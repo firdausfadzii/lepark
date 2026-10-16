@@ -1,11 +1,17 @@
 import Phaser from "phaser";
 import { MultiplayerManager } from "../network/MultiplayerManager";
 import {
+  TILE_SIZE,
+  GRID_COLS,
+  GRID_ROWS,
   WORLD_WIDTH,
   WORLD_HEIGHT,
   PLAYER_RADIUS,
+  CHARACTER_MAX_SIZE,
   PLAYER_SPEED,
   PlayerAvatars,
+  getTileCenter,
+  getTileCoords,
 } from "shared";
 
 interface PlayerVisual {
@@ -30,6 +36,7 @@ export class GameScene extends Phaser.Scene {
   private playerVisuals: Map<string, PlayerVisual> = new Map();
   private localPlayerId: string | null = null;
   private lastInputState = { left: false, right: false, up: false, down: false };
+  public controlsActive = true;
 
   constructor() {
     super({ key: "GameScene" });
@@ -39,20 +46,25 @@ export class GameScene extends Phaser.Scene {
     this.multiplayer = data?.multiplayer;
   }
 
+  preload() {
+    this.load.image("birch_floor_tile", "/assets/birch_floor_150.png");
+  }
+
   create() {
     if (!this.multiplayer) {
       console.error("MultiplayerManager not provided to GameScene");
       return;
     }
 
-    // White background
-    this.cameras.main.setBackgroundColor(0xffffff);
+    // World & Camera bounds
+    this.cameras.main.setBackgroundColor(0x1e1814);
     this.cameras.main.setBounds(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
+    this.cameras.main.setRoundPixels(true);
     this.physics.world.setBounds(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
 
-    // Center camera on world center immediately (960, 540)
+    // Center camera on world center immediately (1200, 900)
     this.cameras.main.centerOn(WORLD_WIDTH / 2, WORLD_HEIGHT / 2);
-    this.cameras.main.setZoom(1.2);
+    this.cameras.main.setZoom(1.0);
 
     // Keep camera viewport aligned on browser resize
     this.scale.on("resize", (gameSize: Phaser.Structs.Size) => {
@@ -65,19 +77,27 @@ export class GameScene extends Phaser.Scene {
       }
     });
 
-    // Subtle arena perimeter boundary (clean light gray line)
-    const boundsGraphics = this.add.graphics();
-    boundsGraphics.lineStyle(2, 0xe2e8f0, 1);
-    boundsGraphics.strokeRect(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
+    // Background fully rendered with birch_floor_150.png on each 150x150 tile
+    const bgTileSprite = this.add.tileSprite(0, 0, WORLD_WIDTH, WORLD_HEIGHT, "birch_floor_tile");
+    bgTileSprite.setOrigin(0, 0);
+    bgTileSprite.setDepth(0);
 
-    // Subtle grid dots to give sense of motion while keeping background strictly white
-    const dotGraphics = this.add.graphics();
-    dotGraphics.fillStyle(0xf1f5f9, 0.8);
-    for (let x = 60; x < WORLD_WIDTH; x += 60) {
-      for (let y = 60; y < WORLD_HEIGHT; y += 60) {
-        dotGraphics.fillCircle(x, y, 1.5);
-      }
+    // Subtle grid lines to distinguish each 150x150 tile clearly
+    const gridGraphics = this.add.graphics();
+    gridGraphics.lineStyle(1, 0x000000, 0.07);
+    for (let x = 0; x <= WORLD_WIDTH; x += TILE_SIZE) {
+      gridGraphics.lineBetween(x, 0, x, WORLD_HEIGHT);
     }
+    for (let y = 0; y <= WORLD_HEIGHT; y += TILE_SIZE) {
+      gridGraphics.lineBetween(0, y, WORLD_WIDTH, y);
+    }
+    gridGraphics.setDepth(1);
+
+    // Outer perimeter boundary border
+    const boundsGraphics = this.add.graphics();
+    boundsGraphics.lineStyle(3, 0x3d271d, 0.85);
+    boundsGraphics.strokeRect(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
+    boundsGraphics.setDepth(2);
 
     // Keyboard inputs
     if (this.input.keyboard) {
@@ -89,27 +109,20 @@ export class GameScene extends Phaser.Scene {
         D: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.D),
       };
 
-      // Capture navigation and movement keys to prevent browser scroll attempts
-      this.input.keyboard.addCapture([
-        Phaser.Input.Keyboard.KeyCodes.W,
-        Phaser.Input.Keyboard.KeyCodes.A,
-        Phaser.Input.Keyboard.KeyCodes.S,
-        Phaser.Input.Keyboard.KeyCodes.D,
-        Phaser.Input.Keyboard.KeyCodes.UP,
-        Phaser.Input.Keyboard.KeyCodes.DOWN,
-        Phaser.Input.Keyboard.KeyCodes.LEFT,
-        Phaser.Input.Keyboard.KeyCodes.RIGHT,
-        Phaser.Input.Keyboard.KeyCodes.SPACE,
-      ]);
+      if (this.controlsActive) {
+        this.registerKeyCaptures();
+      } else {
+        this.input.keyboard.enabled = false;
+      }
     }
 
-    // Generate circular dot texture once if not already created
+    // Generate circular dot texture once if not already created (diameter 80px)
     if (!this.textures.exists("dot_texture")) {
       const g = this.make.graphics({ x: 0, y: 0 }, false);
-      g.fillStyle(0x0f172a, 0.2);
+      g.fillStyle(0x0f172a, 0.25);
       g.fillCircle(PLAYER_RADIUS, PLAYER_RADIUS, PLAYER_RADIUS);
       g.fillStyle(0xffffff, 1);
-      g.fillCircle(PLAYER_RADIUS, PLAYER_RADIUS, PLAYER_RADIUS - 2);
+      g.fillCircle(PLAYER_RADIUS, PLAYER_RADIUS, PLAYER_RADIUS - 3);
       g.generateTexture("dot_texture", PLAYER_RADIUS * 2, PLAYER_RADIUS * 2);
       g.destroy();
     }
@@ -166,16 +179,17 @@ export class GameScene extends Phaser.Scene {
     // Dot sprite with color tint (default visual)
     const dot = this.add.image(0, 0, "dot_texture");
     dot.setTint(colorNum);
+    dot.setDisplaySize(PLAYER_RADIUS * 2, PLAYER_RADIUS * 2);
 
-    // Sprite image for custom uploaded pictures (initially hidden)
+    // Sprite image for custom uploaded pictures (max 150px)
     const sprite = this.add.image(0, 0, "empty_pixel");
     sprite.setVisible(false);
-    sprite.setDisplaySize(60, 60);
+    sprite.setDisplaySize(CHARACTER_MAX_SIZE, CHARACTER_MAX_SIZE);
 
     // Name text floating above dot/sprite with native background pill
-    const nameTag = this.add.text(0, -PLAYER_RADIUS - 16, player.name || "Player", {
+    const nameTag = this.add.text(0, -PLAYER_RADIUS - 14, player.name || "Player", {
       fontFamily: "Outfit, sans-serif",
-      fontSize: "13px",
+      fontSize: "12px",
       fontStyle: "bold",
       color: "#0f172a",
       backgroundColor: "rgba(255, 255, 255, 0.95)",
@@ -184,10 +198,14 @@ export class GameScene extends Phaser.Scene {
     });
     nameTag.setOrigin(0.5, 0.5);
 
-    const spawnX = typeof player.x === "number" ? player.x : WORLD_WIDTH / 2;
-    const spawnY = typeof player.y === "number" ? player.y : WORLD_HEIGHT / 2;
+    // Align spawn to tile center
+    const coords = getTileCoords(
+      typeof player.x === "number" ? player.x : WORLD_WIDTH / 2,
+      typeof player.y === "number" ? player.y : WORLD_HEIGHT / 2
+    );
+    const spawnCenter = getTileCenter(coords.tileX, coords.tileY);
 
-    const container = this.add.container(spawnX, spawnY, [dot, sprite, nameTag]);
+    const container = this.add.container(spawnCenter.x, spawnCenter.y, [dot, sprite, nameTag]);
     container.setDepth(100);
 
     const visual: PlayerVisual = {
@@ -199,13 +217,13 @@ export class GameScene extends Phaser.Scene {
     };
     this.playerVisuals.set(sessionId, visual);
 
-    console.log(`🎮 Spawned player for ${player.name} (${sessionId}) at (${spawnX}, ${spawnY})`);
+    console.log(`🎮 Spawned player for ${player.name} (${sessionId}) at tile (${coords.tileX}, ${coords.tileY})`);
 
-    // If local player, center camera immediately on container and follow smoothly without subpixel jitter
+    // If local player, center camera immediately on container and follow smoothly
     if (sessionId === this.multiplayer.sessionId) {
       this.localPlayerId = sessionId;
       this.cameras.main.centerOn(container.x, container.y);
-      this.cameras.main.startFollow(container, false, 0.15, 0.15);
+      this.cameras.main.startFollow(container, true, 0.12, 0.12);
     }
 
     // Check if avatars are already available for this player
@@ -224,7 +242,7 @@ export class GameScene extends Phaser.Scene {
       visual.avatars = undefined;
       visual.sprite.setVisible(false);
       visual.dot.setVisible(true);
-      visual.nameTag.setPosition(0, -PLAYER_RADIUS - 16);
+      visual.nameTag.setPosition(0, -PLAYER_RADIUS - 14);
       return;
     }
 
@@ -252,6 +270,10 @@ export class GameScene extends Phaser.Scene {
           this.textures.remove(textureKey);
         }
         this.textures.addImage(textureKey, img);
+        const tex = this.textures.get(textureKey);
+        if (tex) {
+          tex.setFilter(Phaser.Textures.FilterMode.NEAREST);
+        }
 
         const currentVisual = this.playerVisuals.get(sessionId);
         if (currentVisual && currentVisual.avatars && currentVisual.avatars.idle) {
@@ -281,8 +303,8 @@ export class GameScene extends Phaser.Scene {
     if (activeKey) {
       visual.sprite.setTexture(activeKey);
 
-      // Render 1:1 contain with max width/height of 60px
-      const MAX_DIM = 60;
+      // Render 1:1 contain with max width/height of 150px
+      const MAX_DIM = CHARACTER_MAX_SIZE;
       const fw = visual.sprite.width;
       const fh = visual.sprite.height;
 
@@ -293,7 +315,7 @@ export class GameScene extends Phaser.Scene {
         visual.sprite.setDisplaySize(MAX_DIM, MAX_DIM);
       }
 
-      // Dynamically position nametag floating above sprite without overlapping
+      // Dynamically position nametag above sprite without overlapping
       const halfH = Math.max(PLAYER_RADIUS, visual.sprite.displayHeight / 2);
       visual.nameTag.setPosition(0, -halfH - 14);
     }
@@ -312,7 +334,7 @@ export class GameScene extends Phaser.Scene {
       visual.nameTag.setText(player.name);
     }
 
-    // For local player, reconcile smoothly with authoritative server position (eliminates jitter)
+    // For local player, reconcile with authoritative server position smoothly
     if (sessionId === this.localPlayerId) {
       const dist = Phaser.Math.Distance.Between(
         visual.container.x,
@@ -325,8 +347,8 @@ export class GameScene extends Phaser.Scene {
       if (dist > 120) {
         visual.container.x = player.x;
         visual.container.y = player.y;
-      } else if (dist > 8) {
-        // Soft reconciliation (smooth lerp) to eliminate visual snapping
+      } else if (dist > 25) {
+        // Soft reconciliation glide (smooth lerp with zero snapping)
         visual.container.x = Phaser.Math.Linear(visual.container.x, player.x, 0.15);
         visual.container.y = Phaser.Math.Linear(visual.container.y, player.y, 0.15);
       }
@@ -356,82 +378,129 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
+  public setControlsActive(active: boolean) {
+    this.controlsActive = active;
+
+    if (!active) {
+      // Unregister / clear captures so HTML inputs receive typing without interference
+      if (this.input.keyboard) {
+        this.input.keyboard.clearCaptures();
+        this.input.keyboard.resetKeys();
+        this.input.keyboard.enabled = false;
+      }
+
+      // Immediately stop any local movement
+      if (
+        this.lastInputState.left ||
+        this.lastInputState.right ||
+        this.lastInputState.up ||
+        this.lastInputState.down
+      ) {
+        this.lastInputState = { left: false, right: false, up: false, down: false };
+        this.multiplayer.sendInput(this.lastInputState);
+      }
+
+      if (this.localPlayerId) {
+        const localVisual = this.playerVisuals.get(this.localPlayerId);
+        if (localVisual && localVisual.currentDirection !== "idle") {
+          localVisual.currentDirection = "idle";
+          this.updateVisualSprite(this.localPlayerId);
+        }
+      }
+    } else {
+      // Re-enable keyboard and register captures
+      if (this.input.keyboard) {
+        this.input.keyboard.enabled = true;
+        this.input.keyboard.resetKeys();
+        this.registerKeyCaptures();
+      }
+    }
+  }
+
+  private registerKeyCaptures() {
+    if (!this.input.keyboard) return;
+    this.input.keyboard.addCapture([
+      Phaser.Input.Keyboard.KeyCodes.W,
+      Phaser.Input.Keyboard.KeyCodes.A,
+      Phaser.Input.Keyboard.KeyCodes.S,
+      Phaser.Input.Keyboard.KeyCodes.D,
+      Phaser.Input.Keyboard.KeyCodes.UP,
+      Phaser.Input.Keyboard.KeyCodes.DOWN,
+      Phaser.Input.Keyboard.KeyCodes.LEFT,
+      Phaser.Input.Keyboard.KeyCodes.RIGHT,
+      Phaser.Input.Keyboard.KeyCodes.SPACE,
+    ]);
+  }
+
   update(time: number, delta: number) {
-    // 1. Handle local player inputs
+    const dtSeconds = delta / 1000;
+
+    // 1. Read input state (only when controls are active)
     let left = false;
     let right = false;
     let up = false;
     let down = false;
 
-    if (this.cursors) {
+    if (this.controlsActive && this.cursors) {
       left = this.cursors.left.isDown || this.wasdKeys.A.isDown;
       right = this.cursors.right.isDown || this.wasdKeys.D.isDown;
       up = this.cursors.up.isDown || this.wasdKeys.W.isDown;
       down = this.cursors.down.isDown || this.wasdKeys.S.isDown;
     }
 
-    // Determine current movement direction for sprite state
-    let currentDir: "idle" | "left" | "right" | "up" | "down" = "idle";
-    if (left) currentDir = "left";
-    else if (right) currentDir = "right";
-    else if (up) currentDir = "up";
-    else if (down) currentDir = "down";
-
-    if (this.localPlayerId) {
-      const localVisual = this.playerVisuals.get(this.localPlayerId);
-      if (localVisual && localVisual.currentDirection !== currentDir) {
-        localVisual.currentDirection = currentDir;
-        this.updateVisualSprite(this.localPlayerId);
-      }
-    }
-
-    // Only send when input state changed or actively moving
+    // Send input whenever state changed
     if (
       left !== this.lastInputState.left ||
       right !== this.lastInputState.right ||
       up !== this.lastInputState.up ||
-      down !== this.lastInputState.down ||
-      left || right || up || down
+      down !== this.lastInputState.down
     ) {
       this.lastInputState = { left, right, up, down };
       this.multiplayer.sendInput(this.lastInputState);
+    }
 
-      // Client-side prediction for instant responsiveness of local player
-      if (this.localPlayerId) {
-        const localVisual = this.playerVisuals.get(this.localPlayerId);
-        if (localVisual) {
-          const dtSeconds = delta / 1000;
-          let dx = 0;
-          let dy = 0;
-          if (left) dx -= 1;
-          if (right) dx += 1;
-          if (up) dy -= 1;
-          if (down) dy += 1;
+    // 2. Local player continuous movement (smooth client-side prediction)
+    if (this.localPlayerId) {
+      const localVisual = this.playerVisuals.get(this.localPlayerId);
+      if (localVisual) {
+        let vx = 0;
+        let vy = 0;
+        if (left) vx -= 1;
+        if (right) vx += 1;
+        if (up) vy -= 1;
+        if (down) vy += 1;
 
-          if (dx !== 0 && dy !== 0) {
-            dx *= 0.7071;
-            dy *= 0.7071;
+        let targetDir: "idle" | "left" | "right" | "up" | "down" = "idle";
+
+        if (vx !== 0 || vy !== 0) {
+          if (vx !== 0 && vy !== 0) {
+            const inv = 1 / Math.SQRT2;
+            vx *= inv;
+            vy *= inv;
           }
 
-          localVisual.container.x += dx * PLAYER_SPEED * dtSeconds;
-          localVisual.container.y += dy * PLAYER_SPEED * dtSeconds;
+          if (Math.abs(vx) >= Math.abs(vy)) {
+            targetDir = vx < 0 ? "left" : "right";
+          } else {
+            targetDir = vy < 0 ? "up" : "down";
+          }
 
-          // Clamp
-          localVisual.container.x = Phaser.Math.Clamp(
-            localVisual.container.x,
-            PLAYER_RADIUS,
-            WORLD_WIDTH - PLAYER_RADIUS
-          );
-          localVisual.container.y = Phaser.Math.Clamp(
-            localVisual.container.y,
-            PLAYER_RADIUS,
-            WORLD_HEIGHT - PLAYER_RADIUS
-          );
+          const halfSize = CHARACTER_MAX_SIZE / 2;
+          const nextX = localVisual.container.x + vx * PLAYER_SPEED * dtSeconds;
+          const nextY = localVisual.container.y + vy * PLAYER_SPEED * dtSeconds;
+
+          localVisual.container.x = Math.max(halfSize, Math.min(WORLD_WIDTH - halfSize, nextX));
+          localVisual.container.y = Math.max(halfSize, Math.min(WORLD_HEIGHT - halfSize, nextY));
+        }
+
+        if (localVisual.currentDirection !== targetDir) {
+          localVisual.currentDirection = targetDir;
+          this.updateVisualSprite(this.localPlayerId);
         }
       }
     }
 
-    // 2. Snapshot Interpolation for remote players (anti-jitter pipeline)
+    // 3. Snapshot Interpolation for remote players (anti-jitter pipeline)
     const interpolation = this.multiplayer.si.calcInterpolation("x y");
     if (interpolation && interpolation.state) {
       interpolation.state.forEach((item: any) => {
@@ -444,7 +513,7 @@ export class GameScene extends Phaser.Scene {
             const dist = Math.hypot(dx, dy);
 
             let remoteDir: "idle" | "left" | "right" | "up" | "down" = "idle";
-            if (dist > 0.4) {
+            if (dist > 1.0) {
               if (Math.abs(dx) > Math.abs(dy)) {
                 remoteDir = dx > 0 ? "right" : "left";
               } else {

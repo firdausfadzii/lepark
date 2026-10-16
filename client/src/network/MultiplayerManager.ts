@@ -2,9 +2,14 @@ import { Client, Room } from "colyseus.js";
 import { SnapshotInterpolation } from "@geckos.io/snapshot-interpolation";
 import { PlayerInputPayload, PlayerJoinOptions, PlayerAvatars, SERVER_TICK_RATE } from "shared";
 
+export interface NetworkStats {
+  pingMs: number;
+  packetLoss: number;
+}
 export type PlayerChangeCallback = (sessionId: string, player: any) => void;
 export type PlayerRemoveCallback = (sessionId: string) => void;
 export type PlayerAvatarCallback = (sessionId: string, avatars: PlayerAvatars | null) => void;
+export type NetworkStatsCallback = (stats: NetworkStats) => void;
 
 export class MultiplayerManager {
   private client!: Client;
@@ -17,7 +22,13 @@ export class MultiplayerManager {
   private onConnectionStatusCallbacks: ((connected: boolean) => void)[] = [];
   private onPlayerCountCallbacks: ((count: number) => void)[] = [];
   private onPlayerAvatarCallbacks: PlayerAvatarCallback[] = [];
+  private onNetworkStatsCallbacks: NetworkStatsCallback[] = [];
   public playerAvatarsMap = new Map<string, PlayerAvatars>();
+
+  private pingTimer: number | null = null;
+  private pingSeq = 0;
+  private recentPings: { seq: number; sentAt: number; received: boolean }[] = [];
+  private readonly MAX_PING_HISTORY = 15;
 
   constructor() {
     const wsProtocol =
@@ -92,13 +103,27 @@ export class MultiplayerManager {
       }
     });
 
+    this.room.onMessage("PONG", (data: { seq: number; t: number }) => {
+      const now = Date.now();
+      const rtt = Math.max(1, now - data.t);
+      const record = this.recentPings.find((p) => p.seq === data.seq);
+      if (record) {
+        record.received = true;
+      }
+      this.calculateAndNotifyNetworkStats(rtt);
+    });
+
+    this.startPingLoop();
+
     this.room.onLeave((code) => {
       console.warn("Left room with code:", code);
+      this.stopPingLoop();
       this.notifyConnectionStatus(false);
     });
 
     this.room.onError((code, message) => {
       console.error("Room error:", code, message);
+      this.stopPingLoop();
     });
   }
 
@@ -209,5 +234,81 @@ export class MultiplayerManager {
 
   private notifyPlayerCount(count: number) {
     this.onPlayerCountCallbacks.forEach((cb) => cb(count));
+  }
+
+  public onNetworkStats(cb: NetworkStatsCallback) {
+    this.onNetworkStatsCallbacks.push(cb);
+  }
+
+  private startPingLoop() {
+    this.stopPingLoop();
+    this.recentPings = [];
+    this.pingSeq = 0;
+
+    // Send immediate initial ping
+    this.sendPing();
+
+    this.pingTimer = window.setInterval(() => {
+      this.sendPing();
+    }, 1000);
+  }
+
+  private stopPingLoop() {
+    if (this.pingTimer !== null) {
+      clearInterval(this.pingTimer);
+      this.pingTimer = null;
+    }
+  }
+
+  private sendPing() {
+    if (!this.room) return;
+    const seq = ++this.pingSeq;
+    const now = Date.now();
+
+    this.recentPings.push({
+      seq,
+      sentAt: now,
+      received: false,
+    });
+
+    if (this.recentPings.length > this.MAX_PING_HISTORY) {
+      this.recentPings.shift();
+    }
+
+    try {
+      this.room.send("PING", { seq, t: now });
+    } catch {
+      // Room disconnected
+    }
+
+    this.calculateAndNotifyNetworkStats();
+  }
+
+  private calculateAndNotifyNetworkStats(latestPing?: number) {
+    const now = Date.now();
+    const TIMEOUT_MS = 1800;
+
+    const evaluatedPings = this.recentPings.filter(
+      (p) => p.received || now - p.sentAt > TIMEOUT_MS
+    );
+
+    let lossPercent = 0;
+    if (evaluatedPings.length > 0) {
+      const lostCount = evaluatedPings.filter((p) => !p.received).length;
+      lossPercent = Math.round((lostCount / evaluatedPings.length) * 100);
+    }
+
+    let displayPing = latestPing;
+    if (displayPing === undefined) {
+      const lastReceived = [...this.recentPings].reverse().find((p) => p.received);
+      displayPing = lastReceived ? Math.max(1, now - lastReceived.sentAt) : 0;
+    }
+
+    const stats: NetworkStats = {
+      pingMs: Math.round(displayPing),
+      packetLoss: lossPercent,
+    };
+
+    this.onNetworkStatsCallbacks.forEach((cb) => cb(stats));
   }
 }

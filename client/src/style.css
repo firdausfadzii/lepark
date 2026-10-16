@@ -3,7 +3,7 @@
 :root {
   --font-main: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
   --font-display: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
-  --bg-game: #ffffff;
+  --bg-game: #1e1814;
   --glass-bg: rgba(15, 23, 42, 0.75);
   --glass-border: rgba(255, 255, 255, 0.12);
   --glass-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.35);
@@ -97,6 +97,31 @@ canvas {
 .status-dot.disconnected {
   background: #ef4444;
   box-shadow: 0 0 10px #ef4444;
+}
+
+.badge-divider {
+  opacity: 0.35;
+  user-select: none;
+}
+
+.badge-stat {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+  font-weight: 500;
+  color: #94a3b8;
+  transition: color 0.2s ease;
+}
+
+.badge-stat.good {
+  color: #34d399;
+}
+
+.badge-stat.fair {
+  color: #fbbf24;
+}
+
+.badge-stat.poor {
+  color: #f87171;
 }
 
 .btn-secondary {
@@ -237,7 +262,7 @@ canvas {
   border: 1px dashed rgba(255, 255, 255, 0.15);
   border-radius: 16px;
   padding: 14px 12px;
-  min-height: 120px;
+  min-height: 130px;
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -251,6 +276,8 @@ canvas {
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
+  min-height: 85px;
   gap: 8px;
   animation: float 3s ease-in-out infinite;
 }
@@ -270,20 +297,20 @@ canvas {
 }
 
 .preview-dot {
-  width: 34px;
-  height: 34px;
+  width: 46px;
+  height: 46px;
   border-radius: 50%;
   background: #3b82f6;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
-  border: 2px solid rgba(255, 255, 255, 0.3);
+  border: 2px solid rgba(255, 255, 255, 0.35);
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .preview-avatar {
-  width: 60px;
-  height: 60px;
-  max-width: 60px;
-  max-height: 60px;
+  width: 65px;
+  height: 65px;
+  max-width: 75px;
+  max-height: 75px;
   aspect-ratio: 1 / 1;
   object-fit: contain;
   filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.35));

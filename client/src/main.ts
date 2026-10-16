@@ -20,6 +20,8 @@ const previewName = document.getElementById("preview-name") as HTMLDivElement;
 const connectionDot = document.getElementById("connection-indicator") as HTMLSpanElement;
 const statusText = document.getElementById("status-text") as HTMLSpanElement;
 const playerCountText = document.getElementById("player-count") as HTMLSpanElement;
+const pingStatText = document.getElementById("ping-stat") as HTMLSpanElement;
+const lossStatText = document.getElementById("loss-stat") as HTMLSpanElement;
 const btnEditProfile = document.getElementById("btn-edit-profile") as HTMLButtonElement;
 const btnJoin = document.getElementById("btn-join") as HTMLButtonElement;
 
@@ -122,14 +124,14 @@ function updatePreview() {
   }
 }
 
-// Helper to downscale and optimize uploaded image to ~96px max dimension
+// Helper to downscale and optimize uploaded image to ~150px max dimension
 function processImageFile(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (e) => {
       const img = new Image();
       img.onload = () => {
-        const MAX_DIM = 96;
+        const MAX_DIM = 150;
         let width = img.width;
         let height = img.height;
         if (width > MAX_DIM || height > MAX_DIM) {
@@ -335,7 +337,15 @@ function generateDemoSprite(direction: DirectionSlot): string {
     ctx.fillRect(26, 40, 6, 5);
   }
 
-  return canvas.toDataURL("image/png");
+  // Upscale cleanly to 144x144 (3x) for crisp 150px tile character display
+  const outCanvas = document.createElement("canvas");
+  outCanvas.width = 144;
+  outCanvas.height = 144;
+  const outCtx = outCanvas.getContext("2d")!;
+  outCtx.imageSmoothingEnabled = false;
+  outCtx.drawImage(canvas, 0, 0, 144, 144);
+
+  return outCanvas.toDataURL("image/png");
 }
 
 function setSlotPicture(slot: DirectionSlot, dataUrl: string) {
@@ -395,11 +405,32 @@ customColorInput.addEventListener("input", (e) => {
 function openModal(isEditMode = false) {
   btnJoin.textContent = isEditMode ? "Save Changes" : "Enter Game";
   modal.classList.remove("hidden");
-  nameInput.focus();
+
+  // When modal is open, unregister all movement keys so user can freely type (WASD)
+  if (gameInstance) {
+    const activeScene = gameInstance.scene.getScene("GameScene") as GameScene;
+    if (activeScene && typeof activeScene.setControlsActive === "function") {
+      activeScene.setControlsActive(false);
+    }
+  }
+
+  // Focus directly into the modal's name input
+  setTimeout(() => {
+    nameInput.focus();
+    nameInput.select();
+  }, 50);
 }
 
 function closeModal() {
   modal.classList.add("hidden");
+
+  // Re-enable movement controls when modal closes
+  if (gameInstance) {
+    const activeScene = gameInstance.scene.getScene("GameScene") as GameScene;
+    if (activeScene && typeof activeScene.setControlsActive === "function") {
+      activeScene.setControlsActive(true);
+    }
+  }
 }
 
 btnEditProfile.addEventListener("click", () => {
@@ -459,6 +490,19 @@ async function handleJoinOrSave(e: Event) {
     const manager = new MultiplayerManager();
 
     // Hook up UI indicators
+    manager.onNetworkStats(({ pingMs, packetLoss }) => {
+      if (pingStatText) {
+        pingStatText.textContent = `${pingMs} ms`;
+        pingStatText.className =
+          "badge-stat " + (pingMs < 60 ? "good" : pingMs < 130 ? "fair" : "poor");
+      }
+      if (lossStatText) {
+        lossStatText.textContent = `${packetLoss}% loss`;
+        lossStatText.className =
+          "badge-stat " + (packetLoss === 0 ? "good" : packetLoss < 5 ? "fair" : "poor");
+      }
+    });
+
     manager.onConnectionStatus((connected) => {
       if (connected) {
         connectionDot.className = "status-dot";
@@ -466,6 +510,14 @@ async function handleJoinOrSave(e: Event) {
       } else {
         connectionDot.className = "status-dot disconnected";
         statusText.textContent = "Disconnected";
+        if (pingStatText) {
+          pingStatText.textContent = "-- ms";
+          pingStatText.className = "badge-stat";
+        }
+        if (lossStatText) {
+          lossStatText.textContent = "-- loss";
+          lossStatText.className = "badge-stat";
+        }
       }
     });
 

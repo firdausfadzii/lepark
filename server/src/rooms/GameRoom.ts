@@ -4,11 +4,15 @@ import {
   PlayerInputPayload,
   PlayerJoinOptions,
   PlayerAvatars,
+  TILE_SIZE,
+  GRID_COLS,
+  GRID_ROWS,
   WORLD_WIDTH,
   WORLD_HEIGHT,
   PLAYER_SPEED,
+  CHARACTER_MAX_SIZE,
   SERVER_TICK_RATE,
-  PLAYER_RADIUS,
+  getTileCenter,
 } from "shared";
 import { upsertPlayer, updatePlayerPosition } from "../db";
 
@@ -89,6 +93,10 @@ export class GameRoom extends Room<GameState> {
         });
       }
     });
+
+    this.onMessage("PING", (client: Client, data: { seq: number; t: number }) => {
+      client.send("PONG", data);
+    });
   }
 
   onJoin(client: Client, options: PlayerJoinOptions) {
@@ -103,9 +111,12 @@ export class GameRoom extends Room<GameState> {
     player.id = client.sessionId;
     player.name = name;
     player.color = color;
-    // Spawn directly at the center of the world
-    player.x = WORLD_WIDTH / 2;
-    player.y = WORLD_HEIGHT / 2;
+    const defaultTileX = Math.floor(GRID_COLS / 2);
+    const defaultTileY = Math.floor(GRID_ROWS / 2);
+    const spawnCenter = getTileCenter(defaultTileX, defaultTileY);
+
+    player.x = spawnCenter.x;
+    player.y = spawnCenter.y;
 
     this.state.players.set(client.sessionId, player);
     this.playerInputs.set(client.sessionId, {
@@ -115,7 +126,7 @@ export class GameRoom extends Room<GameState> {
       down: false,
     });
 
-    console.log(` Player joined: ${name} (${color}) [${client.sessionId}]`);
+    console.log(` Player joined: ${name} (${color}) [${client.sessionId}] at tile (${defaultTileX}, ${defaultTileY})`);
 
     upsertPlayer({
       id: client.sessionId,
@@ -155,32 +166,31 @@ export class GameRoom extends Room<GameState> {
 
   update(deltaTime: number) {
     const dtSeconds = deltaTime / 1000;
-    const distance = PLAYER_SPEED * dtSeconds;
 
     this.state.players.forEach((player: PlayerState, sessionId: string) => {
       const input = this.playerInputs.get(sessionId);
-      if (!input) return;
+      if (input) {
+        let vx = 0;
+        let vy = 0;
+        if (input.left) vx -= 1;
+        if (input.right) vx += 1;
+        if (input.up) vy -= 1;
+        if (input.down) vy += 1;
 
-      let dx = 0;
-      let dy = 0;
+        if (vx !== 0 || vy !== 0) {
+          if (vx !== 0 && vy !== 0) {
+            const inv = 1 / Math.SQRT2;
+            vx *= inv;
+            vy *= inv;
+          }
 
-      if (input.left) dx -= 1;
-      if (input.right) dx += 1;
-      if (input.up) dy -= 1;
-      if (input.down) dy += 1;
+          const halfSize = CHARACTER_MAX_SIZE / 2;
+          const nextX = player.x + vx * PLAYER_SPEED * dtSeconds;
+          const nextY = player.y + vy * PLAYER_SPEED * dtSeconds;
 
-      if (dx !== 0 && dy !== 0) {
-        const invSqrt2 = 0.70710678;
-        dx *= invSqrt2;
-        dy *= invSqrt2;
-      }
-
-      if (dx !== 0 || dy !== 0) {
-        player.x += dx * distance;
-        player.y += dy * distance;
-
-        player.x = Math.max(PLAYER_RADIUS, Math.min(WORLD_WIDTH - PLAYER_RADIUS, player.x));
-        player.y = Math.max(PLAYER_RADIUS, Math.min(WORLD_HEIGHT - PLAYER_RADIUS, player.y));
+          player.x = Math.max(halfSize, Math.min(WORLD_WIDTH - halfSize, nextX));
+          player.y = Math.max(halfSize, Math.min(WORLD_HEIGHT - halfSize, nextY));
+        }
       }
     });
 

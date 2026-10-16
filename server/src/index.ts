@@ -47,6 +47,7 @@ const httpServer = http.createServer(app);
 const gameServer = new Server({
   transport: new WebSocketTransport({
     server: httpServer,
+    maxPayload: 10 * 1024 * 1024, // 10MB payload limit to prevent disconnects when transmitting custom sprites
   }),
 });
 
