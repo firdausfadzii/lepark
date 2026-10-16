@@ -30,3 +30,17 @@ export interface PlayerDbRecord {
   last_seen?: Date;
 }
 
+export interface AuthUser {
+  id: number;
+  username: string;
+  displayName?: string | null;
+}
+
+export interface AuthResponse {
+  success: boolean;
+  token?: string;
+  user?: AuthUser;
+  error?: string;
+}
+
+

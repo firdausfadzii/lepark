@@ -1,15 +1,47 @@
 import Phaser from "phaser";
 import { MultiplayerManager } from "./network/MultiplayerManager";
 import { GameScene } from "./scenes/GameScene";
-import { DEFAULT_PRESET_COLORS, PlayerAvatars } from "shared";
+import { DEFAULT_PRESET_COLORS, PlayerAvatars, AuthUser, AuthResponse } from "shared";
 
 // Types
 type DirectionSlot = "idle" | "left" | "right" | "up" | "down";
 
-// DOM Elements
+// DOM Elements - Auth Modal
+const authModal = document.getElementById("auth-modal") as HTMLDivElement;
+const tabLogin = document.getElementById("tab-login") as HTMLButtonElement;
+const tabRegister = document.getElementById("tab-register") as HTMLButtonElement;
+const loginForm = document.getElementById("login-form") as HTMLFormElement;
+const registerForm = document.getElementById("register-form") as HTMLFormElement;
+const loginUsernameInput = document.getElementById("login-username") as HTMLInputElement;
+const loginPasswordInput = document.getElementById("login-password") as HTMLInputElement;
+const regUsernameInput = document.getElementById("reg-username") as HTMLInputElement;
+const regDisplayNameInput = document.getElementById("reg-display-name") as HTMLInputElement;
+const regPasswordInput = document.getElementById("reg-password") as HTMLInputElement;
+const regConfirmPasswordInput = document.getElementById("reg-confirm-password") as HTMLInputElement;
+const btnSubmitLogin = document.getElementById("btn-submit-login") as HTMLButtonElement;
+const btnSubmitRegister = document.getElementById("btn-submit-register") as HTMLButtonElement;
+const authAlert = document.getElementById("auth-alert") as HTMLDivElement;
+const authAlertMsg = document.getElementById("auth-alert-msg") as HTMLSpanElement;
+const linkGoRegister = document.getElementById("link-go-register") as HTMLButtonElement;
+const linkGoLogin = document.getElementById("link-go-login") as HTMLButtonElement;
+
+// DOM Elements - HUD
+const hudActions = document.getElementById("hud-actions") as HTMLDivElement;
+const hudFooter = document.getElementById("hud-footer") as HTMLDivElement;
+const connectionDot = document.getElementById("connection-indicator") as HTMLSpanElement;
+const statusText = document.getElementById("status-text") as HTMLSpanElement;
+const playerCountText = document.getElementById("player-count") as HTMLSpanElement;
+const pingStatText = document.getElementById("ping-stat") as HTMLSpanElement;
+const lossStatText = document.getElementById("loss-stat") as HTMLSpanElement;
+const btnEditProfile = document.getElementById("btn-edit-profile") as HTMLButtonElement;
+const btnLogout = document.getElementById("btn-logout") as HTMLButtonElement;
+
+// DOM Elements - Update Character Modal
 const modal = document.getElementById("onboarding-modal") as HTMLDivElement;
+const btnCloseModal = document.getElementById("btn-close-modal") as HTMLButtonElement;
 const profileForm = document.getElementById("profile-form") as HTMLFormElement;
 const nameInput = document.getElementById("player-name") as HTMLInputElement;
+const currentUsernameTag = document.getElementById("current-username-tag") as HTMLSpanElement;
 const customColorInput = document.getElementById("custom-color-picker") as HTMLInputElement;
 const colorGrid = document.getElementById("color-grid") as HTMLDivElement;
 const previewDot = document.getElementById("preview-dot") as HTMLDivElement;
@@ -17,12 +49,6 @@ const previewAvatar = document.getElementById("preview-avatar") as HTMLImageElem
 const previewDirectionsBar = document.getElementById("preview-directions-bar") as HTMLDivElement;
 const previewStatusHint = document.getElementById("preview-status-hint") as HTMLDivElement;
 const previewName = document.getElementById("preview-name") as HTMLDivElement;
-const connectionDot = document.getElementById("connection-indicator") as HTMLSpanElement;
-const statusText = document.getElementById("status-text") as HTMLSpanElement;
-const playerCountText = document.getElementById("player-count") as HTMLSpanElement;
-const pingStatText = document.getElementById("ping-stat") as HTMLSpanElement;
-const lossStatText = document.getElementById("loss-stat") as HTMLSpanElement;
-const btnEditProfile = document.getElementById("btn-edit-profile") as HTMLButtonElement;
 const btnJoin = document.getElementById("btn-join") as HTMLButtonElement;
 
 // Switch and Sections
@@ -31,6 +57,8 @@ const dotInputSection = document.getElementById("dot-input-section") as HTMLDivE
 const uploadPicturesSection = document.getElementById("upload-pictures-section") as HTMLDivElement;
 
 // State
+let currentUser: AuthUser | null = null;
+let authToken: string | null = null;
 let selectedColor = DEFAULT_PRESET_COLORS[5]; // Royal blue default
 let gameInstance: Phaser.Game | null = null;
 let multiplayer: MultiplayerManager | null = null;
@@ -44,7 +72,246 @@ const uploadedPictures: Record<DirectionSlot, string | undefined> = {
   down: undefined,
 };
 
-// Setup Preset Color Buttons
+function getApiUrl(path: string): string {
+  const protocol = window.location.protocol;
+  const host = window.location.hostname || "localhost";
+  return `${protocol}//${host}:2567${path}`;
+}
+
+/**
+ * Determine in-game character name:
+ * "name will try to use 'display name' first. if not exist, use username."
+ */
+function getEffectivePlayerName(): string {
+  if (currentUser) {
+    if (currentUser.displayName && currentUser.displayName.trim().length > 0) {
+      return currentUser.displayName.trim();
+    }
+    return currentUser.username;
+  }
+  return nameInput.value.trim() || "Player";
+}
+
+// ==========================================
+// Auth Modal & Tab Management
+// ==========================================
+
+function showAuthAlert(message: string, isSuccess = false) {
+  authAlertMsg.textContent = message;
+  authAlert.className = "auth-alert " + (isSuccess ? "success" : "");
+  authAlert.classList.remove("hidden");
+}
+
+function clearAuthAlert() {
+  authAlert.classList.add("hidden");
+  authAlertMsg.textContent = "";
+}
+
+function switchAuthTab(tab: "login" | "register") {
+  clearAuthAlert();
+  if (tab === "login") {
+    tabLogin.classList.add("active");
+    tabRegister.classList.remove("active");
+    loginForm.classList.remove("hidden");
+    registerForm.classList.add("hidden");
+    setTimeout(() => loginUsernameInput.focus(), 50);
+  } else {
+    tabRegister.classList.add("active");
+    tabLogin.classList.remove("active");
+    registerForm.classList.remove("hidden");
+    loginForm.classList.add("hidden");
+    setTimeout(() => regUsernameInput.focus(), 50);
+  }
+}
+
+tabLogin.addEventListener("click", () => switchAuthTab("login"));
+tabRegister.addEventListener("click", () => switchAuthTab("register"));
+linkGoRegister.addEventListener("click", (e) => {
+  e.preventDefault();
+  switchAuthTab("register");
+});
+linkGoLogin.addEventListener("click", (e) => {
+  e.preventDefault();
+  switchAuthTab("login");
+});
+
+// Toggle password visibility
+document.querySelectorAll(".btn-toggle-pwd").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const targetId = (btn as HTMLElement).getAttribute("data-target");
+    if (!targetId) return;
+    const input = document.getElementById(targetId) as HTMLInputElement;
+    if (input) {
+      const isPwd = input.type === "password";
+      input.type = isPwd ? "text" : "password";
+      btn.textContent = isPwd ? "🙈" : "👁️";
+    }
+  });
+});
+
+function openAuthModal(initialTab: "login" | "register" = "login") {
+  switchAuthTab(initialTab);
+  authModal.classList.remove("hidden");
+  hudActions.classList.add("hidden");
+  hudFooter.classList.add("hidden");
+}
+
+function closeAuthModal() {
+  authModal.classList.add("hidden");
+  hudActions.classList.remove("hidden");
+  hudFooter.classList.remove("hidden");
+}
+
+// Handle Register Submission
+registerForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  clearAuthAlert();
+
+  const username = regUsernameInput.value.trim();
+  const displayName = regDisplayNameInput.value.trim();
+  const password = regPasswordInput.value;
+  const confirmPassword = regConfirmPasswordInput.value;
+
+  if (username.length < 3) {
+    showAuthAlert("Username must be at least 3 characters long.");
+    regUsernameInput.focus();
+    return;
+  }
+
+  if (password.length < 6) {
+    showAuthAlert("Password must be at least 6 characters long.");
+    regPasswordInput.focus();
+    return;
+  }
+
+  if (password !== confirmPassword) {
+    showAuthAlert("Passwords do not match. Please re-enter.");
+    regConfirmPasswordInput.focus();
+    return;
+  }
+
+  btnSubmitRegister.disabled = true;
+  btnSubmitRegister.innerHTML = `<span>Creating account...</span>`;
+
+  try {
+    const res = await fetch(getApiUrl("/api/auth/register"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        username,
+        displayName: displayName || null,
+        password,
+        confirmPassword,
+      }),
+    });
+
+    const data: AuthResponse = await res.json();
+    if (!res.ok || !data.success || !data.token || !data.user) {
+      showAuthAlert(data.error || "Failed to register account.");
+      return;
+    }
+
+    // Success: store auth credentials
+    authToken = data.token;
+    currentUser = data.user;
+    localStorage.setItem("lepark_auth_token", authToken);
+    localStorage.setItem("lepark_auth_user", JSON.stringify(currentUser));
+
+    closeAuthModal();
+    await enterGameSession();
+  } catch (err: any) {
+    console.error("Register request failed:", err);
+    showAuthAlert("Network error. Please check that the server is running.");
+  } finally {
+    btnSubmitRegister.disabled = false;
+    btnSubmitRegister.innerHTML = `<span>Create Account</span><span class="btn-arrow">→</span>`;
+  }
+});
+
+// Handle Login Submission
+loginForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  clearAuthAlert();
+
+  const username = loginUsernameInput.value.trim();
+  const password = loginPasswordInput.value;
+
+  if (!username || !password) {
+    showAuthAlert("Please enter both username and password.");
+    return;
+  }
+
+  btnSubmitLogin.disabled = true;
+  btnSubmitLogin.innerHTML = `<span>Signing in...</span>`;
+
+  try {
+    const res = await fetch(getApiUrl("/api/auth/login"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password }),
+    });
+
+    const data: AuthResponse = await res.json();
+    if (!res.ok || !data.success || !data.token || !data.user) {
+      showAuthAlert(data.error || "Invalid username or password.");
+      return;
+    }
+
+    // Success: store auth credentials
+    authToken = data.token;
+    currentUser = data.user;
+    localStorage.setItem("lepark_auth_token", authToken);
+    localStorage.setItem("lepark_auth_user", JSON.stringify(currentUser));
+
+    closeAuthModal();
+    await enterGameSession();
+  } catch (err: any) {
+    console.error("Login request failed:", err);
+    showAuthAlert("Network error. Please check that the server is running.");
+  } finally {
+    btnSubmitLogin.disabled = false;
+    btnSubmitLogin.innerHTML = `<span>Sign In</span><span class="btn-arrow">→</span>`;
+  }
+});
+
+// Logout Handler
+btnLogout.addEventListener("click", () => {
+  handleLogout();
+});
+
+function handleLogout() {
+  if (multiplayer) {
+    multiplayer.leave();
+    multiplayer = null;
+  }
+
+  if (gameInstance) {
+    gameInstance.destroy(true);
+    gameInstance = null;
+  }
+
+  localStorage.removeItem("lepark_auth_token");
+  localStorage.removeItem("lepark_auth_user");
+  currentUser = null;
+  authToken = null;
+
+  connectionDot.className = "status-dot disconnected";
+  statusText.textContent = "Disconnected";
+  if (pingStatText) pingStatText.textContent = "-- ms";
+  if (lossStatText) lossStatText.textContent = "-- loss";
+
+  // Reset inputs
+  loginPasswordInput.value = "";
+  regPasswordInput.value = "";
+  regConfirmPasswordInput.value = "";
+
+  openAuthModal("login");
+}
+
+// ==========================================
+// Character Customization & Swatches
+// ==========================================
+
 function setupColorSwatches() {
   colorGrid.innerHTML = "";
   DEFAULT_PRESET_COLORS.forEach((colorHex) => {
@@ -70,7 +337,6 @@ function selectColor(colorHex: string) {
   selectedColor = colorHex;
   customColorInput.value = colorHex;
 
-  // Update selection rings
   document.querySelectorAll(".color-option").forEach((el) => {
     if (el.getAttribute("data-color")?.toLowerCase() === colorHex.toLowerCase()) {
       el.classList.add("selected");
@@ -82,16 +348,17 @@ function selectColor(colorHex: string) {
   updatePreview();
 }
 
-// Live Preview Update
 function updatePreview() {
-  const currentName = nameInput.value.trim() || "Player";
+  // If display name input has value, use it; otherwise fallback to currentUser.username; fallback to Player
+  const inputVal = nameInput.value.trim();
+  const fallbackUsername = currentUser ? currentUser.username : "Player";
+  const currentName = inputVal.length > 0 ? inputVal : fallbackUsername;
+
   previewName.textContent = currentName;
   previewDot.style.backgroundColor = selectedColor;
 
   const isSwitchOn = switchUploadPictures.checked;
 
-  // "if standing still picture is uploaded, then use that picture. else, use dot."
-  // "if any of other movement picture is not uploaded, use the standing still picture."
   if (isSwitchOn && uploadedPictures.idle) {
     previewDot.classList.add("hidden");
     previewAvatar.classList.remove("hidden");
@@ -110,7 +377,6 @@ function updatePreview() {
       previewStatusHint.classList.remove("hidden");
     }
   } else {
-    // Show dot
     previewDot.classList.remove("hidden");
     previewAvatar.classList.add("hidden");
     previewDirectionsBar.classList.add("hidden");
@@ -124,7 +390,6 @@ function updatePreview() {
   }
 }
 
-// Helper to downscale and optimize uploaded image to ~150px max dimension
 function processImageFile(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -147,7 +412,7 @@ function processImageFile(file: File): Promise<string> {
         canvas.width = width;
         canvas.height = height;
         const ctx = canvas.getContext("2d")!;
-        ctx.imageSmoothingEnabled = false; // preserve pixel art crispness
+        ctx.imageSmoothingEnabled = false;
         ctx.drawImage(img, 0, 0, width, height);
         resolve(canvas.toDataURL("image/png"));
       };
@@ -159,31 +424,23 @@ function processImageFile(file: File): Promise<string> {
   });
 }
 
-// Setup Upload Dropzones & File Listeners
 function setupUploadSlots() {
   const slots: DirectionSlot[] = ["idle", "left", "right", "up", "down"];
 
   slots.forEach((slot) => {
     const dropzone = document.getElementById(`dropzone-${slot}`) as HTMLDivElement;
     const fileInput = document.getElementById(`file-${slot}`) as HTMLInputElement;
-    const emptyState = document.getElementById(`empty-${slot}`) as HTMLDivElement;
-    const filledState = document.getElementById(`filled-${slot}`) as HTMLDivElement;
-    const thumbImg = document.getElementById(`thumb-${slot}`) as HTMLImageElement;
 
     if (!dropzone || !fileInput) return;
 
-    // Click dropzone triggers file picker
     dropzone.addEventListener("click", (e) => {
-      // Don't trigger if remove button was clicked
       if ((e.target as HTMLElement).closest(".btn-remove-picture")) return;
       fileInput.click();
     });
 
-    // Handle file selection
     fileInput.addEventListener("change", async () => {
       const file = fileInput.files?.[0];
       if (!file) return;
-
       try {
         const dataUrl = await processImageFile(file);
         setSlotPicture(slot, dataUrl);
@@ -192,7 +449,6 @@ function setupUploadSlots() {
       }
     });
 
-    // Drag and drop support
     dropzone.addEventListener("dragover", (e) => {
       e.preventDefault();
       dropzone.style.borderColor = "var(--primary-accent)";
@@ -217,7 +473,6 @@ function setupUploadSlots() {
     });
   });
 
-  // Remove picture buttons
   document.querySelectorAll(".btn-remove-picture").forEach((btn) => {
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -228,7 +483,6 @@ function setupUploadSlots() {
     });
   });
 
-  // Setup preview direction buttons
   document.querySelectorAll(".preview-dir-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
       const dir = (btn as HTMLElement).getAttribute("data-dir") as DirectionSlot;
@@ -241,7 +495,6 @@ function setupUploadSlots() {
     });
   });
 
-  // Load sample demo sprites
   const btnLoadDemo = document.getElementById("btn-load-demo-sprites") as HTMLButtonElement;
   if (btnLoadDemo) {
     btnLoadDemo.addEventListener("click", () => {
@@ -252,7 +505,6 @@ function setupUploadSlots() {
     });
   }
 
-  // Clear all sprites
   const btnClearAll = document.getElementById("btn-clear-all-sprites") as HTMLButtonElement;
   if (btnClearAll) {
     btnClearAll.addEventListener("click", () => {
@@ -261,7 +513,6 @@ function setupUploadSlots() {
   }
 }
 
-// Procedural sample RPG sprite generator for quick testing & demonstration
 function generateDemoSprite(direction: DirectionSlot): string {
   const canvas = document.createElement("canvas");
   canvas.width = 48;
@@ -271,60 +522,48 @@ function generateDemoSprite(direction: DirectionSlot): string {
 
   ctx.clearRect(0, 0, 48, 48);
 
-  // Hair / Hat (Indigo / Purple)
   ctx.fillStyle = "#818cf8";
   ctx.beginPath();
   ctx.roundRect(14, 6, 20, 14, 6);
   ctx.fill();
 
-  // Face (Warm peach)
   ctx.fillStyle = "#fcd34d";
   ctx.beginPath();
   ctx.roundRect(16, 12, 16, 14, 4);
   ctx.fill();
 
-  // Direction specific details:
   if (direction === "idle") {
-    // Eyes looking front
     ctx.fillStyle = "#1e293b";
     ctx.fillRect(19, 17, 3, 3);
     ctx.fillRect(26, 17, 3, 3);
-    // Smile
     ctx.fillRect(22, 22, 4, 1);
   } else if (direction === "left") {
-    // Eyes looking left
     ctx.fillStyle = "#1e293b";
     ctx.fillRect(17, 17, 3, 3);
     ctx.fillRect(23, 17, 2, 3);
   } else if (direction === "right") {
-    // Eyes looking right
     ctx.fillStyle = "#1e293b";
     ctx.fillRect(23, 17, 2, 3);
     ctx.fillRect(28, 17, 3, 3);
   } else if (direction === "up") {
-    // Back of head (all hair)
     ctx.fillStyle = "#818cf8";
     ctx.beginPath();
     ctx.roundRect(16, 10, 16, 16, 4);
     ctx.fill();
   } else if (direction === "down") {
-    // Eyes looking down
     ctx.fillStyle = "#1e293b";
     ctx.fillRect(19, 19, 3, 2);
     ctx.fillRect(26, 19, 3, 2);
   }
 
-  // Shirt / Body
   ctx.fillStyle = "#6366f1";
   ctx.beginPath();
   ctx.roundRect(15, 26, 18, 14, 4);
   ctx.fill();
 
-  // Belt / Details
   ctx.fillStyle = "#312e81";
   ctx.fillRect(15, 34, 18, 3);
 
-  // Feet
   ctx.fillStyle = "#1e293b";
   if (direction === "left") {
     ctx.fillRect(14, 40, 7, 5);
@@ -337,7 +576,6 @@ function generateDemoSprite(direction: DirectionSlot): string {
     ctx.fillRect(26, 40, 6, 5);
   }
 
-  // Upscale cleanly to 144x144 (3x) for crisp 150px tile character display
   const outCanvas = document.createElement("canvas");
   outCanvas.width = 144;
   outCanvas.height = 144;
@@ -382,7 +620,6 @@ function clearSlotPicture(slot: DirectionSlot) {
   updatePreview();
 }
 
-// Switch Handler ("Upload Pictures")
 switchUploadPictures.addEventListener("change", () => {
   const isChecked = switchUploadPictures.checked;
   if (isChecked) {
@@ -395,18 +632,22 @@ switchUploadPictures.addEventListener("change", () => {
   updatePreview();
 });
 
-// Event Listeners for Live Preview
 nameInput.addEventListener("input", updatePreview);
 customColorInput.addEventListener("input", (e) => {
   selectColor((e.target as HTMLInputElement).value);
 });
 
-// Modal Open / Close
-function openModal(isEditMode = false) {
-  btnJoin.textContent = isEditMode ? "Save Changes" : "Enter Game";
+// Update Character Modal Open / Close
+function openUpdateCharacterModal() {
+  btnJoin.textContent = "Save Changes";
+  nameInput.value = currentUser?.displayName || "";
+  if (currentUsernameTag) {
+    currentUsernameTag.textContent = currentUser ? `@${currentUser.username}` : "";
+  }
+  updatePreview();
+
   modal.classList.remove("hidden");
 
-  // When modal is open, unregister all movement keys so user can freely type (WASD)
   if (gameInstance) {
     const activeScene = gameInstance.scene.getScene("GameScene") as GameScene;
     if (activeScene && typeof activeScene.setControlsActive === "function") {
@@ -414,17 +655,15 @@ function openModal(isEditMode = false) {
     }
   }
 
-  // Focus directly into the modal's name input
   setTimeout(() => {
     nameInput.focus();
     nameInput.select();
   }, 50);
 }
 
-function closeModal() {
+function closeUpdateCharacterModal() {
   modal.classList.add("hidden");
 
-  // Re-enable movement controls when modal closes
   if (gameInstance) {
     const activeScene = gameInstance.scene.getScene("GameScene") as GameScene;
     if (activeScene && typeof activeScene.setControlsActive === "function") {
@@ -434,16 +673,17 @@ function closeModal() {
 }
 
 btnEditProfile.addEventListener("click", () => {
-  openModal(true);
+  openUpdateCharacterModal();
 });
 
-// Compute active avatars based on rules:
-// "if standing still picture is uploaded, then use that picture. else, use dot."
-// "if any of other movement picture is not uploaded, use the standing still picture."
+btnCloseModal.addEventListener("click", () => {
+  closeUpdateCharacterModal();
+});
+
 function computeActiveAvatars(): PlayerAvatars | undefined {
   const isSwitchOn = switchUploadPictures.checked;
   if (!isSwitchOn || !uploadedPictures.idle) {
-    return undefined; // use dot
+    return undefined;
   }
 
   const idle = uploadedPictures.idle;
@@ -456,16 +696,44 @@ function computeActiveAvatars(): PlayerAvatars | undefined {
   };
 }
 
-// Start or Update Game
-async function handleJoinOrSave(e: Event) {
+// Handle Update Character Form Submission
+async function handleUpdateCharacter(e: Event) {
   e.preventDefault();
-  const name = nameInput.value.trim() || "Player";
+
+  const newDisplayName = nameInput.value.trim();
   const color = selectedColor;
   const avatars = computeActiveAvatars();
 
-  // Save preferences in localStorage
+  // If user changed their display name, sync with server backend
+  if (currentUser && authToken) {
+    const previousDisplayName = currentUser.displayName || "";
+    if (newDisplayName !== previousDisplayName) {
+      try {
+        const res = await fetch(getApiUrl("/api/auth/profile"), {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${authToken}`,
+          },
+          body: JSON.stringify({ displayName: newDisplayName || null }),
+        });
+        const data: AuthResponse = await res.json();
+        if (data.success && data.user) {
+          currentUser = data.user;
+          if (data.token) {
+            authToken = data.token;
+            localStorage.setItem("lepark_auth_token", authToken);
+          }
+          localStorage.setItem("lepark_auth_user", JSON.stringify(currentUser));
+        }
+      } catch (err) {
+        console.warn("Could not sync display name with server:", err);
+      }
+    }
+  }
+
+  // Save character visual preferences locally
   try {
-    localStorage.setItem("player_name", name);
     localStorage.setItem("player_color", color);
     localStorage.setItem("player_upload_switch", switchUploadPictures.checked ? "true" : "false");
     if (uploadedPictures.idle) localStorage.setItem("player_pic_idle", uploadedPictures.idle);
@@ -479,90 +747,17 @@ async function handleJoinOrSave(e: Event) {
     if (uploadedPictures.down) localStorage.setItem("player_pic_down", uploadedPictures.down);
     else localStorage.removeItem("player_pic_down");
   } catch (err) {
-    console.warn("Could not save all pictures to localStorage:", err);
+    console.warn("Could not save pictures to localStorage:", err);
   }
 
-  closeModal();
+  closeUpdateCharacterModal();
 
-  if (!gameInstance) {
-    // First-time join: connect and initialize Phaser
-    statusText.textContent = "Connecting to server...";
-    const manager = new MultiplayerManager();
+  const effectiveName = getEffectivePlayerName();
 
-    // Hook up UI indicators
-    manager.onNetworkStats(({ pingMs, packetLoss }) => {
-      if (pingStatText) {
-        pingStatText.textContent = `${pingMs} ms`;
-        pingStatText.className =
-          "badge-stat " + (pingMs < 60 ? "good" : pingMs < 130 ? "fair" : "poor");
-      }
-      if (lossStatText) {
-        lossStatText.textContent = `${packetLoss}% loss`;
-        lossStatText.className =
-          "badge-stat " + (packetLoss === 0 ? "good" : packetLoss < 5 ? "fair" : "poor");
-      }
-    });
+  if (multiplayer) {
+    multiplayer.updateProfile(effectiveName, color, avatars || null);
 
-    manager.onConnectionStatus((connected) => {
-      if (connected) {
-        connectionDot.className = "status-dot";
-        statusText.textContent = "Connected";
-      } else {
-        connectionDot.className = "status-dot disconnected";
-        statusText.textContent = "Disconnected";
-        if (pingStatText) {
-          pingStatText.textContent = "-- ms";
-          pingStatText.className = "badge-stat";
-        }
-        if (lossStatText) {
-          lossStatText.textContent = "-- loss";
-          lossStatText.className = "badge-stat";
-        }
-      }
-    });
-
-    manager.onPlayerCount((count) => {
-      playerCountText.textContent = `${count} Online`;
-    });
-
-    try {
-      await manager.joinGame({ name, color, avatars });
-      multiplayer = manager;
-
-      // Initialize Phaser 3 Game
-      const config: Phaser.Types.Core.GameConfig = {
-        type: Phaser.AUTO,
-        parent: "game-container",
-        backgroundColor: "#ffffff",
-        scale: {
-          mode: Phaser.Scale.RESIZE,
-          autoCenter: Phaser.Scale.CENTER_BOTH,
-          width: window.innerWidth,
-          height: window.innerHeight,
-        },
-        physics: {
-          default: "arcade",
-          arcade: {
-            gravity: { x: 0, y: 0 },
-            debug: false,
-          },
-        },
-      };
-
-      gameInstance = new Phaser.Game(config);
-      gameInstance.scene.add("GameScene", GameScene, true, { multiplayer });
-    } catch (err) {
-      console.error("Connection or join error:", err);
-      multiplayer = null;
-      alert("Could not connect to multiplayer server. Please ensure the backend is running!");
-      openModal(false);
-    }
-  } else if (multiplayer) {
-    // Already in game: update live profile
-    multiplayer.updateProfile(name, color, avatars || null);
-
-    // Also update local visual immediately
-    if (multiplayer.sessionId) {
+    if (multiplayer.sessionId && gameInstance) {
       const activeScene = gameInstance.scene.getScene("GameScene") as GameScene;
       if (activeScene && typeof activeScene.setPlayerAvatars === "function") {
         activeScene.setPlayerAvatars(multiplayer.sessionId, avatars || null);
@@ -571,7 +766,95 @@ async function handleJoinOrSave(e: Event) {
   }
 }
 
-profileForm.addEventListener("submit", handleJoinOrSave);
+profileForm.addEventListener("submit", handleUpdateCharacter);
+
+// ==========================================
+// Multiplayer Session & Game Initialization
+// ==========================================
+
+async function enterGameSession() {
+  const effectiveName = getEffectivePlayerName();
+  const color = selectedColor;
+  const avatars = computeActiveAvatars();
+
+  if (gameInstance) {
+    // If game instance already running, just update profile
+    if (multiplayer) {
+      multiplayer.updateProfile(effectiveName, color, avatars || null);
+    }
+    return;
+  }
+
+  statusText.textContent = "Connecting to server...";
+  const manager = new MultiplayerManager();
+
+  manager.onNetworkStats(({ pingMs, packetLoss }) => {
+    if (pingStatText) {
+      pingStatText.textContent = `${pingMs} ms`;
+      pingStatText.className =
+        "badge-stat " + (pingMs < 60 ? "good" : pingMs < 130 ? "fair" : "poor");
+    }
+    if (lossStatText) {
+      lossStatText.textContent = `${packetLoss}% loss`;
+      lossStatText.className =
+        "badge-stat " + (packetLoss === 0 ? "good" : packetLoss < 5 ? "fair" : "poor");
+    }
+  });
+
+  manager.onConnectionStatus((connected) => {
+    if (connected) {
+      connectionDot.className = "status-dot";
+      statusText.textContent = "Connected";
+    } else {
+      connectionDot.className = "status-dot disconnected";
+      statusText.textContent = "Disconnected";
+      if (pingStatText) {
+        pingStatText.textContent = "-- ms";
+        pingStatText.className = "badge-stat";
+      }
+      if (lossStatText) {
+        lossStatText.textContent = "-- loss";
+        lossStatText.className = "badge-stat";
+      }
+    }
+  });
+
+  manager.onPlayerCount((count) => {
+    playerCountText.textContent = `${count} Online`;
+  });
+
+  try {
+    await manager.joinGame({ name: effectiveName, color, avatars });
+    multiplayer = manager;
+
+    const config: Phaser.Types.Core.GameConfig = {
+      type: Phaser.AUTO,
+      parent: "game-container",
+      backgroundColor: "#ffffff",
+      scale: {
+        mode: Phaser.Scale.RESIZE,
+        autoCenter: Phaser.Scale.CENTER_BOTH,
+        width: window.innerWidth,
+        height: window.innerHeight,
+      },
+      physics: {
+        default: "arcade",
+        arcade: {
+          gravity: { x: 0, y: 0 },
+          debug: false,
+        },
+      },
+    };
+
+    gameInstance = new Phaser.Game(config);
+    gameInstance.scene.add("GameScene", GameScene, true, { multiplayer });
+  } catch (err) {
+    console.error("Connection or join error:", err);
+    multiplayer = null;
+    alert("Could not connect to multiplayer server. Please ensure the backend is running!");
+    openAuthModal("login");
+  }
+}
 
 // Window Resize Handler
 window.addEventListener("resize", () => {
@@ -581,24 +864,19 @@ window.addEventListener("resize", () => {
 });
 
 // App Initialization
-function init() {
+async function init() {
   setupColorSwatches();
   setupUploadSlots();
 
-  const savedName = localStorage.getItem("player_name");
   const savedColor = localStorage.getItem("player_color");
   const savedSwitch = localStorage.getItem("player_upload_switch");
 
-  if (savedName) {
-    nameInput.value = savedName;
-  }
   if (savedColor) {
     selectColor(savedColor);
   } else {
     selectColor(selectedColor);
   }
 
-  // Restore saved pictures if any
   const slots: DirectionSlot[] = ["idle", "left", "right", "up", "down"];
   slots.forEach((slot) => {
     const savedPic = localStorage.getItem(`player_pic_${slot}`);
@@ -607,7 +885,6 @@ function init() {
     }
   });
 
-  // Default switch state is false (dot input by default)
   if (savedSwitch === "true") {
     switchUploadPictures.checked = true;
     dotInputSection.classList.add("hidden");
@@ -618,11 +895,31 @@ function init() {
     uploadPicturesSection.classList.add("hidden");
   }
 
-  updatePreview();
+  // Check stored auth session
+  const storedToken = localStorage.getItem("lepark_auth_token");
+  if (storedToken) {
+    try {
+      const res = await fetch(getApiUrl("/api/auth/me"), {
+        headers: { Authorization: `Bearer ${storedToken}` },
+      });
+      const data: AuthResponse = await res.json();
+      if (res.ok && data.success && data.user) {
+        authToken = storedToken;
+        currentUser = data.user;
+        closeAuthModal();
+        await enterGameSession();
+        return;
+      }
+    } catch (err) {
+      console.warn("Could not verify saved session token:", err);
+    }
+    // Stale token
+    localStorage.removeItem("lepark_auth_token");
+    localStorage.removeItem("lepark_auth_user");
+  }
 
-  // Show modal immediately so user enters their profile
-  openModal(false);
+  // Not authenticated: Show Auth Modal
+  openAuthModal("login");
 }
 
 init();
-

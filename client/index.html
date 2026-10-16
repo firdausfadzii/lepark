@@ -6,7 +6,7 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
     />
-    <title>Lepark</title>
+    <title>Lepark - Multiplayer Game</title>
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
@@ -27,13 +27,18 @@
           <span class="badge-divider">|</span>
           <span id="loss-stat" class="badge-stat">0% loss</span>
         </div>
-        <button id="btn-edit-profile" class="btn-secondary">
-          ⚙️ Change Character
-        </button>
+        <div class="hud-actions" id="hud-actions">
+          <button id="btn-edit-profile" class="btn-secondary">
+            ⚙️ Update Character
+          </button>
+          <button id="btn-logout" class="btn-secondary btn-logout">
+            🚪 Logout
+          </button>
+        </div>
       </div>
 
       <!-- Bottom HUD Controls Hint -->
-      <div class="hud-footer">
+      <div class="hud-footer" id="hud-footer">
         <div class="controls-hint">
           <span>Controls:</span>
           <span class="key-badge">W</span>
@@ -50,12 +55,177 @@
       </div>
     </div>
 
+    <!-- Modal for User Authentication (Login & Register) -->
+    <div id="auth-modal" class="modal-overlay">
+      <div class="modal-card auth-card">
+        <!-- Auth Brand Header -->
+        <div class="auth-brand">
+          <div class="brand-logo-glow">🎮</div>
+          <h1 class="brand-title">Lepark</h1>
+          <p class="brand-tagline">Multiplayer Virtual World</p>
+        </div>
+
+        <!-- Auth Tab Navigation -->
+        <div class="auth-tabs">
+          <button type="button" id="tab-login" class="auth-tab active" data-tab="login">
+            Sign In
+          </button>
+          <button type="button" id="tab-register" class="auth-tab" data-tab="register">
+            Register
+          </button>
+        </div>
+
+        <!-- Error / Info Banner -->
+        <div id="auth-alert" class="auth-alert hidden">
+          <span id="auth-alert-icon">⚠️</span>
+          <span id="auth-alert-msg"></span>
+        </div>
+
+        <!-- Login Form -->
+        <form id="login-form" class="auth-form">
+          <div class="form-group">
+            <label class="form-label" for="login-username">Username</label>
+            <div class="input-with-icon">
+              <span class="input-icon">👤</span>
+              <input
+                id="login-username"
+                class="form-input"
+                type="text"
+                placeholder="Enter your username..."
+                required
+                autocomplete="username"
+              />
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="login-password">Password</label>
+            <div class="input-with-icon">
+              <span class="input-icon">🔒</span>
+              <input
+                id="login-password"
+                class="form-input"
+                type="password"
+                placeholder="Enter your password..."
+                required
+                autocomplete="current-password"
+              />
+              <button type="button" class="btn-toggle-pwd" data-target="login-password" title="Toggle password visibility">👁️</button>
+            </div>
+          </div>
+
+          <button id="btn-submit-login" class="btn-primary auth-submit-btn" type="submit">
+            <span>Sign In</span>
+            <span class="btn-arrow">→</span>
+          </button>
+
+          <div class="auth-switch-prompt">
+            Don't have an account?
+            <button type="button" id="link-go-register" class="auth-link-btn">Create one</button>
+          </div>
+        </form>
+
+        <!-- Register Form -->
+        <form id="register-form" class="auth-form hidden">
+          <div class="form-group">
+            <label class="form-label" for="reg-username">
+              Username <span class="badge-required">Unique</span>
+            </label>
+            <div class="input-with-icon">
+              <span class="input-icon">👤</span>
+              <input
+                id="reg-username"
+                class="form-input"
+                type="text"
+                placeholder="Unique username (3-30 chars)..."
+                required
+                minlength="3"
+                maxlength="30"
+                autocomplete="username"
+              />
+            </div>
+            <span class="field-hint">Unique username required to log in.</span>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="reg-display-name">
+              Display Name <span class="badge-optional">Optional</span>
+            </label>
+            <div class="input-with-icon">
+              <span class="input-icon">🏷️</span>
+              <input
+                id="reg-display-name"
+                class="form-input"
+                type="text"
+                placeholder="e.g. Shadow Ninja (falls back to username)"
+                maxlength="30"
+                autocomplete="nickname"
+              />
+            </div>
+            <span class="field-hint">If set, shown in game. Otherwise username is used.</span>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="reg-password">
+              Password <span class="badge-required">Required</span>
+            </label>
+            <div class="input-with-icon">
+              <span class="input-icon">🔒</span>
+              <input
+                id="reg-password"
+                class="form-input"
+                type="password"
+                placeholder="At least 6 characters..."
+                required
+                minlength="6"
+                autocomplete="new-password"
+              />
+              <button type="button" class="btn-toggle-pwd" data-target="reg-password" title="Toggle password visibility">👁️</button>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="reg-confirm-password">
+              Require Password <span class="badge-required">Confirm</span>
+            </label>
+            <div class="input-with-icon">
+              <span class="input-icon">🔐</span>
+              <input
+                id="reg-confirm-password"
+                class="form-input"
+                type="password"
+                placeholder="Re-enter password to confirm..."
+                required
+                minlength="6"
+                autocomplete="new-password"
+              />
+              <button type="button" class="btn-toggle-pwd" data-target="reg-confirm-password" title="Toggle password visibility">👁️</button>
+            </div>
+            <span class="field-hint">Must match password exactly.</span>
+          </div>
+
+          <button id="btn-submit-register" class="btn-primary auth-submit-btn" type="submit">
+            <span>Create Account</span>
+            <span class="btn-arrow">→</span>
+          </button>
+
+          <div class="auth-switch-prompt">
+            Already have an account?
+            <button type="button" id="link-go-login" class="auth-link-btn">Sign In</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
     <!-- Modal for Name and Appearance Customization -->
-    <div id="onboarding-modal" class="modal-overlay">
+    <div id="onboarding-modal" class="modal-overlay hidden">
       <div class="modal-card">
         <div class="modal-header">
-          <h2 class="modal-title">Customize Character</h2>
-          <p class="modal-subtitle">Choose your name and appearance to join</p>
+          <div class="modal-header-row">
+            <h2 class="modal-title">Update Character</h2>
+            <button type="button" id="btn-close-modal" class="btn-modal-close" title="Close">✕</button>
+          </div>
+          <p class="modal-subtitle">Customize your display name and appearance</p>
         </div>
 
         <!-- Live Preview -->
@@ -79,16 +249,18 @@
         <form id="profile-form">
           <!-- Name Input -->
           <div class="form-group">
-            <label class="form-label" for="player-name">Player Name</label>
+            <label class="form-label" for="player-name">
+              Display Name <span class="badge-optional">Optional</span>
+            </label>
             <input
               id="player-name"
               class="form-input"
               type="text"
-              maxlength="20"
-              placeholder="Enter your nickname..."
-              required
+              maxlength="24"
+              placeholder="Leave blank to use username..."
               autocomplete="off"
             />
+            <span class="field-hint">If blank, your username (<span id="current-username-tag"></span>) will be used.</span>
           </div>
 
           <!-- Switch to Upload Pictures -->
@@ -262,7 +434,7 @@
           </div>
 
           <button id="btn-join" class="btn-primary" type="submit">
-            Enter Game
+            Save Changes
           </button>
         </form>
       </div>

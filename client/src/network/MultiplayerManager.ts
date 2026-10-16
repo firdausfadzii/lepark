@@ -51,6 +51,19 @@ export class MultiplayerManager {
     return this.room?.sessionId;
   }
 
+  public leave() {
+    this.stopPingLoop();
+    if (this.room) {
+      try {
+        this.room.leave();
+      } catch (err) {
+        console.warn("Error leaving room:", err);
+      }
+      this.room = null;
+    }
+    this.notifyConnectionStatus(false);
+  }
+
   public async joinGame(options: PlayerJoinOptions): Promise<Room> {
     try {
       // Use schema reflection (no root class) — passing `GameState` from `shared`

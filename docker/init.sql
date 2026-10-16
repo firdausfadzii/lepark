@@ -1,4 +1,15 @@
 -- Database initialization for multiplayer game
+CREATE TABLE IF NOT EXISTS users (
+    id SERIAL PRIMARY KEY,
+    username VARCHAR(50) UNIQUE NOT NULL,
+    display_name VARCHAR(50),
+    password_hash VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username_lower ON users (LOWER(username));
+
 CREATE TABLE IF NOT EXISTS players (
     id VARCHAR(64) PRIMARY KEY,
     name VARCHAR(50) NOT NULL,
@@ -10,3 +21,4 @@ CREATE TABLE IF NOT EXISTS players (
 );
 
 CREATE INDEX IF NOT EXISTS idx_players_last_seen ON players (last_seen DESC);
+
