@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: game_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: gameuser
+      POSTGRES_PASSWORD: gamepassword
+      POSTGRES_DB: gamedb
+    ports:
+      # Using 5433 to avoid collision if 5432 is already bound on host
+      - "5433:5432"
+    volumes:
+      - game_pgdata:/var/lib/postgresql/data
+      - ./docker/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gameuser -d gamedb"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  game_pgdata:

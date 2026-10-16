@@ -1,0 +1,12 @@
+-- Database initialization for multiplayer game
+CREATE TABLE IF NOT EXISTS players (
+    id VARCHAR(64) PRIMARY KEY,
+    name VARCHAR(50) NOT NULL,
+    color VARCHAR(30) NOT NULL,
+    x DOUBLE PRECISION DEFAULT 400,
+    y DOUBLE PRECISION DEFAULT 300,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    last_seen TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_players_last_seen ON players (last_seen DESC);

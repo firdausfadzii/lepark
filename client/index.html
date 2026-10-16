@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <title>Lepark</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <!-- Game Canvas Root -->
+    <div id="game-container"></div>
+
+    <!-- UI Overlay Layer -->
+    <div id="ui-layer">
+      <!-- Top HUD Header -->
+      <div class="hud-header">
+        <div class="badge">
+          <span id="connection-indicator" class="status-dot"></span>
+          <span id="status-text">Connecting...</span>
+          <span style="opacity: 0.4">|</span>
+          <span id="player-count">1 Online</span>
+        </div>
+        <button id="btn-edit-profile" class="btn-secondary">
+          ⚙️ Change Character
+        </button>
+      </div>
+
+      <!-- Bottom HUD Controls Hint -->
+      <div class="hud-footer">
+        <div class="controls-hint">
+          <span>Controls:</span>
+          <span class="key-badge">W</span>
+          <span class="key-badge">A</span>
+          <span class="key-badge">S</span>
+          <span class="key-badge">D</span>
+          <span>or</span>
+          <span class="key-badge">▲</span>
+          <span class="key-badge">◄</span>
+          <span class="key-badge">▼</span>
+          <span class="key-badge">►</span>
+          <span>to move</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal for Name and Appearance Customization -->
+    <div id="onboarding-modal" class="modal-overlay">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h2 class="modal-title">Customize Character</h2>
+          <p class="modal-subtitle">Choose your name and appearance to join</p>
+        </div>
+
+        <!-- Live Preview -->
+        <div class="preview-box">
+          <div class="preview-character-container">
+            <div id="preview-name" class="preview-name-tag">Player</div>
+            <div id="preview-dot" class="preview-dot"></div>
+            <img id="preview-avatar" class="preview-avatar hidden" alt="Character Preview" />
+          </div>
+          <!-- Direction Preview Switcher (active when pictures uploaded) -->
+          <div id="preview-directions-bar" class="preview-directions-bar hidden">
+            <button type="button" class="preview-dir-btn active" data-dir="idle" title="Standing Still">🧍 Still</button>
+            <button type="button" class="preview-dir-btn" data-dir="left" title="Left">⬅️ Left</button>
+            <button type="button" class="preview-dir-btn" data-dir="right" title="Right">➡️ Right</button>
+            <button type="button" class="preview-dir-btn" data-dir="up" title="Up">⬆️ Up</button>
+            <button type="button" class="preview-dir-btn" data-dir="down" title="Down">⬇️ Down</button>
+          </div>
+          <div id="preview-status-hint" class="preview-status-hint hidden"></div>
+        </div>
+
+        <form id="profile-form">
+          <!-- Name Input -->
+          <div class="form-group">
+            <label class="form-label" for="player-name">Player Name</label>
+            <input
+              id="player-name"
+              class="form-input"
+              type="text"
+              maxlength="20"
+              placeholder="Enter your nickname..."
+              required
+              autocomplete="off"
+            />
+          </div>
+
+          <!-- Switch to Upload Pictures -->
+          <div class="form-group switch-group">
+            <div class="switch-row">
+              <div class="switch-info">
+                <label class="switch-title" for="switch-upload-pictures">Upload Pictures</label>
+                <span class="switch-desc">Use custom sprites instead of a dot</span>
+              </div>
+              <label class="toggle-switch">
+                <input type="checkbox" id="switch-upload-pictures" />
+                <span class="slider"></span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Section 1: Dot Input (Default, visible when switch is false) -->
+          <div id="dot-input-section" class="input-section">
+            <div class="form-group">
+              <label class="form-label">Pick Color</label>
+              <div id="color-grid" class="color-grid"></div>
+              <div class="custom-color-row">
+                <input
+                  id="custom-color-picker"
+                  class="custom-color-input"
+                  type="color"
+                  value="#3b82f6"
+                />
+                <span class="custom-color-text">Custom hex color</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Section 2: Upload Pictures Form (Visible when switch is true) -->
+          <div id="upload-pictures-section" class="input-section hidden">
+            <div class="section-notice">
+              <span class="notice-icon">💡</span>
+              <span class="notice-text">
+                Standing still picture is required for custom pictures; otherwise character uses the dot. Missing movement pictures automatically fall back to standing still!
+              </span>
+            </div>
+
+            <div class="demo-sprites-row">
+              <button type="button" id="btn-load-demo-sprites" class="btn-demo-sprites">
+                ✨ Load Sample Sprites
+              </button>
+              <button type="button" id="btn-clear-all-sprites" class="btn-demo-sprites secondary">
+                ✕ Clear All
+              </button>
+            </div>
+
+            <div class="upload-slots-container">
+              <!-- Slot 1: Standing Still (Primary / Required) -->
+              <div class="upload-slot-card primary-slot" id="slot-card-idle">
+                <div class="upload-slot-header">
+                  <div class="slot-badge-group">
+                    <span class="slot-icon">🧍</span>
+                    <span class="slot-title">Standing Still</span>
+                    <span class="badge-required">Required</span>
+                  </div>
+                  <span class="slot-hint">Default idle pose & fallback</span>
+                </div>
+                <div class="upload-dropzone" id="dropzone-idle" data-slot="idle">
+                  <input type="file" id="file-idle" accept="image/*" class="file-input-hidden" />
+                  <div class="upload-empty-state" id="empty-idle">
+                    <span class="upload-icon">📁</span>
+                    <span class="upload-text">Upload picture</span>
+                  </div>
+                  <div class="upload-filled-state hidden" id="filled-idle">
+                    <img id="thumb-idle" class="upload-thumb" alt="Standing still thumbnail" />
+                    <button type="button" class="btn-remove-picture" data-slot="idle" title="Remove picture">✕</button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Directional Movement Slots 2x2 Grid -->
+              <div class="movement-slots-grid">
+                <!-- Slot 2: Left -->
+                <div class="upload-slot-card" id="slot-card-left">
+                  <div class="upload-slot-header">
+                    <div class="slot-badge-group">
+                      <span class="slot-icon">⬅️</span>
+                      <span class="slot-title">Left</span>
+                    </div>
+                    <span class="slot-fallback-tag">Fallback: Still</span>
+                  </div>
+                  <div class="slot-desc">Standing left & moving left</div>
+                  <div class="upload-dropzone" id="dropzone-left" data-slot="left">
+                    <input type="file" id="file-left" accept="image/*" class="file-input-hidden" />
+                    <div class="upload-empty-state" id="empty-left">
+                      <span class="upload-icon">📁</span>
+                      <span class="upload-text">Upload picture</span>
+                    </div>
+                    <div class="upload-filled-state hidden" id="filled-left">
+                      <img id="thumb-left" class="upload-thumb" alt="Left thumbnail" />
+                      <button type="button" class="btn-remove-picture" data-slot="left" title="Remove picture">✕</button>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Slot 3: Right -->
+                <div class="upload-slot-card" id="slot-card-right">
+                  <div class="upload-slot-header">
+                    <div class="slot-badge-group">
+                      <span class="slot-icon">➡️</span>
+                      <span class="slot-title">Right</span>
+                    </div>
+                    <span class="slot-fallback-tag">Fallback: Still</span>
+                  </div>
+                  <div class="slot-desc">Standing right & moving right</div>
+                  <div class="upload-dropzone" id="dropzone-right" data-slot="right">
+                    <input type="file" id="file-right" accept="image/*" class="file-input-hidden" />
+                    <div class="upload-empty-state" id="empty-right">
+                      <span class="upload-icon">📁</span>
+                      <span class="upload-text">Upload picture</span>
+                    </div>
+                    <div class="upload-filled-state hidden" id="filled-right">
+                      <img id="thumb-right" class="upload-thumb" alt="Right thumbnail" />
+                      <button type="button" class="btn-remove-picture" data-slot="right" title="Remove picture">✕</button>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Slot 4: Up -->
+                <div class="upload-slot-card" id="slot-card-up">
+                  <div class="upload-slot-header">
+                    <div class="slot-badge-group">
+                      <span class="slot-icon">⬆️</span>
+                      <span class="slot-title">Up</span>
+                    </div>
+                    <span class="slot-fallback-tag">Fallback: Still</span>
+                  </div>
+                  <div class="slot-desc">Standing up & moving up</div>
+                  <div class="upload-dropzone" id="dropzone-up" data-slot="up">
+                    <input type="file" id="file-up" accept="image/*" class="file-input-hidden" />
+                    <div class="upload-empty-state" id="empty-up">
+                      <span class="upload-icon">📁</span>
+                      <span class="upload-text">Upload picture</span>
+                    </div>
+                    <div class="upload-filled-state hidden" id="filled-up">
+                      <img id="thumb-up" class="upload-thumb" alt="Up thumbnail" />
+                      <button type="button" class="btn-remove-picture" data-slot="up" title="Remove picture">✕</button>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Slot 5: Down -->
+                <div class="upload-slot-card" id="slot-card-down">
+                  <div class="upload-slot-header">
+                    <div class="slot-badge-group">
+                      <span class="slot-icon">⬇️</span>
+                      <span class="slot-title">Down</span>
+                    </div>
+                    <span class="slot-fallback-tag">Fallback: Still</span>
+                  </div>
+                  <div class="slot-desc">Standing down & moving down</div>
+                  <div class="upload-dropzone" id="dropzone-down" data-slot="down">
+                    <input type="file" id="file-down" accept="image/*" class="file-input-hidden" />
+                    <div class="upload-empty-state" id="empty-down">
+                      <span class="upload-icon">📁</span>
+                      <span class="upload-text">Upload picture</span>
+                    </div>
+                    <div class="upload-filled-state hidden" id="filled-down">
+                      <img id="thumb-down" class="upload-thumb" alt="Down thumbnail" />
+                      <button type="button" class="btn-remove-picture" data-slot="down" title="Remove picture">✕</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <button id="btn-join" class="btn-primary" type="submit">
+            Enter Game
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
