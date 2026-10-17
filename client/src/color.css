@@ -1,0 +1,7 @@
+:root {
+  --lepark-primary: #3B8282;     /* Slate / Teal */
+  --lepark-secondary: #ECA239;   /* Ochre / Marigold */
+  --lepark-accent: #DB5B47;      /* Terracotta */
+  --lepark-surface: #F8F9F6;     /* Off-White */
+  --lepark-text-dark: #1E3131;   /* Deep shade of the teal for high-contrast text */
+}

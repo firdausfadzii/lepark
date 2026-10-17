@@ -7,35 +7,94 @@
       content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
     />
     <title>Lepark - Multiplayer Game</title>
+    <link rel="icon" type="image/png" href="/assets/lepark_800.png" />
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
     <!-- Game Canvas Root -->
     <div id="game-container"></div>
 
-    <!-- UI Overlay Layer -->
-    <div id="ui-layer">
-      <!-- Top HUD Header -->
-      <div class="hud-header">
-        <div class="badge">
-          <span id="connection-indicator" class="status-dot"></span>
-          <span id="status-text">Connecting...</span>
-          <span class="badge-divider">|</span>
-          <span id="player-count">1 Online</span>
-          <span class="badge-divider">|</span>
-          <span id="ping-stat" class="badge-stat">-- ms</span>
-          <span class="badge-divider">|</span>
-          <span id="loss-stat" class="badge-stat">0% loss</span>
+    <!-- Top-Left Map Settings Button (Shown if user can configure this space) -->
+    <button type="button" id="btn-map-settings" class="topleft-settings-btn hidden" title="Space Settings" aria-label="Space Settings">
+      <svg class="gear-svg-icon" viewBox="0 0 24 24">
+        <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>
+      </svg>
+    </button>
+
+    <!-- Middle Top Bar (Floats centered at top) -->
+    <header id="top-bar" class="middle-top-bar">
+      <!-- Lepark Brand Logo Badge -->
+      <div class="topbar-brand" title="Lepark">
+        <img src="/assets/lepark_800.png" alt="Lepark Logo" class="topbar-logo-img" />
+      </div>
+
+      <!-- Left: User Avatar & Profile Section -->
+      <div id="topbar-profile-trigger" class="topbar-profile-pill" role="button" tabindex="0" title="Account Menu">
+        <div class="topbar-avatar-container">
+          <div id="topbar-avatar-dot" class="topbar-avatar-dot"></div>
+          <img id="topbar-avatar-img" class="topbar-avatar-img hidden" alt="Avatar" />
+          <span id="topbar-status-dot" class="topbar-status-dot" title="Online"></span>
         </div>
-        <div class="hud-actions" id="hud-actions">
-          <button id="btn-edit-profile" class="btn-secondary">
-            ⚙️ Update Character
+        <div class="topbar-user-details">
+          <div class="topbar-name-row">
+            <span id="topbar-admin-crown" class="topbar-crown-icon hidden" title="Superadmin">👑</span>
+            <span id="topbar-user-name" class="topbar-user-name">Player</span>
+          </div>
+          <span id="topbar-status-subtitle" class="topbar-status-subtitle">Online</span>
+        </div>
+        <span class="topbar-chevron">▾</span>
+
+        <!-- Dropdown Menu -->
+        <div id="user-profile-dropdown" class="user-profile-dropdown hidden">
+          <button type="button" id="dropdown-my-space-btn" class="dropdown-item">
+            <span class="dropdown-icon">🏠</span>
+            <div class="dropdown-text">
+              <span class="dropdown-title">Go to my space</span>
+              <span id="dropdown-my-space-sub" class="dropdown-sub">Enter personal space</span>
+            </div>
           </button>
-          <button id="btn-logout" class="btn-secondary btn-logout">
-            🚪 Logout
+          <button type="button" id="dropdown-update-char-btn" class="dropdown-item">
+            <span class="dropdown-icon">⚙️</span>
+            <div class="dropdown-text">
+              <span class="dropdown-title">Update character</span>
+              <span class="dropdown-sub">Customize avatar & appearance</span>
+            </div>
+          </button>
+          <div class="dropdown-divider"></div>
+          <button type="button" id="dropdown-logout-btn" class="dropdown-item danger">
+            <span class="dropdown-icon">🚪</span>
+            <div class="dropdown-text">
+              <span class="dropdown-title">Logout</span>
+            </div>
           </button>
         </div>
       </div>
+
+      <!-- Right: Map Icon, Ping & Packet Loss -->
+      <div class="topbar-actions-group">
+        <!-- Map Icon Button -->
+        <button type="button" id="btn-open-map" class="topbar-map-btn" title="Explore Spaces (Map)">
+          <svg class="map-svg-icon" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M20.5 3l-6 2.25L8.5 3 3.5 4.88v16.12l6-2.25 6 2.25 5-1.88V3zM9.5 5.15l5 1.88v11.82l-5-1.88V5.15zM5 6.42l3-1.12v12.28l-3 1.13V6.42zm14 11.16l-3 1.13V6.43l3-1.13v12.28z"/>
+          </svg>
+        </button>
+
+        <!-- Network Ping & Loss Pill -->
+        <div class="topbar-net-stats" title="Connection latency & packet loss">
+          <svg class="net-svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+            <line x1="8" y1="21" x2="16" y2="21"></line>
+            <line x1="12" y1="17" x2="12" y2="21"></line>
+          </svg>
+          <span id="topbar-ping-stat" class="net-stat-val">-- ms</span>
+          <span class="net-stat-div">|</span>
+          <span id="topbar-loss-stat" class="net-stat-val">0% loss</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- UI Overlay Layer -->
+    <div id="ui-layer">
 
       <!-- Bottom HUD Controls Hint -->
       <div class="hud-footer" id="hud-footer">
@@ -60,7 +119,9 @@
       <div class="modal-card auth-card">
         <!-- Auth Brand Header -->
         <div class="auth-brand">
-          <div class="brand-logo-glow">🎮</div>
+          <div class="brand-logo-glow">
+            <img src="/assets/lepark_800.png" alt="Lepark Logo" class="brand-logo-img" />
+          </div>
           <h1 class="brand-title">Lepark</h1>
           <p class="brand-tagline">Multiplayer Virtual World</p>
         </div>
@@ -122,6 +183,11 @@
           <div class="auth-switch-prompt">
             Don't have an account?
             <button type="button" id="link-go-register" class="auth-link-btn">Create one</button>
+          </div>
+
+          <div class="auth-demo-hint">
+            <span class="demo-pill">👑 Superadmin demo:</span>
+            <span><code>admin</code> / <code>adminpassword123</code></span>
           </div>
         </form>
 
@@ -287,7 +353,7 @@
                   id="custom-color-picker"
                   class="custom-color-input"
                   type="color"
-                  value="#3b82f6"
+                  value="#3B8282"
                 />
                 <span class="custom-color-text">Custom hex color</span>
               </div>
@@ -437,6 +503,229 @@
             Save Changes
           </button>
         </form>
+      </div>
+    </div>
+
+    <!-- Modal: My Space Settings & Invitation Whitelist -->
+    <div id="my-space-settings-modal" class="modal-overlay hidden">
+      <div class="modal-card space-settings-card">
+        <div class="modal-header">
+          <div class="modal-header-row">
+            <h2 class="modal-title">⚙️ My Space Settings</h2>
+            <button type="button" id="btn-close-my-space-settings" class="btn-modal-close" title="Close">✕</button>
+          </div>
+          <p class="modal-subtitle">Manage your personal space privacy and whitelist</p>
+        </div>
+
+        <form id="my-space-settings-form">
+          <div class="form-group">
+            <label class="form-label" for="my-space-input-name">Space Name</label>
+            <input
+              id="my-space-input-name"
+              class="form-input"
+              type="text"
+              maxlength="40"
+              placeholder="e.g. My Cozy Room"
+              required
+            />
+          </div>
+
+          <div class="form-group switch-group">
+            <div class="switch-row">
+              <div class="switch-info">
+                <label class="switch-title" for="my-space-switch-public">Public Space</label>
+                <span class="switch-desc">If off, space is private and only invited users can join</span>
+              </div>
+              <label class="toggle-switch">
+                <input type="checkbox" id="my-space-switch-public" />
+                <span class="slider"></span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Whitelist Management (Active when private) -->
+          <div id="my-space-whitelist-section" class="whitelist-manager-section">
+            <div class="form-group">
+              <label class="form-label">
+                Invitation Whitelist <span class="badge-required">Private Space</span>
+              </label>
+              <div class="whitelist-input-row">
+                <div class="input-with-icon flex-1">
+                  <span class="input-icon">👤</span>
+                  <input
+                    id="my-space-invite-username"
+                    class="form-input"
+                    type="text"
+                    placeholder="Enter username to invite..."
+                    autocomplete="off"
+                  />
+                </div>
+                <button type="button" id="btn-add-my-space-invite" class="btn-secondary btn-add-invite">
+                  + Add
+                </button>
+              </div>
+              <span class="field-hint">Users on this whitelist will be permitted to enter your private space.</span>
+            </div>
+
+            <!-- Whitelist Tags Container -->
+            <div class="whitelist-tags-box">
+              <div class="tags-header">
+                <span>Invited Users (<span id="my-space-tags-count">0</span>):</span>
+              </div>
+              <div id="my-space-tags-container" class="whitelist-tags-container">
+                <!-- tags populated via js -->
+              </div>
+            </div>
+          </div>
+
+          <div class="modal-footer-actions">
+            <button type="submit" id="btn-save-my-space" class="btn-primary">
+              Save Space Settings
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Modal: Superadmin Create & Edit Space -->
+    <div id="admin-space-modal" class="modal-overlay hidden">
+      <div class="modal-card space-settings-card">
+        <div class="modal-header">
+          <div class="modal-header-row">
+            <h2 id="admin-space-modal-title" class="modal-title">🌌 Create New Space</h2>
+            <button type="button" id="btn-close-admin-space-modal" class="btn-modal-close" title="Close">✕</button>
+          </div>
+          <p id="admin-space-modal-subtitle" class="modal-subtitle">Superadmin space directory manager</p>
+        </div>
+
+        <form id="admin-space-form">
+          <input type="hidden" id="admin-space-edit-id" value="" />
+
+          <div class="form-group">
+            <label class="form-label" for="admin-space-name">Space Name</label>
+            <input
+              id="admin-space-name"
+              class="form-input"
+              type="text"
+              maxlength="40"
+              placeholder="e.g. Neon Rooftop Club"
+              required
+            />
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="admin-space-category-select">Category</label>
+            <div class="category-select-row">
+              <select id="admin-space-category-select" class="form-select">
+                <option value="Town Square">Town Square</option>
+                <option value="Hangout Lounges">Hangout Lounges</option>
+                <option value="Gaming Zones">Gaming Zones</option>
+                <option value="Chill Parks">Chill Parks</option>
+                <option value="__custom__">+ Custom Category...</option>
+              </select>
+              <input
+                id="admin-space-category-custom"
+                class="form-input hidden"
+                type="text"
+                placeholder="Type new category..."
+                maxlength="30"
+              />
+            </div>
+            <span class="field-hint">Spaces in the side panel are organized by this category.</span>
+          </div>
+
+          <div class="form-group switch-group">
+            <div class="switch-row">
+              <div class="switch-info">
+                <label class="switch-title" for="admin-space-switch-public">Public Space</label>
+                <span class="switch-desc">If off, space is private and only invited whitelist users can enter</span>
+              </div>
+              <label class="toggle-switch">
+                <input type="checkbox" id="admin-space-switch-public" checked />
+                <span class="slider"></span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Whitelist Management for Admin Space -->
+          <div id="admin-space-whitelist-section" class="whitelist-manager-section hidden">
+            <div class="form-group">
+              <label class="form-label">
+                Invitation Whitelist <span class="badge-required">Private Space</span>
+              </label>
+              <div class="whitelist-input-row">
+                <div class="input-with-icon flex-1">
+                  <span class="input-icon">👤</span>
+                  <input
+                    id="admin-space-invite-username"
+                    class="form-input"
+                    type="text"
+                    placeholder="Enter username to invite..."
+                    autocomplete="off"
+                  />
+                </div>
+                <button type="button" id="btn-add-admin-space-invite" class="btn-secondary btn-add-invite">
+                  + Add
+                </button>
+              </div>
+              <span class="field-hint">Only whitelisted users will be allowed entry into this private space.</span>
+            </div>
+
+            <!-- Whitelist Tags Container -->
+            <div class="whitelist-tags-box">
+              <div class="tags-header">
+                <span>Invited Users (<span id="admin-space-tags-count">0</span>):</span>
+              </div>
+              <div id="admin-space-tags-container" class="whitelist-tags-container">
+                <!-- tags populated via js -->
+              </div>
+            </div>
+          </div>
+
+          <div class="modal-footer-actions">
+            <button type="submit" id="btn-submit-admin-space" class="btn-primary">
+              Save Space
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Modal: Spaces & Map Picker (Grid of 4 with Category Tabs) -->
+    <div id="map-modal" class="modal-overlay hidden">
+      <div class="modal-card map-picker-card">
+        <div class="modal-header map-picker-header">
+          <div class="modal-header-row">
+            <div class="map-header-title-box">
+              <span class="map-header-icon">🗺️</span>
+              <div>
+                <h2 class="modal-title">Select Destination</h2>
+                <div class="current-space-chip">
+                  <span class="status-dot"></span>
+                  <span>Currently at: <strong id="map-current-space-name">Central Plaza</strong></span>
+                </div>
+              </div>
+            </div>
+            <div class="map-header-actions">
+              <button type="button" id="btn-admin-add-space" class="btn-primary btn-add-space-header hidden">
+                + Create Space
+              </button>
+              <button type="button" id="btn-close-map-modal" class="btn-modal-close" title="Close">✕</button>
+            </div>
+          </div>
+
+          <!-- Category Tabs at Top -->
+          <div id="map-category-tabs" class="map-category-tabs">
+            <!-- Dynamically populated category buttons -->
+          </div>
+        </div>
+
+        <!-- Tab Content: Spaces in Grid of 4 -->
+        <div class="map-picker-body">
+          <div id="map-spaces-grid" class="map-spaces-grid">
+            <!-- Dynamically populated grid of 4 space cards -->
+          </div>
+        </div>
       </div>
     </div>
 

@@ -39,6 +39,7 @@ export function generateToken(user: AuthUser): string {
       id: user.id,
       username: user.username,
       displayName: user.displayName || null,
+      role: user.role || "user",
       exp,
     })
   ).toString("base64url");
@@ -87,6 +88,7 @@ export function verifyToken(token: string): AuthUser | null {
       id: decoded.id,
       username: decoded.username,
       displayName: decoded.displayName || null,
+      role: decoded.role === "superadmin" ? "superadmin" : "user",
     };
   } catch {
     return null;

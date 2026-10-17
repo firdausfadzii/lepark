@@ -47,7 +47,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   preload() {
-    this.load.image("birch_floor_tile", "/assets/birch_floor_150.png");
+    this.load.image("grass_tile", "/assets/grass_100.png");
   }
 
   create() {
@@ -57,12 +57,12 @@ export class GameScene extends Phaser.Scene {
     }
 
     // World & Camera bounds
-    this.cameras.main.setBackgroundColor(0x1e1814);
+    this.cameras.main.setBackgroundColor(0x142020);
     this.cameras.main.setBounds(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
     this.cameras.main.setRoundPixels(true);
     this.physics.world.setBounds(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
 
-    // Center camera on world center immediately (1200, 900)
+    // Center camera on world center immediately
     this.cameras.main.centerOn(WORLD_WIDTH / 2, WORLD_HEIGHT / 2);
     this.cameras.main.setZoom(1.0);
 
@@ -77,14 +77,14 @@ export class GameScene extends Phaser.Scene {
       }
     });
 
-    // Background fully rendered with birch_floor_150.png on each 150x150 tile
-    const bgTileSprite = this.add.tileSprite(0, 0, WORLD_WIDTH, WORLD_HEIGHT, "birch_floor_tile");
+    // Background fully rendered with grass_100.png on each 100x100 tile
+    const bgTileSprite = this.add.tileSprite(0, 0, WORLD_WIDTH, WORLD_HEIGHT, "grass_tile");
     bgTileSprite.setOrigin(0, 0);
     bgTileSprite.setDepth(0);
 
-    // Subtle grid lines to distinguish each 150x150 tile clearly
+    // Subtle grid lines to distinguish each 100x100 tile clearly
     const gridGraphics = this.add.graphics();
-    gridGraphics.lineStyle(1, 0x000000, 0.07);
+    gridGraphics.lineStyle(1, 0x000000, 0.06);
     for (let x = 0; x <= WORLD_WIDTH; x += TILE_SIZE) {
       gridGraphics.lineBetween(x, 0, x, WORLD_HEIGHT);
     }
@@ -95,7 +95,7 @@ export class GameScene extends Phaser.Scene {
 
     // Outer perimeter boundary border
     const boundsGraphics = this.add.graphics();
-    boundsGraphics.lineStyle(3, 0x3d271d, 0.85);
+    boundsGraphics.lineStyle(3, 0x1e3131, 0.9);
     boundsGraphics.strokeRect(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
     boundsGraphics.setDepth(2);
 
@@ -116,13 +116,13 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    // Generate circular dot texture once if not already created (diameter 80px)
+    // Generate circular dot texture once if not already created
     if (!this.textures.exists("dot_texture")) {
       const g = this.make.graphics({ x: 0, y: 0 }, false);
       g.fillStyle(0x0f172a, 0.25);
       g.fillCircle(PLAYER_RADIUS, PLAYER_RADIUS, PLAYER_RADIUS);
       g.fillStyle(0xffffff, 1);
-      g.fillCircle(PLAYER_RADIUS, PLAYER_RADIUS, PLAYER_RADIUS - 3);
+      g.fillCircle(PLAYER_RADIUS, PLAYER_RADIUS, Math.max(1, PLAYER_RADIUS - 3));
       g.generateTexture("dot_texture", PLAYER_RADIUS * 2, PLAYER_RADIUS * 2);
       g.destroy();
     }
@@ -162,12 +162,31 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  public resetPlayers() {
+    this.playerVisuals.forEach((visual) => {
+      visual.container.destroy();
+    });
+    this.playerVisuals.clear();
+    this.localPlayerId = null;
+    this.cameras.main.stopFollow();
+    this.cameras.main.centerOn(WORLD_WIDTH / 2, WORLD_HEIGHT / 2);
+  }
+
+  public respawnCurrentPlayers() {
+    if (this.multiplayer?.room?.state?.players) {
+      this.localPlayerId = this.multiplayer.sessionId || null;
+      this.multiplayer.room.state.players.forEach((player: any, sessionId: string) => {
+        this.createPlayerVisual(sessionId, player);
+      });
+    }
+  }
+
   private parseColor(colorStr: string): number {
     try {
       const hex = colorStr.replace("#", "");
-      return parseInt(hex, 16) || 0x3b82f6;
+      return parseInt(hex, 16) || 0x3b8282;
     } catch {
-      return 0x3b82f6;
+      return 0x3b8282;
     }
   }
 
@@ -181,19 +200,21 @@ export class GameScene extends Phaser.Scene {
     dot.setTint(colorNum);
     dot.setDisplaySize(PLAYER_RADIUS * 2, PLAYER_RADIUS * 2);
 
-    // Sprite image for custom uploaded pictures (max 150px)
+    // Sprite image for custom uploaded pictures
     const sprite = this.add.image(0, 0, "empty_pixel");
     sprite.setVisible(false);
     sprite.setDisplaySize(CHARACTER_MAX_SIZE, CHARACTER_MAX_SIZE);
 
     // Name text floating above dot/sprite with native background pill
-    const nameTag = this.add.text(0, -PLAYER_RADIUS - 14, player.name || "Player", {
+    const crownPrefix = player.isSuperadmin ? "👑 " : "";
+    const displayName = `${crownPrefix}${player.name || "Player"}`;
+    const nameTag = this.add.text(0, -PLAYER_RADIUS - 12, displayName, {
       fontFamily: "Outfit, sans-serif",
-      fontSize: "12px",
+      fontSize: "11px",
       fontStyle: "bold",
       color: "#0f172a",
       backgroundColor: "rgba(255, 255, 255, 0.95)",
-      padding: { x: 8, y: 3 },
+      padding: { x: 7, y: 2.5 },
       align: "center",
     });
     nameTag.setOrigin(0.5, 0.5);
@@ -242,7 +263,7 @@ export class GameScene extends Phaser.Scene {
       visual.avatars = undefined;
       visual.sprite.setVisible(false);
       visual.dot.setVisible(true);
-      visual.nameTag.setPosition(0, -PLAYER_RADIUS - 14);
+      visual.nameTag.setPosition(0, -PLAYER_RADIUS - 12);
       return;
     }
 
@@ -303,7 +324,7 @@ export class GameScene extends Phaser.Scene {
     if (activeKey) {
       visual.sprite.setTexture(activeKey);
 
-      // Render 1:1 contain with max width/height of 150px
+      // Render 1:1 contain with max width/height of CHARACTER_MAX_SIZE
       const MAX_DIM = CHARACTER_MAX_SIZE;
       const fw = visual.sprite.width;
       const fh = visual.sprite.height;
@@ -317,7 +338,7 @@ export class GameScene extends Phaser.Scene {
 
       // Dynamically position nametag above sprite without overlapping
       const halfH = Math.max(PLAYER_RADIUS, visual.sprite.displayHeight / 2);
-      visual.nameTag.setPosition(0, -halfH - 14);
+      visual.nameTag.setPosition(0, -halfH - 12);
     }
   }
 
@@ -330,8 +351,10 @@ export class GameScene extends Phaser.Scene {
     visual.dot.setTint(colorNum);
 
     // Update name
-    if (visual.nameTag.text !== player.name) {
-      visual.nameTag.setText(player.name);
+    const crownPrefix = player.isSuperadmin ? "👑 " : "";
+    const expectedName = `${crownPrefix}${player.name || "Player"}`;
+    if (visual.nameTag.text !== expectedName) {
+      visual.nameTag.setText(expectedName);
     }
 
     // For local player, reconcile with authoritative server position smoothly

@@ -17,6 +17,8 @@ export interface PlayerJoinOptions {
   name: string;
   color: string;
   avatars?: PlayerAvatars;
+  spaceId?: string;
+  token?: string;
 }
 
 export interface PlayerDbRecord {
@@ -34,6 +36,7 @@ export interface AuthUser {
   id: number;
   username: string;
   displayName?: string | null;
+  role: "user" | "superadmin";
 }
 
 export interface AuthResponse {
@@ -42,5 +45,34 @@ export interface AuthResponse {
   user?: AuthUser;
   error?: string;
 }
+
+export interface Space {
+  id: string;
+  name: string;
+  category: string; // e.g. "Town Square", "Hangout Lounges", or "Personal"
+  ownerId: number;
+  ownerUsername?: string;
+  isPublic: boolean;
+  isSuperadminSpace: boolean;
+  whitelist: string[]; // usernames allowed if private
+  playerCount?: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface SpacesListResponse {
+  success: boolean;
+  categories: string[];
+  spaces: Space[];
+  mySpace?: Space;
+  error?: string;
+}
+
+export interface SpaceResponse {
+  success: boolean;
+  space?: Space;
+  error?: string;
+}
+
 
 

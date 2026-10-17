@@ -1,27 +1,27 @@
-export const TILE_SIZE = 150;
-export const GRID_COLS = 16;
-export const GRID_ROWS = 12;
+export const TILE_SIZE = 100;
+export const GRID_COLS = 24;
+export const GRID_ROWS = 18;
 
 export const WORLD_WIDTH = GRID_COLS * TILE_SIZE; // 2400
 export const WORLD_HEIGHT = GRID_ROWS * TILE_SIZE; // 1800
 
-export const CHARACTER_MAX_SIZE = 75; // Proportionate character size (50% of tile)
-export const PLAYER_RADIUS = 24; // Default dot radius (diameter 48px)
-export const PLAYER_SPEED = 280; // Smooth continuous walking speed (px/sec)
+export const CHARACTER_MAX_SIZE = 70; // 70x70px character size
+export const PLAYER_RADIUS = 22; // Default dot radius (diameter 44px)
+export const PLAYER_SPEED = 260; // Smooth continuous walking speed (px/sec)
 export const TILE_MOVE_DURATION = 0.25; // Retained for compatibility
 
 export const DEFAULT_PRESET_COLORS = [
-  "#ef4444", // Crimson Red
-  "#f97316", // Bright Orange
-  "#f59e0b", // Amber / Gold
+  "#3B8282", // Lepark Slate Teal (Primary)
+  "#ECA239", // Lepark Ochre / Marigold (Secondary)
+  "#DB5B47", // Lepark Terracotta (Accent)
+  "#1E3131", // Lepark Deep Teal
   "#10b981", // Emerald Green
-  "#06b6d4", // Cyan
   "#3b82f6", // Royal Blue
-  "#6366f1", // Indigo
-  "#8b5cf6", // Purple
+  "#06b6d4", // Cyan
+  "#f97316", // Bright Orange
   "#ec4899", // Rose Pink
-  "#14b8a6", // Teal
-  "#1e293b", // Slate Charcoal
+  "#8b5cf6", // Purple
+  "#14b8a6", // Mint Teal
   "#64748b"  // Cool Gray
 ];
 

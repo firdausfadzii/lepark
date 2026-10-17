@@ -4,7 +4,7 @@ import cors from "cors";
 import dotenv from "dotenv";
 import { Server } from "colyseus";
 import { WebSocketTransport, WebSocketClient } from "@colyseus/ws-transport";
-import { GameRoom } from "./rooms/GameRoom";
+import { GameRoom, getSpacePlayerCount } from "./rooms/GameRoom";
 import {
   initDb,
   getAllSavedPlayers,
@@ -13,9 +13,16 @@ import {
   findUserById,
   createUser,
   updateUserDisplayName,
+  getSuperadminSpaces,
+  getSpaceById,
+  getUserPersonalSpace,
+  ensureUserPersonalSpace,
+  createSuperadminSpace,
+  updateSpace,
+  deleteSpace,
 } from "./db";
 import { hashPassword, verifyPassword, generateToken, verifyToken } from "./auth";
-import { AuthUser } from "shared";
+import { AuthUser, Space, SpacesListResponse, SpaceResponse } from "shared";
 
 dotenv.config();
 
@@ -32,6 +39,14 @@ const app = express();
 
 app.use(cors());
 app.use(express.json());
+
+// Helper for extracting AuthUser from Bearer token
+function getAuthUser(req: express.Request): AuthUser | null {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith("Bearer ")) return null;
+  const token = authHeader.slice(7).trim();
+  return verifyToken(token);
+}
 
 // Health check endpoint
 app.get("/health", (req, res) => {
@@ -58,11 +73,6 @@ app.get("/api/players", async (req, res) => {
 
 /**
  * Register a new user account.
- * Requires:
- * - unique username
- * - display name (optional)
- * - password
- * - require password (confirm password)
  */
 app.post("/api/auth/register", async (req, res) => {
   try {
@@ -97,7 +107,7 @@ app.post("/api/auth/register", async (req, res) => {
       });
     }
 
-    // 3. Confirm password validation ("require password")
+    // 3. Confirm password validation
     if (confirmPassword === undefined || confirmPassword === null) {
       return res.status(400).json({
         success: false,
@@ -128,12 +138,13 @@ app.post("/api/auth/register", async (req, res) => {
 
     // 6. Hash password and insert record
     const passwordHash = hashPassword(password);
-    const createdUser = await createUser(cleanUsername, passwordHash, cleanDisplayName);
+    const createdUser = await createUser(cleanUsername, passwordHash, cleanDisplayName, "user");
 
     const user: AuthUser = {
       id: createdUser.id,
       username: createdUser.username,
       displayName: createdUser.display_name,
+      role: createdUser.role,
     };
 
     const token = generateToken(user);
@@ -184,10 +195,14 @@ app.post("/api/auth/login", async (req, res) => {
       });
     }
 
+    // Ensure personal space is initialized
+    await ensureUserPersonalSpace(userRecord.id, userRecord.username);
+
     const user: AuthUser = {
       id: userRecord.id,
       username: userRecord.username,
       displayName: userRecord.display_name,
+      role: userRecord.role,
     };
 
     const token = generateToken(user);
@@ -211,29 +226,27 @@ app.post("/api/auth/login", async (req, res) => {
  */
 app.get("/api/auth/me", async (req, res) => {
   try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return res.status(401).json({ success: false, error: "Missing or invalid authorization token." });
+    const user = getAuthUser(req);
+    if (!user) {
+      return res.status(401).json({ success: false, error: "Invalid or expired authorization token." });
     }
 
-    const token = authHeader.slice(7).trim();
-    const payload = verifyToken(token);
-    if (!payload) {
-      return res.status(401).json({ success: false, error: "Invalid or expired token." });
-    }
-
-    const userRecord = await findUserById(payload.id);
+    const userRecord = await findUserById(user.id);
     if (!userRecord) {
       return res.status(404).json({ success: false, error: "User no longer exists." });
     }
 
-    const user: AuthUser = {
+    // Ensure user has personal space
+    await ensureUserPersonalSpace(userRecord.id, userRecord.username);
+
+    const updatedUser: AuthUser = {
       id: userRecord.id,
       username: userRecord.username,
       displayName: userRecord.display_name,
+      role: userRecord.role,
     };
 
-    return res.json({ success: true, user });
+    return res.json({ success: true, user: updatedUser });
   } catch (err: any) {
     console.error("Auth me error:", err);
     return res.status(500).json({ success: false, error: "Internal server error." });
@@ -245,14 +258,8 @@ app.get("/api/auth/me", async (req, res) => {
  */
 app.put("/api/auth/profile", async (req, res) => {
   try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return res.status(401).json({ success: false, error: "Missing authorization token." });
-    }
-
-    const token = authHeader.slice(7).trim();
-    const payload = verifyToken(token);
-    if (!payload) {
+    const user = getAuthUser(req);
+    if (!user) {
       return res.status(401).json({ success: false, error: "Invalid or expired token." });
     }
 
@@ -262,27 +269,335 @@ app.put("/api/auth/profile", async (req, res) => {
         ? displayName.trim().slice(0, 30)
         : null;
 
-    const updatedRecord = await updateUserDisplayName(payload.id, cleanDisplayName);
+    const updatedRecord = await updateUserDisplayName(user.id, cleanDisplayName);
     if (!updatedRecord) {
       return res.status(404).json({ success: false, error: "User not found." });
     }
 
-    const user: AuthUser = {
+    const updatedUser: AuthUser = {
       id: updatedRecord.id,
       username: updatedRecord.username,
       displayName: updatedRecord.display_name,
+      role: updatedRecord.role,
     };
 
-    const newToken = generateToken(user);
+    const newToken = generateToken(updatedUser);
 
     return res.json({
       success: true,
       token: newToken,
-      user,
+      user: updatedUser,
     });
   } catch (err: any) {
     console.error("Update profile error:", err);
     return res.status(500).json({ success: false, error: "Internal server error." });
+  }
+});
+
+// ==========================================
+// Spaces REST Endpoints
+// ==========================================
+
+/**
+ * GET /api/spaces
+ * - Returns superadmin spaces (shown in listing, grouped by category).
+ * - User spaces are explicitly omitted from the public listing.
+ * - If user is authenticated, also returns their own single personal space.
+ */
+app.get("/api/spaces", async (req, res) => {
+  try {
+    const authUser = getAuthUser(req);
+    const adminSpaces = await getSuperadminSpaces();
+
+    // Attach real-time active player counts
+    const spaces: Space[] = adminSpaces.map((s) => ({
+      id: s.id,
+      name: s.name,
+      category: s.category,
+      ownerId: s.owner_id,
+      ownerUsername: s.owner_username,
+      isPublic: s.is_public,
+      isSuperadminSpace: true,
+      whitelist: s.whitelist,
+      playerCount: getSpacePlayerCount(s.id),
+      createdAt: s.created_at.toISOString(),
+      updatedAt: s.updated_at.toISOString(),
+    }));
+
+    // Extract unique categories
+    const categorySet = new Set<string>();
+    spaces.forEach((s) => {
+      if (s.category) categorySet.add(s.category);
+    });
+    const categories = Array.from(categorySet);
+
+    let mySpace: Space | undefined = undefined;
+    if (authUser) {
+      const personalSpace = await ensureUserPersonalSpace(authUser.id, authUser.username);
+      if (personalSpace) {
+        mySpace = {
+          id: personalSpace.id,
+          name: personalSpace.name,
+          category: "Personal",
+          ownerId: personalSpace.owner_id,
+          ownerUsername: authUser.username,
+          isPublic: personalSpace.is_public,
+          isSuperadminSpace: false,
+          whitelist: personalSpace.whitelist,
+          playerCount: getSpacePlayerCount(personalSpace.id),
+          createdAt: personalSpace.created_at.toISOString(),
+          updatedAt: personalSpace.updated_at.toISOString(),
+        };
+      }
+    }
+
+    const response: SpacesListResponse = {
+      success: true,
+      categories,
+      spaces,
+      mySpace,
+    };
+
+    return res.json(response);
+  } catch (err: any) {
+    console.error("Get spaces error:", err);
+    return res.status(500).json({ success: false, error: "Failed to fetch spaces." });
+  }
+});
+
+/**
+ * GET /api/spaces/my-space
+ * - Get authenticated user's personal space
+ */
+app.get("/api/spaces/my-space", async (req, res) => {
+  try {
+    const authUser = getAuthUser(req);
+    if (!authUser) {
+      return res.status(401).json({ success: false, error: "Authentication required." });
+    }
+
+    const personalSpace = await ensureUserPersonalSpace(authUser.id, authUser.username);
+    const space: Space = {
+      id: personalSpace.id,
+      name: personalSpace.name,
+      category: "Personal",
+      ownerId: personalSpace.owner_id,
+      ownerUsername: authUser.username,
+      isPublic: personalSpace.is_public,
+      isSuperadminSpace: false,
+      whitelist: personalSpace.whitelist,
+      playerCount: getSpacePlayerCount(personalSpace.id),
+      createdAt: personalSpace.created_at.toISOString(),
+      updatedAt: personalSpace.updated_at.toISOString(),
+    };
+
+    return res.json({ success: true, space });
+  } catch (err: any) {
+    console.error("Get my-space error:", err);
+    return res.status(500).json({ success: false, error: "Failed to fetch personal space." });
+  }
+});
+
+/**
+ * PUT /api/spaces/my-space
+ * - User updates their personal space (name, public/private toggle, whitelist)
+ */
+app.put("/api/spaces/my-space", async (req, res) => {
+  try {
+    const authUser = getAuthUser(req);
+    if (!authUser) {
+      return res.status(401).json({ success: false, error: "Authentication required." });
+    }
+
+    const personalSpace = await ensureUserPersonalSpace(authUser.id, authUser.username);
+    const { name, isPublic, whitelist } = req.body || {};
+
+    // Clean whitelist: array of trimmed non-empty usernames
+    let cleanWhitelist: string[] | undefined = undefined;
+    if (Array.isArray(whitelist)) {
+      cleanWhitelist = whitelist
+        .map((w: any) => String(w).trim())
+        .filter((w: string) => w.length > 0 && /^[a-zA-Z0-9_]+$/.test(w));
+    }
+
+    const updated = await updateSpace(personalSpace.id, {
+      name: typeof name === "string" && name.trim() ? name.trim().slice(0, 50) : undefined,
+      isPublic: typeof isPublic === "boolean" ? isPublic : undefined,
+      whitelist: cleanWhitelist,
+    });
+
+    if (!updated) {
+      return res.status(500).json({ success: false, error: "Failed to update personal space." });
+    }
+
+    const space: Space = {
+      id: updated.id,
+      name: updated.name,
+      category: "Personal",
+      ownerId: updated.owner_id,
+      ownerUsername: authUser.username,
+      isPublic: updated.is_public,
+      isSuperadminSpace: false,
+      whitelist: updated.whitelist,
+      playerCount: getSpacePlayerCount(updated.id),
+      createdAt: updated.created_at.toISOString(),
+      updatedAt: updated.updated_at.toISOString(),
+    };
+
+    return res.json({ success: true, space });
+  } catch (err: any) {
+    console.error("Update my-space error:", err);
+    return res.status(500).json({ success: false, error: "Failed to update space." });
+  }
+});
+
+/**
+ * POST /api/spaces
+ * - Superadmin creates a new space (public or private with category)
+ */
+app.post("/api/spaces", async (req, res) => {
+  try {
+    const authUser = getAuthUser(req);
+    if (!authUser || authUser.role !== "superadmin") {
+      return res.status(403).json({
+        success: false,
+        error: "Only superadmin accounts can create new directory spaces.",
+      });
+    }
+
+    const { name, category, isPublic, whitelist } = req.body || {};
+    if (!name || typeof name !== "string" || name.trim().length === 0) {
+      return res.status(400).json({ success: false, error: "Space name is required." });
+    }
+
+    const cleanName = name.trim().slice(0, 50);
+    const cleanCategory =
+      category && typeof category === "string" && category.trim().length > 0
+        ? category.trim().slice(0, 40)
+        : "General";
+
+    let cleanWhitelist: string[] = [];
+    if (Array.isArray(whitelist)) {
+      cleanWhitelist = whitelist
+        .map((w: any) => String(w).trim())
+        .filter((w: string) => w.length > 0 && /^[a-zA-Z0-9_]+$/.test(w));
+    }
+
+    const created = await createSuperadminSpace({
+      name: cleanName,
+      category: cleanCategory,
+      isPublic: typeof isPublic === "boolean" ? isPublic : true,
+      ownerId: authUser.id,
+      whitelist: cleanWhitelist,
+    });
+
+    const space: Space = {
+      id: created.id,
+      name: created.name,
+      category: created.category,
+      ownerId: created.owner_id,
+      ownerUsername: authUser.username,
+      isPublic: created.is_public,
+      isSuperadminSpace: true,
+      whitelist: created.whitelist,
+      playerCount: 0,
+      createdAt: created.created_at.toISOString(),
+      updatedAt: created.updated_at.toISOString(),
+    };
+
+    return res.status(201).json({ success: true, space });
+  } catch (err: any) {
+    console.error("Create space error:", err);
+    return res.status(500).json({ success: false, error: "Failed to create space." });
+  }
+});
+
+/**
+ * PUT /api/spaces/:id
+ * - Superadmin updates a directory space
+ */
+app.put("/api/spaces/:id", async (req, res) => {
+  try {
+    const authUser = getAuthUser(req);
+    if (!authUser || authUser.role !== "superadmin") {
+      return res.status(403).json({
+        success: false,
+        error: "Only superadmin accounts can edit directory spaces.",
+      });
+    }
+
+    const spaceId = req.params.id;
+    const existing = await getSpaceById(spaceId);
+    if (!existing || !existing.is_superadmin_space) {
+      return res.status(404).json({ success: false, error: "Superadmin space not found." });
+    }
+
+    const { name, category, isPublic, whitelist } = req.body || {};
+
+    let cleanWhitelist: string[] | undefined = undefined;
+    if (Array.isArray(whitelist)) {
+      cleanWhitelist = whitelist
+        .map((w: any) => String(w).trim())
+        .filter((w: string) => w.length > 0 && /^[a-zA-Z0-9_]+$/.test(w));
+    }
+
+    const updated = await updateSpace(spaceId, {
+      name: typeof name === "string" && name.trim() ? name.trim().slice(0, 50) : undefined,
+      category: typeof category === "string" && category.trim() ? category.trim().slice(0, 40) : undefined,
+      isPublic: typeof isPublic === "boolean" ? isPublic : undefined,
+      whitelist: cleanWhitelist,
+    });
+
+    if (!updated) {
+      return res.status(500).json({ success: false, error: "Failed to update space." });
+    }
+
+    const space: Space = {
+      id: updated.id,
+      name: updated.name,
+      category: updated.category,
+      ownerId: updated.owner_id,
+      ownerUsername: updated.owner_username || "admin",
+      isPublic: updated.is_public,
+      isSuperadminSpace: true,
+      whitelist: updated.whitelist,
+      playerCount: getSpacePlayerCount(updated.id),
+      createdAt: updated.created_at.toISOString(),
+      updatedAt: updated.updated_at.toISOString(),
+    };
+
+    return res.json({ success: true, space });
+  } catch (err: any) {
+    console.error("Update space error:", err);
+    return res.status(500).json({ success: false, error: "Failed to update space." });
+  }
+});
+
+/**
+ * DELETE /api/spaces/:id
+ * - Superadmin deletes a directory space
+ */
+app.delete("/api/spaces/:id", async (req, res) => {
+  try {
+    const authUser = getAuthUser(req);
+    if (!authUser || authUser.role !== "superadmin") {
+      return res.status(403).json({
+        success: false,
+        error: "Only superadmin accounts can delete directory spaces.",
+      });
+    }
+
+    const spaceId = req.params.id;
+    const existing = await getSpaceById(spaceId);
+    if (!existing || !existing.is_superadmin_space) {
+      return res.status(404).json({ success: false, error: "Superadmin space not found." });
+    }
+
+    const success = await deleteSpace(spaceId);
+    return res.json({ success });
+  } catch (err: any) {
+    console.error("Delete space error:", err);
+    return res.status(500).json({ success: false, error: "Failed to delete space." });
   }
 });
 
@@ -291,12 +606,12 @@ const httpServer = http.createServer(app);
 const gameServer = new Server({
   transport: new WebSocketTransport({
     server: httpServer,
-    maxPayload: 10 * 1024 * 1024, // 10MB payload limit to prevent disconnects when transmitting custom sprites
+    maxPayload: 10 * 1024 * 1024, // 10MB payload limit
   }),
 });
 
-// Define multiplayer game room
-gameServer.define("game_room", GameRoom);
+// Define multiplayer game room with space filtering
+gameServer.define("game_room", GameRoom).filterBy(["spaceId"]);
 
 async function start() {
   await initDb();
@@ -304,6 +619,7 @@ async function start() {
   console.log(`🎮 Game Server is listening on ws://localhost:${PORT}`);
   console.log(`📡 Health endpoint: http://localhost:${PORT}/health`);
   console.log(`👥 Database players API: http://localhost:${PORT}/api/players`);
+  console.log(`🌌 Spaces API: http://localhost:${PORT}/api/spaces`);
   console.log(`🔐 Auth endpoints available at http://localhost:${PORT}/api/auth/*`);
 }
 

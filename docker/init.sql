@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS users (
     username VARCHAR(50) UNIQUE NOT NULL,
     display_name VARCHAR(50),
     password_hash VARCHAR(255) NOT NULL,
+    role VARCHAR(20) DEFAULT 'user' NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -21,4 +22,19 @@ CREATE TABLE IF NOT EXISTS players (
 );
 
 CREATE INDEX IF NOT EXISTS idx_players_last_seen ON players (last_seen DESC);
+
+CREATE TABLE IF NOT EXISTS spaces (
+    id VARCHAR(64) PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    category VARCHAR(50) DEFAULT 'General',
+    owner_id INT REFERENCES users(id) ON DELETE CASCADE,
+    is_public BOOLEAN DEFAULT TRUE,
+    is_superadmin_space BOOLEAN DEFAULT FALSE,
+    whitelist JSONB DEFAULT '[]'::jsonb,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_spaces_superadmin ON spaces (is_superadmin_space, category);
+
 

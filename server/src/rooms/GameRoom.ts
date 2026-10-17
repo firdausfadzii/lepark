@@ -1,4 +1,4 @@
-import { Room, Client } from "colyseus";
+import { Room, Client, ServerError } from "colyseus";
 import { GameState, PlayerState } from "../schema/GameState";
 import {
   PlayerInputPayload,
@@ -14,16 +14,69 @@ import {
   SERVER_TICK_RATE,
   getTileCenter,
 } from "shared";
-import { upsertPlayer, updatePlayerPosition } from "../db";
+import { upsertPlayer, updatePlayerPosition, getSpaceById } from "../db";
+import { verifyToken } from "../auth";
+
+export const activeSpaceCounts = new Map<string, number>();
+
+export function getSpacePlayerCount(spaceId: string): number {
+  return activeSpaceCounts.get(spaceId) || 0;
+}
 
 export class GameRoom extends Room<GameState> {
   maxClients = 64;
 
+  public spaceId: string = "space_central_plaza";
   private playerInputs: Map<string, PlayerInputPayload> = new Map();
   private playerAvatars: Map<string, PlayerAvatars> = new Map();
   private dbSyncCounter: number = 0;
 
+  async onAuth(client: Client, options: PlayerJoinOptions, request?: any) {
+    const spaceId = options?.spaceId || "space_central_plaza";
+    const space = await getSpaceById(spaceId);
+    if (!space) {
+      throw new ServerError(404, "Space not found");
+    }
+
+    let user = null;
+    if (options.token) {
+      user = verifyToken(options.token);
+    }
+
+    // 1. Personal user space rule:
+    // "for now, user dont have ways to travel to other user's space."
+    if (!space.is_superadmin_space) {
+      if (!user || (user.id !== space.owner_id && user.role !== "superadmin")) {
+        throw new ServerError(
+          403,
+          "Access denied: Traveling to other users' spaces is currently disabled."
+        );
+      }
+    }
+
+    // 2. Superadmin space rule:
+    // "private space can only be joined by invitation (a whitelist for now)"
+    if (space.is_superadmin_space && !space.is_public) {
+      if (!user) {
+        throw new ServerError(401, "Authentication required to join private space.");
+      }
+      const isWhitelisted = space.whitelist.some(
+        (w) => w.toLowerCase() === user.username.toLowerCase()
+      );
+      if (!isWhitelisted && user.role !== "superadmin") {
+        throw new ServerError(
+          403,
+          "Access denied: This space is private and requires an invitation."
+        );
+      }
+    }
+
+    return { user, space };
+  }
+
   onCreate(options: any) {
+    this.spaceId = options.spaceId || "space_central_plaza";
+    this.setMetadata({ spaceId: this.spaceId });
     this.setState(new GameState());
 
     // 20 Hz tick loop
@@ -99,7 +152,10 @@ export class GameRoom extends Room<GameState> {
     });
   }
 
-  onJoin(client: Client, options: PlayerJoinOptions) {
+  onJoin(client: Client, options: PlayerJoinOptions, auth: any) {
+    const count = activeSpaceCounts.get(this.spaceId) || 0;
+    activeSpaceCounts.set(this.spaceId, count + 1);
+
     const rawName = (options && options.name ? options.name.trim() : "").slice(0, 24);
     const name = rawName || `Player_${client.sessionId.slice(0, 4)}`;
     const color =
@@ -111,6 +167,7 @@ export class GameRoom extends Room<GameState> {
     player.id = client.sessionId;
     player.name = name;
     player.color = color;
+    player.isSuperadmin = (auth && auth.user && auth.user.role === "superadmin") || false;
     const defaultTileX = Math.floor(GRID_COLS / 2);
     const defaultTileY = Math.floor(GRID_ROWS / 2);
     const spawnCenter = getTileCenter(defaultTileX, defaultTileY);
@@ -126,7 +183,9 @@ export class GameRoom extends Room<GameState> {
       down: false,
     });
 
-    console.log(` Player joined: ${name} (${color}) [${client.sessionId}] at tile (${defaultTileX}, ${defaultTileY})`);
+    console.log(
+      ` Player joined space [${this.spaceId}]: ${name} (${color}) [${client.sessionId}] at tile (${defaultTileX}, ${defaultTileY})`
+    );
 
     upsertPlayer({
       id: client.sessionId,
@@ -136,7 +195,7 @@ export class GameRoom extends Room<GameState> {
       y: player.y,
     });
 
-    // Check if player joined with custom avatar pictures (idle is required)
+    // Check if player joined with custom avatar pictures
     if (options && options.avatars && options.avatars.idle) {
       this.playerAvatars.set(client.sessionId, options.avatars);
       this.broadcast("PLAYER_AVATARS", {
@@ -154,9 +213,12 @@ export class GameRoom extends Room<GameState> {
   }
 
   onLeave(client: Client, consented?: boolean) {
+    const count = activeSpaceCounts.get(this.spaceId) || 1;
+    activeSpaceCounts.set(this.spaceId, Math.max(0, count - 1));
+
     const player = this.state.players.get(client.sessionId);
     if (player) {
-      console.log(` Player left: ${player.name} [${client.sessionId}]`);
+      console.log(` Player left space [${this.spaceId}]: ${player.name} [${client.sessionId}]`);
       updatePlayerPosition(client.sessionId, player.x, player.y);
       this.state.players.delete(client.sessionId);
     }

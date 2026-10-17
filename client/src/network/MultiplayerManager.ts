@@ -43,6 +43,8 @@ export class MultiplayerManager {
     this.client = new Client(serverUrl);
   }
 
+  public currentSpaceId: string = "space_central_plaza";
+
   public get isConnected(): boolean {
     return this.room !== null;
   }
@@ -53,6 +55,7 @@ export class MultiplayerManager {
 
   public leave() {
     this.stopPingLoop();
+    this.playerAvatarsMap.clear();
     if (this.room) {
       try {
         this.room.leave();
@@ -66,6 +69,7 @@ export class MultiplayerManager {
 
   public async joinGame(options: PlayerJoinOptions): Promise<Room> {
     try {
+      this.currentSpaceId = options.spaceId || "space_central_plaza";
       // Use schema reflection (no root class) — passing `GameState` from `shared`
       // pulls in a second @colyseus/schema instance and breaks decoding ("refId not found").
       this.room = await this.client.joinOrCreate("game_room", options);
