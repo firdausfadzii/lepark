@@ -66,7 +66,7 @@
           <div class="editor-category-header">
             <div class="editor-category-name-wrap">
               <span class="category-icon">🪵</span>
-              <span class="category-title">Tile Pattern</span>
+              <span class="category-title">Flooring Patterns</span>
             </div>
             <span class="category-count">3 styles</span>
           </div>
@@ -123,6 +123,59 @@
               <div class="asset-card-info">
                 <span class="asset-card-name">Plain Tile</span>
                 <span class="asset-card-code">color_tile</span>
+              </div>
+            </button>
+          </div>
+        </div>
+
+        <!-- Walls Category (Solid / Impassable) -->
+        <div class="editor-category-group">
+          <div class="editor-category-header">
+            <div class="editor-category-name-wrap">
+              <span class="category-icon">🧱</span>
+              <span class="category-title">Walls (Solid Obstacles)</span>
+            </div>
+            <span class="category-count">2 styles</span>
+          </div>
+
+          <div class="editor-assets-grid">
+            <!-- Asset 4: Half Wall (wall_half_150) -->
+            <button
+              type="button"
+              class="editor-asset-card"
+              data-asset-id="wall_half_150"
+              data-asset-name="Half Wall"
+              data-is-wall="true"
+              title="Half Wall (wall_half_150) - Solid obstacle (not walkable on top)"
+            >
+              <div class="asset-card-thumb">
+                <img src="/assets/wall_half_150.png" alt="Half Wall" class="asset-thumb-img" />
+                <span class="asset-card-badge wall-badge">Wall</span>
+                <span class="asset-card-check">✓</span>
+              </div>
+              <div class="asset-card-info">
+                <span class="asset-card-name">Half Wall</span>
+                <span class="asset-card-code">wall_half_150</span>
+              </div>
+            </button>
+
+            <!-- Asset 5: Top Wall (wall_top_150) -->
+            <button
+              type="button"
+              class="editor-asset-card"
+              data-asset-id="wall_top_150"
+              data-asset-name="Top Wall"
+              data-is-wall="true"
+              title="Top Wall (wall_top_150) - Solid obstacle (not walkable on top)"
+            >
+              <div class="asset-card-thumb">
+                <img src="/assets/wall_top_150.png" alt="Top Wall" class="asset-thumb-img" />
+                <span class="asset-card-badge wall-badge">Wall</span>
+                <span class="asset-card-check">✓</span>
+              </div>
+              <div class="asset-card-info">
+                <span class="asset-card-name">Top Wall</span>
+                <span class="asset-card-code">wall_top_150</span>
               </div>
             </button>
           </div>
@@ -209,8 +262,7 @@
       <!-- Left: User Avatar & Profile Section -->
       <div id="topbar-profile-trigger" class="topbar-profile-pill" role="button" tabindex="0" title="Account Menu">
         <div class="topbar-avatar-container">
-          <div id="topbar-avatar-dot" class="topbar-avatar-dot"></div>
-          <img id="topbar-avatar-img" class="topbar-avatar-img hidden" alt="Avatar" />
+          <img id="topbar-avatar-img" class="topbar-avatar-img" alt="Avatar" src="/assets/man_still.png" />
           <span id="topbar-status-dot" class="topbar-status-dot" title="Online"></span>
         </div>
         <div class="topbar-user-details">
@@ -278,15 +330,15 @@
       <div class="hud-footer" id="hud-footer">
         <div class="controls-hint">
           <span>Controls:</span>
-          <span class="key-badge">W</span>
-          <span class="key-badge">A</span>
-          <span class="key-badge">S</span>
-          <span class="key-badge">D</span>
+          <span class="key-badge" id="hud-btn-w" data-dir="up">W</span>
+          <span class="key-badge" id="hud-btn-a" data-dir="left">A</span>
+          <span class="key-badge" id="hud-btn-s" data-dir="down">S</span>
+          <span class="key-badge" id="hud-btn-d" data-dir="right">D</span>
           <span>or</span>
-          <span class="key-badge">▲</span>
-          <span class="key-badge">◄</span>
-          <span class="key-badge">▼</span>
-          <span class="key-badge">►</span>
+          <span class="key-badge" id="hud-btn-up" data-dir="up">▲</span>
+          <span class="key-badge" id="hud-btn-left" data-dir="left">◄</span>
+          <span class="key-badge" id="hud-btn-down" data-dir="down">▼</span>
+          <span class="key-badge" id="hud-btn-right" data-dir="right">►</span>
           <span>to move</span>
         </div>
       </div>
@@ -476,18 +528,17 @@
         <div class="preview-box">
           <div class="preview-character-container">
             <div id="preview-name" class="preview-name-tag">Player</div>
-            <div id="preview-dot" class="preview-dot"></div>
-            <img id="preview-avatar" class="preview-avatar hidden" alt="Character Preview" />
+            <img id="preview-avatar" class="preview-avatar" alt="Character Preview" src="/assets/man_still.png" />
           </div>
-          <!-- Direction Preview Switcher (active when pictures uploaded) -->
-          <div id="preview-directions-bar" class="preview-directions-bar hidden">
+          <!-- Direction Preview Switcher -->
+          <div id="preview-directions-bar" class="preview-directions-bar">
             <button type="button" class="preview-dir-btn active" data-dir="idle" title="Standing Still">🧍 Still</button>
             <button type="button" class="preview-dir-btn" data-dir="left" title="Left">⬅️ Left</button>
             <button type="button" class="preview-dir-btn" data-dir="right" title="Right">➡️ Right</button>
             <button type="button" class="preview-dir-btn" data-dir="up" title="Up">⬆️ Up</button>
             <button type="button" class="preview-dir-btn" data-dir="down" title="Down">⬇️ Down</button>
           </div>
-          <div id="preview-status-hint" class="preview-status-hint hidden"></div>
+          <div id="preview-status-hint" class="preview-status-hint"></div>
         </div>
 
         <form id="profile-form">
@@ -507,12 +558,12 @@
             <span class="field-hint">If blank, your username (<span id="current-username-tag"></span>) will be used.</span>
           </div>
 
-          <!-- Switch to Upload Pictures -->
+          <!-- Switch to Upload Custom Sprites -->
           <div class="form-group switch-group">
             <div class="switch-row">
               <div class="switch-info">
-                <label class="switch-title" for="switch-upload-pictures">Upload Pictures</label>
-                <span class="switch-desc">Use custom sprites instead of a dot</span>
+                <label class="switch-title" for="switch-upload-pictures">Customize Sprites</label>
+                <span class="switch-desc">Upload your own character sprites</span>
               </div>
               <label class="toggle-switch">
                 <input type="checkbox" id="switch-upload-pictures" />
@@ -521,19 +572,13 @@
             </div>
           </div>
 
-          <!-- Section 1: Dot Input (Default, visible when switch is false) -->
-          <div id="dot-input-section" class="input-section">
-            <div class="form-group">
-              <label class="form-label">Pick Color</label>
-              <div id="color-grid" class="color-grid"></div>
-              <div class="custom-color-row">
-                <input
-                  id="custom-color-picker"
-                  class="custom-color-input"
-                  type="color"
-                  value="#3B8282"
-                />
-                <span class="custom-color-text">Custom hex color</span>
+          <!-- Section 1: Default Character (Visible when switch is false) -->
+          <div id="default-character-section" class="input-section">
+            <div class="default-avatar-card">
+              <span class="default-avatar-card-icon">🧍</span>
+              <div class="default-avatar-card-info">
+                <span class="default-avatar-card-title">Default Male Character</span>
+                <span class="default-avatar-card-desc">Equipped with complete walk animations (Standing still, Left, Right, Up, and Down). Toggle "Customize Sprites" above to upload custom frames!</span>
               </div>
             </div>
           </div>
@@ -543,13 +588,13 @@
             <div class="section-notice">
               <span class="notice-icon">💡</span>
               <span class="notice-text">
-                Standing still picture is required for custom pictures; otherwise character uses the dot. Missing movement pictures automatically fall back to standing still!
+                Upload custom sprites to personalize your character. Any empty movement directions will automatically use the default male character movements!
               </span>
             </div>
 
             <div class="demo-sprites-row">
               <button type="button" id="btn-load-demo-sprites" class="btn-demo-sprites">
-                ✨ Load Sample Sprites
+                ✨ Reset to Default Male Sprites
               </button>
               <button type="button" id="btn-clear-all-sprites" class="btn-demo-sprites secondary">
                 ✕ Clear All
@@ -564,20 +609,14 @@
                     <span class="slot-icon">🧍</span>
                     <span class="slot-title">Standing Still</span>
                     <span class="badge-required">Required</span>
+                    <span class="badge-frame-counter" id="badge-counter-idle">0 / 6</span>
                   </div>
-                  <span class="slot-hint">Default idle pose & fallback</span>
+                  <span class="slot-hint">Default idle pose & fallback (up to 6 frames)</span>
                 </div>
-                <div class="upload-dropzone" id="dropzone-idle" data-slot="idle">
-                  <input type="file" id="file-idle" accept="image/*" class="file-input-hidden" />
-                  <div class="upload-empty-state" id="empty-idle">
-                    <span class="upload-icon">📁</span>
-                    <span class="upload-text">Upload picture</span>
-                  </div>
-                  <div class="upload-filled-state hidden" id="filled-idle">
-                    <img id="thumb-idle" class="upload-thumb" alt="Standing still thumbnail" />
-                    <button type="button" class="btn-remove-picture" data-slot="idle" title="Remove picture">✕</button>
-                  </div>
+                <div class="frames-strip-container" id="frames-strip-idle">
+                  <!-- Injected dynamically: frame cards + Add Frame dropzone -->
                 </div>
+                <input type="file" id="file-idle" accept="image/*" multiple class="file-input-hidden" />
               </div>
 
               <!-- Directional Movement Slots 2x2 Grid -->
@@ -588,21 +627,15 @@
                     <div class="slot-badge-group">
                       <span class="slot-icon">⬅️</span>
                       <span class="slot-title">Left</span>
+                      <span class="badge-frame-counter" id="badge-counter-left">0 / 6</span>
                     </div>
                     <span class="slot-fallback-tag">Fallback: Still</span>
                   </div>
-                  <div class="slot-desc">Standing left & moving left</div>
-                  <div class="upload-dropzone" id="dropzone-left" data-slot="left">
-                    <input type="file" id="file-left" accept="image/*" class="file-input-hidden" />
-                    <div class="upload-empty-state" id="empty-left">
-                      <span class="upload-icon">📁</span>
-                      <span class="upload-text">Upload picture</span>
-                    </div>
-                    <div class="upload-filled-state hidden" id="filled-left">
-                      <img id="thumb-left" class="upload-thumb" alt="Left thumbnail" />
-                      <button type="button" class="btn-remove-picture" data-slot="left" title="Remove picture">✕</button>
-                    </div>
+                  <div class="slot-desc">Moving left animation frames (max 6)</div>
+                  <div class="frames-strip-container" id="frames-strip-left">
+                    <!-- Injected dynamically -->
                   </div>
+                  <input type="file" id="file-left" accept="image/*" multiple class="file-input-hidden" />
                 </div>
 
                 <!-- Slot 3: Right -->
@@ -611,21 +644,15 @@
                     <div class="slot-badge-group">
                       <span class="slot-icon">➡️</span>
                       <span class="slot-title">Right</span>
+                      <span class="badge-frame-counter" id="badge-counter-right">0 / 6</span>
                     </div>
                     <span class="slot-fallback-tag">Fallback: Still</span>
                   </div>
-                  <div class="slot-desc">Standing right & moving right</div>
-                  <div class="upload-dropzone" id="dropzone-right" data-slot="right">
-                    <input type="file" id="file-right" accept="image/*" class="file-input-hidden" />
-                    <div class="upload-empty-state" id="empty-right">
-                      <span class="upload-icon">📁</span>
-                      <span class="upload-text">Upload picture</span>
-                    </div>
-                    <div class="upload-filled-state hidden" id="filled-right">
-                      <img id="thumb-right" class="upload-thumb" alt="Right thumbnail" />
-                      <button type="button" class="btn-remove-picture" data-slot="right" title="Remove picture">✕</button>
-                    </div>
+                  <div class="slot-desc">Moving right animation frames (max 6)</div>
+                  <div class="frames-strip-container" id="frames-strip-right">
+                    <!-- Injected dynamically -->
                   </div>
+                  <input type="file" id="file-right" accept="image/*" multiple class="file-input-hidden" />
                 </div>
 
                 <!-- Slot 4: Up -->
@@ -634,21 +661,15 @@
                     <div class="slot-badge-group">
                       <span class="slot-icon">⬆️</span>
                       <span class="slot-title">Up</span>
+                      <span class="badge-frame-counter" id="badge-counter-up">0 / 6</span>
                     </div>
                     <span class="slot-fallback-tag">Fallback: Still</span>
                   </div>
-                  <div class="slot-desc">Standing up & moving up</div>
-                  <div class="upload-dropzone" id="dropzone-up" data-slot="up">
-                    <input type="file" id="file-up" accept="image/*" class="file-input-hidden" />
-                    <div class="upload-empty-state" id="empty-up">
-                      <span class="upload-icon">📁</span>
-                      <span class="upload-text">Upload picture</span>
-                    </div>
-                    <div class="upload-filled-state hidden" id="filled-up">
-                      <img id="thumb-up" class="upload-thumb" alt="Up thumbnail" />
-                      <button type="button" class="btn-remove-picture" data-slot="up" title="Remove picture">✕</button>
-                    </div>
+                  <div class="slot-desc">Moving up animation frames (max 6)</div>
+                  <div class="frames-strip-container" id="frames-strip-up">
+                    <!-- Injected dynamically -->
                   </div>
+                  <input type="file" id="file-up" accept="image/*" multiple class="file-input-hidden" />
                 </div>
 
                 <!-- Slot 5: Down -->
@@ -657,21 +678,15 @@
                     <div class="slot-badge-group">
                       <span class="slot-icon">⬇️</span>
                       <span class="slot-title">Down</span>
+                      <span class="badge-frame-counter" id="badge-counter-down">0 / 6</span>
                     </div>
                     <span class="slot-fallback-tag">Fallback: Still</span>
                   </div>
-                  <div class="slot-desc">Standing down & moving down</div>
-                  <div class="upload-dropzone" id="dropzone-down" data-slot="down">
-                    <input type="file" id="file-down" accept="image/*" class="file-input-hidden" />
-                    <div class="upload-empty-state" id="empty-down">
-                      <span class="upload-icon">📁</span>
-                      <span class="upload-text">Upload picture</span>
-                    </div>
-                    <div class="upload-filled-state hidden" id="filled-down">
-                      <img id="thumb-down" class="upload-thumb" alt="Down thumbnail" />
-                      <button type="button" class="btn-remove-picture" data-slot="down" title="Remove picture">✕</button>
-                    </div>
+                  <div class="slot-desc">Moving down animation frames (max 6)</div>
+                  <div class="frames-strip-container" id="frames-strip-down">
+                    <!-- Injected dynamically -->
                   </div>
+                  <input type="file" id="file-down" accept="image/*" multiple class="file-input-hidden" />
                 </div>
               </div>
             </div>

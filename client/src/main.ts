@@ -9,6 +9,8 @@ import {
   Space,
   SpacesListResponse,
   SpaceResponse,
+  MAX_AVATAR_FRAMES,
+  DEFAULT_AVATARS,
 } from "shared";
 
 // Types
@@ -24,118 +26,277 @@ function escapeHtml(str: string): string {
 // DOM Elements - Auth Modal
 const authModal = document.getElementById("auth-modal") as HTMLDivElement;
 const tabLogin = document.getElementById("tab-login") as HTMLButtonElement;
-const tabRegister = document.getElementById("tab-register") as HTMLButtonElement;
+const tabRegister = document.getElementById(
+  "tab-register",
+) as HTMLButtonElement;
 const loginForm = document.getElementById("login-form") as HTMLFormElement;
-const registerForm = document.getElementById("register-form") as HTMLFormElement;
-const loginUsernameInput = document.getElementById("login-username") as HTMLInputElement;
-const loginPasswordInput = document.getElementById("login-password") as HTMLInputElement;
-const regUsernameInput = document.getElementById("reg-username") as HTMLInputElement;
-const regDisplayNameInput = document.getElementById("reg-display-name") as HTMLInputElement;
-const regPasswordInput = document.getElementById("reg-password") as HTMLInputElement;
-const regConfirmPasswordInput = document.getElementById("reg-confirm-password") as HTMLInputElement;
-const btnSubmitLogin = document.getElementById("btn-submit-login") as HTMLButtonElement;
-const btnSubmitRegister = document.getElementById("btn-submit-register") as HTMLButtonElement;
+const registerForm = document.getElementById(
+  "register-form",
+) as HTMLFormElement;
+const loginUsernameInput = document.getElementById(
+  "login-username",
+) as HTMLInputElement;
+const loginPasswordInput = document.getElementById(
+  "login-password",
+) as HTMLInputElement;
+const regUsernameInput = document.getElementById(
+  "reg-username",
+) as HTMLInputElement;
+const regDisplayNameInput = document.getElementById(
+  "reg-display-name",
+) as HTMLInputElement;
+const regPasswordInput = document.getElementById(
+  "reg-password",
+) as HTMLInputElement;
+const regConfirmPasswordInput = document.getElementById(
+  "reg-confirm-password",
+) as HTMLInputElement;
+const btnSubmitLogin = document.getElementById(
+  "btn-submit-login",
+) as HTMLButtonElement;
+const btnSubmitRegister = document.getElementById(
+  "btn-submit-register",
+) as HTMLButtonElement;
 const authAlert = document.getElementById("auth-alert") as HTMLDivElement;
-const authAlertMsg = document.getElementById("auth-alert-msg") as HTMLSpanElement;
-const linkGoRegister = document.getElementById("link-go-register") as HTMLButtonElement;
-const linkGoLogin = document.getElementById("link-go-login") as HTMLButtonElement;
+const authAlertMsg = document.getElementById(
+  "auth-alert-msg",
+) as HTMLSpanElement;
+const linkGoRegister = document.getElementById(
+  "link-go-register",
+) as HTMLButtonElement;
+const linkGoLogin = document.getElementById(
+  "link-go-login",
+) as HTMLButtonElement;
 
 // DOM Elements - Middle Top Bar & Profile Dropdown
-const topbarProfileTrigger = document.getElementById("topbar-profile-trigger") as HTMLDivElement;
-const topbarAvatarDot = document.getElementById("topbar-avatar-dot") as HTMLDivElement;
-const topbarAvatarImg = document.getElementById("topbar-avatar-img") as HTMLImageElement;
-const topbarStatusDot = document.getElementById("topbar-status-dot") as HTMLSpanElement;
-const topbarAdminCrown = document.getElementById("topbar-admin-crown") as HTMLSpanElement;
-const topbarUserName = document.getElementById("topbar-user-name") as HTMLSpanElement;
-const topbarStatusSubtitle = document.getElementById("topbar-status-subtitle") as HTMLSpanElement;
+const topbarProfileTrigger = document.getElementById(
+  "topbar-profile-trigger",
+) as HTMLDivElement;
+const topbarAvatarDot = document.getElementById(
+  "topbar-avatar-dot",
+) as HTMLDivElement | null;
+const topbarAvatarImg = document.getElementById(
+  "topbar-avatar-img",
+) as HTMLImageElement;
+const topbarStatusDot = document.getElementById(
+  "topbar-status-dot",
+) as HTMLSpanElement;
+const topbarAdminCrown = document.getElementById(
+  "topbar-admin-crown",
+) as HTMLSpanElement;
+const topbarUserName = document.getElementById(
+  "topbar-user-name",
+) as HTMLSpanElement;
+const topbarStatusSubtitle = document.getElementById(
+  "topbar-status-subtitle",
+) as HTMLSpanElement;
 
 // User Profile Dropdown
-const userProfileDropdown = document.getElementById("user-profile-dropdown") as HTMLDivElement;
-const dropdownMySpaceBtn = document.getElementById("dropdown-my-space-btn") as HTMLButtonElement;
-const dropdownMySpaceSub = document.getElementById("dropdown-my-space-sub") as HTMLSpanElement;
-const dropdownUpdateCharBtn = document.getElementById("dropdown-update-char-btn") as HTMLButtonElement;
-const dropdownLogoutBtn = document.getElementById("dropdown-logout-btn") as HTMLButtonElement;
+const userProfileDropdown = document.getElementById(
+  "user-profile-dropdown",
+) as HTMLDivElement;
+const dropdownMySpaceBtn = document.getElementById(
+  "dropdown-my-space-btn",
+) as HTMLButtonElement;
+const dropdownMySpaceSub = document.getElementById(
+  "dropdown-my-space-sub",
+) as HTMLSpanElement;
+const dropdownUpdateCharBtn = document.getElementById(
+  "dropdown-update-char-btn",
+) as HTMLButtonElement;
+const dropdownLogoutBtn = document.getElementById(
+  "dropdown-logout-btn",
+) as HTMLButtonElement;
 
 // Top-Left Controls
-const btnMapSettings = document.getElementById("btn-map-settings") as HTMLButtonElement;
+const btnMapSettings = document.getElementById(
+  "btn-map-settings",
+) as HTMLButtonElement;
 const btnEditMap = document.getElementById("btn-edit-map") as HTMLButtonElement;
-const mapEditBanner = document.getElementById("map-edit-banner") as HTMLDivElement;
-const editBannerAssetText = document.getElementById("edit-banner-asset-text") as HTMLElement;
-const btnBannerDone = document.getElementById("btn-banner-done") as HTMLButtonElement | null;
-const mapEditorSidebar = document.getElementById("map-editor-sidebar") as HTMLElement;
-const btnCloseMapEditor = document.getElementById("btn-close-map-editor") as HTMLButtonElement;
-const btnResetTileColor = document.getElementById("btn-reset-tile-color") as HTMLButtonElement | null;
-const editorTileColorInput = document.getElementById("editor-tile-color-input") as HTMLInputElement | null;
-const editorTileHexInput = document.getElementById("editor-tile-hex-input") as HTMLInputElement | null;
-const editorColorCircle = document.getElementById("editor-color-circle") as HTMLElement | null;
-const editorColorPalette = document.getElementById("editor-color-palette") as HTMLElement | null;
-const brushHeadline = document.getElementById("brush-headline") as HTMLElement | null;
-const brushColorText = document.getElementById("brush-color-text") as HTMLElement | null;
+const mapEditBanner = document.getElementById(
+  "map-edit-banner",
+) as HTMLDivElement;
+const editBannerAssetText = document.getElementById(
+  "edit-banner-asset-text",
+) as HTMLElement;
+const btnBannerDone = document.getElementById(
+  "btn-banner-done",
+) as HTMLButtonElement | null;
+const mapEditorSidebar = document.getElementById(
+  "map-editor-sidebar",
+) as HTMLElement;
+const btnCloseMapEditor = document.getElementById(
+  "btn-close-map-editor",
+) as HTMLButtonElement;
+const btnResetTileColor = document.getElementById(
+  "btn-reset-tile-color",
+) as HTMLButtonElement | null;
+const editorTileColorInput = document.getElementById(
+  "editor-tile-color-input",
+) as HTMLInputElement | null;
+const editorTileHexInput = document.getElementById(
+  "editor-tile-hex-input",
+) as HTMLInputElement | null;
+const editorColorCircle = document.getElementById(
+  "editor-color-circle",
+) as HTMLElement | null;
+const editorColorPalette = document.getElementById(
+  "editor-color-palette",
+) as HTMLElement | null;
+const brushHeadline = document.getElementById(
+  "brush-headline",
+) as HTMLElement | null;
+const brushColorText = document.getElementById(
+  "brush-color-text",
+) as HTMLElement | null;
 const brushDot = document.getElementById("brush-dot") as HTMLElement | null;
-const brushPatternLayer = document.getElementById("brush-pattern-layer") as HTMLElement | null;
-const brushTintLayer = document.getElementById("brush-tint-layer") as HTMLElement | null;
-const plainTilePreviewSquare = document.getElementById("plain-tile-preview-square") as HTMLElement | null;
+const brushPatternLayer = document.getElementById(
+  "brush-pattern-layer",
+) as HTMLElement | null;
+const brushTintLayer = document.getElementById(
+  "brush-tint-layer",
+) as HTMLElement | null;
+const plainTilePreviewSquare = document.getElementById(
+  "plain-tile-preview-square",
+) as HTMLElement | null;
 
 // Top Bar Right Actions (Map, Ping, Loss)
 const btnOpenMap = document.getElementById("btn-open-map") as HTMLButtonElement;
-const topbarPingStat = document.getElementById("topbar-ping-stat") as HTMLSpanElement;
-const topbarLossStat = document.getElementById("topbar-loss-stat") as HTMLSpanElement;
+const topbarPingStat = document.getElementById(
+  "topbar-ping-stat",
+) as HTMLSpanElement;
+const topbarLossStat = document.getElementById(
+  "topbar-loss-stat",
+) as HTMLSpanElement;
 
 // DOM Elements - Map Modal (Grid of 4)
 const mapModal = document.getElementById("map-modal") as HTMLDivElement;
-const mapCurrentSpaceName = document.getElementById("map-current-space-name") as HTMLElement;
-const btnAdminAddSpace = document.getElementById("btn-admin-add-space") as HTMLButtonElement;
-const btnCloseMapModal = document.getElementById("btn-close-map-modal") as HTMLButtonElement;
-const mapCategoryTabs = document.getElementById("map-category-tabs") as HTMLElement;
+const mapCurrentSpaceName = document.getElementById(
+  "map-current-space-name",
+) as HTMLElement;
+const btnAdminAddSpace = document.getElementById(
+  "btn-admin-add-space",
+) as HTMLButtonElement;
+const btnCloseMapModal = document.getElementById(
+  "btn-close-map-modal",
+) as HTMLButtonElement;
+const mapCategoryTabs = document.getElementById(
+  "map-category-tabs",
+) as HTMLElement;
 const mapSpacesGrid = document.getElementById("map-spaces-grid") as HTMLElement;
 
 // DOM Elements - Update Character Modal
 const modal = document.getElementById("onboarding-modal") as HTMLDivElement;
-const btnCloseModal = document.getElementById("btn-close-modal") as HTMLButtonElement;
+const btnCloseModal = document.getElementById(
+  "btn-close-modal",
+) as HTMLButtonElement;
 const profileForm = document.getElementById("profile-form") as HTMLFormElement;
 const nameInput = document.getElementById("player-name") as HTMLInputElement;
-const currentUsernameTag = document.getElementById("current-username-tag") as HTMLSpanElement;
-const customColorInput = document.getElementById("custom-color-picker") as HTMLInputElement;
-const colorGrid = document.getElementById("color-grid") as HTMLDivElement;
-const previewDot = document.getElementById("preview-dot") as HTMLDivElement;
-const previewAvatar = document.getElementById("preview-avatar") as HTMLImageElement;
-const previewDirectionsBar = document.getElementById("preview-directions-bar") as HTMLDivElement;
-const previewStatusHint = document.getElementById("preview-status-hint") as HTMLDivElement;
+const currentUsernameTag = document.getElementById(
+  "current-username-tag",
+) as HTMLSpanElement;
+const customColorInput = document.getElementById(
+  "custom-color-picker",
+) as HTMLInputElement | null;
+const colorGrid = document.getElementById("color-grid") as HTMLDivElement | null;
+const previewAvatar = document.getElementById(
+  "preview-avatar",
+) as HTMLImageElement;
+const previewDirectionsBar = document.getElementById(
+  "preview-directions-bar",
+) as HTMLDivElement;
+const previewStatusHint = document.getElementById(
+  "preview-status-hint",
+) as HTMLDivElement;
 const previewName = document.getElementById("preview-name") as HTMLDivElement;
 const btnJoin = document.getElementById("btn-join") as HTMLButtonElement;
 
 // Switch and Sections for Custom Sprites
-const switchUploadPictures = document.getElementById("switch-upload-pictures") as HTMLInputElement;
-const dotInputSection = document.getElementById("dot-input-section") as HTMLDivElement;
-const uploadPicturesSection = document.getElementById("upload-pictures-section") as HTMLDivElement;
+const switchUploadPictures = document.getElementById(
+  "switch-upload-pictures",
+) as HTMLInputElement;
+const defaultCharacterSection = document.getElementById(
+  "default-character-section",
+) as HTMLDivElement | null;
+const uploadPicturesSection = document.getElementById(
+  "upload-pictures-section",
+) as HTMLDivElement;
 
 // DOM Elements - My Space Settings Modal
-const mySpaceSettingsModal = document.getElementById("my-space-settings-modal") as HTMLDivElement;
-const btnCloseMySpaceSettings = document.getElementById("btn-close-my-space-settings") as HTMLButtonElement;
-const mySpaceSettingsForm = document.getElementById("my-space-settings-form") as HTMLFormElement;
-const mySpaceInputName = document.getElementById("my-space-input-name") as HTMLInputElement;
-const mySpaceSwitchPublic = document.getElementById("my-space-switch-public") as HTMLInputElement;
-const mySpaceWhitelistSection = document.getElementById("my-space-whitelist-section") as HTMLDivElement;
-const mySpaceInviteUsername = document.getElementById("my-space-invite-username") as HTMLInputElement;
-const btnAddMySpaceInvite = document.getElementById("btn-add-my-space-invite") as HTMLButtonElement;
-const mySpaceTagsCount = document.getElementById("my-space-tags-count") as HTMLElement;
-const mySpaceTagsContainer = document.getElementById("my-space-tags-container") as HTMLElement;
+const mySpaceSettingsModal = document.getElementById(
+  "my-space-settings-modal",
+) as HTMLDivElement;
+const btnCloseMySpaceSettings = document.getElementById(
+  "btn-close-my-space-settings",
+) as HTMLButtonElement;
+const mySpaceSettingsForm = document.getElementById(
+  "my-space-settings-form",
+) as HTMLFormElement;
+const mySpaceInputName = document.getElementById(
+  "my-space-input-name",
+) as HTMLInputElement;
+const mySpaceSwitchPublic = document.getElementById(
+  "my-space-switch-public",
+) as HTMLInputElement;
+const mySpaceWhitelistSection = document.getElementById(
+  "my-space-whitelist-section",
+) as HTMLDivElement;
+const mySpaceInviteUsername = document.getElementById(
+  "my-space-invite-username",
+) as HTMLInputElement;
+const btnAddMySpaceInvite = document.getElementById(
+  "btn-add-my-space-invite",
+) as HTMLButtonElement;
+const mySpaceTagsCount = document.getElementById(
+  "my-space-tags-count",
+) as HTMLElement;
+const mySpaceTagsContainer = document.getElementById(
+  "my-space-tags-container",
+) as HTMLElement;
 
 // DOM Elements - Superadmin Space Modal
-const adminSpaceModal = document.getElementById("admin-space-modal") as HTMLDivElement;
-const adminSpaceModalTitle = document.getElementById("admin-space-modal-title") as HTMLElement;
-const btnCloseAdminSpaceModal = document.getElementById("btn-close-admin-space-modal") as HTMLButtonElement;
-const adminSpaceForm = document.getElementById("admin-space-form") as HTMLFormElement;
-const adminSpaceEditId = document.getElementById("admin-space-edit-id") as HTMLInputElement;
-const adminSpaceName = document.getElementById("admin-space-name") as HTMLInputElement;
-const adminSpaceCategorySelect = document.getElementById("admin-space-category-select") as HTMLSelectElement;
-const adminSpaceCategoryCustom = document.getElementById("admin-space-category-custom") as HTMLInputElement;
-const adminSpaceSwitchPublic = document.getElementById("admin-space-switch-public") as HTMLInputElement;
-const adminSpaceWhitelistSection = document.getElementById("admin-space-whitelist-section") as HTMLDivElement;
-const adminSpaceInviteUsername = document.getElementById("admin-space-invite-username") as HTMLInputElement;
-const btnAddAdminSpaceInvite = document.getElementById("btn-add-admin-space-invite") as HTMLButtonElement;
-const adminSpaceTagsCount = document.getElementById("admin-space-tags-count") as HTMLElement;
-const adminSpaceTagsContainer = document.getElementById("admin-space-tags-container") as HTMLElement;
+const adminSpaceModal = document.getElementById(
+  "admin-space-modal",
+) as HTMLDivElement;
+const adminSpaceModalTitle = document.getElementById(
+  "admin-space-modal-title",
+) as HTMLElement;
+const btnCloseAdminSpaceModal = document.getElementById(
+  "btn-close-admin-space-modal",
+) as HTMLButtonElement;
+const adminSpaceForm = document.getElementById(
+  "admin-space-form",
+) as HTMLFormElement;
+const adminSpaceEditId = document.getElementById(
+  "admin-space-edit-id",
+) as HTMLInputElement;
+const adminSpaceName = document.getElementById(
+  "admin-space-name",
+) as HTMLInputElement;
+const adminSpaceCategorySelect = document.getElementById(
+  "admin-space-category-select",
+) as HTMLSelectElement;
+const adminSpaceCategoryCustom = document.getElementById(
+  "admin-space-category-custom",
+) as HTMLInputElement;
+const adminSpaceSwitchPublic = document.getElementById(
+  "admin-space-switch-public",
+) as HTMLInputElement;
+const adminSpaceWhitelistSection = document.getElementById(
+  "admin-space-whitelist-section",
+) as HTMLDivElement;
+const adminSpaceInviteUsername = document.getElementById(
+  "admin-space-invite-username",
+) as HTMLInputElement;
+const btnAddAdminSpaceInvite = document.getElementById(
+  "btn-add-admin-space-invite",
+) as HTMLButtonElement;
+const adminSpaceTagsCount = document.getElementById(
+  "admin-space-tags-count",
+) as HTMLElement;
+const adminSpaceTagsContainer = document.getElementById(
+  "admin-space-tags-container",
+) as HTMLElement;
 
 // Application State
 let currentUser: AuthUser | null = null;
@@ -158,13 +319,15 @@ let tempMySpaceWhitelist: string[] = [];
 let tempAdminSpaceWhitelist: string[] = [];
 let spacesRefreshTimer: number | null = null;
 
-const uploadedPictures: Record<DirectionSlot, string | undefined> = {
-  idle: undefined,
-  left: undefined,
-  right: undefined,
-  up: undefined,
-  down: undefined,
+const uploadedFrames: Record<DirectionSlot, string[]> = {
+  idle: [...DEFAULT_AVATARS.idle],
+  left: [...DEFAULT_AVATARS.left],
+  right: [...DEFAULT_AVATARS.right],
+  up: [...DEFAULT_AVATARS.up],
+  down: [...DEFAULT_AVATARS.down],
 };
+let previewAnimTimer: number | null = null;
+let previewFrameIndex = 0;
 
 function getApiUrl(path: string): string {
   const protocol = window.location.protocol;
@@ -282,7 +445,9 @@ registerForm.addEventListener("submit", async (e) => {
     return;
   }
   if (password !== confirmPassword) {
-    showAuthAlert("Passwords do not match. Please verify your password confirmation.");
+    showAuthAlert(
+      "Passwords do not match. Please verify your password confirmation.",
+    );
     return;
   }
 
@@ -312,6 +477,18 @@ registerForm.addEventListener("submit", async (e) => {
     currentUser = data.user;
     localStorage.setItem("lepark_auth_token", authToken);
     localStorage.setItem("lepark_auth_user", JSON.stringify(currentUser));
+
+    // Ensure newly created account starts with the male sprites assets with all movements
+    const slots: DirectionSlot[] = ["idle", "left", "right", "up", "down"];
+    slots.forEach((s) => {
+      uploadedFrames[s] = [...DEFAULT_AVATARS[s]];
+      renderSlotFrames(s);
+    });
+    localStorage.setItem("player_avatar_frames", JSON.stringify(uploadedFrames));
+    localStorage.setItem("player_upload_switch", "false");
+    switchUploadPictures.checked = false;
+    defaultCharacterSection?.classList.remove("hidden");
+    uploadPicturesSection.classList.add("hidden");
 
     closeAuthModal();
     await enterGameSession();
@@ -422,6 +599,7 @@ function handleLogout() {
 // ==========================================
 
 function setupColorSwatches() {
+  if (!colorGrid) return;
   colorGrid.innerHTML = "";
   DEFAULT_PRESET_COLORS.forEach((colorHex) => {
     const swatch = document.createElement("button");
@@ -444,10 +622,12 @@ function setupColorSwatches() {
 
 function selectColor(colorHex: string) {
   selectedColor = colorHex;
-  customColorInput.value = colorHex;
+  if (customColorInput) customColorInput.value = colorHex;
 
   document.querySelectorAll(".color-option").forEach((el) => {
-    if (el.getAttribute("data-color")?.toLowerCase() === colorHex.toLowerCase()) {
+    if (
+      el.getAttribute("data-color")?.toLowerCase() === colorHex.toLowerCase()
+    ) {
       el.classList.add("selected");
     } else {
       el.classList.remove("selected");
@@ -457,44 +637,57 @@ function selectColor(colorHex: string) {
   updatePreview();
 }
 
+function startPreviewAnimation() {
+  if (previewAnimTimer !== null) return;
+  previewAnimTimer = window.setInterval(() => {
+    previewFrameIndex++;
+    updatePreviewFrame();
+  }, 166);
+}
+
 function updatePreview() {
   const inputVal = nameInput.value.trim();
   const fallbackUsername = currentUser ? currentUser.username : "Player";
   const currentName = inputVal.length > 0 ? inputVal : fallbackUsername;
 
   previewName.textContent = currentName;
-  previewDot.style.backgroundColor = selectedColor;
+  updatePreviewFrame();
+}
 
+function updatePreviewFrame() {
   const isSwitchOn = switchUploadPictures.checked;
 
-  if (isSwitchOn && uploadedPictures.idle) {
-    previewDot.classList.add("hidden");
-    previewAvatar.classList.remove("hidden");
-    previewDirectionsBar.classList.remove("hidden");
+  if (isSwitchOn && uploadedFrames.idle.length > 0) {
+    const frames =
+      uploadedFrames[activePreviewDir].length > 0
+        ? uploadedFrames[activePreviewDir]
+        : uploadedFrames.idle;
 
-    const currentImg = uploadedPictures[activePreviewDir] || uploadedPictures.idle;
+    const currentImg = frames[previewFrameIndex % frames.length];
     previewAvatar.src = currentImg;
 
     if (activePreviewDir === "idle") {
       previewStatusHint.classList.add("hidden");
-    } else if (uploadedPictures[activePreviewDir]) {
-      previewStatusHint.textContent = `Showing custom ${activePreviewDir} picture`;
+    } else if (uploadedFrames[activePreviewDir].length > 0) {
+      previewStatusHint.textContent = `Showing custom ${activePreviewDir} (${uploadedFrames[activePreviewDir].length} frame${uploadedFrames[activePreviewDir].length > 1 ? "s" : ""})`;
       previewStatusHint.classList.remove("hidden");
     } else {
       previewStatusHint.textContent = `Using standing still fallback for ${activePreviewDir}`;
       previewStatusHint.classList.remove("hidden");
     }
   } else {
-    previewDot.classList.remove("hidden");
-    previewAvatar.classList.add("hidden");
-    previewDirectionsBar.classList.add("hidden");
+    // Default male avatar preview (animating walk cycles for directions, still for idle)
+    const defaultFrames =
+      DEFAULT_AVATARS[activePreviewDir] || DEFAULT_AVATARS.idle;
+    const currentImg = defaultFrames[previewFrameIndex % defaultFrames.length];
+    previewAvatar.src = currentImg;
 
-    if (isSwitchOn && !uploadedPictures.idle) {
-      previewStatusHint.textContent = "Upload Standing Still picture to activate custom character";
-      previewStatusHint.classList.remove("hidden");
+    if (activePreviewDir === "idle") {
+      previewStatusHint.textContent = "Default male character (standing still)";
     } else {
-      previewStatusHint.classList.add("hidden");
+      previewStatusHint.textContent = `Default male character (${activePreviewDir} walk)`;
     }
+    previewStatusHint.classList.remove("hidden");
   }
 }
 
@@ -532,196 +725,224 @@ function processImageFile(file: File): Promise<string> {
   });
 }
 
+function renderSlotFrames(slot: DirectionSlot) {
+  const container = document.getElementById(`frames-strip-${slot}`);
+  const counter = document.getElementById(`badge-counter-${slot}`);
+  if (!container) return;
+
+  const frames = uploadedFrames[slot] || [];
+  if (counter) {
+    counter.textContent = `${frames.length} / ${MAX_AVATAR_FRAMES}`;
+    if (frames.length > 0) {
+      counter.classList.add("has-frames");
+    } else {
+      counter.classList.remove("has-frames");
+    }
+  }
+
+  container.innerHTML = "";
+
+  frames.forEach((frameUrl, idx) => {
+    const card = document.createElement("div");
+    card.className = "frame-card";
+
+    const img = document.createElement("img");
+    img.className = "frame-thumb-img";
+    img.src = frameUrl;
+    img.alt = `${slot} frame ${idx + 1}`;
+
+    const pill = document.createElement("span");
+    pill.className = "frame-index-pill";
+    pill.textContent = `#${idx + 1}`;
+
+    const delBtn = document.createElement("button");
+    delBtn.type = "button";
+    delBtn.className = "btn-delete-frame";
+    delBtn.title = "Delete frame";
+    delBtn.textContent = "✕";
+    delBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      deleteSlotFrame(slot, idx);
+    });
+
+    card.appendChild(img);
+    card.appendChild(pill);
+    card.appendChild(delBtn);
+    container.appendChild(card);
+  });
+
+  if (frames.length < MAX_AVATAR_FRAMES) {
+    const addDropzone = document.createElement("div");
+    addDropzone.className = "add-frame-dropzone";
+    addDropzone.title = `Add frame (${frames.length + 1} of ${MAX_AVATAR_FRAMES})`;
+    addDropzone.innerHTML = `
+      <span class="add-frame-icon">+</span>
+      <span class="add-frame-text">Add Frame</span>
+    `;
+
+    addDropzone.addEventListener("click", () => {
+      const fileInput = document.getElementById(
+        `file-${slot}`,
+      ) as HTMLInputElement;
+      if (fileInput) fileInput.click();
+    });
+
+    addDropzone.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      addDropzone.style.borderColor = "var(--primary-accent)";
+    });
+
+    addDropzone.addEventListener("dragleave", () => {
+      addDropzone.style.borderColor = "";
+    });
+
+    addDropzone.addEventListener("drop", async (e) => {
+      e.preventDefault();
+      addDropzone.style.borderColor = "";
+      const files = e.dataTransfer?.files;
+      if (files && files.length > 0) {
+        await handleFilesForSlot(slot, Array.from(files));
+      }
+    });
+
+    container.appendChild(addDropzone);
+  }
+}
+
+function deleteSlotFrame(slot: DirectionSlot, index: number) {
+  if (uploadedFrames[slot] && index >= 0 && index < uploadedFrames[slot].length) {
+    uploadedFrames[slot].splice(index, 1);
+    renderSlotFrames(slot);
+    updatePreview();
+  }
+}
+
+async function handleFilesForSlot(slot: DirectionSlot, files: File[]) {
+  const imageFiles = files.filter((f) => f.type.startsWith("image/"));
+  if (imageFiles.length === 0) return;
+
+  const currentCount = uploadedFrames[slot].length;
+  const remaining = MAX_AVATAR_FRAMES - currentCount;
+  if (remaining <= 0) return;
+
+  const toProcess = imageFiles.slice(0, remaining);
+  for (const file of toProcess) {
+    try {
+      const dataUrl = await processImageFile(file);
+      uploadedFrames[slot].push(dataUrl);
+    } catch (err) {
+      console.error("Error processing frame image:", err);
+    }
+  }
+
+  renderSlotFrames(slot);
+  updatePreview();
+}
+
 function setupUploadSlots() {
   const slots: DirectionSlot[] = ["idle", "left", "right", "up", "down"];
 
   slots.forEach((slot) => {
-    const dropzone = document.getElementById(`dropzone-${slot}`) as HTMLDivElement;
-    const fileInput = document.getElementById(`file-${slot}`) as HTMLInputElement;
+    const fileInput = document.getElementById(
+      `file-${slot}`,
+    ) as HTMLInputElement;
+    const stripContainer = document.getElementById(
+      `frames-strip-${slot}`,
+    ) as HTMLDivElement;
 
-    if (!dropzone || !fileInput) return;
-
-    dropzone.addEventListener("click", (e) => {
-      if ((e.target as HTMLElement).closest(".btn-remove-picture")) return;
-      fileInput.click();
-    });
-
-    fileInput.addEventListener("change", async () => {
-      const file = fileInput.files?.[0];
-      if (!file) return;
-      try {
-        const dataUrl = await processImageFile(file);
-        setSlotPicture(slot, dataUrl);
-      } catch (err) {
-        console.error("Error processing image file:", err);
-      }
-    });
-
-    dropzone.addEventListener("dragover", (e) => {
-      e.preventDefault();
-      dropzone.style.borderColor = "var(--primary-accent)";
-    });
-
-    dropzone.addEventListener("dragleave", () => {
-      dropzone.style.borderColor = "";
-    });
-
-    dropzone.addEventListener("drop", async (e) => {
-      e.preventDefault();
-      dropzone.style.borderColor = "";
-      const file = e.dataTransfer?.files?.[0];
-      if (file && file.type.startsWith("image/")) {
-        try {
-          const dataUrl = await processImageFile(file);
-          setSlotPicture(slot, dataUrl);
-        } catch (err) {
-          console.error("Error processing dropped image:", err);
+    if (fileInput) {
+      fileInput.addEventListener("change", async () => {
+        if (fileInput.files && fileInput.files.length > 0) {
+          await handleFilesForSlot(slot, Array.from(fileInput.files));
+          fileInput.value = "";
         }
-      }
-    });
-  });
+      });
+    }
 
-  document.querySelectorAll(".btn-remove-picture").forEach((btn) => {
-    btn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const slot = (btn as HTMLElement).getAttribute("data-slot") as DirectionSlot;
-      if (slot) {
-        clearSlotPicture(slot);
-      }
-    });
+    if (stripContainer) {
+      stripContainer.addEventListener("dragover", (e) => {
+        e.preventDefault();
+      });
+      stripContainer.addEventListener("drop", async (e) => {
+        e.preventDefault();
+        if (e.dataTransfer?.files && e.dataTransfer.files.length > 0) {
+          await handleFilesForSlot(slot, Array.from(e.dataTransfer.files));
+        }
+      });
+    }
   });
 
   document.querySelectorAll(".preview-dir-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
-      const dir = (btn as HTMLElement).getAttribute("data-dir") as DirectionSlot;
+      const dir = (btn as HTMLElement).getAttribute(
+        "data-dir",
+      ) as DirectionSlot;
       if (dir) {
         activePreviewDir = dir;
-        document.querySelectorAll(".preview-dir-btn").forEach((b) => b.classList.remove("active"));
+        document
+          .querySelectorAll(".preview-dir-btn")
+          .forEach((b) => b.classList.remove("active"));
         btn.classList.add("active");
         updatePreview();
       }
     });
   });
 
-  const btnLoadDemo = document.getElementById("btn-load-demo-sprites") as HTMLButtonElement;
+  const btnLoadDemo = document.getElementById(
+    "btn-load-demo-sprites",
+  ) as HTMLButtonElement;
   if (btnLoadDemo) {
     btnLoadDemo.addEventListener("click", () => {
       slots.forEach((s) => {
-        const demoImg = generateDemoSprite(s);
-        setSlotPicture(s, demoImg);
+        uploadedFrames[s] = [...DEFAULT_AVATARS[s]];
+        renderSlotFrames(s);
       });
+      updatePreview();
     });
   }
 
-  const btnClearAll = document.getElementById("btn-clear-all-sprites") as HTMLButtonElement;
+  const btnClearAll = document.getElementById(
+    "btn-clear-all-sprites",
+  ) as HTMLButtonElement;
   if (btnClearAll) {
     btnClearAll.addEventListener("click", () => {
-      slots.forEach((s) => clearSlotPicture(s));
+      slots.forEach((s) => {
+        uploadedFrames[s] = [];
+        renderSlotFrames(s);
+      });
+      updatePreview();
     });
   }
-}
 
-function generateDemoSprite(direction: DirectionSlot): string {
-  const canvas = document.createElement("canvas");
-  canvas.width = 48;
-  canvas.height = 48;
-  const ctx = canvas.getContext("2d")!;
-  ctx.imageSmoothingEnabled = false;
-
-  ctx.clearRect(0, 0, 48, 48);
-
-  ctx.fillStyle = "#3B8282";
-  ctx.beginPath();
-  ctx.roundRect(14, 6, 20, 14, 6);
-  ctx.fill();
-
-  ctx.fillStyle = "#ECA239";
-  ctx.beginPath();
-  ctx.roundRect(16, 12, 16, 14, 4);
-  ctx.fill();
-
-  if (direction === "idle") {
-    ctx.fillStyle = "#1E3131";
-    ctx.fillRect(19, 17, 3, 3);
-    ctx.fillRect(26, 17, 3, 3);
-    ctx.fillRect(22, 22, 4, 1);
-  } else if (direction === "left") {
-    ctx.fillStyle = "#1E3131";
-    ctx.fillRect(17, 17, 3, 3);
-    ctx.fillRect(23, 17, 2, 3);
-  } else if (direction === "right") {
-    ctx.fillStyle = "#1E3131";
-    ctx.fillRect(23, 17, 2, 3);
-    ctx.fillRect(28, 17, 3, 3);
-  } else if (direction === "up") {
-    ctx.fillStyle = "#3B8282";
-    ctx.beginPath();
-    ctx.roundRect(16, 12, 16, 14, 4);
-    ctx.fill();
-  } else if (direction === "down") {
-    ctx.fillStyle = "#1E3131";
-    ctx.fillRect(19, 18, 3, 3);
-    ctx.fillRect(26, 18, 3, 3);
-    ctx.fillRect(22, 23, 4, 1);
-  }
-
-  return canvas.toDataURL("image/png");
-}
-
-function setSlotPicture(slot: DirectionSlot, dataUrl: string) {
-  uploadedPictures[slot] = dataUrl;
-  const emptyState = document.getElementById(`empty-${slot}`);
-  const filledState = document.getElementById(`filled-${slot}`);
-  const thumb = document.getElementById(`thumb-${slot}`) as HTMLImageElement;
-
-  if (emptyState && filledState && thumb) {
-    thumb.src = dataUrl;
-    emptyState.classList.add("hidden");
-    filledState.classList.remove("hidden");
-  }
-
-  updatePreview();
-}
-
-function clearSlotPicture(slot: DirectionSlot) {
-  uploadedPictures[slot] = undefined;
-  const emptyState = document.getElementById(`empty-${slot}`);
-  const filledState = document.getElementById(`filled-${slot}`);
-  const thumb = document.getElementById(`thumb-${slot}`) as HTMLImageElement;
-  const fileInput = document.getElementById(`file-${slot}`) as HTMLInputElement;
-
-  if (emptyState && filledState && thumb) {
-    thumb.src = "";
-    filledState.classList.add("hidden");
-    emptyState.classList.remove("hidden");
-  }
-  if (fileInput) fileInput.value = "";
-
-  updatePreview();
+  startPreviewAnimation();
 }
 
 switchUploadPictures.addEventListener("change", () => {
   if (switchUploadPictures.checked) {
-    dotInputSection.classList.add("hidden");
+    defaultCharacterSection?.classList.add("hidden");
     uploadPicturesSection.classList.remove("hidden");
   } else {
-    dotInputSection.classList.remove("hidden");
+    defaultCharacterSection?.classList.remove("hidden");
     uploadPicturesSection.classList.add("hidden");
   }
   updatePreview();
 });
 
 nameInput.addEventListener("input", updatePreview);
-customColorInput.addEventListener("input", (e) => {
-  selectColor((e.target as HTMLInputElement).value);
-});
+if (customColorInput) {
+  customColorInput.addEventListener("input", (e) => {
+    selectColor((e.target as HTMLInputElement).value);
+  });
+}
 
 // Update Character Modal Open / Close
 function openUpdateCharacterModal() {
   btnJoin.textContent = "Save Changes";
   nameInput.value = currentUser?.displayName || "";
   if (currentUsernameTag) {
-    currentUsernameTag.textContent = currentUser ? `@${currentUser.username}` : "";
+    currentUsernameTag.textContent = currentUser
+      ? `@${currentUser.username}`
+      : "";
   }
   updatePreview();
 
@@ -750,17 +971,28 @@ btnCloseModal.addEventListener("click", () => {
 
 function computeActiveAvatars(): PlayerAvatars | undefined {
   const isSwitchOn = switchUploadPictures.checked;
-  if (!isSwitchOn || !uploadedPictures.idle) {
+  if (!isSwitchOn || uploadedFrames.idle.length === 0) {
     return undefined;
   }
 
-  const idle = uploadedPictures.idle;
+  // Check if actual custom base64 frames exist
+  const slots: DirectionSlot[] = ["idle", "left", "right", "up", "down"];
+  const hasCustomFrames = slots.some((s) =>
+    uploadedFrames[s].some((f) => typeof f === "string" && f.startsWith("data:image/"))
+  );
+  if (!hasCustomFrames) {
+    return undefined;
+  }
+
+  const idle = uploadedFrames.idle.filter((f) => typeof f === "string" && f.startsWith("data:image/"));
+  if (idle.length === 0) return undefined;
+
   return {
     idle,
-    left: uploadedPictures.left || idle,
-    right: uploadedPictures.right || idle,
-    up: uploadedPictures.up || idle,
-    down: uploadedPictures.down || idle,
+    left: uploadedFrames.left.length > 0 ? uploadedFrames.left : idle,
+    right: uploadedFrames.right.length > 0 ? uploadedFrames.right : idle,
+    up: uploadedFrames.up.length > 0 ? uploadedFrames.up : idle,
+    down: uploadedFrames.down.length > 0 ? uploadedFrames.down : idle,
   };
 }
 
@@ -801,19 +1033,16 @@ async function handleUpdateCharacter(e: Event) {
 
   try {
     localStorage.setItem("player_color", color);
-    localStorage.setItem("player_upload_switch", switchUploadPictures.checked ? "true" : "false");
-    if (uploadedPictures.idle) localStorage.setItem("player_pic_idle", uploadedPictures.idle);
-    else localStorage.removeItem("player_pic_idle");
-    if (uploadedPictures.left) localStorage.setItem("player_pic_left", uploadedPictures.left);
-    else localStorage.removeItem("player_pic_left");
-    if (uploadedPictures.right) localStorage.setItem("player_pic_right", uploadedPictures.right);
-    else localStorage.removeItem("player_pic_right");
-    if (uploadedPictures.up) localStorage.setItem("player_pic_up", uploadedPictures.up);
-    else localStorage.removeItem("player_pic_up");
-    if (uploadedPictures.down) localStorage.setItem("player_pic_down", uploadedPictures.down);
-    else localStorage.removeItem("player_pic_down");
+    localStorage.setItem(
+      "player_upload_switch",
+      switchUploadPictures.checked ? "true" : "false",
+    );
+    localStorage.setItem(
+      "player_avatar_frames",
+      JSON.stringify(uploadedFrames),
+    );
   } catch (err) {
-    console.warn("Could not save pictures to localStorage:", err);
+    console.warn("Could not save avatar frames to localStorage:", err);
   }
 
   closeUpdateCharacterModal();
@@ -879,7 +1108,9 @@ dropdownMySpaceBtn.addEventListener("click", () => {
   if (myPersonalSpace) {
     switchSpace(myPersonalSpace.id, myPersonalSpace.name);
   } else {
-    alert("Personal space is still initializing. Please try again in a moment.");
+    alert(
+      "Personal space is still initializing. Please try again in a moment.",
+    );
   }
 });
 
@@ -947,7 +1178,9 @@ function setupMapEditorColorPicker() {
       swatch.style.backgroundColor = preset.hex;
       swatch.title = `${preset.name} (${preset.hex})`;
       swatch.setAttribute("data-color", preset.hex);
-      if (currentSelectedTileColor?.toLowerCase() === preset.hex.toLowerCase()) {
+      if (
+        currentSelectedTileColor?.toLowerCase() === preset.hex.toLowerCase()
+      ) {
         swatch.classList.add("selected");
       }
     }
@@ -988,7 +1221,8 @@ function selectTileColor(colorHex: string | null) {
 
   if (colorHex) {
     if (editorTileColorInput) editorTileColorInput.value = colorHex;
-    if (editorTileHexInput) editorTileHexInput.value = colorHex.replace("#", "").toUpperCase();
+    if (editorTileHexInput)
+      editorTileHexInput.value = colorHex.replace("#", "").toUpperCase();
     if (editorColorCircle) editorColorCircle.style.backgroundColor = colorHex;
   }
 
@@ -997,7 +1231,11 @@ function selectTileColor(colorHex: string | null) {
     const swatchColor = el.getAttribute("data-color");
     if (!colorHex && el.classList.contains("swatch-none")) {
       el.classList.add("selected");
-    } else if (colorHex && swatchColor && swatchColor.toLowerCase() === colorHex.toLowerCase()) {
+    } else if (
+      colorHex &&
+      swatchColor &&
+      swatchColor.toLowerCase() === colorHex.toLowerCase()
+    ) {
       el.classList.add("selected");
     } else {
       el.classList.remove("selected");
@@ -1049,10 +1287,19 @@ function updateBrushPreview() {
 
   if (brushPatternLayer) {
     if (currentSelectedAssetId === "birch_floor_150") {
-      brushPatternLayer.style.backgroundImage = 'url("/assets/birch_floor_150.png")';
+      brushPatternLayer.style.backgroundImage =
+        'url("/assets/birch_floor_150.png")';
       brushPatternLayer.style.backgroundColor = "transparent";
     } else if (currentSelectedAssetId === "grass_150") {
       brushPatternLayer.style.backgroundImage = 'url("/assets/grass_150.png")';
+      brushPatternLayer.style.backgroundColor = "transparent";
+    } else if (currentSelectedAssetId === "wall_half_150") {
+      brushPatternLayer.style.backgroundImage =
+        'url("/assets/wall_half_150.png")';
+      brushPatternLayer.style.backgroundColor = "transparent";
+    } else if (currentSelectedAssetId === "wall_top_150") {
+      brushPatternLayer.style.backgroundImage =
+        'url("/assets/wall_top_150.png")';
       brushPatternLayer.style.backgroundColor = "transparent";
     } else {
       // Plain tile
@@ -1072,10 +1319,16 @@ function updateBrushPreview() {
 
 function updateEditBannerText() {
   if (!editBannerAssetText) return;
+  const isWall =
+    currentSelectedAssetId === "wall_half_150" ||
+    currentSelectedAssetId === "wall_top_150";
+  const wallTag = isWall
+    ? `<span class="banner-wall-tag">🧱 Impassable Wall</span> `
+    : "";
   const colorMarkup = currentSelectedTileColor
     ? `<span class="banner-color-indicator" style="background:${currentSelectedTileColor};"></span><strong>${currentSelectedTileColor.toUpperCase()}</strong>`
     : `<em>(No Tint)</em>`;
-  editBannerAssetText.innerHTML = `Active: <strong>${currentSelectedAssetName}</strong> • Color: ${colorMarkup}`;
+  editBannerAssetText.innerHTML = `${wallTag}Active: <strong>${currentSelectedAssetName}</strong> • Color: ${colorMarkup}`;
 }
 
 function enterEditMode() {
@@ -1178,7 +1431,8 @@ if (btnBannerDone) {
   });
 }
 
-const editorAssetCards = document.querySelectorAll<HTMLButtonElement>(".editor-asset-card");
+const editorAssetCards =
+  document.querySelectorAll<HTMLButtonElement>(".editor-asset-card");
 editorAssetCards.forEach((card) => {
   card.addEventListener("click", () => {
     const id = card.dataset.assetId || "birch_floor_150";
@@ -1243,15 +1497,11 @@ function updateTopBarUI() {
   }
 
   // Update Avatar Visual in Top Bar
-  if (uploadedPictures.idle) {
-    topbarAvatarImg.src = uploadedPictures.idle;
-    topbarAvatarImg.classList.remove("hidden");
-    topbarAvatarDot.classList.add("hidden");
-  } else {
-    topbarAvatarDot.style.backgroundColor = selectedColor;
-    topbarAvatarDot.classList.remove("hidden");
-    topbarAvatarImg.classList.add("hidden");
-  }
+  const isCustomActive = switchUploadPictures.checked && uploadedFrames.idle.length > 0 && uploadedFrames.idle[0].startsWith("data:image/");
+  const topbarImgUrl = isCustomActive ? uploadedFrames.idle[0] : "/assets/man_still.png";
+  topbarAvatarImg.src = topbarImgUrl;
+  topbarAvatarImg.classList.remove("hidden");
+  if (topbarAvatarDot) topbarAvatarDot.classList.add("hidden");
 
   // Dropdown subtitle
   if (myPersonalSpace) {
@@ -1397,7 +1647,9 @@ function renderSpacesList() {
     const isCurrent = space.id === currentSpaceId;
     const isSuperadmin = currentUser?.role === "superadmin";
     const isWhitelisted = currentUser
-      ? space.whitelist.some((w) => w.toLowerCase() === currentUser!.username.toLowerCase())
+      ? space.whitelist.some(
+          (w) => w.toLowerCase() === currentUser!.username.toLowerCase(),
+        )
       : false;
     const canJoin = space.isPublic || isSuperadmin || isWhitelisted;
 
@@ -1436,14 +1688,16 @@ function renderSpacesList() {
           isCurrent
             ? `<button type="button" class="btn-space-join current" disabled>✓ Current</button>`
             : canJoin
-            ? `<button type="button" class="btn-space-join action-travel" data-id="${space.id}" data-name="${escapeHtml(space.name)}">🚀 Travel</button>`
-            : `<button type="button" class="btn-space-join locked" disabled title="Requires invitation from superadmin">🔒 Locked</button>`
+              ? `<button type="button" class="btn-space-join action-travel" data-id="${space.id}" data-name="${escapeHtml(space.name)}">🚀 Travel</button>`
+              : `<button type="button" class="btn-space-join locked" disabled title="Requires invitation from superadmin">🔒 Locked</button>`
         }
       </div>
     `;
 
     // Hook up Travel button
-    const travelBtn = card.querySelector(".action-travel") as HTMLButtonElement | null;
+    const travelBtn = card.querySelector(
+      ".action-travel",
+    ) as HTMLButtonElement | null;
     if (travelBtn) {
       travelBtn.addEventListener("click", () => {
         closeMapModal();
@@ -1453,14 +1707,18 @@ function renderSpacesList() {
 
     // Hook up Edit / Delete buttons for Superadmin
     if (isSuperadmin) {
-      const editBtn = card.querySelector(".edit-admin-space") as HTMLButtonElement | null;
+      const editBtn = card.querySelector(
+        ".edit-admin-space",
+      ) as HTMLButtonElement | null;
       if (editBtn) {
         editBtn.addEventListener("click", (e) => {
           e.stopPropagation();
           openAdminEditSpaceModal(space);
         });
       }
-      const deleteBtn = card.querySelector(".delete-admin-space") as HTMLButtonElement | null;
+      const deleteBtn = card.querySelector(
+        ".delete-admin-space",
+      ) as HTMLButtonElement | null;
       if (deleteBtn) {
         deleteBtn.addEventListener("click", (e) => {
           e.stopPropagation();
@@ -1530,7 +1788,10 @@ async function switchSpace(newSpaceId: string, newSpaceName: string) {
     await fetchSpaces();
   } catch (err: any) {
     console.error("Failed to switch space:", err);
-    alert(err?.message || "Failed to join space. It might be private or require invitation.");
+    alert(
+      err?.message ||
+        "Failed to join space. It might be private or require invitation.",
+    );
     // Fall back to default Central Plaza if access denied
     if (currentSpaceId !== "space_central_plaza") {
       switchSpace("space_central_plaza", "Central Plaza");
@@ -1590,9 +1851,13 @@ function renderMySpaceWhitelistTags() {
       <span class="whitelist-tag-chip-remove" data-user="${escapeHtml(username)}" title="Remove">✕</span>
     `;
 
-    const removeBtn = chip.querySelector(".whitelist-tag-chip-remove") as HTMLElement;
+    const removeBtn = chip.querySelector(
+      ".whitelist-tag-chip-remove",
+    ) as HTMLElement;
     removeBtn.addEventListener("click", () => {
-      tempMySpaceWhitelist = tempMySpaceWhitelist.filter((u) => u.toLowerCase() !== username.toLowerCase());
+      tempMySpaceWhitelist = tempMySpaceWhitelist.filter(
+        (u) => u.toLowerCase() !== username.toLowerCase(),
+      );
       renderMySpaceWhitelistTags();
     });
 
@@ -1675,14 +1940,25 @@ mySpaceSettingsForm.addEventListener("submit", async (e) => {
 function populateCategoryDropdown(selectedCategory?: string) {
   adminSpaceCategorySelect.innerHTML = "";
 
-  const defaultCategories = ["Town Square", "Hangout Lounges", "Gaming Zones", "Chill Parks", "Events & Arenas"];
-  const combined = Array.from(new Set([...defaultCategories, ...loadedCategories]));
+  const defaultCategories = [
+    "Town Square",
+    "Hangout Lounges",
+    "Gaming Zones",
+    "Chill Parks",
+    "Events & Arenas",
+  ];
+  const combined = Array.from(
+    new Set([...defaultCategories, ...loadedCategories]),
+  );
 
   combined.forEach((cat) => {
     const opt = document.createElement("option");
     opt.value = cat;
     opt.textContent = cat;
-    if (selectedCategory && cat.toLowerCase() === selectedCategory.toLowerCase()) {
+    if (
+      selectedCategory &&
+      cat.toLowerCase() === selectedCategory.toLowerCase()
+    ) {
       opt.selected = true;
     }
     adminSpaceCategorySelect.appendChild(opt);
@@ -1731,9 +2007,13 @@ function renderAdminSpaceWhitelistTags() {
       <span class="whitelist-tag-chip-remove" data-user="${escapeHtml(username)}" title="Remove">✕</span>
     `;
 
-    const removeBtn = chip.querySelector(".whitelist-tag-chip-remove") as HTMLElement;
+    const removeBtn = chip.querySelector(
+      ".whitelist-tag-chip-remove",
+    ) as HTMLElement;
     removeBtn.addEventListener("click", () => {
-      tempAdminSpaceWhitelist = tempAdminSpaceWhitelist.filter((u) => u.toLowerCase() !== username.toLowerCase());
+      tempAdminSpaceWhitelist = tempAdminSpaceWhitelist.filter(
+        (u) => u.toLowerCase() !== username.toLowerCase(),
+      );
       renderAdminSpaceWhitelistTags();
     });
 
@@ -1750,7 +2030,9 @@ function addAdminSpaceInvite() {
     return;
   }
 
-  if (tempAdminSpaceWhitelist.some((u) => u.toLowerCase() === raw.toLowerCase())) {
+  if (
+    tempAdminSpaceWhitelist.some((u) => u.toLowerCase() === raw.toLowerCase())
+  ) {
     alert("User is already on the whitelist.");
     return;
   }
@@ -1807,7 +2089,7 @@ function closeAdminSpaceModal() {
   setGameControlsActive(true);
 }
 
-  btnCloseAdminSpaceModal.addEventListener("click", closeAdminSpaceModal);
+btnCloseAdminSpaceModal.addEventListener("click", closeAdminSpaceModal);
 
 adminSpaceForm.addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -1966,7 +2248,9 @@ async function enterGameSession() {
   } catch (err: any) {
     console.error("Connection or join error:", err);
     multiplayer = null;
-    alert("Could not connect to multiplayer server. Please ensure the backend is running!");
+    alert(
+      "Could not connect to multiplayer server. Please ensure the backend is running!",
+    );
     openAuthModal("login");
   }
 }
@@ -1978,11 +2262,78 @@ window.addEventListener("resize", () => {
   }
 });
 
+function setupHudControlBadges() {
+  const badges = document.querySelectorAll<HTMLElement>(
+    ".controls-hint .key-badge",
+  );
+  badges.forEach((badge) => {
+    const dir = badge.dataset.dir as
+      | "up"
+      | "down"
+      | "left"
+      | "right"
+      | undefined;
+    if (!dir) return;
+
+    badge.style.cursor = "pointer";
+    badge.style.userSelect = "none";
+
+    let isHolding = false;
+    let holdTimer: any = null;
+
+    const startMove = (e: Event) => {
+      e.preventDefault();
+      isHolding = true;
+      clearTimeout(holdTimer);
+      if (gameInstance) {
+        const scene = gameInstance.scene.getScene("GameScene") as any;
+        if (scene && scene.virtualInput) {
+          scene.virtualInput[dir] = true;
+        }
+      }
+    };
+
+    const stopMove = (e: Event) => {
+      e.preventDefault();
+      if (isHolding) {
+        isHolding = false;
+        holdTimer = setTimeout(() => {
+          if (!isHolding && gameInstance) {
+            const scene = gameInstance.scene.getScene("GameScene") as any;
+            if (scene && scene.virtualInput) {
+              scene.virtualInput[dir] = false;
+            }
+          }
+        }, 400);
+      }
+    };
+
+    badge.addEventListener("pointerdown", startMove);
+    badge.addEventListener("pointerup", stopMove);
+    badge.addEventListener("pointercancel", stopMove);
+    badge.addEventListener("mouseleave", stopMove);
+
+    badge.addEventListener("click", (e) => {
+      e.preventDefault();
+      if (gameInstance) {
+        const scene = gameInstance.scene.getScene("GameScene") as any;
+        if (scene && scene.virtualInput) {
+          scene.virtualInput[dir] = true;
+          setTimeout(() => {
+            if (!isHolding) scene.virtualInput[dir] = false;
+          }, 450);
+        }
+      }
+    });
+  });
+}
+
 // App Initialization
 async function init() {
   setupColorSwatches();
   setupMapEditorColorPicker();
   setupUploadSlots();
+  setupHudControlBadges();
 
   const savedColor = localStorage.getItem("player_color");
   const savedSwitch = localStorage.getItem("player_upload_switch");
@@ -1994,20 +2345,38 @@ async function init() {
   }
 
   const slots: DirectionSlot[] = ["idle", "left", "right", "up", "down"];
-  slots.forEach((slot) => {
-    const savedPic = localStorage.getItem(`player_pic_${slot}`);
-    if (savedPic) {
-      setSlotPicture(slot, savedPic);
+  const savedFramesStr = localStorage.getItem("player_avatar_frames");
+  if (savedFramesStr) {
+    try {
+      const parsed = JSON.parse(savedFramesStr);
+      slots.forEach((s) => {
+        if (Array.isArray(parsed[s]) && parsed[s].length > 0) {
+          uploadedFrames[s] = parsed[s].slice(0, MAX_AVATAR_FRAMES);
+        } else {
+          uploadedFrames[s] = [...DEFAULT_AVATARS[s]];
+        }
+      });
+    } catch (e) {
+      console.warn("Error parsing saved avatar frames:", e);
+      slots.forEach((s) => {
+        uploadedFrames[s] = [...DEFAULT_AVATARS[s]];
+      });
     }
-  });
+  } else {
+    // Default to male sprite assets with all movements
+    slots.forEach((s) => {
+      uploadedFrames[s] = [...DEFAULT_AVATARS[s]];
+    });
+  }
+  slots.forEach((s) => renderSlotFrames(s));
 
   if (savedSwitch === "true") {
     switchUploadPictures.checked = true;
-    dotInputSection.classList.add("hidden");
+    defaultCharacterSection?.classList.add("hidden");
     uploadPicturesSection.classList.remove("hidden");
   } else {
     switchUploadPictures.checked = false;
-    dotInputSection.classList.remove("hidden");
+    defaultCharacterSection?.classList.remove("hidden");
     uploadPicturesSection.classList.add("hidden");
   }
 

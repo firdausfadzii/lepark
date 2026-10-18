@@ -13,6 +13,9 @@ import {
   CHARACTER_MAX_SIZE,
   SERVER_TICK_RATE,
   getTileCenter,
+  isWallTile,
+  resolveMovement,
+  findSafeSpawnCenter,
 } from "shared";
 import {
   upsertPlayer,
@@ -58,7 +61,7 @@ export class GameRoom extends Room<GameState> {
       if (!user || (user.id !== space.owner_id && user.role !== "superadmin")) {
         throw new ServerError(
           403,
-          "Access denied: Traveling to other users' spaces is currently disabled."
+          "Access denied: Traveling to other users' spaces is currently disabled.",
         );
       }
     }
@@ -67,15 +70,18 @@ export class GameRoom extends Room<GameState> {
     // "private space can only be joined by invitation (a whitelist for now)"
     if (space.is_superadmin_space && !space.is_public) {
       if (!user) {
-        throw new ServerError(401, "Authentication required to join private space.");
+        throw new ServerError(
+          401,
+          "Authentication required to join private space.",
+        );
       }
       const isWhitelisted = space.whitelist.some(
-        (w) => w.toLowerCase() === user.username.toLowerCase()
+        (w) => w.toLowerCase() === user.username.toLowerCase(),
       );
       if (!isWhitelisted && user.role !== "superadmin") {
         throw new ServerError(
           403,
-          "Access denied: This space is private and requires an invitation."
+          "Access denied: This space is private and requires an invitation.",
         );
       }
     }
@@ -91,21 +97,27 @@ export class GameRoom extends Room<GameState> {
     // 20 Hz tick loop
     this.setSimulationInterval(
       (deltaTime) => this.update(deltaTime),
-      1000 / SERVER_TICK_RATE
+      1000 / SERVER_TICK_RATE,
     );
 
-    this.onMessage("PLAYER_INPUT", (client: Client, data: PlayerInputPayload) => {
-      this.playerInputs.set(client.sessionId, {
-        left: !!data.left,
-        right: !!data.right,
-        up: !!data.up,
-        down: !!data.down,
-      });
-    });
+    this.onMessage(
+      "PLAYER_INPUT",
+      (client: Client, data: PlayerInputPayload) => {
+        this.playerInputs.set(client.sessionId, {
+          left: !!data.left,
+          right: !!data.right,
+          up: !!data.up,
+          down: !!data.down,
+        });
+      },
+    );
 
     this.onMessage(
       "UPDATE_PROFILE",
-      (client: Client, data: { name?: string; color?: string; avatars?: PlayerAvatars | null }) => {
+      (
+        client: Client,
+        data: { name?: string; color?: string; avatars?: PlayerAvatars | null },
+      ) => {
         const player = this.state.players.get(client.sessionId);
         if (player) {
           if (data.name && data.name.trim().length > 0) {
@@ -137,28 +149,34 @@ export class GameRoom extends Room<GameState> {
             y: player.y,
           });
         }
-      }
+      },
     );
 
-    this.onMessage("UPDATE_AVATARS", (client: Client, data: PlayerAvatars | null) => {
-      if (data && data.idle) {
-        this.playerAvatars.set(client.sessionId, data);
-        this.broadcast("PLAYER_AVATARS", {
-          sessionId: client.sessionId,
-          avatars: data,
-        });
-      } else {
-        this.playerAvatars.delete(client.sessionId);
-        this.broadcast("PLAYER_AVATARS", {
-          sessionId: client.sessionId,
-          avatars: null,
-        });
-      }
-    });
+    this.onMessage(
+      "UPDATE_AVATARS",
+      (client: Client, data: PlayerAvatars | null) => {
+        if (data && data.idle) {
+          this.playerAvatars.set(client.sessionId, data);
+          this.broadcast("PLAYER_AVATARS", {
+            sessionId: client.sessionId,
+            avatars: data,
+          });
+        } else {
+          this.playerAvatars.delete(client.sessionId);
+          this.broadcast("PLAYER_AVATARS", {
+            sessionId: client.sessionId,
+            avatars: null,
+          });
+        }
+      },
+    );
 
-    this.onMessage("PING", (client: Client, data: { seq: number; t: number }) => {
-      client.send("PONG", data);
-    });
+    this.onMessage(
+      "PING",
+      (client: Client, data: { seq: number; t: number }) => {
+        client.send("PONG", data);
+      },
+    );
 
     // Load initial tiles and space metadata
     getSpaceTiles(this.spaceId)
@@ -182,14 +200,16 @@ export class GameRoom extends Room<GameState> {
         const auth = this.clientAuthMap.get(client.sessionId);
         const user = auth?.user;
         const isSuperadmin = user?.role === "superadmin";
-        const isOwner = user && this.spaceOwnerId !== null && user.id === this.spaceOwnerId;
+        const isOwner =
+          user && this.spaceOwnerId !== null && user.id === this.spaceOwnerId;
 
         if (!isSuperadmin && !isOwner) {
           console.warn(
-            `[GameRoom] Unauthorized tile edit attempt by ${client.sessionId} in space ${this.spaceId}`
+            `[GameRoom] Unauthorized tile edit attempt by ${client.sessionId} in space ${this.spaceId}`,
           );
           client.send("ERROR", {
-            message: "Permission denied: Only space owner or superadmin can edit map.",
+            message:
+              "Permission denied: Only space owner or superadmin can edit map.",
           });
           return;
         }
@@ -199,7 +219,7 @@ export class GameRoom extends Room<GameState> {
           this.broadcast("TILES_UPDATED", data.updates);
           await updateSpaceTiles(this.spaceId, this.tiles);
         }
-      }
+      },
     );
   }
 
@@ -207,10 +227,15 @@ export class GameRoom extends Room<GameState> {
     const count = activeSpaceCounts.get(this.spaceId) || 0;
     activeSpaceCounts.set(this.spaceId, count + 1);
 
-    const rawName = (options && options.name ? options.name.trim() : "").slice(0, 24);
+    const rawName = (options && options.name ? options.name.trim() : "").slice(
+      0,
+      24,
+    );
     const name = rawName || `Player_${client.sessionId.slice(0, 4)}`;
     const color =
-      options && options.color && /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(options.color)
+      options &&
+      options.color &&
+      /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(options.color)
         ? options.color
         : "#3b82f6";
 
@@ -218,10 +243,16 @@ export class GameRoom extends Room<GameState> {
     player.id = client.sessionId;
     player.name = name;
     player.color = color;
-    player.isSuperadmin = (auth && auth.user && auth.user.role === "superadmin") || false;
+    player.direction = "idle";
+    player.isSuperadmin =
+      (auth && auth.user && auth.user.role === "superadmin") || false;
     const defaultTileX = Math.floor(GRID_COLS / 2);
     const defaultTileY = Math.floor(GRID_ROWS / 2);
-    const spawnCenter = getTileCenter(defaultTileX, defaultTileY);
+    const spawnCenter = findSafeSpawnCenter(
+      defaultTileX,
+      defaultTileY,
+      (c, r) => isWallTile(this.tiles[`${c},${r}`]),
+    );
 
     player.x = spawnCenter.x;
     player.y = spawnCenter.y;
@@ -235,7 +266,7 @@ export class GameRoom extends Room<GameState> {
     });
 
     console.log(
-      ` Player joined space [${this.spaceId}]: ${name} (${color}) [${client.sessionId}] at tile (${defaultTileX}, ${defaultTileY})`
+      ` Player joined space [${this.spaceId}]: ${name} (${color}) [${client.sessionId}] at tile (${defaultTileX}, ${defaultTileY})`,
     );
 
     upsertPlayer({
@@ -278,7 +309,9 @@ export class GameRoom extends Room<GameState> {
 
     const player = this.state.players.get(client.sessionId);
     if (player) {
-      console.log(` Player left space [${this.spaceId}]: ${player.name} [${client.sessionId}]`);
+      console.log(
+        ` Player left space [${this.spaceId}]: ${player.name} [${client.sessionId}]`,
+      );
       updatePlayerPosition(client.sessionId, player.x, player.y);
       this.state.players.delete(client.sessionId);
     }
@@ -301,19 +334,26 @@ export class GameRoom extends Room<GameState> {
         if (input.down) vy += 1;
 
         if (vx !== 0 || vy !== 0) {
-          if (vx !== 0 && vy !== 0) {
-            const inv = 1 / Math.SQRT2;
-            vx *= inv;
-            vy *= inv;
+          if (Math.abs(vx) >= Math.abs(vy)) {
+            player.direction = vx < 0 ? "left" : "right";
+          } else {
+            player.direction = vy < 0 ? "up" : "down";
           }
-
-          const halfSize = CHARACTER_MAX_SIZE / 2;
-          const nextX = player.x + vx * PLAYER_SPEED * dtSeconds;
-          const nextY = player.y + vy * PLAYER_SPEED * dtSeconds;
-
-          player.x = Math.max(halfSize, Math.min(WORLD_WIDTH - halfSize, nextX));
-          player.y = Math.max(halfSize, Math.min(WORLD_HEIGHT - halfSize, nextY));
+          const resolved = resolveMovement(
+            player.x,
+            player.y,
+            vx,
+            vy,
+            dtSeconds,
+            (c, r) => isWallTile(this.tiles[`${c},${r}`]),
+          );
+          player.x = resolved.x;
+          player.y = resolved.y;
+        } else {
+          player.direction = "idle";
         }
+      } else {
+        player.direction = "idle";
       }
     });
 

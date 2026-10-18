@@ -1,9 +1,28 @@
+export type AvatarFrames = string | string[];
+
+export const MAX_AVATAR_FRAMES = 6;
+
 export interface PlayerAvatars {
-  idle?: string; // Standing still (data URL / base64)
-  left?: string; // Standing left and moving left
-  right?: string; // Standing right and moving right
-  up?: string; // Standing up and moving up
-  down?: string; // Standing down and moving down
+  idle?: AvatarFrames; // Standing still (data URL / base64 or array of frames)
+  left?: AvatarFrames; // Moving left frames
+  right?: AvatarFrames; // Moving right frames
+  up?: AvatarFrames; // Moving up frames
+  down?: AvatarFrames; // Moving down frames
+}
+
+export const DEFAULT_AVATARS: Record<"idle" | "left" | "right" | "up" | "down", string[]> = {
+  idle: ["/assets/man_still.png"],
+  left: ["/assets/male_move_left_1.png", "/assets/male_move_left_2.png"],
+  right: ["/assets/male_move_right_1.png", "/assets/male_move_right_2.png"],
+  up: ["/assets/male_move_up_1.png", "/assets/male_move_up_2.png"],
+  down: ["/assets/male_move_down_1.png", "/assets/male_move_down_2.png"],
+};
+
+export function normalizeFrames(frames?: AvatarFrames): string[] {
+  if (!frames) return [];
+  if (Array.isArray(frames)) return frames.filter((f) => typeof f === "string" && f.length > 0);
+  if (typeof frames === "string" && frames.length > 0) return [frames];
+  return [];
 }
 
 export interface PlayerInputPayload {
@@ -74,6 +93,3 @@ export interface SpaceResponse {
   space?: Space;
   error?: string;
 }
-
-
-

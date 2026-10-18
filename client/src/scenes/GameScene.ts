@@ -10,17 +10,23 @@ import {
   CHARACTER_MAX_SIZE,
   PLAYER_SPEED,
   PlayerAvatars,
+  DEFAULT_AVATARS,
+  normalizeFrames,
   getTileCenter,
   getTileCoords,
+  isWallTile,
+  resolveMovement,
 } from "shared";
 
 interface PlayerVisual {
   container: Phaser.GameObjects.Container;
-  dot: Phaser.GameObjects.Image;
   sprite: Phaser.GameObjects.Image;
   nameTag: Phaser.GameObjects.Text;
   currentDirection: "idle" | "left" | "right" | "up" | "down";
   avatars?: PlayerAvatars;
+  animTimer: number;
+  currentFrameIdx: number;
+  lastMoveTime: number;
 }
 
 export class GameScene extends Phaser.Scene {
@@ -37,6 +43,7 @@ export class GameScene extends Phaser.Scene {
   private localPlayerId: string | null = null;
   private lastInputState = { left: false, right: false, up: false, down: false };
   public controlsActive = true;
+  public virtualInput = { left: false, right: false, up: false, down: false };
 
   // Map Editor State
   public isEditMode: boolean = false;
@@ -72,6 +79,19 @@ export class GameScene extends Phaser.Scene {
     this.load.image("birch_floor_150", "/assets/birch_floor_150.png");
     this.load.image("grass_100", "/assets/grass_150.png");
     this.load.image("birch_floor_100", "/assets/birch_floor_150.png");
+    this.load.image("wall_half_150", "/assets/wall_half_150.png");
+    this.load.image("wall_top_150", "/assets/wall_top_150.png");
+
+    // Default character avatar frames
+    this.load.image("default_avatar_idle", "/assets/man_still.png");
+    this.load.image("default_avatar_left_0", "/assets/male_move_left_1.png");
+    this.load.image("default_avatar_left_1", "/assets/male_move_left_2.png");
+    this.load.image("default_avatar_right_0", "/assets/male_move_right_1.png");
+    this.load.image("default_avatar_right_1", "/assets/male_move_right_2.png");
+    this.load.image("default_avatar_up_0", "/assets/male_move_up_1.png");
+    this.load.image("default_avatar_up_1", "/assets/male_move_up_2.png");
+    this.load.image("default_avatar_down_0", "/assets/male_move_down_1.png");
+    this.load.image("default_avatar_down_1", "/assets/male_move_down_2.png");
   }
 
   create() {
@@ -175,17 +195,6 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    // Generate circular dot texture once if not already created
-    if (!this.textures.exists("dot_texture")) {
-      const g = this.make.graphics({ x: 0, y: 0 }, false);
-      g.fillStyle(0x0f172a, 0.25);
-      g.fillCircle(PLAYER_RADIUS, PLAYER_RADIUS, PLAYER_RADIUS);
-      g.fillStyle(0xffffff, 1);
-      g.fillCircle(PLAYER_RADIUS, PLAYER_RADIUS, Math.max(1, PLAYER_RADIUS - 3));
-      g.generateTexture("dot_texture", PLAYER_RADIUS * 2, PLAYER_RADIUS * 2);
-      g.destroy();
-    }
-
     // Generate 1x1 transparent texture for sprite initialization
     if (!this.textures.exists("empty_pixel")) {
       const g = this.make.graphics({ x: 0, y: 0 }, false);
@@ -230,6 +239,23 @@ export class GameScene extends Phaser.Scene {
         this.createPlayerVisual(sessionId, player);
       });
     }
+
+    (window as any).leparkGame = {
+      scene: this,
+      getLocalPlayerPos: () => {
+        const v = this.playerVisuals.get(this.localPlayerId || "");
+        return v ? { x: v.container.x, y: v.container.y } : null;
+      },
+      walk: (dir: "up" | "down" | "left" | "right", durationMs: number = 600) => {
+        this.virtualInput[dir] = true;
+        setTimeout(() => {
+          this.virtualInput[dir] = false;
+        }, durationMs);
+      },
+      setWalking: (dir: "up" | "down" | "left" | "right", active: boolean) => {
+        this.virtualInput[dir] = active;
+      },
+    };
   }
 
   public resetPlayers() {
@@ -266,20 +292,15 @@ export class GameScene extends Phaser.Scene {
 
     const colorNum = this.parseColor(player.color);
 
-    // Dot sprite with color tint (default visual)
-    const dot = this.add.image(0, 0, "dot_texture");
-    dot.setTint(colorNum);
-    dot.setDisplaySize(PLAYER_RADIUS * 2, PLAYER_RADIUS * 2);
-
-    // Sprite image for custom uploaded pictures
-    const sprite = this.add.image(0, 0, "empty_pixel");
-    sprite.setVisible(false);
+    // Sprite for avatar (defaults to male character sprite)
+    const sprite = this.add.image(0, 0, "default_avatar_idle");
+    sprite.setVisible(true);
     sprite.setDisplaySize(CHARACTER_MAX_SIZE, CHARACTER_MAX_SIZE);
 
-    // Name text floating above dot/sprite with native background pill
+    // Name text floating above sprite with native background pill
     const crownPrefix = player.isSuperadmin ? "👑 " : "";
     const displayName = `${crownPrefix}${player.name || "Player"}`;
-    const nameTag = this.add.text(0, -PLAYER_RADIUS - 12, displayName, {
+    const nameTag = this.add.text(0, -CHARACTER_MAX_SIZE / 2 - 12, displayName, {
       fontFamily: "Outfit, sans-serif",
       fontSize: "11px",
       fontStyle: "bold",
@@ -290,22 +311,20 @@ export class GameScene extends Phaser.Scene {
     });
     nameTag.setOrigin(0.5, 0.5);
 
-    // Align spawn to tile center
-    const coords = getTileCoords(
-      typeof player.x === "number" ? player.x : WORLD_WIDTH / 2,
-      typeof player.y === "number" ? player.y : WORLD_HEIGHT / 2
-    );
-    const spawnCenter = getTileCenter(coords.tileX, coords.tileY);
-
-    const container = this.add.container(spawnCenter.x, spawnCenter.y, [dot, sprite, nameTag]);
+    const spawnX = typeof player.x === "number" ? player.x : WORLD_WIDTH / 2;
+    const spawnY = typeof player.y === "number" ? player.y : WORLD_HEIGHT / 2;
+    const coords = getTileCoords(spawnX, spawnY);
+    const container = this.add.container(spawnX, spawnY, [sprite, nameTag]);
     container.setDepth(100);
 
     const visual: PlayerVisual = {
       container,
-      dot,
       sprite,
       nameTag,
-      currentDirection: "idle",
+      currentDirection: (player.direction as any) || "idle",
+      animTimer: 0,
+      currentFrameIdx: 0,
+      lastMoveTime: 0,
     };
     this.playerVisuals.set(sessionId, visual);
 
@@ -320,29 +339,74 @@ export class GameScene extends Phaser.Scene {
 
     // Check if avatars are already available for this player
     const existingAvatars = this.multiplayer.playerAvatarsMap.get(sessionId);
-    if (existingAvatars) {
-      this.setPlayerAvatars(sessionId, existingAvatars);
+    this.setPlayerAvatars(sessionId, existingAvatars || null);
+  }
+
+  private getVisualFrames(sessionId: string, dir: "idle" | "left" | "right" | "up" | "down"): string[] {
+    const visual = this.playerVisuals.get(sessionId);
+    if (!visual) return ["default_avatar_idle"];
+
+    if (visual.avatars) {
+      const customForDir: string[] = [];
+      for (let i = 0; i < 6; i++) {
+        const k = `avatar_${sessionId}_${dir}_${i}`;
+        if (this.textures.exists(k)) customForDir.push(k);
+      }
+      if (customForDir.length > 0) return customForDir;
+
+      const customIdle: string[] = [];
+      for (let i = 0; i < 6; i++) {
+        const k = `avatar_${sessionId}_idle_${i}`;
+        if (this.textures.exists(k)) customIdle.push(k);
+      }
+      if (customIdle.length > 0) return customIdle;
     }
+
+    if (dir === "left") {
+      return ["default_avatar_left_0", "default_avatar_left_1"];
+    }
+    if (dir === "right") {
+      return ["default_avatar_right_0", "default_avatar_right_1"];
+    }
+    if (dir === "up") {
+      return ["default_avatar_up_0", "default_avatar_up_1"];
+    }
+    if (dir === "down") {
+      return ["default_avatar_down_0", "default_avatar_down_1"];
+    }
+    return ["default_avatar_idle"];
+  }
+
+  private cleanupCustomAvatars(sessionId: string) {
+    const visual = this.playerVisuals.get(sessionId);
+    if (visual && visual.sprite) {
+      try {
+        visual.sprite.setTexture("default_avatar_idle");
+      } catch (_) {}
+    }
+
+    const dirs: ("idle" | "left" | "right" | "up" | "down")[] = [
+      "idle",
+      "left",
+      "right",
+      "up",
+      "down",
+    ];
+    dirs.forEach((dir) => {
+      for (let i = 0; i < 6; i++) {
+        const texKey = `avatar_${sessionId}_${dir}_${i}`;
+        if (this.textures.exists(texKey)) {
+          this.textures.remove(texKey);
+        }
+      }
+    });
   }
 
   public setPlayerAvatars(sessionId: string, avatars: PlayerAvatars | null) {
     const visual = this.playerVisuals.get(sessionId);
     if (!visual) return;
 
-    // "if standing still picture is uploaded, then use that picture. else, use dot."
-    if (!avatars || !avatars.idle) {
-      visual.avatars = undefined;
-      visual.sprite.setVisible(false);
-      visual.dot.setVisible(true);
-      visual.nameTag.setPosition(0, -PLAYER_RADIUS - 12);
-      return;
-    }
-
-    visual.avatars = avatars;
-    visual.dot.setVisible(false);
-    visual.sprite.setVisible(true);
-
-    const directions: ("idle" | "left" | "right" | "up" | "down")[] = [
+    const dirs: ("idle" | "left" | "right" | "up" | "down")[] = [
       "idle",
       "left",
       "right",
@@ -350,52 +414,69 @@ export class GameScene extends Phaser.Scene {
       "down",
     ];
 
-    // "if any of other movement picture is not uploaded, use the standing still picture."
-    directions.forEach((dir) => {
-      const imgData = avatars[dir] || avatars.idle;
-      if (!imgData) return;
+    const hasCustomUploads = avatars && dirs.some((dir) => {
+      const frames = normalizeFrames(avatars[dir]);
+      return frames.some((f) => typeof f === "string" && f.startsWith("data:image/"));
+    });
 
-      const textureKey = `avatar_${sessionId}_${dir}`;
-      const img = new Image();
-      img.onload = () => {
-        if (this.textures.exists(textureKey)) {
-          this.textures.remove(textureKey);
-        }
-        this.textures.addImage(textureKey, img);
-        const tex = this.textures.get(textureKey);
-        if (tex) {
-          tex.setFilter(Phaser.Textures.FilterMode.NEAREST);
-        }
+    if (!hasCustomUploads) {
+      this.cleanupCustomAvatars(sessionId);
+      visual.avatars = undefined;
+      visual.sprite.setVisible(true);
+      this.updateVisualSprite(sessionId);
+      return;
+    }
 
-        const currentVisual = this.playerVisuals.get(sessionId);
-        if (currentVisual && currentVisual.avatars && currentVisual.avatars.idle) {
-          currentVisual.dot.setVisible(false);
-          currentVisual.sprite.setVisible(true);
+    visual.avatars = avatars || undefined;
+    visual.sprite.setVisible(true);
+
+    dirs.forEach((dir) => {
+      let frames = normalizeFrames(avatars?.[dir]);
+      if (frames.length === 0 && avatars?.idle) {
+        frames = normalizeFrames(avatars.idle);
+      }
+      if (frames.length === 0) return;
+
+      frames.slice(0, 6).forEach((frameSrc, idx) => {
+        if (!frameSrc || !frameSrc.startsWith("data:image/")) return;
+
+        const texKey = `avatar_${sessionId}_${dir}_${idx}`;
+        const img = new Image();
+        img.onload = () => {
+          try {
+            if (this.textures.exists(texKey)) {
+              this.textures.remove(texKey);
+            }
+            this.textures.addImage(texKey, img);
+            const tex = this.textures.get(texKey);
+            if (tex) {
+              tex.setFilter(Phaser.Textures.FilterMode.NEAREST);
+            }
+          } catch (e) {
+            console.warn("Failed registering texture:", texKey, e);
+          }
           this.updateVisualSprite(sessionId);
-        }
-      };
-      img.src = imgData;
+        };
+        img.src = frameSrc;
+      });
     });
   }
 
   private updateVisualSprite(sessionId: string) {
     const visual = this.playerVisuals.get(sessionId);
-    if (!visual || !visual.avatars || !visual.avatars.idle) return;
+    if (!visual) return;
 
-    const targetKey = `avatar_${sessionId}_${visual.currentDirection}`;
-    const idleKey = `avatar_${sessionId}_idle`;
+    const dir = visual.currentDirection || "idle";
+    const frames = this.getVisualFrames(sessionId, dir);
+    const frameKey = frames[visual.currentFrameIdx % frames.length] || "default_avatar_idle";
 
-    let activeKey = "";
-    if (this.textures.exists(targetKey)) {
-      activeKey = targetKey;
-    } else if (this.textures.exists(idleKey)) {
-      activeKey = idleKey;
-    }
+    try {
+      if (this.textures.exists(frameKey)) {
+        visual.sprite.setTexture(frameKey);
+      } else if (this.textures.exists("default_avatar_idle")) {
+        visual.sprite.setTexture("default_avatar_idle");
+      }
 
-    if (activeKey) {
-      visual.sprite.setTexture(activeKey);
-
-      // Render 1:1 contain with max width/height of CHARACTER_MAX_SIZE
       const MAX_DIM = CHARACTER_MAX_SIZE;
       const fw = visual.sprite.width;
       const fh = visual.sprite.height;
@@ -407,9 +488,10 @@ export class GameScene extends Phaser.Scene {
         visual.sprite.setDisplaySize(MAX_DIM, MAX_DIM);
       }
 
-      // Dynamically position nametag above sprite without overlapping
       const halfH = Math.max(PLAYER_RADIUS, visual.sprite.displayHeight / 2);
       visual.nameTag.setPosition(0, -halfH - 12);
+    } catch (e) {
+      console.warn("Visual update error:", e);
     }
   }
 
@@ -417,15 +499,21 @@ export class GameScene extends Phaser.Scene {
     const visual = this.playerVisuals.get(sessionId);
     if (!visual) return;
 
-    // Update color tint (for dot fallback)
-    const colorNum = this.parseColor(player.color);
-    visual.dot.setTint(colorNum);
-
     // Update name
     const crownPrefix = player.isSuperadmin ? "👑 " : "";
     const expectedName = `${crownPrefix}${player.name || "Player"}`;
     if (visual.nameTag.text !== expectedName) {
       visual.nameTag.setText(expectedName);
+    }
+
+    // For remote player, if server says idle, immediately ensure direction and animation stop
+    if (sessionId !== this.localPlayerId) {
+      if (player.direction === "idle" && visual.currentDirection !== "idle") {
+        visual.currentDirection = "idle";
+        visual.currentFrameIdx = 0;
+        visual.animTimer = 0;
+        this.updateVisualSprite(sessionId);
+      }
     }
 
     // For local player, reconcile with authoritative server position smoothly
@@ -450,26 +538,12 @@ export class GameScene extends Phaser.Scene {
   }
 
   private removePlayerVisual(sessionId: string) {
+    this.cleanupCustomAvatars(sessionId);
     const visual = this.playerVisuals.get(sessionId);
     if (visual) {
       visual.container.destroy();
       this.playerVisuals.delete(sessionId);
     }
-
-    // Clean up textures
-    const directions: ("idle" | "left" | "right" | "up" | "down")[] = [
-      "idle",
-      "left",
-      "right",
-      "up",
-      "down",
-    ];
-    directions.forEach((dir) => {
-      const textureKey = `avatar_${sessionId}_${dir}`;
-      if (this.textures.exists(textureKey)) {
-        this.textures.remove(textureKey);
-      }
-    });
   }
 
   public setControlsActive(active: boolean) {
@@ -573,10 +647,10 @@ export class GameScene extends Phaser.Scene {
     let down = false;
 
     if (this.controlsActive && this.cursors) {
-      left = this.cursors.left.isDown || this.wasdKeys.A.isDown;
-      right = this.cursors.right.isDown || this.wasdKeys.D.isDown;
-      up = this.cursors.up.isDown || this.wasdKeys.W.isDown;
-      down = this.cursors.down.isDown || this.wasdKeys.S.isDown;
+      left = this.cursors.left.isDown || this.wasdKeys.A.isDown || this.virtualInput.left;
+      right = this.cursors.right.isDown || this.wasdKeys.D.isDown || this.virtualInput.right;
+      up = this.cursors.up.isDown || this.wasdKeys.W.isDown || this.virtualInput.up;
+      down = this.cursors.down.isDown || this.wasdKeys.S.isDown || this.virtualInput.down;
     }
 
     // Send input whenever state changed
@@ -604,38 +678,48 @@ export class GameScene extends Phaser.Scene {
         let targetDir: "idle" | "left" | "right" | "up" | "down" = "idle";
 
         if (vx !== 0 || vy !== 0) {
-          if (vx !== 0 && vy !== 0) {
-            const inv = 1 / Math.SQRT2;
-            vx *= inv;
-            vy *= inv;
-          }
-
           if (Math.abs(vx) >= Math.abs(vy)) {
             targetDir = vx < 0 ? "left" : "right";
           } else {
             targetDir = vy < 0 ? "up" : "down";
           }
 
-          const halfSize = CHARACTER_MAX_SIZE / 2;
-          const nextX = localVisual.container.x + vx * PLAYER_SPEED * dtSeconds;
-          const nextY = localVisual.container.y + vy * PLAYER_SPEED * dtSeconds;
+          try {
+            const resolved = resolveMovement(
+              localVisual.container.x,
+              localVisual.container.y,
+              vx,
+              vy,
+              dtSeconds,
+              (c, r) => isWallTile(this.currentTilesMap.get(`${c},${r}`))
+            );
 
-          localVisual.container.x = Math.max(halfSize, Math.min(WORLD_WIDTH - halfSize, nextX));
-          localVisual.container.y = Math.max(halfSize, Math.min(WORLD_HEIGHT - halfSize, nextY));
+            localVisual.container.x = resolved.x;
+            localVisual.container.y = resolved.y;
+          } catch (e) {
+            console.error("resolveMovement error:", e);
+          }
         }
 
         if (localVisual.currentDirection !== targetDir) {
           localVisual.currentDirection = targetDir;
-          this.updateVisualSprite(this.localPlayerId);
+          try {
+            this.updateVisualSprite(this.localPlayerId);
+          } catch (e) {
+            console.warn("updateVisualSprite error:", e);
+          }
         }
       }
     }
 
     // 3. Snapshot Interpolation for remote players (anti-jitter pipeline)
     const interpolation = this.multiplayer.si.calcInterpolation("x y");
+    const interpolatedIds = new Set<string>();
+
     if (interpolation && interpolation.state) {
       interpolation.state.forEach((item: any) => {
         if (item.id !== this.localPlayerId) {
+          interpolatedIds.add(item.id);
           const remoteVisual = this.playerVisuals.get(item.id);
           if (remoteVisual) {
             // Determine direction based on movement delta
@@ -644,26 +728,82 @@ export class GameScene extends Phaser.Scene {
             const dist = Math.hypot(dx, dy);
 
             let remoteDir: "idle" | "left" | "right" | "up" | "down" = "idle";
-            if (dist > 1.0) {
-              if (Math.abs(dx) > Math.abs(dy)) {
+            if (dist > 0.8) {
+              remoteVisual.lastMoveTime = time;
+              if (Math.abs(dx) >= Math.abs(dy)) {
                 remoteDir = dx > 0 ? "right" : "left";
               } else {
                 remoteDir = dy > 0 ? "down" : "up";
               }
+            } else {
+              remoteDir = "idle";
+            }
+
+            // Authoritative server direction check
+            const serverPlayer = this.multiplayer.room?.state?.players?.get(item.id);
+            if (serverPlayer && serverPlayer.direction === "idle") {
+              remoteDir = "idle";
             }
 
             if (remoteVisual.currentDirection !== remoteDir) {
               remoteVisual.currentDirection = remoteDir;
+              if (remoteDir === "idle") {
+                remoteVisual.currentFrameIdx = 0;
+                remoteVisual.animTimer = 0;
+              }
               this.updateVisualSprite(item.id);
             }
 
-            // Smoothly move remote dot to interpolated server coordinates
+            // Smoothly move remote visual to interpolated server coordinates
             remoteVisual.container.x = item.x;
             remoteVisual.container.y = item.y;
           }
         }
       });
     }
+
+    // Safeguard for all remote players: if player stopped moving, timed out, or server is idle, stop animation immediately
+    this.playerVisuals.forEach((visual, sId) => {
+      if (sId === this.localPlayerId) return;
+
+      const serverPlayer = this.multiplayer.room?.state?.players?.get(sId);
+      const isServerIdle = !serverPlayer || serverPlayer.direction === "idle";
+      const hasTimedOut = (time - visual.lastMoveTime) > 80;
+
+      if ((!interpolatedIds.has(sId) || hasTimedOut || isServerIdle) && visual.currentDirection !== "idle") {
+        visual.currentDirection = "idle";
+        visual.currentFrameIdx = 0;
+        visual.animTimer = 0;
+        this.updateVisualSprite(sId);
+
+        if (serverPlayer && typeof serverPlayer.x === "number" && typeof serverPlayer.y === "number") {
+          visual.container.x = serverPlayer.x;
+          visual.container.y = serverPlayer.y;
+        }
+      }
+    });
+
+    // 4. Animate walking sprites (~6 FPS)
+    const FRAME_DURATION = 0.166;
+    this.playerVisuals.forEach((visual, sId) => {
+      if (visual.currentDirection !== "idle") {
+        visual.animTimer += dtSeconds;
+        if (visual.animTimer >= FRAME_DURATION) {
+          visual.animTimer -= FRAME_DURATION;
+          const frames = this.getVisualFrames(sId, visual.currentDirection);
+          if (frames.length > 1) {
+            visual.currentFrameIdx = (visual.currentFrameIdx + 1) % frames.length;
+            this.updateVisualSprite(sId);
+          }
+        }
+      } else {
+        if (visual.currentFrameIdx !== 0 || visual.animTimer !== 0) {
+          visual.currentFrameIdx = 0;
+          visual.animTimer = 0;
+          this.updateVisualSprite(sId);
+        }
+      }
+    });
   }
 
   // ==========================================
@@ -688,6 +828,18 @@ export class GameScene extends Phaser.Scene {
 
   private setupEditorPointerEvents() {
     this.input.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
+      // Whenever user clicks on canvas, blur any active input element so WASD works immediately
+      if (document.activeElement && document.activeElement !== document.body) {
+        const el = document.activeElement as HTMLElement;
+        if (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT") {
+          el.blur();
+        }
+      }
+      const anyModalOpen = document.querySelector(".modal-overlay:not(.hidden)");
+      if (!anyModalOpen && !this.controlsActive) {
+        this.setControlsActive(true);
+      }
+
       if (!this.isEditMode) return;
       const target = pointer.event.target as HTMLElement;
       if (target && target.tagName !== "CANVAS") return;
@@ -734,7 +886,9 @@ export class GameScene extends Phaser.Scene {
         this.selectionCurrentTile = { x: col, y: row };
         this.updateSelectionVisuals();
       } else {
-        const hoverColor = this.selectedTileColor ? this.parseColor(this.selectedTileColor) : 0xeca239;
+        const isWall = isWallTile(this.selectedAssetKey);
+        const defaultHover = isWall ? 0xdb5b47 : 0xeca239;
+        const hoverColor = this.selectedTileColor ? this.parseColor(this.selectedTileColor) : defaultHover;
         this.editorHoverGraphics.clear();
         this.editorHoverGraphics.lineStyle(2, hoverColor, 0.95);
         this.editorHoverGraphics.strokeRect(col * TILE_SIZE, row * TILE_SIZE, TILE_SIZE, TILE_SIZE);
@@ -809,13 +963,16 @@ export class GameScene extends Phaser.Scene {
 
     this.editorSelectionGraphics.clear();
 
-    const fillColor = this.selectedTileColor ? this.parseColor(this.selectedTileColor) : 0x3b8282;
+    const isWall = isWallTile(this.selectedAssetKey);
+    const defaultFill = isWall ? 0xdb5b47 : 0x3b8282;
+    const defaultStroke = isWall ? 0xff6b55 : 0xeca239;
+    const fillColor = this.selectedTileColor ? this.parseColor(this.selectedTileColor) : defaultFill;
     // Fill
     this.editorSelectionGraphics.fillStyle(fillColor, 0.32);
     this.editorSelectionGraphics.fillRect(rx, ry, rw, rh);
 
     // Outer border
-    const strokeColor = this.selectedTileColor ? this.parseColor(this.selectedTileColor) : 0xeca239;
+    const strokeColor = this.selectedTileColor ? this.parseColor(this.selectedTileColor) : defaultStroke;
     this.editorSelectionGraphics.lineStyle(2.5, strokeColor, 1);
     this.editorSelectionGraphics.strokeRect(rx, ry, rw, rh);
 
@@ -833,6 +990,8 @@ export class GameScene extends Phaser.Scene {
     let labelName = "Birch Floor";
     if (this.selectedAssetKey === "grass_150") labelName = "Grass Tile";
     else if (this.selectedAssetKey === "color_tile") labelName = "Plain Tile";
+    else if (this.selectedAssetKey === "wall_half_150") labelName = "Half Wall (Impassable)";
+    else if (this.selectedAssetKey === "wall_top_150") labelName = "Top Wall (Impassable)";
 
     const colorBadge = this.selectedTileColor ? ` • ${this.selectedTileColor.toUpperCase()}` : "";
     this.editorOverlayText.setText(
