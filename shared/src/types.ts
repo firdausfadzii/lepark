@@ -55,6 +55,7 @@ export interface Space {
   isPublic: boolean;
   isSuperadminSpace: boolean;
   whitelist: string[]; // usernames allowed if private
+  tiles?: Record<string, string>;
   playerCount?: number;
   createdAt?: string;
   updatedAt?: string;

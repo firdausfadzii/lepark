@@ -35,6 +35,7 @@ export interface SpaceRecord {
   is_public: boolean;
   is_superadmin_space: boolean;
   whitelist: string[]; // usernames allowed if private
+  tiles?: Record<string, string>;
   created_at: Date;
   updated_at: Date;
 }
@@ -234,9 +235,11 @@ export async function initDb(): Promise<boolean> {
         is_public BOOLEAN DEFAULT TRUE,
         is_superadmin_space BOOLEAN DEFAULT FALSE,
         whitelist JSONB DEFAULT '[]'::jsonb,
+        tiles JSONB DEFAULT '{}'::jsonb,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
+      ALTER TABLE spaces ADD COLUMN IF NOT EXISTS tiles JSONB DEFAULT '{}'::jsonb;
       CREATE INDEX IF NOT EXISTS idx_spaces_superadmin ON spaces (is_superadmin_space, category);
     `);
 
@@ -739,6 +742,53 @@ export async function deleteSpace(spaceId: string): Promise<boolean> {
     return inMemorySpaces.delete(spaceId);
   }
   return false;
+}
+
+/**
+ * Get custom map tiles for a space
+ */
+export async function getSpaceTiles(spaceId: string): Promise<Record<string, string>> {
+  if (isDbConnected) {
+    try {
+      const res = await pool.query("SELECT tiles FROM spaces WHERE id = $1", [spaceId]);
+      if (res.rows[0]?.tiles) {
+        return typeof res.rows[0].tiles === "string"
+          ? JSON.parse(res.rows[0].tiles)
+          : res.rows[0].tiles;
+      }
+    } catch (err) {
+      console.error("Error fetching space tiles from DB:", err);
+    }
+  }
+
+  const inMem = inMemorySpaces.get(spaceId);
+  return inMem?.tiles ? { ...inMem.tiles } : {};
+}
+
+/**
+ * Update and persist custom map tiles for a space
+ */
+export async function updateSpaceTiles(
+  spaceId: string,
+  tiles: Record<string, string>
+): Promise<boolean> {
+  if (isDbConnected) {
+    try {
+      await pool.query(
+        "UPDATE spaces SET tiles = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1",
+        [spaceId, JSON.stringify(tiles)]
+      );
+    } catch (err) {
+      console.error("Error updating space tiles in DB:", err);
+    }
+  }
+
+  const inMem = inMemorySpaces.get(spaceId);
+  if (inMem) {
+    inMem.tiles = { ...tiles };
+    inMem.updated_at = new Date();
+  }
+  return true;
 }
 
 /**

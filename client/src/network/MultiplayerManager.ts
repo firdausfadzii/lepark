@@ -10,6 +10,7 @@ export type PlayerChangeCallback = (sessionId: string, player: any) => void;
 export type PlayerRemoveCallback = (sessionId: string) => void;
 export type PlayerAvatarCallback = (sessionId: string, avatars: PlayerAvatars | null) => void;
 export type NetworkStatsCallback = (stats: NetworkStats) => void;
+export type TilesUpdateCallback = (updates: Record<string, string>) => void;
 
 export class MultiplayerManager {
   private client!: Client;
@@ -23,6 +24,8 @@ export class MultiplayerManager {
   private onPlayerCountCallbacks: ((count: number) => void)[] = [];
   private onPlayerAvatarCallbacks: PlayerAvatarCallback[] = [];
   private onNetworkStatsCallbacks: NetworkStatsCallback[] = [];
+  private onTilesUpdateCallbacks: TilesUpdateCallback[] = [];
+  public currentTiles: Record<string, string> = {};
   public playerAvatarsMap = new Map<string, PlayerAvatars>();
 
   private pingTimer: number | null = null;
@@ -56,6 +59,7 @@ export class MultiplayerManager {
   public leave() {
     this.stopPingLoop();
     this.playerAvatarsMap.clear();
+    this.currentTiles = {};
     if (this.room) {
       try {
         this.room.leave();
@@ -128,6 +132,19 @@ export class MultiplayerManager {
         record.received = true;
       }
       this.calculateAndNotifyNetworkStats(rtt);
+    });
+
+    this.room.onMessage("CURRENT_TILES", (tiles: Record<string, string>) => {
+      if (tiles && typeof tiles === "object") {
+        this.currentTiles = { ...tiles };
+        this.notifyTilesUpdate(tiles);
+      }
+    });
+
+    this.room.onMessage("TILES_UPDATED", (updates: Record<string, string>) => {
+      if (updates && typeof updates === "object") {
+        this.notifyTilesUpdate(updates);
+      }
     });
 
     this.startPingLoop();
@@ -327,5 +344,29 @@ export class MultiplayerManager {
     };
 
     this.onNetworkStatsCallbacks.forEach((cb) => cb(stats));
+  }
+
+  public onTilesUpdated(callback: TilesUpdateCallback) {
+    this.onTilesUpdateCallbacks.push(callback);
+    if (Object.keys(this.currentTiles).length > 0) {
+      callback(this.currentTiles);
+    }
+  }
+
+  private notifyTilesUpdate(updates: Record<string, string>) {
+    Object.assign(this.currentTiles, updates);
+    this.onTilesUpdateCallbacks.forEach((cb) => {
+      try {
+        cb(updates);
+      } catch (err) {
+        console.error("Error in onTilesUpdated callback:", err);
+      }
+    });
+  }
+
+  public sendUpdateTiles(updates: Record<string, string>) {
+    if (this.room) {
+      this.room.send("UPDATE_TILES", { updates });
+    }
   }
 }

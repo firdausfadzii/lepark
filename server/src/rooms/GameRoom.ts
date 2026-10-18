@@ -14,7 +14,13 @@ import {
   SERVER_TICK_RATE,
   getTileCenter,
 } from "shared";
-import { upsertPlayer, updatePlayerPosition, getSpaceById } from "../db";
+import {
+  upsertPlayer,
+  updatePlayerPosition,
+  getSpaceById,
+  getSpaceTiles,
+  updateSpaceTiles,
+} from "../db";
 import { verifyToken } from "../auth";
 
 export const activeSpaceCounts = new Map<string, number>();
@@ -29,6 +35,9 @@ export class GameRoom extends Room<GameState> {
   public spaceId: string = "space_central_plaza";
   private playerInputs: Map<string, PlayerInputPayload> = new Map();
   private playerAvatars: Map<string, PlayerAvatars> = new Map();
+  private tiles: Record<string, string> = {};
+  private spaceOwnerId: number | null = null;
+  private clientAuthMap: Map<string, any> = new Map();
   private dbSyncCounter: number = 0;
 
   async onAuth(client: Client, options: PlayerJoinOptions, request?: any) {
@@ -150,6 +159,48 @@ export class GameRoom extends Room<GameState> {
     this.onMessage("PING", (client: Client, data: { seq: number; t: number }) => {
       client.send("PONG", data);
     });
+
+    // Load initial tiles and space metadata
+    getSpaceTiles(this.spaceId)
+      .then((loadedTiles) => {
+        this.tiles = loadedTiles || {};
+      })
+      .catch((err) => console.warn("Failed loading space tiles:", err));
+
+    getSpaceById(this.spaceId)
+      .then((space) => {
+        if (space) {
+          this.spaceOwnerId = space.owner_id;
+        }
+      })
+      .catch((err) => console.warn("Failed loading space metadata:", err));
+
+    // Handle tile updates from clients with edit permissions
+    this.onMessage(
+      "UPDATE_TILES",
+      async (client: Client, data: { updates: Record<string, string> }) => {
+        const auth = this.clientAuthMap.get(client.sessionId);
+        const user = auth?.user;
+        const isSuperadmin = user?.role === "superadmin";
+        const isOwner = user && this.spaceOwnerId !== null && user.id === this.spaceOwnerId;
+
+        if (!isSuperadmin && !isOwner) {
+          console.warn(
+            `[GameRoom] Unauthorized tile edit attempt by ${client.sessionId} in space ${this.spaceId}`
+          );
+          client.send("ERROR", {
+            message: "Permission denied: Only space owner or superadmin can edit map.",
+          });
+          return;
+        }
+
+        if (data && data.updates && typeof data.updates === "object") {
+          Object.assign(this.tiles, data.updates);
+          this.broadcast("TILES_UPDATED", data.updates);
+          await updateSpaceTiles(this.spaceId, this.tiles);
+        }
+      }
+    );
   }
 
   onJoin(client: Client, options: PlayerJoinOptions, auth: any) {
@@ -210,6 +261,15 @@ export class GameRoom extends Room<GameState> {
       allAvatars[sId] = av;
     });
     client.send("ALL_AVATARS", allAvatars);
+
+    // Save auth and update space ownership if applicable
+    this.clientAuthMap.set(client.sessionId, auth);
+    if (auth?.space?.owner_id !== undefined) {
+      this.spaceOwnerId = auth.space.owner_id;
+    }
+
+    // Send current space tiles to joining client
+    client.send("CURRENT_TILES", this.tiles);
   }
 
   onLeave(client: Client, consented?: boolean) {
@@ -224,6 +284,7 @@ export class GameRoom extends Room<GameState> {
     }
     this.playerInputs.delete(client.sessionId);
     this.playerAvatars.delete(client.sessionId);
+    this.clientAuthMap.delete(client.sessionId);
   }
 
   update(deltaTime: number) {

@@ -56,8 +56,25 @@ const dropdownMySpaceSub = document.getElementById("dropdown-my-space-sub") as H
 const dropdownUpdateCharBtn = document.getElementById("dropdown-update-char-btn") as HTMLButtonElement;
 const dropdownLogoutBtn = document.getElementById("dropdown-logout-btn") as HTMLButtonElement;
 
-// Top-Left Map Settings Button
+// Top-Left Controls
 const btnMapSettings = document.getElementById("btn-map-settings") as HTMLButtonElement;
+const btnEditMap = document.getElementById("btn-edit-map") as HTMLButtonElement;
+const mapEditBanner = document.getElementById("map-edit-banner") as HTMLDivElement;
+const editBannerAssetText = document.getElementById("edit-banner-asset-text") as HTMLElement;
+const btnBannerDone = document.getElementById("btn-banner-done") as HTMLButtonElement | null;
+const mapEditorSidebar = document.getElementById("map-editor-sidebar") as HTMLElement;
+const btnCloseMapEditor = document.getElementById("btn-close-map-editor") as HTMLButtonElement;
+const btnResetTileColor = document.getElementById("btn-reset-tile-color") as HTMLButtonElement | null;
+const editorTileColorInput = document.getElementById("editor-tile-color-input") as HTMLInputElement | null;
+const editorTileHexInput = document.getElementById("editor-tile-hex-input") as HTMLInputElement | null;
+const editorColorCircle = document.getElementById("editor-color-circle") as HTMLElement | null;
+const editorColorPalette = document.getElementById("editor-color-palette") as HTMLElement | null;
+const brushHeadline = document.getElementById("brush-headline") as HTMLElement | null;
+const brushColorText = document.getElementById("brush-color-text") as HTMLElement | null;
+const brushDot = document.getElementById("brush-dot") as HTMLElement | null;
+const brushPatternLayer = document.getElementById("brush-pattern-layer") as HTMLElement | null;
+const brushTintLayer = document.getElementById("brush-tint-layer") as HTMLElement | null;
+const plainTilePreviewSquare = document.getElementById("plain-tile-preview-square") as HTMLElement | null;
 
 // Top Bar Right Actions (Map, Ping, Loss)
 const btnOpenMap = document.getElementById("btn-open-map") as HTMLButtonElement;
@@ -389,6 +406,8 @@ function handleLogout() {
   if (topbarPingStat) topbarPingStat.textContent = "-- ms";
   if (topbarLossStat) topbarLossStat.textContent = "-- loss";
   if (btnMapSettings) btnMapSettings.classList.add("hidden");
+  if (btnEditMap) btnEditMap.classList.add("hidden");
+  exitEditMode();
 
   // Reset inputs
   loginPasswordInput.value = "";
@@ -885,6 +904,295 @@ if (btnMapSettings) {
   });
 }
 
+// ==========================================
+// Map Editor Logic & Controls
+// ==========================================
+
+let isEditModeActive = false;
+let currentSelectedAssetId = "birch_floor_150";
+let currentSelectedAssetName = "Birch Floor";
+let currentSelectedTileColor: string | null = null; // null = original/no tint
+
+const MAP_EDITOR_PRESET_COLORS = [
+  { name: "Original", hex: null },
+  { name: "Slate Teal", hex: "#3B8282" },
+  { name: "Ochre Gold", hex: "#ECA239" },
+  { name: "Terracotta", hex: "#DB5B47" },
+  { name: "Forest Dark", hex: "#1E3131" },
+  { name: "Emerald", hex: "#10B981" },
+  { name: "Royal Blue", hex: "#3B82F6" },
+  { name: "Cyan", hex: "#06B6D4" },
+  { name: "Purple", hex: "#8B5CF6" },
+  { name: "Rose Pink", hex: "#EC4899" },
+  { name: "Orange", hex: "#F97316" },
+  { name: "Cool Slate", hex: "#64748B" },
+  { name: "Clean White", hex: "#FFFFFF" },
+];
+
+function setupMapEditorColorPicker() {
+  if (!editorColorPalette) return;
+  editorColorPalette.innerHTML = "";
+
+  MAP_EDITOR_PRESET_COLORS.forEach((preset) => {
+    const swatch = document.createElement("button");
+    swatch.type = "button";
+    swatch.className = "editor-palette-swatch";
+    if (preset.hex === null) {
+      swatch.classList.add("swatch-none");
+      swatch.title = "Original (No tint)";
+      if (currentSelectedTileColor === null) {
+        swatch.classList.add("selected");
+      }
+    } else {
+      swatch.style.backgroundColor = preset.hex;
+      swatch.title = `${preset.name} (${preset.hex})`;
+      swatch.setAttribute("data-color", preset.hex);
+      if (currentSelectedTileColor?.toLowerCase() === preset.hex.toLowerCase()) {
+        swatch.classList.add("selected");
+      }
+    }
+
+    swatch.addEventListener("click", () => {
+      selectTileColor(preset.hex);
+    });
+
+    editorColorPalette.appendChild(swatch);
+  });
+
+  if (editorTileColorInput) {
+    editorTileColorInput.addEventListener("input", (e) => {
+      const val = (e.target as HTMLInputElement).value;
+      selectTileColor(val);
+    });
+  }
+
+  if (editorTileHexInput) {
+    editorTileHexInput.addEventListener("input", (e) => {
+      let raw = (e.target as HTMLInputElement).value.trim().replace("#", "");
+      if (raw.length === 6 && /^[0-9a-fA-F]{6}$/.test(raw)) {
+        const hex = `#${raw}`;
+        selectTileColor(hex);
+      }
+    });
+  }
+
+  if (btnResetTileColor) {
+    btnResetTileColor.addEventListener("click", () => {
+      selectTileColor(null);
+    });
+  }
+}
+
+function selectTileColor(colorHex: string | null) {
+  currentSelectedTileColor = colorHex;
+
+  if (colorHex) {
+    if (editorTileColorInput) editorTileColorInput.value = colorHex;
+    if (editorTileHexInput) editorTileHexInput.value = colorHex.replace("#", "").toUpperCase();
+    if (editorColorCircle) editorColorCircle.style.backgroundColor = colorHex;
+  }
+
+  // Update palette swatches active class
+  document.querySelectorAll(".editor-palette-swatch").forEach((el) => {
+    const swatchColor = el.getAttribute("data-color");
+    if (!colorHex && el.classList.contains("swatch-none")) {
+      el.classList.add("selected");
+    } else if (colorHex && swatchColor && swatchColor.toLowerCase() === colorHex.toLowerCase()) {
+      el.classList.add("selected");
+    } else {
+      el.classList.remove("selected");
+    }
+  });
+
+  updateBrushPreview();
+  updateEditBannerText();
+
+  if (gameInstance) {
+    const scene = gameInstance.scene.getScene("GameScene") as GameScene;
+    if (scene) {
+      scene.setSelectedColor(colorHex);
+    }
+  }
+}
+
+function updateBrushPreview() {
+  if (brushHeadline) {
+    brushHeadline.textContent = currentSelectedAssetName;
+  }
+
+  if (brushColorText) {
+    if (currentSelectedTileColor) {
+      brushColorText.textContent = currentSelectedTileColor.toUpperCase();
+    } else {
+      brushColorText.textContent = "Original (No Tint)";
+    }
+  }
+
+  if (brushDot) {
+    if (currentSelectedTileColor) {
+      brushDot.style.display = "inline-block";
+      brushDot.style.backgroundColor = currentSelectedTileColor;
+      brushDot.style.boxShadow = `0 0 6px ${currentSelectedTileColor}`;
+    } else {
+      brushDot.style.display = "none";
+    }
+  }
+
+  if (brushTintLayer) {
+    if (currentSelectedTileColor) {
+      brushTintLayer.style.backgroundColor = currentSelectedTileColor;
+      brushTintLayer.style.opacity = "0.75";
+    } else {
+      brushTintLayer.style.opacity = "0";
+    }
+  }
+
+  if (brushPatternLayer) {
+    if (currentSelectedAssetId === "birch_floor_150") {
+      brushPatternLayer.style.backgroundImage = 'url("/assets/birch_floor_150.png")';
+      brushPatternLayer.style.backgroundColor = "transparent";
+    } else if (currentSelectedAssetId === "grass_150") {
+      brushPatternLayer.style.backgroundImage = 'url("/assets/grass_150.png")';
+      brushPatternLayer.style.backgroundColor = "transparent";
+    } else {
+      // Plain tile
+      brushPatternLayer.style.backgroundImage = "none";
+      brushPatternLayer.style.backgroundColor = "#ffffff";
+    }
+  }
+
+  if (plainTilePreviewSquare) {
+    if (currentSelectedTileColor) {
+      plainTilePreviewSquare.style.backgroundColor = currentSelectedTileColor;
+    } else {
+      plainTilePreviewSquare.style.backgroundColor = "#ffffff";
+    }
+  }
+}
+
+function updateEditBannerText() {
+  if (!editBannerAssetText) return;
+  const colorMarkup = currentSelectedTileColor
+    ? `<span class="banner-color-indicator" style="background:${currentSelectedTileColor};"></span><strong>${currentSelectedTileColor.toUpperCase()}</strong>`
+    : `<em>(No Tint)</em>`;
+  editBannerAssetText.innerHTML = `Active: <strong>${currentSelectedAssetName}</strong> • Color: ${colorMarkup}`;
+}
+
+function enterEditMode() {
+  if (!canChangeCurrentSpaceSettings()) {
+    alert("You do not have permission to edit this space's map.");
+    return;
+  }
+  isEditModeActive = true;
+  document.body.classList.add("edit-mode-active");
+
+  if (mapEditorSidebar) mapEditorSidebar.classList.remove("hidden");
+  if (mapEditBanner) mapEditBanner.classList.remove("hidden");
+  if (btnEditMap) {
+    btnEditMap.classList.add("active");
+    const label = btnEditMap.querySelector(".edit-btn-label");
+    if (label) label.textContent = "Exit Edit";
+  }
+
+  if (gameInstance) {
+    const scene = gameInstance.scene.getScene("GameScene") as GameScene;
+    if (scene) {
+      scene.setEditMode(true);
+      scene.setSelectedAsset(currentSelectedAssetId);
+      scene.setSelectedColor(currentSelectedTileColor);
+    }
+  }
+
+  updateBrushPreview();
+  updateEditBannerText();
+}
+
+function exitEditMode() {
+  if (!isEditModeActive) return;
+  isEditModeActive = false;
+  document.body.classList.remove("edit-mode-active");
+
+  if (mapEditorSidebar) mapEditorSidebar.classList.add("hidden");
+  if (mapEditBanner) mapEditBanner.classList.add("hidden");
+  if (btnEditMap) {
+    btnEditMap.classList.remove("active");
+    const label = btnEditMap.querySelector(".edit-btn-label");
+    if (label) label.textContent = "Edit Map";
+  }
+
+  if (gameInstance) {
+    const scene = gameInstance.scene.getScene("GameScene") as GameScene;
+    if (scene) {
+      scene.setEditMode(false);
+    }
+  }
+}
+
+function toggleEditMode() {
+  if (isEditModeActive) {
+    exitEditMode();
+  } else {
+    enterEditMode();
+  }
+}
+
+function selectEditorAsset(assetId: string, assetName: string) {
+  currentSelectedAssetId = assetId;
+  currentSelectedAssetName = assetName;
+
+  const cards = document.querySelectorAll(".editor-asset-card");
+  cards.forEach((card) => {
+    if ((card as HTMLElement).dataset.assetId === assetId) {
+      card.classList.add("selected");
+    } else {
+      card.classList.remove("selected");
+    }
+  });
+
+  updateBrushPreview();
+  updateEditBannerText();
+
+  if (gameInstance) {
+    const scene = gameInstance.scene.getScene("GameScene") as GameScene;
+    if (scene) {
+      scene.setSelectedAsset(assetId);
+    }
+  }
+}
+
+if (btnEditMap) {
+  btnEditMap.addEventListener("click", () => {
+    toggleEditMode();
+  });
+}
+
+if (btnCloseMapEditor) {
+  btnCloseMapEditor.addEventListener("click", () => {
+    exitEditMode();
+  });
+}
+
+if (btnBannerDone) {
+  btnBannerDone.addEventListener("click", () => {
+    exitEditMode();
+  });
+}
+
+const editorAssetCards = document.querySelectorAll<HTMLButtonElement>(".editor-asset-card");
+editorAssetCards.forEach((card) => {
+  card.addEventListener("click", () => {
+    const id = card.dataset.assetId || "birch_floor_150";
+    const name = card.dataset.assetName || "Birch Floor";
+    selectEditorAsset(id, name);
+  });
+});
+
+window.addEventListener("keydown", (e: KeyboardEvent) => {
+  if (e.key === "Escape" && isEditModeActive) {
+    exitEditMode();
+  }
+});
+
 // Map Modal Handlers
 function openMapModal() {
   if (mapCurrentSpaceName) {
@@ -983,12 +1291,23 @@ function canChangeCurrentSpaceSettings(): boolean {
 }
 
 function updateMapSettingsVisibility() {
-  if (!btnMapSettings) return;
+  const canEdit = canChangeCurrentSpaceSettings();
 
-  if (canChangeCurrentSpaceSettings()) {
-    btnMapSettings.classList.remove("hidden");
-  } else {
-    btnMapSettings.classList.add("hidden");
+  if (btnMapSettings) {
+    if (canEdit) {
+      btnMapSettings.classList.remove("hidden");
+    } else {
+      btnMapSettings.classList.add("hidden");
+    }
+  }
+
+  if (btnEditMap) {
+    if (canEdit) {
+      btnEditMap.classList.remove("hidden");
+    } else {
+      btnEditMap.classList.add("hidden");
+      exitEditMode();
+    }
   }
 }
 
@@ -1159,6 +1478,8 @@ function renderSpacesList() {
  */
 async function switchSpace(newSpaceId: string, newSpaceName: string) {
   if (currentSpaceId === newSpaceId) return;
+
+  exitEditMode();
 
   topbarStatusSubtitle.textContent = `Traveling...`;
 
@@ -1660,6 +1981,7 @@ window.addEventListener("resize", () => {
 // App Initialization
 async function init() {
   setupColorSwatches();
+  setupMapEditorColorPicker();
   setupUploadSlots();
 
   const savedColor = localStorage.getItem("player_color");

@@ -1115,14 +1115,22 @@ canvas {
 }
 
 /* ==========================================
-   Top-Left Map Settings Floating Action Button
+   Top-Left Action Controls Bar & Buttons
    ========================================== */
 
-.topleft-settings-btn {
+.topleft-bar {
   position: fixed;
   top: 18px;
   left: 24px;
-  z-index: 50;
+  z-index: 55;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.topleft-settings-btn {
+  position: relative;
+  z-index: 55;
   width: 44px;
   height: 44px;
   min-width: 44px;
@@ -1159,6 +1167,753 @@ canvas {
   height: 22px;
   fill: currentColor;
   transition: transform 0.25s ease;
+}
+
+.topleft-edit-btn {
+  position: relative;
+  z-index: 55;
+  height: 44px;
+  min-height: 44px;
+  padding: 0 16px 0 14px;
+  border-radius: 22px;
+  background: rgba(26, 42, 42, 0.94);
+  border: 1px solid rgba(59, 130, 130, 0.28);
+  color: var(--lepark-surface);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 10px 30px rgba(10, 20, 20, 0.5), 0 0 20px rgba(59, 130, 130, 0.18);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  outline: none;
+  user-select: none;
+}
+
+.topleft-edit-btn:hover,
+.topleft-edit-btn:focus-visible {
+  background: rgba(35, 56, 56, 0.95);
+  color: #ffffff;
+  border-color: var(--lepark-primary);
+  transform: translateY(-2px);
+  box-shadow: 0 12px 35px rgba(10, 20, 20, 0.6), 0 0 25px rgba(59, 130, 130, 0.35);
+}
+
+.topleft-edit-btn.active {
+  background: linear-gradient(135deg, rgba(59, 130, 130, 0.95), rgba(30, 49, 49, 0.98));
+  border-color: var(--lepark-secondary);
+  color: var(--lepark-secondary);
+  box-shadow: 0 0 25px rgba(236, 162, 57, 0.4), 0 10px 30px rgba(10, 20, 20, 0.6);
+}
+
+.topleft-edit-btn .edit-svg-icon {
+  width: 18px;
+  height: 18px;
+  fill: currentColor;
+}
+
+/* ==========================================
+   Left-Side Map Editor Assets Sidebar
+   ========================================== */
+
+.map-editor-sidebar {
+  position: fixed;
+  top: 76px;
+  left: 24px;
+  width: 290px;
+  max-height: calc(100vh - 100px);
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  background: rgba(20, 32, 32, 0.94);
+  border: 1px solid rgba(59, 130, 130, 0.35);
+  border-radius: 20px;
+  box-shadow: 0 20px 45px rgba(10, 20, 20, 0.7), 0 0 30px rgba(59, 130, 130, 0.2);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  overflow: hidden;
+  animation: slideInLeft 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes slideInLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.editor-sidebar-header {
+  padding: 16px 18px;
+  border-bottom: 1px solid rgba(59, 130, 130, 0.2);
+  background: rgba(26, 42, 42, 0.65);
+}
+
+.editor-header-title-box {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.editor-header-badge {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, var(--lepark-primary), #244646);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(59, 130, 130, 0.3);
+}
+
+.editor-palette-icon {
+  width: 20px;
+  height: 20px;
+  fill: currentColor;
+}
+
+.editor-title {
+  margin: 0;
+  font-size: 15.5px;
+  font-weight: 700;
+  color: #ffffff;
+  letter-spacing: -0.01em;
+}
+
+.editor-subtitle {
+  font-size: 11.5px;
+  color: var(--lepark-muted);
+  display: block;
+  margin-top: 2px;
+}
+
+.editor-sidebar-body {
+  padding: 16px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.editor-category-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.editor-category-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 2px 8px 2px;
+}
+
+.editor-category-name-wrap {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.category-icon {
+  font-size: 14px;
+}
+
+.category-title {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--lepark-secondary);
+}
+
+.category-count {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: rgba(59, 130, 130, 0.2);
+  color: var(--lepark-surface);
+  border: 1px solid rgba(59, 130, 130, 0.3);
+}
+
+.editor-assets-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.editor-asset-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px 4px;
+  background: rgba(26, 42, 42, 0.7);
+  border: 2px solid rgba(59, 130, 130, 0.24);
+  border-radius: 12px;
+  cursor: pointer;
+  outline: none;
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  text-align: center;
+  color: inherit;
+  font-family: inherit;
+}
+
+.editor-asset-card:hover {
+  background: rgba(35, 56, 56, 0.9);
+  border-color: rgba(59, 130, 130, 0.55);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+}
+
+.editor-asset-card.selected {
+  background: rgba(35, 60, 60, 0.95);
+  border-color: var(--lepark-secondary);
+  box-shadow: 0 0 20px rgba(236, 162, 57, 0.4), 0 8px 20px rgba(0, 0, 0, 0.4);
+}
+
+.asset-card-thumb {
+  position: relative;
+  width: 58px;
+  height: 58px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #142020;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 6px;
+}
+
+.plain-tile-thumb {
+  background: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.plain-tile-preview-square {
+  width: 100%;
+  height: 100%;
+  background: #ffffff;
+  border: 2px solid rgba(0, 0, 0, 0.08);
+  transition: background-color 0.2s ease;
+}
+
+.asset-thumb-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  image-rendering: pixelated;
+  transition: transform 0.2s ease;
+}
+
+.editor-asset-card:hover .asset-thumb-img {
+  transform: scale(1.08);
+}
+
+.asset-card-check {
+  display: none;
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--lepark-secondary);
+  color: #142020;
+  font-size: 10px;
+  font-weight: 800;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+}
+
+.editor-asset-card.selected .asset-card-check {
+  display: flex;
+}
+
+.asset-card-info {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+.asset-card-name {
+  font-size: 11px;
+  font-weight: 600;
+  color: #ffffff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.asset-card-code {
+  font-size: 9px;
+  color: var(--lepark-muted);
+  margin-top: 1px;
+}
+
+/* ==========================================
+   Map Editor Color Tint Picker Section
+   ========================================== */
+
+.editor-color-group {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(59, 130, 130, 0.25);
+}
+
+.editor-color-reset-btn {
+  padding: 3px 9px;
+  font-size: 11px;
+  font-weight: 700;
+  font-family: inherit;
+  color: var(--lepark-surface);
+  background: rgba(59, 130, 130, 0.2);
+  border: 1px solid rgba(59, 130, 130, 0.35);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.editor-color-reset-btn:hover {
+  background: rgba(59, 130, 130, 0.4);
+  color: #ffffff;
+  border-color: var(--lepark-primary);
+  transform: translateY(-1px);
+}
+
+.editor-brush-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  background: rgba(16, 26, 26, 0.7);
+  border: 1px solid rgba(59, 130, 130, 0.3);
+  border-radius: 14px;
+  margin-bottom: 12px;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.brush-swatch-box {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: #142020;
+  border: 1.5px solid rgba(255, 255, 255, 0.15);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.35);
+}
+
+.brush-pattern-layer {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  image-rendering: pixelated;
+  background-image: url("/assets/birch_floor_150.png");
+}
+
+.brush-tint-layer {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  mix-blend-mode: multiply;
+  transition: all 0.2s ease;
+  pointer-events: none;
+}
+
+.brush-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.brush-headline {
+  font-size: 13px;
+  font-weight: 700;
+  color: #ffffff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.brush-color-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--lepark-muted);
+}
+
+.brush-dot {
+  display: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  box-shadow: 0 0 6px currentColor;
+  flex-shrink: 0;
+}
+
+.brush-color-text {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
+  font-weight: 600;
+}
+
+.editor-custom-color-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.editor-color-input-wrap {
+  position: relative;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  background: rgba(26, 42, 42, 0.7);
+  border: 1px solid rgba(59, 130, 130, 0.35);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.editor-color-input-wrap:hover {
+  border-color: var(--lepark-primary);
+  background: rgba(35, 56, 56, 0.85);
+}
+
+.editor-color-input-wrap input[type="color"] {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.editor-color-circle {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.85);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+}
+
+.editor-color-input-wrap:hover .editor-color-circle {
+  transform: scale(1.1);
+}
+
+.editor-color-picker-title {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.editor-hex-wrap {
+  display: flex;
+  align-items: center;
+  width: 86px;
+  background: rgba(16, 26, 26, 0.8);
+  border: 1px solid rgba(59, 130, 130, 0.35);
+  border-radius: 12px;
+  padding: 0 8px;
+  transition: all 0.2s ease;
+}
+
+.editor-hex-wrap:focus-within {
+  border-color: var(--lepark-secondary);
+  box-shadow: 0 0 10px rgba(236, 162, 57, 0.25);
+}
+
+.editor-hex-hash {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--lepark-muted);
+}
+
+.editor-hex-field {
+  width: 100%;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #ffffff;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 7px 4px;
+  text-transform: uppercase;
+}
+
+.editor-swatches-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--lepark-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 8px;
+}
+
+.editor-color-palette {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 7px;
+}
+
+.editor-palette-swatch {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 8px;
+  border: 2px solid rgba(255, 255, 255, 0.18);
+  cursor: pointer;
+  outline: none;
+  padding: 0;
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.25);
+}
+
+.editor-palette-swatch:hover {
+  transform: scale(1.15);
+  border-color: #ffffff;
+  z-index: 2;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.editor-palette-swatch.selected {
+  border-color: var(--lepark-secondary);
+  transform: scale(1.12);
+  box-shadow: 0 0 12px rgba(236, 162, 57, 0.7);
+  z-index: 3;
+}
+
+.editor-palette-swatch.selected::after {
+  content: "✓";
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 900;
+  color: #ffffff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8), 0 0 2px rgba(0, 0, 0, 0.9);
+}
+
+.editor-palette-swatch.swatch-none {
+  background: repeating-linear-gradient(
+    45deg,
+    rgba(255, 255, 255, 0.1),
+    rgba(255, 255, 255, 0.1) 4px,
+    transparent 4px,
+    transparent 8px
+  ), #1a2a2a;
+}
+
+.editor-palette-swatch.swatch-none::before {
+  content: "Ø";
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--lepark-muted);
+}
+
+.banner-color-indicator {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 4px;
+  margin-left: 4px;
+  vertical-align: middle;
+  border: 1.5px solid rgba(255, 255, 255, 0.7);
+  box-shadow: 0 0 5px currentColor;
+}
+
+.editor-sidebar-footer {
+  padding: 14px 16px;
+  background: rgba(26, 42, 42, 0.65);
+  border-top: 1px solid rgba(59, 130, 130, 0.2);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.editor-tip-box {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 9px 11px;
+  border-radius: 10px;
+  background: rgba(236, 162, 57, 0.1);
+  border: 1px solid rgba(236, 162, 57, 0.22);
+}
+
+.tip-icon {
+  font-size: 13px;
+  line-height: 1.3;
+}
+
+.tip-text {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.35;
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.editor-finish-btn {
+  width: 100%;
+  padding: 10px 16px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, var(--lepark-primary), #235252);
+  border: 1px solid rgba(59, 130, 130, 0.5);
+  color: #ffffff;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 4px 15px rgba(59, 130, 130, 0.3);
+}
+
+.editor-finish-btn:hover {
+  background: linear-gradient(135deg, #449797, var(--lepark-primary));
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(59, 130, 130, 0.45);
+}
+
+/* ==========================================
+   Top Edit Mode Floating Banner
+   ========================================== */
+
+.map-edit-banner {
+  position: fixed;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 55;
+  display: flex;
+  align-items: center;
+  animation: bannerFadeDown 0.25s ease-out;
+}
+
+@keyframes bannerFadeDown {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -15px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+.edit-banner-capsule {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(20, 32, 32, 0.94);
+  border: 1.5px solid var(--lepark-secondary);
+  border-radius: 25px;
+  padding: 6px 14px 6px 14px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 0 25px rgba(236, 162, 57, 0.3);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.edit-banner-pulse {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--lepark-secondary);
+  box-shadow: 0 0 10px var(--lepark-secondary);
+  animation: pulseGold 1.5s infinite;
+}
+
+@keyframes pulseGold {
+  0% {
+    box-shadow: 0 0 0 0 rgba(236, 162, 57, 0.7);
+  }
+  70% {
+    box-shadow: 0 0 0 8px rgba(236, 162, 57, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(236, 162, 57, 0);
+  }
+}
+
+.edit-banner-tag {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: var(--lepark-secondary);
+}
+
+.edit-banner-sep {
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.edit-banner-asset-text {
+  font-size: 12.5px;
+  color: #ffffff;
+}
+
+.edit-banner-done-btn {
+  padding: 5px 12px;
+  border-radius: 14px;
+  background: rgba(236, 162, 57, 0.2);
+  border: 1px solid var(--lepark-secondary);
+  color: var(--lepark-secondary);
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.edit-banner-done-btn:hover {
+  background: var(--lepark-secondary);
+  color: #142020;
+}
+
+/* In edit mode, subtly fade normal middle top bar */
+body.edit-mode-active .middle-top-bar {
+  opacity: 0.12;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+
+body.edit-mode-active .middle-top-bar:hover {
+  opacity: 0.9;
+  pointer-events: auto;
 }
 
 /* ==========================================

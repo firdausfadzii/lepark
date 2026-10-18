@@ -38,6 +38,26 @@ export class GameScene extends Phaser.Scene {
   private lastInputState = { left: false, right: false, up: false, down: false };
   public controlsActive = true;
 
+  // Map Editor State
+  public isEditMode: boolean = false;
+  public selectedAssetKey: string = "birch_floor_150";
+  public selectedTileColor: string | null = null;
+  private isSelectingArea: boolean = false;
+  private selectionStartTile: { x: number; y: number } | null = null;
+  private selectionCurrentTile: { x: number; y: number } | null = null;
+
+  // Tile images grid [row][col] and state
+  private tileImages: (Phaser.GameObjects.Image | null)[][] = [];
+  private currentTilesMap: Map<string, string> = new Map();
+
+  // Graphics overlays
+  private gridGraphics!: Phaser.GameObjects.Graphics;
+  private editorHoverGraphics!: Phaser.GameObjects.Graphics;
+  private editorSelectionGraphics!: Phaser.GameObjects.Graphics;
+  private editorOverlayText!: Phaser.GameObjects.Text;
+  private isRightMouseDown: boolean = false;
+  private panStartPoint: { x: number; y: number; scrollX: number; scrollY: number } | null = null;
+
   constructor() {
     super({ key: "GameScene" });
   }
@@ -47,7 +67,11 @@ export class GameScene extends Phaser.Scene {
   }
 
   preload() {
-    this.load.image("grass_tile", "/assets/grass_100.png");
+    this.load.image("grass_tile", "/assets/grass_150.png");
+    this.load.image("grass_150", "/assets/grass_150.png");
+    this.load.image("birch_floor_150", "/assets/birch_floor_150.png");
+    this.load.image("grass_100", "/assets/grass_150.png");
+    this.load.image("birch_floor_100", "/assets/birch_floor_150.png");
   }
 
   create() {
@@ -69,7 +93,7 @@ export class GameScene extends Phaser.Scene {
     // Keep camera viewport aligned on browser resize
     this.scale.on("resize", (gameSize: Phaser.Structs.Size) => {
       this.cameras.main.setSize(gameSize.width, gameSize.height);
-      if (this.localPlayerId) {
+      if (this.localPlayerId && !this.isEditMode) {
         const localVisual = this.playerVisuals.get(this.localPlayerId);
         if (localVisual) {
           this.cameras.main.centerOn(localVisual.container.x, localVisual.container.y);
@@ -77,21 +101,56 @@ export class GameScene extends Phaser.Scene {
       }
     });
 
-    // Background fully rendered with grass_100.png on each 100x100 tile
+    // Dynamic plain color tile texture (white with subtle bevel) for solid color tiles
+    if (!this.textures.exists("color_tile")) {
+      const g = this.make.graphics({ x: 0, y: 0 });
+      g.fillStyle(0xffffff, 1);
+      g.fillRect(0, 0, 150, 150);
+      g.lineStyle(2, 0x000000, 0.08);
+      g.strokeRect(1, 1, 148, 148);
+      g.generateTexture("color_tile", 150, 150);
+      g.destroy();
+    }
+
+    // Background fully rendered with grass_150.png on each 50x50 tile as base
     const bgTileSprite = this.add.tileSprite(0, 0, WORLD_WIDTH, WORLD_HEIGHT, "grass_tile");
     bgTileSprite.setOrigin(0, 0);
+    bgTileSprite.setTileScale(TILE_SIZE / 150, TILE_SIZE / 150);
     bgTileSprite.setDepth(0);
 
-    // Subtle grid lines to distinguish each 100x100 tile clearly
-    const gridGraphics = this.add.graphics();
-    gridGraphics.lineStyle(1, 0x000000, 0.06);
-    for (let x = 0; x <= WORLD_WIDTH; x += TILE_SIZE) {
-      gridGraphics.lineBetween(x, 0, x, WORLD_HEIGHT);
+    // Interactive per-tile images grid for custom flooring
+    this.tileImages = [];
+    for (let row = 0; row < GRID_ROWS; row++) {
+      this.tileImages[row] = [];
+      for (let col = 0; col < GRID_COLS; col++) {
+        const img = this.add.image(col * TILE_SIZE, row * TILE_SIZE, "grass_150");
+        img.setOrigin(0, 0);
+        img.setDisplaySize(TILE_SIZE, TILE_SIZE);
+        img.setDepth(0.1);
+        this.tileImages[row][col] = img;
+      }
     }
-    for (let y = 0; y <= WORLD_HEIGHT; y += TILE_SIZE) {
-      gridGraphics.lineBetween(0, y, WORLD_WIDTH, y);
-    }
-    gridGraphics.setDepth(1);
+
+    // Grid lines graphics (dynamically highlighted in edit mode)
+    this.gridGraphics = this.add.graphics();
+    this.drawGrid(false);
+
+    // Map Editor Hover and Selection graphics overlays
+    this.editorHoverGraphics = this.add.graphics();
+    this.editorHoverGraphics.setDepth(6);
+
+    this.editorSelectionGraphics = this.add.graphics();
+    this.editorSelectionGraphics.setDepth(7);
+
+    this.editorOverlayText = this.add.text(0, 0, "", {
+      fontSize: "13px",
+      fontFamily: "Inter, system-ui, sans-serif",
+      backgroundColor: "rgba(20, 32, 32, 0.94)",
+      color: "#ffffff",
+      padding: { x: 10, y: 6 },
+    });
+    this.editorOverlayText.setDepth(8);
+    this.editorOverlayText.setVisible(false);
 
     // Outer perimeter boundary border
     const boundsGraphics = this.add.graphics();
@@ -153,6 +212,17 @@ export class GameScene extends Phaser.Scene {
       this.setPlayerAvatars(sessionId, avatars);
     });
 
+    // Hook up map tile updates from multiplayer
+    this.multiplayer.onTilesUpdated((updates) => {
+      this.applyTileUpdates(updates);
+    });
+    if (this.multiplayer.currentTiles && Object.keys(this.multiplayer.currentTiles).length > 0) {
+      this.applyTileUpdates(this.multiplayer.currentTiles);
+    }
+
+    // Pointer events for Map Editor (click and drag to select area)
+    this.setupEditorPointerEvents();
+
     // If room already has players on scene start
     if (this.multiplayer.room) {
       this.localPlayerId = this.multiplayer.sessionId || null;
@@ -163,6 +233,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   public resetPlayers() {
+    this.resetTiles();
     this.playerVisuals.forEach((visual) => {
       visual.container.destroy();
     });
@@ -458,6 +529,43 @@ export class GameScene extends Phaser.Scene {
   update(time: number, delta: number) {
     const dtSeconds = delta / 1000;
 
+    // In Edit Mode, WASD / Arrow Keys pan the camera smoothly instead of moving player
+    if (this.isEditMode) {
+      const panSpeed = 700 * dtSeconds;
+      let camDx = 0;
+      let camDy = 0;
+      if (this.cursors) {
+        if (this.cursors.left.isDown || this.wasdKeys.A.isDown) camDx -= panSpeed;
+        if (this.cursors.right.isDown || this.wasdKeys.D.isDown) camDx += panSpeed;
+        if (this.cursors.up.isDown || this.wasdKeys.W.isDown) camDy -= panSpeed;
+        if (this.cursors.down.isDown || this.wasdKeys.S.isDown) camDy += panSpeed;
+      }
+      if (camDx !== 0 || camDy !== 0) {
+        this.cameras.main.scrollX = Phaser.Math.Clamp(
+          this.cameras.main.scrollX + camDx,
+          0,
+          Math.max(0, WORLD_WIDTH - this.cameras.main.width)
+        );
+        this.cameras.main.scrollY = Phaser.Math.Clamp(
+          this.cameras.main.scrollY + camDy,
+          0,
+          Math.max(0, WORLD_HEIGHT - this.cameras.main.height)
+        );
+      }
+
+      // Reset any active walking inputs
+      if (
+        this.lastInputState.left ||
+        this.lastInputState.right ||
+        this.lastInputState.up ||
+        this.lastInputState.down
+      ) {
+        this.lastInputState = { left: false, right: false, up: false, down: false };
+        this.multiplayer.sendInput(this.lastInputState);
+      }
+      return;
+    }
+
     // 1. Read input state (only when controls are active)
     let left = false;
     let right = false;
@@ -555,6 +663,273 @@ export class GameScene extends Phaser.Scene {
           }
         }
       });
+    }
+  }
+
+  // ==========================================
+  // Map Editor Methods & Visuals
+  // ==========================================
+
+  private drawGrid(isEditMode: boolean) {
+    this.gridGraphics.clear();
+    if (isEditMode) {
+      this.gridGraphics.lineStyle(1, 0x3b8282, 0.28);
+    } else {
+      this.gridGraphics.lineStyle(1, 0x000000, 0.06);
+    }
+    for (let x = 0; x <= WORLD_WIDTH; x += TILE_SIZE) {
+      this.gridGraphics.lineBetween(x, 0, x, WORLD_HEIGHT);
+    }
+    for (let y = 0; y <= WORLD_HEIGHT; y += TILE_SIZE) {
+      this.gridGraphics.lineBetween(0, y, WORLD_WIDTH, y);
+    }
+    this.gridGraphics.setDepth(1);
+  }
+
+  private setupEditorPointerEvents() {
+    this.input.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
+      if (!this.isEditMode) return;
+      const target = pointer.event.target as HTMLElement;
+      if (target && target.tagName !== "CANVAS") return;
+
+      if (pointer.leftButtonDown()) {
+        const col = Math.max(0, Math.min(GRID_COLS - 1, Math.floor(pointer.worldX / TILE_SIZE)));
+        const row = Math.max(0, Math.min(GRID_ROWS - 1, Math.floor(pointer.worldY / TILE_SIZE)));
+        this.isSelectingArea = true;
+        this.selectionStartTile = { x: col, y: row };
+        this.selectionCurrentTile = { x: col, y: row };
+        this.updateSelectionVisuals();
+      } else if (pointer.rightButtonDown() || pointer.middleButtonDown()) {
+        this.isRightMouseDown = true;
+        this.panStartPoint = {
+          x: pointer.x,
+          y: pointer.y,
+          scrollX: this.cameras.main.scrollX,
+          scrollY: this.cameras.main.scrollY,
+        };
+      }
+    });
+
+    this.input.on("pointermove", (pointer: Phaser.Input.Pointer) => {
+      if (!this.isEditMode) return;
+
+      if (this.isRightMouseDown && this.panStartPoint) {
+        const dx = (pointer.x - this.panStartPoint.x) / this.cameras.main.zoom;
+        const dy = (pointer.y - this.panStartPoint.y) / this.cameras.main.zoom;
+        this.cameras.main.scrollX = this.panStartPoint.scrollX - dx;
+        this.cameras.main.scrollY = this.panStartPoint.scrollY - dy;
+        return;
+      }
+
+      const target = pointer.event.target as HTMLElement;
+      if (target && target.tagName !== "CANVAS") {
+        this.editorHoverGraphics.clear();
+        return;
+      }
+
+      const col = Math.max(0, Math.min(GRID_COLS - 1, Math.floor(pointer.worldX / TILE_SIZE)));
+      const row = Math.max(0, Math.min(GRID_ROWS - 1, Math.floor(pointer.worldY / TILE_SIZE)));
+
+      if (this.isSelectingArea && this.selectionStartTile) {
+        this.selectionCurrentTile = { x: col, y: row };
+        this.updateSelectionVisuals();
+      } else {
+        const hoverColor = this.selectedTileColor ? this.parseColor(this.selectedTileColor) : 0xeca239;
+        this.editorHoverGraphics.clear();
+        this.editorHoverGraphics.lineStyle(2, hoverColor, 0.95);
+        this.editorHoverGraphics.strokeRect(col * TILE_SIZE, row * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+        this.editorHoverGraphics.fillStyle(hoverColor, 0.22);
+        this.editorHoverGraphics.fillRect(col * TILE_SIZE, row * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+      }
+    });
+
+    this.input.on("pointerup", (pointer: Phaser.Input.Pointer) => {
+      if (pointer.button === 2 || pointer.button === 1) {
+        this.isRightMouseDown = false;
+        this.panStartPoint = null;
+      }
+
+      if (!this.isEditMode) return;
+
+      if (this.isSelectingArea && this.selectionStartTile && this.selectionCurrentTile) {
+        const minCol = Math.min(this.selectionStartTile.x, this.selectionCurrentTile.x);
+        const maxCol = Math.max(this.selectionStartTile.x, this.selectionCurrentTile.x);
+        const minRow = Math.min(this.selectionStartTile.y, this.selectionCurrentTile.y);
+        const maxRow = Math.max(this.selectionStartTile.y, this.selectionCurrentTile.y);
+
+        const tileVal = this.selectedTileColor
+          ? `${this.selectedAssetKey}|${this.selectedTileColor}`
+          : this.selectedAssetKey;
+
+        const updates: Record<string, string> = {};
+        for (let r = minRow; r <= maxRow; r++) {
+          for (let c = minCol; c <= maxCol; c++) {
+            updates[`${c},${r}`] = tileVal;
+          }
+        }
+
+        this.applyTileUpdates(updates);
+
+        if (this.multiplayer) {
+          this.multiplayer.sendUpdateTiles(updates);
+        }
+
+        this.isSelectingArea = false;
+        this.selectionStartTile = null;
+        this.selectionCurrentTile = null;
+        this.editorSelectionGraphics.clear();
+        this.editorOverlayText.setVisible(false);
+      }
+    });
+
+    this.input.on("wheel", (_pointer: any, _objs: any, _dx: number, dy: number) => {
+      if (!this.isEditMode) return;
+      const currentZoom = this.cameras.main.zoom;
+      const newZoom = Phaser.Math.Clamp(currentZoom - dy * 0.001, 0.5, 1.6);
+      this.cameras.main.setZoom(newZoom);
+    });
+  }
+
+  private updateSelectionVisuals() {
+    if (!this.selectionStartTile || !this.selectionCurrentTile) return;
+
+    const minCol = Math.min(this.selectionStartTile.x, this.selectionCurrentTile.x);
+    const maxCol = Math.max(this.selectionStartTile.x, this.selectionCurrentTile.x);
+    const minRow = Math.min(this.selectionStartTile.y, this.selectionCurrentTile.y);
+    const maxRow = Math.max(this.selectionStartTile.y, this.selectionCurrentTile.y);
+
+    const cols = maxCol - minCol + 1;
+    const rows = maxRow - minRow + 1;
+    const totalTiles = cols * rows;
+
+    const rx = minCol * TILE_SIZE;
+    const ry = minRow * TILE_SIZE;
+    const rw = cols * TILE_SIZE;
+    const rh = rows * TILE_SIZE;
+
+    this.editorSelectionGraphics.clear();
+
+    const fillColor = this.selectedTileColor ? this.parseColor(this.selectedTileColor) : 0x3b8282;
+    // Fill
+    this.editorSelectionGraphics.fillStyle(fillColor, 0.32);
+    this.editorSelectionGraphics.fillRect(rx, ry, rw, rh);
+
+    // Outer border
+    const strokeColor = this.selectedTileColor ? this.parseColor(this.selectedTileColor) : 0xeca239;
+    this.editorSelectionGraphics.lineStyle(2.5, strokeColor, 1);
+    this.editorSelectionGraphics.strokeRect(rx, ry, rw, rh);
+
+    // Inner grid dashed lines
+    this.editorSelectionGraphics.lineStyle(1, 0xffffff, 0.35);
+    for (let c = 1; c < cols; c++) {
+      const gx = rx + c * TILE_SIZE;
+      this.editorSelectionGraphics.lineBetween(gx, ry, gx, ry + rh);
+    }
+    for (let r = 1; r < rows; r++) {
+      const gy = ry + r * TILE_SIZE;
+      this.editorSelectionGraphics.lineBetween(rx, gy, rx + rw, gy);
+    }
+
+    let labelName = "Birch Floor";
+    if (this.selectedAssetKey === "grass_150") labelName = "Grass Tile";
+    else if (this.selectedAssetKey === "color_tile") labelName = "Plain Tile";
+
+    const colorBadge = this.selectedTileColor ? ` • ${this.selectedTileColor.toUpperCase()}` : "";
+    this.editorOverlayText.setText(
+      `📐 ${cols} × ${rows} (${totalTiles} ${totalTiles === 1 ? "tile" : "tiles"}) • ${labelName}${colorBadge}`
+    );
+    this.editorOverlayText.setPosition(rx + 8, Math.max(8, ry - 32));
+    this.editorOverlayText.setVisible(true);
+  }
+
+  public setEditMode(enabled: boolean) {
+    this.isEditMode = enabled;
+    this.drawGrid(enabled);
+
+    if (enabled) {
+      this.cameras.main.stopFollow();
+    } else {
+      this.isSelectingArea = false;
+      this.selectionStartTile = null;
+      this.selectionCurrentTile = null;
+      this.isRightMouseDown = false;
+      this.panStartPoint = null;
+      this.editorHoverGraphics.clear();
+      this.editorSelectionGraphics.clear();
+      this.editorOverlayText.setVisible(false);
+
+      if (this.localPlayerId) {
+        const localVisual = this.playerVisuals.get(this.localPlayerId);
+        if (localVisual) {
+          this.cameras.main.startFollow(localVisual.container, true, 0.12, 0.12);
+        }
+      }
+      this.cameras.main.setZoom(1.0);
+    }
+  }
+
+  public setSelectedAsset(assetKey: string) {
+    this.selectedAssetKey = assetKey;
+  }
+
+  public setSelectedColor(color: string | null) {
+    this.selectedTileColor = color;
+  }
+
+  public applyTileUpdates(updates: Record<string, string>) {
+    if (!updates || typeof updates !== "object") return;
+    for (const [key, rawValue] of Object.entries(updates)) {
+      this.currentTilesMap.set(key, rawValue);
+      const [colStr, rowStr] = key.split(",");
+      const col = parseInt(colStr, 10);
+      const row = parseInt(rowStr, 10);
+      if (row >= 0 && row < GRID_ROWS && col >= 0 && col < GRID_COLS) {
+        const img = this.tileImages[row]?.[col];
+        if (img) {
+          let assetKey = "birch_floor_150";
+          let tintColor: number | null = null;
+
+          if (rawValue.includes("|")) {
+            const [parsedAsset, colorPart] = rawValue.split("|");
+            assetKey = parsedAsset || "birch_floor_150";
+            if (colorPart && colorPart !== "none") {
+              tintColor = this.parseColor(colorPart);
+            }
+          } else if (rawValue.startsWith("#")) {
+            assetKey = "color_tile";
+            tintColor = this.parseColor(rawValue);
+          } else {
+            assetKey = rawValue;
+          }
+
+          if (assetKey === "grass_100") assetKey = "grass_150";
+          if (assetKey === "birch_floor_100") assetKey = "birch_floor_150";
+
+          const textureKey = this.textures.exists(assetKey) ? assetKey : "grass_150";
+          img.setTexture(textureKey);
+          img.setDisplaySize(TILE_SIZE, TILE_SIZE);
+
+          if (tintColor !== null) {
+            img.setTint(tintColor);
+          } else {
+            img.clearTint();
+          }
+        }
+      }
+    }
+  }
+
+  public resetTiles() {
+    this.currentTilesMap.clear();
+    for (let r = 0; r < GRID_ROWS; r++) {
+      for (let c = 0; c < GRID_COLS; c++) {
+        const img = this.tileImages[r]?.[c];
+        if (img) {
+          img.setTexture("grass_150");
+          img.setDisplaySize(TILE_SIZE, TILE_SIZE);
+          img.clearTint();
+        }
+      }
     }
   }
 }

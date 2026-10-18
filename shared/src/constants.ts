@@ -1,12 +1,12 @@
-export const TILE_SIZE = 100;
-export const GRID_COLS = 24;
-export const GRID_ROWS = 18;
+export const TILE_SIZE = 50;
+export const GRID_COLS = 48;
+export const GRID_ROWS = 36;
 
 export const WORLD_WIDTH = GRID_COLS * TILE_SIZE; // 2400
 export const WORLD_HEIGHT = GRID_ROWS * TILE_SIZE; // 1800
 
-export const CHARACTER_MAX_SIZE = 70; // 70x70px character size
-export const PLAYER_RADIUS = 22; // Default dot radius (diameter 44px)
+export const CHARACTER_MAX_SIZE = 60; // 60x60px character size (reduced by 10px)
+export const PLAYER_RADIUS = 17; // Default dot radius (diameter 34px, reduced by 10px)
 export const PLAYER_SPEED = 260; // Smooth continuous walking speed (px/sec)
 export const TILE_MOVE_DURATION = 0.25; // Retained for compatibility
 

@@ -14,12 +14,190 @@
     <!-- Game Canvas Root -->
     <div id="game-container"></div>
 
-    <!-- Top-Left Map Settings Button (Shown if user can configure this space) -->
-    <button type="button" id="btn-map-settings" class="topleft-settings-btn hidden" title="Space Settings" aria-label="Space Settings">
-      <svg class="gear-svg-icon" viewBox="0 0 24 24">
-        <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>
-      </svg>
-    </button>
+    <!-- Top-Left Action Controls (Shown if user can configure this space) -->
+    <div id="topleft-bar" class="topleft-bar">
+      <!-- Space Settings Gear Icon -->
+      <button type="button" id="btn-map-settings" class="topleft-settings-btn hidden" title="Space Settings" aria-label="Space Settings">
+        <svg class="gear-svg-icon" viewBox="0 0 24 24">
+          <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>
+        </svg>
+      </button>
+
+      <!-- Edit Map Button (Right side of gear icon) -->
+      <button type="button" id="btn-edit-map" class="topleft-edit-btn hidden" title="Edit Map Flooring" aria-label="Edit Map">
+        <svg class="edit-svg-icon" viewBox="0 0 24 24">
+          <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
+        </svg>
+        <span class="edit-btn-label">Edit Map</span>
+      </button>
+    </div>
+
+    <!-- Top Edit Mode Floating Notice Banner -->
+    <div id="map-edit-banner" class="map-edit-banner hidden">
+      <div class="edit-banner-capsule">
+        <span class="edit-banner-pulse"></span>
+        <span class="edit-banner-tag">EDIT MODE</span>
+        <span class="edit-banner-sep">•</span>
+        <span id="edit-banner-asset-text" class="edit-banner-asset-text">Active: <strong>Birch Floor</strong></span>
+        <button type="button" id="btn-banner-done" class="edit-banner-done-btn">Done Editing</button>
+      </div>
+    </div>
+
+    <!-- Left-Side Map Editor Assets Sidebar -->
+    <aside id="map-editor-sidebar" class="map-editor-sidebar hidden" aria-label="Map Editor Assets">
+      <div class="editor-sidebar-header">
+        <div class="editor-header-title-box">
+          <div class="editor-header-badge">
+            <svg class="editor-palette-icon" viewBox="0 0 24 24">
+              <path d="M12 3c-4.97 0-9 4.03-9 9 0 2.12.74 4.07 1.97 5.61L4.35 19.4c-.39.39-.39 1.02 0 1.41.39.39 1.02.39 1.41 0l1.9-1.9C9.17 19.64 10.54 20 12 20c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-5 9c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1zm3-4c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1zm4 0c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1zm3 4c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1z"/>
+            </svg>
+          </div>
+          <div>
+            <h3 class="editor-title">Map Editor</h3>
+            <span class="editor-subtitle">Pick asset & drag map</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Categories & Assets Container -->
+      <div class="editor-sidebar-body">
+        <!-- Flooring Category -->
+        <div class="editor-category-group">
+          <div class="editor-category-header">
+            <div class="editor-category-name-wrap">
+              <span class="category-icon">🪵</span>
+              <span class="category-title">Tile Pattern</span>
+            </div>
+            <span class="category-count">3 styles</span>
+          </div>
+
+          <div class="editor-assets-grid">
+            <!-- Asset 1: Birch Floor (birch_floor_150) -->
+            <button
+              type="button"
+              class="editor-asset-card selected"
+              data-asset-id="birch_floor_150"
+              data-asset-name="Birch Floor"
+              title="Birch Floor (birch_floor_150)"
+            >
+              <div class="asset-card-thumb">
+                <img src="/assets/birch_floor_150.png" alt="Birch Floor" class="asset-thumb-img" />
+                <span class="asset-card-check">✓</span>
+              </div>
+              <div class="asset-card-info">
+                <span class="asset-card-name">Birch Floor</span>
+                <span class="asset-card-code">birch_floor_150</span>
+              </div>
+            </button>
+
+            <!-- Asset 2: Grass (grass_150) -->
+            <button
+              type="button"
+              class="editor-asset-card"
+              data-asset-id="grass_150"
+              data-asset-name="Grass Tile"
+              title="Grass Tile (grass_150)"
+            >
+              <div class="asset-card-thumb">
+                <img src="/assets/grass_150.png" alt="Grass Tile" class="asset-thumb-img" />
+                <span class="asset-card-check">✓</span>
+              </div>
+              <div class="asset-card-info">
+                <span class="asset-card-name">Grass Tile</span>
+                <span class="asset-card-code">grass_150</span>
+              </div>
+            </button>
+
+            <!-- Asset 3: Plain / Solid Color Tile (color_tile) -->
+            <button
+              type="button"
+              class="editor-asset-card"
+              data-asset-id="color_tile"
+              data-asset-name="Plain Tile"
+              title="Plain Solid Tile (color_tile)"
+            >
+              <div class="asset-card-thumb plain-tile-thumb">
+                <div class="plain-tile-preview-square" id="plain-tile-preview-square"></div>
+                <span class="asset-card-check">✓</span>
+              </div>
+              <div class="asset-card-info">
+                <span class="asset-card-name">Plain Tile</span>
+                <span class="asset-card-code">color_tile</span>
+              </div>
+            </button>
+          </div>
+        </div>
+
+        <!-- Tile Color & Tint Picker Category -->
+        <div class="editor-category-group editor-color-group">
+          <div class="editor-category-header">
+            <div class="editor-category-name-wrap">
+              <span class="category-icon">🎨</span>
+              <span class="category-title">Tile Color / Tint</span>
+            </div>
+            <button
+              type="button"
+              id="btn-reset-tile-color"
+              class="editor-color-reset-btn"
+              title="Reset to original asset texture (No tint)"
+            >
+              ↺ Original
+            </button>
+          </div>
+
+          <!-- Active Brush Combined Preview -->
+          <div class="editor-brush-card" id="editor-brush-card">
+            <div class="brush-swatch-box" id="brush-swatch-box">
+              <div class="brush-pattern-layer" id="brush-pattern-layer"></div>
+              <div class="brush-tint-layer" id="brush-tint-layer"></div>
+            </div>
+            <div class="brush-info">
+              <div class="brush-headline" id="brush-headline">Birch Floor</div>
+              <div class="brush-color-status">
+                <span class="brush-dot" id="brush-dot"></span>
+                <span class="brush-color-text" id="brush-color-text">Original (No Tint)</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Custom Color Picker Row -->
+          <div class="editor-custom-color-row">
+            <label class="editor-color-input-wrap" title="Click to pick custom color">
+              <input type="color" id="editor-tile-color-input" value="#3B8282" />
+              <span class="editor-color-circle" id="editor-color-circle" style="background-color: #3B8282;"></span>
+              <span class="editor-color-picker-title">Pick Custom Color</span>
+            </label>
+            <div class="editor-hex-wrap">
+              <span class="editor-hex-hash">#</span>
+              <input
+                type="text"
+                id="editor-tile-hex-input"
+                class="editor-hex-field"
+                value="3B8282"
+                maxlength="6"
+                placeholder="RRGGBB"
+                spellcheck="false"
+              />
+            </div>
+          </div>
+
+          <!-- Preset Colors Palette Grid -->
+          <div class="editor-swatches-title">Preset Colors</div>
+          <div class="editor-color-palette" id="editor-color-palette"></div>
+        </div>
+      </div>
+
+      <!-- Sidebar Footer -->
+      <div class="editor-sidebar-footer">
+        <div class="editor-tip-box">
+          <span class="tip-icon">💡</span>
+          <p class="tip-text"><strong>Drag on map:</strong> Click and drag to replace tiles with the selected asset.</p>
+        </div>
+        <button type="button" id="btn-close-map-editor" class="editor-finish-btn">
+          <span>✓</span> Done Editing
+        </button>
+      </div>
+    </aside>
 
     <!-- Middle Top Bar (Floats centered at top) -->
     <header id="top-bar" class="middle-top-bar">
