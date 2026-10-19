@@ -54,6 +54,23 @@ export class GameScene extends Phaser.Scene {
   public voiceManager: VoiceManager | null = null;
   private speakingPlayers: Set<string> = new Set();
 
+  // Player Interaction Context Menu
+  public onPlayerClick?: (playerData: {
+    sessionId: string;
+    name: string;
+    color: string;
+    isSuperadmin: boolean;
+    worldX: number;
+    worldY: number;
+  }) => void;
+  public onPlayerMenuPositionUpdate?: (pos: {
+    sessionId: string;
+    screenX: number;
+    screenY: number;
+    visible: boolean;
+  }) => void;
+  public activeMenuSessionId: string | null = null;
+
   // Map Editor State
   public isEditMode: boolean = false;
   public activeEditorTool:
@@ -394,6 +411,41 @@ export class GameScene extends Phaser.Scene {
     const container = this.add.container(spawnX, spawnY, [sprite, nameTag]);
     container.setDepth(100);
 
+    // If another player, add clickable hit zone to container to show player interaction menu (e.g. Whisper)
+    if (sessionId !== this.multiplayer.sessionId) {
+      const hitZone = this.add.rectangle(0, -6, 64, 76, 0x000000, 0);
+      hitZone.setInteractive({ useHandCursor: true });
+      hitZone.on(
+        "pointerdown",
+        (
+          pointer: Phaser.Input.Pointer,
+          _localX: number,
+          _localY: number,
+          event: Phaser.Types.Input.EventData,
+        ) => {
+          if (!pointer.leftButtonDown()) return;
+          if (this.isEditMode) return;
+          event.stopPropagation();
+
+          const vis = this.playerVisuals.get(sessionId);
+          if (!vis) return;
+
+          this.activeMenuSessionId = sessionId;
+          if (this.onPlayerClick) {
+            this.onPlayerClick({
+              sessionId,
+              name: player.name || "Player",
+              color: player.color || "#3b82f6",
+              isSuperadmin: !!player.isSuperadmin,
+              worldX: vis.container.x,
+              worldY: vis.container.y,
+            });
+          }
+        },
+      );
+      container.add(hitZone);
+    }
+
     const visual: PlayerVisual = {
       container,
       sprite,
@@ -615,6 +667,9 @@ export class GameScene extends Phaser.Scene {
   }
 
   private removePlayerVisual(sessionId: string) {
+    if (this.activeMenuSessionId === sessionId) {
+      this.closePlayerMenu();
+    }
     this.cleanupCustomAvatars(sessionId);
     const visual = this.playerVisuals.get(sessionId);
     if (visual) {
@@ -626,7 +681,20 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  public showSpeechBubble(sessionId: string, text: string) {
+  public closePlayerMenu() {
+    if (!this.activeMenuSessionId) return;
+    this.activeMenuSessionId = null;
+    if (this.onPlayerMenuPositionUpdate) {
+      this.onPlayerMenuPositionUpdate({
+        sessionId: "",
+        screenX: 0,
+        screenY: 0,
+        visible: false,
+      });
+    }
+  }
+
+  public showSpeechBubble(sessionId: string, text: string, isWhisper = false) {
     const visual = this.playerVisuals.get(sessionId);
     if (!visual) return;
 
@@ -641,7 +709,8 @@ export class GameScene extends Phaser.Scene {
     }
 
     // Limit text length for bubble
-    const cleanText = text.length > 55 ? text.slice(0, 52) + "..." : text;
+    const prefix = isWhisper ? "🔒 " : "";
+    const cleanText = prefix + (text.length > 50 ? text.slice(0, 47) + "..." : text);
 
     // Create speech bubble container
     const bubbleContainer = this.add.container(0, -CHARACTER_MAX_SIZE / 2 - 34);
@@ -666,13 +735,13 @@ export class GameScene extends Phaser.Scene {
     bgGraphics.fillStyle(0x000000, 0.25);
     bgGraphics.fillRoundedRect(-bw / 2 + 1, -bh / 2 + 2, bw, bh, 8);
     // Bubble body
-    bgGraphics.fillStyle(0xffffff, 0.98);
+    bgGraphics.fillStyle(isWhisper ? 0xf0f9ff : 0xffffff, 0.98);
     bgGraphics.fillRoundedRect(-bw / 2, -bh / 2, bw, bh, 8);
-    bgGraphics.lineStyle(1.5, 0x3b8282, 0.8);
+    bgGraphics.lineStyle(1.5, isWhisper ? 0x0284c7 : 0x3b8282, 0.85);
     bgGraphics.strokeRoundedRect(-bw / 2, -bh / 2, bw, bh, 8);
 
     // Pointer tail
-    bgGraphics.fillStyle(0xffffff, 0.98);
+    bgGraphics.fillStyle(isWhisper ? 0xf0f9ff : 0xffffff, 0.98);
     bgGraphics.beginPath();
     bgGraphics.moveTo(-4, bh / 2 - 0.5);
     bgGraphics.lineTo(4, bh / 2 - 0.5);
@@ -1139,6 +1208,28 @@ export class GameScene extends Phaser.Scene {
         });
       }
     }
+
+    // 7. Update active player menu screen position
+    if (this.activeMenuSessionId) {
+      const vis = this.playerVisuals.get(this.activeMenuSessionId);
+      if (!vis || !vis.container.visible) {
+        this.closePlayerMenu();
+      } else {
+        const cam = this.cameras.main;
+        const worldX = vis.container.x;
+        const worldY = vis.container.y - CHARACTER_MAX_SIZE / 2 - 20;
+        const screenX = (worldX - cam.scrollX) * cam.zoom;
+        const screenY = (worldY - cam.scrollY) * cam.zoom;
+        if (this.onPlayerMenuPositionUpdate) {
+          this.onPlayerMenuPositionUpdate({
+            sessionId: this.activeMenuSessionId,
+            screenX,
+            screenY,
+            visible: true,
+          });
+        }
+      }
+    }
   }
 
   // ==========================================
@@ -1163,6 +1254,9 @@ export class GameScene extends Phaser.Scene {
 
   private setupEditorPointerEvents() {
     this.input.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
+      // Whenever user clicks on empty canvas, close any active player menu
+      this.closePlayerMenu();
+
       // Whenever user clicks on canvas, blur any active input element so WASD works immediately
       if (document.activeElement && document.activeElement !== document.body) {
         const el = document.activeElement as HTMLElement;
@@ -1693,6 +1787,7 @@ export class GameScene extends Phaser.Scene {
     this.drawObstacles();
 
     if (enabled) {
+      this.closePlayerMenu();
       this.cameras.main.stopFollow();
     } else {
       this.isSelectingArea = false;

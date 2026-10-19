@@ -109,7 +109,7 @@ export interface SpaceResponse {
   error?: string;
 }
 
-export type ChatRoomType = "map" | "zone";
+export type ChatRoomType = "map" | "zone" | "whisper";
 
 export interface ChatMessage {
   id: string;
@@ -120,6 +120,8 @@ export interface ChatMessage {
   roomType: ChatRoomType;
   roomId: string;
   roomName: string;
+  targetId?: string;
+  targetName?: string;
   text: string;
   timestamp: number;
 }
@@ -127,6 +129,7 @@ export interface ChatMessage {
 export interface SendChatMessagePayload {
   roomType: ChatRoomType;
   roomId?: string;
+  targetName?: string;
   text: string;
 }
 

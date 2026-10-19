@@ -14,6 +14,7 @@ import {
   ChatMessage,
   PrivateZone,
   VoicePeer,
+  CHARACTER_MAX_SIZE,
 } from "shared";
 import { VoiceManager, VoiceError } from "./network/VoiceManager";
 
@@ -345,6 +346,7 @@ const btnToggleChat = document.getElementById("btn-toggle-chat") as HTMLButtonEl
 const chatUnreadBadge = document.getElementById("chat-unread-badge");
 const chatSidebar = document.getElementById("chat-sidebar") as HTMLElement | null;
 const btnCloseChat = document.getElementById("btn-close-chat") as HTMLButtonElement | null;
+const chatTabsContainer = document.getElementById("chat-tabs-container");
 const chatTabMap = document.getElementById("chat-tab-map") as HTMLButtonElement | null;
 const chatTabZone = document.getElementById("chat-tab-zone") as HTMLButtonElement | null;
 const chatTabMapName = document.getElementById("chat-tab-map-name");
@@ -352,6 +354,7 @@ const chatTabZoneName = document.getElementById("chat-tab-zone-name");
 const chatMapBadge = document.getElementById("chat-map-badge");
 const chatZoneBadge = document.getElementById("chat-zone-badge");
 const chatChannelBanner = document.getElementById("chat-channel-banner");
+const chatChannelDot = document.getElementById("chat-channel-dot");
 const chatChannelDesc = document.getElementById("chat-channel-desc");
 const chatActiveChannelLabel = document.getElementById("chat-active-channel-label");
 const chatMessagesContainer = document.getElementById("chat-messages-container");
@@ -359,14 +362,40 @@ const chatMessagesList = document.getElementById("chat-messages-list");
 const chatInputForm = document.getElementById("chat-input-form") as HTMLFormElement | null;
 const chatInputField = document.getElementById("chat-input-field") as HTMLInputElement | null;
 
+// Player Interaction Context Menu DOM Elements & State
+const playerContextMenu = document.getElementById("player-context-menu");
+const playerMenuName = document.getElementById("player-menu-name");
+const playerMenuColorDot = document.getElementById("player-menu-color-dot");
+const btnClosePlayerMenu = document.getElementById("btn-close-player-menu") as HTMLButtonElement | null;
+const btnPlayerMenuWhisper = document.getElementById("btn-player-menu-whisper") as HTMLButtonElement | null;
+
+interface DmConversation {
+  sessionId: string;
+  userName: string;
+  userColor?: string;
+  isSuperadmin?: boolean;
+  messages: ChatMessage[];
+  unreadCount: number;
+  tabElement?: HTMLButtonElement;
+}
+
 let isChatOpen = true; // Default open as requested
-let activeChatRoom: "map" | "zone" = "map";
+let activeChatRoom: string = "map"; // "map", "zone", or `dm_${sessionId}`
 let currentInsideZone: PrivateZone | null = null;
 const chatMessagesMap: ChatMessage[] = [];
 const chatMessagesZone = new Map<string, ChatMessage[]>();
+const dmConversations = new Map<string, DmConversation>();
 let unreadMapCount = 0;
 const unreadZoneCount = new Map<string, number>();
 let totalClosedUnreadCount = 0;
+
+let activeMenuPlayer: {
+  sessionId: string;
+  name: string;
+  color: string;
+  isSuperadmin: boolean;
+} | null = null;
+let menuOpenTimestamp = 0;
 
 // ==========================================
 // Microphone Controls & Proximity Voice State
@@ -1861,30 +1890,241 @@ function updateChatTabNames() {
   }
 }
 
-function switchChatTab(target: "map" | "zone") {
+// ==========================================
+// Player Interaction Context Menu Handlers
+// ==========================================
+function showPlayerContextMenu(player: {
+  sessionId: string;
+  name: string;
+  color: string;
+  isSuperadmin: boolean;
+  worldX: number;
+  worldY: number;
+}) {
+  activeMenuPlayer = player;
+  menuOpenTimestamp = Date.now();
+
+  if (playerMenuName) {
+    const crown = player.isSuperadmin ? "👑 " : "";
+    playerMenuName.textContent = `${crown}${player.name}`;
+  }
+  if (playerMenuColorDot) {
+    playerMenuColorDot.style.backgroundColor = player.color || "#3b82f6";
+  }
+
+  if (gameInstance) {
+    const scene = gameInstance.scene.getScene("GameScene") as GameScene;
+    if (scene) {
+      const cam = scene.cameras.main;
+      const screenX = (player.worldX - cam.scrollX) * cam.zoom;
+      const screenY = (player.worldY - CHARACTER_MAX_SIZE / 2 - 20 - cam.scrollY) * cam.zoom;
+      positionPlayerContextMenu(screenX, screenY);
+    }
+  }
+
+  playerContextMenu?.classList.remove("hidden");
+}
+
+function positionPlayerContextMenu(screenX: number, screenY: number) {
+  if (!playerContextMenu) return;
+  const menuWidth = 170;
+  const menuHeight = 85;
+  const padding = 12;
+
+  const clampedX = Math.max(
+    menuWidth / 2 + padding,
+    Math.min(window.innerWidth - menuWidth / 2 - padding, screenX)
+  );
+  let clampedY = screenY;
+  let isFlipped = false;
+
+  if (clampedY < menuHeight + 20) {
+    clampedY = screenY + CHARACTER_MAX_SIZE + 35;
+    isFlipped = true;
+  }
+
+  playerContextMenu.style.left = `${clampedX}px`;
+  playerContextMenu.style.top = `${clampedY}px`;
+  if (isFlipped) {
+    playerContextMenu.classList.add("flipped");
+  } else {
+    playerContextMenu.classList.remove("flipped");
+  }
+}
+
+function closePlayerContextMenu() {
+  if (playerContextMenu) {
+    playerContextMenu.classList.add("hidden");
+  }
+  activeMenuPlayer = null;
+  if (gameInstance) {
+    const scene = gameInstance.scene.getScene("GameScene") as GameScene;
+    if (scene && typeof scene.closePlayerMenu === "function") {
+      scene.closePlayerMenu();
+    }
+  }
+}
+
+function openDirectMessageChat(
+  targetSessionId: string,
+  targetName: string,
+  targetColor?: string,
+  isSuperadmin?: boolean
+) {
+  closePlayerContextMenu();
+
+  let convo = dmConversations.get(targetSessionId);
+  if (!convo) {
+    convo = {
+      sessionId: targetSessionId,
+      userName: targetName,
+      userColor: targetColor,
+      isSuperadmin: !!isSuperadmin,
+      messages: [],
+      unreadCount: 0,
+    };
+    dmConversations.set(targetSessionId, convo);
+  } else {
+    if (targetName && targetName !== convo.userName) {
+      convo.userName = targetName;
+      updateDmTabName(targetSessionId, targetName);
+    }
+    if (targetColor) {
+      convo.userColor = targetColor;
+    }
+  }
+
+  ensureDmTabElement(convo);
+
+  if (!isChatOpen) {
+    setChatOpen(true);
+  }
+
+  switchChatTab("dm_" + targetSessionId);
+
+  setTimeout(() => {
+    chatInputField?.focus();
+  }, 50);
+}
+
+function ensureDmTabElement(convo: DmConversation) {
+  if (convo.tabElement && document.getElementById(`chat-tab-dm-${convo.sessionId}`)) {
+    return;
+  }
+  if (!chatTabsContainer) return;
+
+  const tab = document.createElement("button");
+  tab.type = "button";
+  tab.id = `chat-tab-dm-${convo.sessionId}`;
+  tab.className = "chat-tab chat-tab-whisper";
+  tab.setAttribute("role", "tab");
+  tab.setAttribute("aria-selected", "false");
+  tab.dataset.room = `dm_${convo.sessionId}`;
+  tab.title = `Whisper with ${convo.userName}`;
+
+  tab.innerHTML = `
+    <span class="chat-tab-icon">💬</span>
+    <span class="chat-tab-name">${escapeHtml(convo.userName)}</span>
+    <span class="chat-tab-badge hidden"></span>
+    <span class="chat-tab-close" title="Close whisper">✕</span>
+  `;
+
+  tab.addEventListener("click", (e) => {
+    const target = e.target as HTMLElement;
+    if (target.closest(".chat-tab-close")) {
+      e.stopPropagation();
+      closeDmTab(convo.sessionId);
+      return;
+    }
+    switchChatTab(`dm_${convo.sessionId}`);
+  });
+
+  chatTabsContainer.appendChild(tab);
+  convo.tabElement = tab;
+}
+
+function updateDmTabName(sessionId: string, newName: string) {
+  const convo = dmConversations.get(sessionId);
+  if (!convo) return;
+  convo.userName = newName;
+  if (convo.tabElement) {
+    const nameEl = convo.tabElement.querySelector(".chat-tab-name");
+    if (nameEl) nameEl.textContent = newName;
+    convo.tabElement.title = `Whisper with ${newName}`;
+  }
+  if (activeChatRoom === `dm_${sessionId}`) {
+    if (chatActiveChannelLabel) chatActiveChannelLabel.textContent = `@${newName}`;
+    if (chatInputField) chatInputField.placeholder = `Message @${newName} (Whisper)...`;
+    if (chatChannelDesc) chatChannelDesc.textContent = `Direct message conversation with @${newName}`;
+  }
+}
+
+function updateDmTabBadge(sessionId: string) {
+  const convo = dmConversations.get(sessionId);
+  if (!convo || !convo.tabElement) return;
+  const badge = convo.tabElement.querySelector(".chat-tab-badge");
+  if (!badge) return;
+  if (convo.unreadCount > 0) {
+    badge.classList.remove("hidden");
+  } else {
+    badge.classList.add("hidden");
+  }
+}
+
+function closeDmTab(sessionId: string) {
+  const convo = dmConversations.get(sessionId);
+  if (convo && convo.tabElement) {
+    convo.tabElement.remove();
+    convo.tabElement = undefined;
+  }
+
+  if (activeChatRoom === `dm_${sessionId}`) {
+    if (currentInsideZone) {
+      switchChatTab("zone");
+    } else {
+      switchChatTab("map");
+    }
+  }
+}
+
+function switchChatTab(target: string) {
   if (target === "zone" && !currentInsideZone) {
     target = "map";
   }
   activeChatRoom = target;
 
+  chatTabMap?.classList.remove("active");
+  chatTabMap?.setAttribute("aria-selected", "false");
+  chatTabZone?.classList.remove("active");
+  chatTabZone?.setAttribute("aria-selected", "false");
+
+  dmConversations.forEach((convo) => {
+    if (convo.tabElement) {
+      convo.tabElement.classList.remove("active");
+      convo.tabElement.setAttribute("aria-selected", "false");
+    }
+  });
+
+  if (chatChannelBanner) {
+    chatChannelBanner.classList.remove("private", "whisper");
+  }
+
   if (target === "map") {
     chatTabMap?.classList.add("active");
     chatTabMap?.setAttribute("aria-selected", "true");
-    chatTabZone?.classList.remove("active");
-    chatTabZone?.setAttribute("aria-selected", "false");
 
     unreadMapCount = 0;
     chatMapBadge?.classList.add("hidden");
 
-    if (chatChannelBanner) chatChannelBanner.classList.remove("private");
+    if (chatChannelDot) {
+      chatChannelDot.style.backgroundColor = "";
+    }
     if (chatChannelDesc) chatChannelDesc.textContent = "Area chat • visible to all in this map";
     if (chatActiveChannelLabel) chatActiveChannelLabel.textContent = "Area Channel";
     if (chatInputField) chatInputField.placeholder = `Message #${currentSpaceName}...`;
-  } else {
+  } else if (target === "zone") {
     chatTabZone?.classList.add("active");
     chatTabZone?.setAttribute("aria-selected", "true");
-    chatTabMap?.classList.remove("active");
-    chatTabMap?.setAttribute("aria-selected", "false");
 
     const zoneId = currentInsideZone?.id || "";
     unreadZoneCount.set(zoneId, 0);
@@ -1892,11 +2132,35 @@ function switchChatTab(target: "map" | "zone") {
 
     const zoneName = currentInsideZone?.name || "Private Area";
     if (chatChannelBanner) chatChannelBanner.classList.add("private");
+    if (chatChannelDot) {
+      chatChannelDot.style.backgroundColor = "";
+    }
     if (chatChannelDesc) {
       chatChannelDesc.textContent = `🔒 Private Area • Only players inside "${zoneName}" can see messages`;
     }
     if (chatActiveChannelLabel) chatActiveChannelLabel.textContent = zoneName;
     if (chatInputField) chatInputField.placeholder = `Message #${zoneName} (Private)...`;
+  } else if (target.startsWith("dm_")) {
+    const targetSessionId = target.replace("dm_", "");
+    const convo = dmConversations.get(targetSessionId);
+    if (convo) {
+      if (convo.tabElement) {
+        convo.tabElement.classList.add("active");
+        convo.tabElement.setAttribute("aria-selected", "true");
+      }
+      convo.unreadCount = 0;
+      updateDmTabBadge(targetSessionId);
+
+      if (chatChannelBanner) chatChannelBanner.classList.add("whisper");
+      if (chatChannelDot) {
+        chatChannelDot.style.backgroundColor = convo.userColor || "#38bdf8";
+      }
+      if (chatChannelDesc) {
+        chatChannelDesc.textContent = `💬 Direct Message • Private chat with @${convo.userName}`;
+      }
+      if (chatActiveChannelLabel) chatActiveChannelLabel.textContent = `@${convo.userName}`;
+      if (chatInputField) chatInputField.placeholder = `Message @${convo.userName} (Whisper)...`;
+    }
   }
 
   renderCurrentChatMessages();
@@ -1906,26 +2170,43 @@ function renderCurrentChatMessages() {
   if (!chatMessagesList) return;
   chatMessagesList.innerHTML = "";
 
-  const messagesToRender =
-    activeChatRoom === "map"
-      ? chatMessagesMap
-      : currentInsideZone
-      ? chatMessagesZone.get(currentInsideZone.id) || []
-      : [];
+  let messagesToRender: ChatMessage[] = [];
+  if (activeChatRoom === "map") {
+    messagesToRender = chatMessagesMap;
+  } else if (activeChatRoom === "zone") {
+    messagesToRender = currentInsideZone ? chatMessagesZone.get(currentInsideZone.id) || [] : [];
+  } else if (activeChatRoom.startsWith("dm_")) {
+    const targetSessionId = activeChatRoom.replace("dm_", "");
+    const convo = dmConversations.get(targetSessionId);
+    messagesToRender = convo ? convo.messages : [];
+  }
 
   if (messagesToRender.length === 0) {
     const welcome = document.createElement("div");
     welcome.className = "chat-welcome-notice";
-    const title =
-      activeChatRoom === "map"
-        ? `Welcome to ${escapeHtml(currentSpaceName)}!`
-        : `Welcome to ${escapeHtml(currentInsideZone?.name || "Private Area")}!`;
-    const sub =
-      activeChatRoom === "map"
-        ? "Talk to everyone exploring this space."
-        : "This is an isolated private channel. Only players currently inside this area can read or send messages.";
+    let title = "";
+    let sub = "";
+    let icon = "💬";
+
+    if (activeChatRoom.startsWith("dm_")) {
+      const targetSessionId = activeChatRoom.replace("dm_", "");
+      const convo = dmConversations.get(targetSessionId);
+      const name = convo?.userName || "Player";
+      icon = "💬";
+      title = `Whisper with ${escapeHtml(name)}`;
+      sub = `Direct message conversation with @${escapeHtml(name)}. Only the two of you can see these messages.`;
+    } else if (activeChatRoom === "map") {
+      icon = "🗺️";
+      title = `Welcome to ${escapeHtml(currentSpaceName)}!`;
+      sub = "Talk to everyone exploring this space.";
+    } else {
+      icon = "🔒";
+      title = `Welcome to ${escapeHtml(currentInsideZone?.name || "Private Area")}!`;
+      sub = "This is an isolated private channel. Only players currently inside this area can read or send messages.";
+    }
+
     welcome.innerHTML = `
-      <div class="chat-welcome-icon">${activeChatRoom === "map" ? "🗺️" : "🔒"}</div>
+      <div class="chat-welcome-icon">${icon}</div>
       <div class="chat-welcome-title">${title}</div>
       <div class="chat-welcome-sub">${sub}</div>
     `;
@@ -1949,7 +2230,7 @@ function appendChatMessageElement(msg: ChatMessage, autoScroll = true) {
 
   const isOwn = multiplayer && multiplayer.sessionId === msg.senderId;
   const item = document.createElement("div");
-  item.className = `chat-msg-item${isOwn ? " own" : ""}${msg.roomType === "zone" ? " zone-msg" : ""}`;
+  item.className = `chat-msg-item${isOwn ? " own" : ""}${msg.roomType === "zone" ? " zone-msg" : ""}${msg.roomType === "whisper" ? " whisper-msg" : ""}`;
 
   const timeStr = new Date(msg.timestamp).toLocaleTimeString([], {
     hour: "2-digit",
@@ -1957,16 +2238,18 @@ function appendChatMessageElement(msg: ChatMessage, autoScroll = true) {
   });
 
   const crownHtml = msg.isSuperadmin ? `<span class="chat-msg-crown" title="Superadmin">👑</span>` : "";
-  const zoneTagHtml =
+  const tagHtml =
     msg.roomType === "zone"
       ? `<span class="chat-msg-tag-zone">🔒 ${escapeHtml(msg.roomName)}</span>`
+      : msg.roomType === "whisper"
+      ? `<span class="chat-msg-tag-whisper">💬 Whisper</span>`
       : "";
 
   item.innerHTML = `
     <div class="chat-msg-header">
       <span class="chat-msg-author-dot" style="background-color: ${escapeHtml(msg.senderColor || "#3b82f6")};"></span>
       <span class="chat-msg-author">${crownHtml}${escapeHtml(msg.senderName)}</span>
-      ${zoneTagHtml}
+      ${tagHtml}
       <span class="chat-msg-time">${timeStr}</span>
     </div>
     <div class="chat-msg-body">${escapeHtml(msg.text)}</div>
@@ -2004,6 +2287,43 @@ function handleIncomingChatMessage(msg: ChatMessage) {
         chatZoneBadge.classList.remove("hidden");
       }
     }
+  } else if (msg.roomType === "whisper") {
+    const isOwn = multiplayer && multiplayer.sessionId === msg.senderId;
+    const partnerSessionId = isOwn ? (msg.targetId || msg.roomId) : msg.senderId;
+    const partnerName = isOwn ? (msg.targetName || msg.roomName) : msg.senderName;
+    const partnerColor = isOwn ? undefined : msg.senderColor;
+    const partnerIsSuperadmin = isOwn ? false : !!msg.isSuperadmin;
+
+    let convo = dmConversations.get(partnerSessionId);
+    if (!convo) {
+      convo = {
+        sessionId: partnerSessionId,
+        userName: partnerName,
+        userColor: partnerColor,
+        isSuperadmin: partnerIsSuperadmin,
+        messages: [],
+        unreadCount: 0,
+      };
+      dmConversations.set(partnerSessionId, convo);
+    } else {
+      if (partnerName && partnerName !== convo.userName) {
+        convo.userName = partnerName;
+        updateDmTabName(partnerSessionId, partnerName);
+      }
+      if (partnerColor) {
+        convo.userColor = partnerColor;
+      }
+    }
+
+    ensureDmTabElement(convo);
+    convo.messages.push(msg);
+
+    if (activeChatRoom === `dm_${partnerSessionId}`) {
+      appendChatMessageElement(msg, true);
+    } else {
+      convo.unreadCount++;
+      updateDmTabBadge(partnerSessionId);
+    }
   }
 
   if (!isChatOpen) {
@@ -2019,7 +2339,7 @@ function handleIncomingChatMessage(msg: ChatMessage) {
   if (gameInstance) {
     const scene = gameInstance.scene.getScene("GameScene") as GameScene;
     if (scene && typeof (scene as any).showSpeechBubble === "function") {
-      (scene as any).showSpeechBubble(msg.senderId, msg.text);
+      (scene as any).showSpeechBubble(msg.senderId, msg.text, msg.roomType === "whisper");
     }
   }
 }
@@ -2065,6 +2385,7 @@ function isAnyModalOpen(): boolean {
   if (mySpaceSettingsModal && !mySpaceSettingsModal.classList.contains("hidden")) return true;
   if (adminSpaceModal && !adminSpaceModal.classList.contains("hidden")) return true;
   if (privateZoneNameModal && !privateZoneNameModal.classList.contains("hidden")) return true;
+  if (playerContextMenu && !playerContextMenu.classList.contains("hidden")) return true;
   if (isEditModeActive) return true;
   return false;
 }
@@ -2093,6 +2414,29 @@ if (chatTabZone) {
   });
 }
 
+if (btnPlayerMenuWhisper) {
+  btnPlayerMenuWhisper.addEventListener("click", () => {
+    if (!activeMenuPlayer) return;
+    const { sessionId, name, color, isSuperadmin } = activeMenuPlayer;
+    openDirectMessageChat(sessionId, name, color, isSuperadmin);
+  });
+}
+
+if (btnClosePlayerMenu) {
+  btnClosePlayerMenu.addEventListener("click", () => {
+    closePlayerContextMenu();
+  });
+}
+
+document.addEventListener("pointerdown", (e) => {
+  if (!playerContextMenu || playerContextMenu.classList.contains("hidden")) return;
+  if (Date.now() - menuOpenTimestamp < 150) return;
+  const target = e.target as HTMLElement;
+  if (!playerContextMenu.contains(target)) {
+    closePlayerContextMenu();
+  }
+});
+
 if (chatInputForm) {
   chatInputForm.addEventListener("submit", (e) => {
     e.preventDefault();
@@ -2100,7 +2444,16 @@ if (chatInputForm) {
     const text = chatInputField.value.trim();
     if (!text) return;
 
-    if (activeChatRoom === "zone") {
+    if (activeChatRoom.startsWith("dm_")) {
+      const targetSessionId = activeChatRoom.replace("dm_", "");
+      const convo = dmConversations.get(targetSessionId);
+      multiplayer.sendChatMessage({
+        roomType: "whisper",
+        roomId: targetSessionId,
+        targetName: convo?.userName || "Player",
+        text,
+      });
+    } else if (activeChatRoom === "zone") {
       if (!currentInsideZone) return;
       multiplayer.sendChatMessage({
         roomType: "zone",
@@ -2636,6 +2989,18 @@ function setupScenePrivateZoneEvents(scene: GameScene) {
 
   scene.onRequestNameForNewZone = (bounds, defaultName) => {
     openPrivateZoneNameModal("create", { bounds, defaultName });
+  };
+
+  scene.onPlayerClick = (data) => {
+    showPlayerContextMenu(data);
+  };
+
+  scene.onPlayerMenuPositionUpdate = (pos) => {
+    if (!pos.visible) {
+      closePlayerContextMenu();
+    } else {
+      positionPlayerContextMenu(pos.screenX, pos.screenY);
+    }
   };
 }
 

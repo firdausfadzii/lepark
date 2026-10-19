@@ -3875,6 +3875,33 @@ body.edit-mode-active .middle-top-bar:hover {
   box-shadow: 0 0 14px rgba(139, 92, 246, 0.35);
 }
 
+.chat-tab-whisper.active {
+  background: rgba(14, 165, 233, 0.25);
+  border-color: rgba(56, 189, 248, 0.65);
+  color: #7dd3fc;
+  box-shadow: 0 0 14px rgba(14, 165, 233, 0.35);
+}
+
+.chat-tab-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  margin-left: 2px;
+  border-radius: 50%;
+  font-size: 9px;
+  color: #94a3b8;
+  opacity: 0.65;
+  transition: all 0.15s ease;
+}
+
+.chat-tab-close:hover {
+  opacity: 1;
+  background: rgba(244, 63, 94, 0.25);
+  color: #f43f5e;
+}
+
 .chat-tab-icon {
   font-size: 12px;
 }
@@ -3918,6 +3945,11 @@ body.edit-mode-active .middle-top-bar:hover {
 .chat-channel-banner.private .chat-channel-dot {
   background: #a78bfa;
   box-shadow: 0 0 6px #a78bfa;
+}
+
+.chat-channel-banner.whisper .chat-channel-dot {
+  background: #38bdf8;
+  box-shadow: 0 0 6px #38bdf8;
 }
 
 .chat-channel-desc {
@@ -4002,6 +4034,16 @@ body.edit-mode-active .middle-top-bar:hover {
   border-color: rgba(139, 92, 246, 0.4);
 }
 
+.chat-msg-item.whisper-msg {
+  border-color: rgba(56, 189, 248, 0.35);
+  background: rgba(12, 32, 50, 0.45);
+}
+
+.chat-msg-item.whisper-msg.own {
+  background: rgba(14, 42, 65, 0.55);
+  border-color: rgba(56, 189, 248, 0.5);
+}
+
 .chat-msg-header {
   display: flex;
   align-items: center;
@@ -4034,6 +4076,16 @@ body.edit-mode-active .middle-top-bar:hover {
   color: #c4b5fd;
   font-weight: 600;
   border: 1px solid rgba(139, 92, 246, 0.4);
+}
+
+.chat-msg-tag-whisper {
+  font-size: 9px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(14, 165, 233, 0.25);
+  color: #7dd3fc;
+  font-weight: 600;
+  border: 1px solid rgba(56, 189, 248, 0.4);
 }
 
 .chat-msg-time {
@@ -4313,4 +4365,165 @@ body.edit-mode-active .middle-top-bar:hover {
   color: #ffffff;
   background: rgba(255, 255, 255, 0.12);
 }
+
+/* ==========================================
+   Player Context Menu (Shown on clicked user)
+   ========================================== */
+.player-context-menu {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 170px;
+  background: rgba(15, 23, 23, 0.94);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(59, 130, 130, 0.45);
+  border-radius: 12px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.55), 0 0 15px rgba(59, 130, 130, 0.25);
+  padding: 8px;
+  pointer-events: auto;
+  z-index: 999;
+  transform: translate(-50%, -100%);
+  transition: opacity 0.15s ease;
+  user-select: none;
+}
+
+.player-context-menu.hidden {
+  display: none;
+}
+
+/* Downward arrow pointing to player */
+.player-context-menu-arrow {
+  position: absolute;
+  bottom: -5px;
+  left: 50%;
+  transform: translateX(-50%) rotate(45deg);
+  width: 10px;
+  height: 10px;
+  background: rgba(15, 23, 23, 0.94);
+  border-right: 1px solid rgba(59, 130, 130, 0.45);
+  border-bottom: 1px solid rgba(59, 130, 130, 0.45);
+}
+
+/* If flipped below player when too close to viewport top */
+.player-context-menu.flipped {
+  transform: translate(-50%, 0);
+}
+
+.player-context-menu.flipped .player-context-menu-arrow {
+  top: -5px;
+  bottom: auto;
+  border-right: none;
+  border-bottom: none;
+  border-left: 1px solid rgba(59, 130, 130, 0.45);
+  border-top: 1px solid rgba(59, 130, 130, 0.45);
+}
+
+.player-context-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 6px 8px 6px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  margin-bottom: 6px;
+}
+
+.player-context-user-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.player-context-avatar-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #3b82f6;
+  flex-shrink: 0;
+  box-shadow: 0 0 6px rgba(59, 130, 246, 0.6);
+}
+
+.player-context-name {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #f1f5f9;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  letter-spacing: -0.01em;
+}
+
+.player-context-close-btn {
+  background: transparent;
+  border: none;
+  color: #64748b;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+  line-height: 1;
+  transition: all 0.15s ease;
+}
+
+.player-context-close-btn:hover {
+  color: #f43f5e;
+  background: rgba(244, 63, 94, 0.15);
+}
+
+.player-context-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.player-context-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  color: #f1f5f9;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  text-align: left;
+}
+
+.player-context-btn:hover {
+  background: rgba(14, 165, 233, 0.22);
+  border-color: rgba(56, 189, 248, 0.55);
+  color: #7dd3fc;
+  box-shadow: 0 0 10px rgba(14, 165, 233, 0.3);
+  transform: translateY(-1px);
+}
+
+.player-context-btn:active {
+  transform: translateY(0);
+}
+
+.player-context-btn-icon {
+  font-size: 13px;
+  line-height: 1;
+}
+
+.player-context-btn-label {
+  flex: 1;
+}
+
+.player-context-btn-tag {
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(14, 165, 233, 0.25);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  letter-spacing: 0.02em;
+}
+
 

@@ -746,6 +746,25 @@
     <!-- UI Overlay Layer -->
     <div id="ui-layer">
 
+      <!-- Floating Player Interaction Context Menu (Shown on top of clicked user) -->
+      <div id="player-context-menu" class="player-context-menu hidden" role="dialog" aria-label="Player Actions">
+        <div class="player-context-menu-arrow"></div>
+        <div class="player-context-header">
+          <div class="player-context-user-info">
+            <span class="player-context-avatar-dot" id="player-menu-color-dot"></span>
+            <span class="player-context-name" id="player-menu-name">Player</span>
+          </div>
+          <button type="button" class="player-context-close-btn" id="btn-close-player-menu" title="Close menu" aria-label="Close">✕</button>
+        </div>
+        <div class="player-context-body">
+          <button type="button" class="player-context-btn" id="btn-player-menu-whisper" title="Send direct message">
+            <span class="player-context-btn-icon">💬</span>
+            <span class="player-context-btn-label">Whisper</span>
+            <span class="player-context-btn-tag">DM</span>
+          </button>
+        </div>
+      </div>
+
       <!-- Bottom HUD Controls Hint -->
       <div class="hud-footer" id="hud-footer">
         <div class="controls-hint">

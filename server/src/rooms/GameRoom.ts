@@ -286,8 +286,53 @@ export class GameRoom extends Room<GameState> {
 
         const msgId = `msg_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
         const timestamp = Date.now();
+        if (data.roomType === "whisper") {
+          const targetSessionId = data.roomId;
+          if (!targetSessionId) return;
 
-        if (data.roomType === "zone") {
+          const targetPlayer = this.state.players.get(targetSessionId);
+          const targetClient = this.clients.find(
+            (c) => c.sessionId === targetSessionId,
+          );
+
+          if (!targetPlayer || !targetClient) {
+            client.send("CHAT_MESSAGE", {
+              id: msgId,
+              senderId: "system",
+              senderName: "System",
+              senderColor: "#ef4444",
+              roomType: "whisper",
+              roomId: targetSessionId,
+              roomName: data.targetName || "Player",
+              targetId: targetSessionId,
+              targetName: data.targetName || "Player",
+              text: `Player "${data.targetName || "User"}" is no longer in this space.`,
+              timestamp,
+            });
+            return;
+          }
+
+          const chatMsg: ChatMessage = {
+            id: msgId,
+            senderId: client.sessionId,
+            senderName: player.name,
+            senderColor: player.color,
+            isSuperadmin,
+            roomType: "whisper",
+            roomId: targetSessionId,
+            roomName: targetPlayer.name,
+            targetId: targetSessionId,
+            targetName: targetPlayer.name,
+            text: cleanText,
+            timestamp,
+          };
+
+          // Send to recipient
+          targetClient.send("CHAT_MESSAGE", chatMsg);
+
+          // Echo to sender so their tab updates
+          client.send("CHAT_MESSAGE", chatMsg);
+        } else if (data.roomType === "zone") {
           // Find target private zone (either by provided roomId or player's current location)
           let targetZone = this.privateZones.find((z) => z.id === data.roomId);
           if (!targetZone) {
