@@ -1,5 +1,6 @@
 import Phaser from "phaser";
 import { MultiplayerManager } from "../network/MultiplayerManager";
+import { VoiceManager } from "../network/VoiceManager";
 import {
   TILE_SIZE,
   GRID_COLS,
@@ -16,6 +17,9 @@ import {
   getTileCoords,
   isWallTile,
   resolveMovement,
+  PLAYER_FEET_TOP_OFFSET,
+  PLAYER_FEET_BOTTOM_OFFSET,
+  PrivateZone,
 } from "shared";
 
 interface PlayerVisual {
@@ -27,6 +31,9 @@ interface PlayerVisual {
   animTimer: number;
   currentFrameIdx: number;
   lastMoveTime: number;
+  speechBubble?: Phaser.GameObjects.Container;
+  speechBubbleTimer?: Phaser.Time.TimerEvent;
+  speakingIndicator?: Phaser.GameObjects.Container;
 }
 
 export class GameScene extends Phaser.Scene {
@@ -44,21 +51,49 @@ export class GameScene extends Phaser.Scene {
   private lastInputState = { left: false, right: false, up: false, down: false };
   public controlsActive = true;
   public virtualInput = { left: false, right: false, up: false, down: false };
+  public voiceManager: VoiceManager | null = null;
+  private speakingPlayers: Set<string> = new Set();
 
   // Map Editor State
   public isEditMode: boolean = false;
+  public activeEditorTool:
+    | "flooring"
+    | "decoration"
+    | "clear_decoration"
+    | "private_zone"
+    | "clear_private_zone"
+    | "obstacle"
+    | "clear_obstacle" = "flooring";
   public selectedAssetKey: string = "birch_floor_150";
   public selectedTileColor: string | null = null;
   private isSelectingArea: boolean = false;
   private selectionStartTile: { x: number; y: number } | null = null;
   private selectionCurrentTile: { x: number; y: number } | null = null;
 
-  // Tile images grid [row][col] and state
+  // Private Zones State & Effects
+  public privateZones: PrivateZone[] = [];
+  public currentInsideZone: PrivateZone | null = null;
+  public onRequestNameForNewZone?: (
+    bounds: { minCol: number; minRow: number; maxCol: number; maxRow: number },
+    defaultName: string
+  ) => void;
+  private onZoneChangeCallbacks: ((zone: PrivateZone | null) => void)[] = [];
+  private onPrivateZonesListChangeCallbacks: ((zones: PrivateZone[]) => void)[] = [];
+  private darknessAlpha: number = 0;
+  private targetDarknessAlpha: number = 0;
+
+  // Tile images grid [row][col], top decoration images grid, and state
   private tileImages: (Phaser.GameObjects.Image | null)[][] = [];
+  private decorationImages: (Phaser.GameObjects.Image | null)[][] = [];
   private currentTilesMap: Map<string, string> = new Map();
+  private obstacleTiles: Set<string> = new Set();
 
   // Graphics overlays
   private gridGraphics!: Phaser.GameObjects.Graphics;
+  private privateZonesGraphics!: Phaser.GameObjects.Graphics;
+  private obstaclesGraphics!: Phaser.GameObjects.Graphics;
+  private outsideDarkGraphics!: Phaser.GameObjects.Graphics;
+  private privateSpotlightGraphics!: Phaser.GameObjects.Graphics;
   private editorHoverGraphics!: Phaser.GameObjects.Graphics;
   private editorSelectionGraphics!: Phaser.GameObjects.Graphics;
   private editorOverlayText!: Phaser.GameObjects.Text;
@@ -69,8 +104,11 @@ export class GameScene extends Phaser.Scene {
     super({ key: "GameScene" });
   }
 
-  init(data: { multiplayer: MultiplayerManager }) {
+  init(data: { multiplayer: MultiplayerManager; voiceManager?: VoiceManager }) {
     this.multiplayer = data?.multiplayer;
+    if (data?.voiceManager) {
+      this.voiceManager = data.voiceManager;
+    }
   }
 
   preload() {
@@ -81,6 +119,7 @@ export class GameScene extends Phaser.Scene {
     this.load.image("birch_floor_100", "/assets/birch_floor_150.png");
     this.load.image("wall_half_150", "/assets/wall_half_150.png");
     this.load.image("wall_top_150", "/assets/wall_top_150.png");
+    this.load.image("table_left_150", "/assets/table_left_150.png");
 
     // Default character avatar frames
     this.load.image("default_avatar_idle", "/assets/man_still.png");
@@ -151,16 +190,46 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
+    // Top decoration per-tile images grid (placed on top of bottom tile)
+    this.decorationImages = [];
+    for (let row = 0; row < GRID_ROWS; row++) {
+      this.decorationImages[row] = [];
+      for (let col = 0; col < GRID_COLS; col++) {
+        const decoImg = this.add.image(col * TILE_SIZE, row * TILE_SIZE, "table_left_150");
+        decoImg.setOrigin(0, 0);
+        decoImg.setDisplaySize(TILE_SIZE, TILE_SIZE);
+        decoImg.setDepth(0.2);
+        decoImg.setVisible(false);
+        this.decorationImages[row][col] = decoImg;
+      }
+    }
+
     // Grid lines graphics (dynamically highlighted in edit mode)
     this.gridGraphics = this.add.graphics();
     this.drawGrid(false);
 
+    // Private zones ambient outline on ground (depth 4)
+    this.privateZonesGraphics = this.add.graphics();
+    this.privateZonesGraphics.setDepth(4);
+
+    // Obstacle highlight overlay on ground (depth 5, visible only in edit mode)
+    this.obstaclesGraphics = this.add.graphics();
+    this.obstaclesGraphics.setDepth(5);
+
+    // Dimming overlay outside active private zone (depth 120, above player containers at depth 100)
+    this.outsideDarkGraphics = this.add.graphics();
+    this.outsideDarkGraphics.setDepth(120);
+
+    // Spotlight glowing boundary & accents around active private zone (depth 125)
+    this.privateSpotlightGraphics = this.add.graphics();
+    this.privateSpotlightGraphics.setDepth(125);
+
     // Map Editor Hover and Selection graphics overlays
     this.editorHoverGraphics = this.add.graphics();
-    this.editorHoverGraphics.setDepth(6);
+    this.editorHoverGraphics.setDepth(130);
 
     this.editorSelectionGraphics = this.add.graphics();
-    this.editorSelectionGraphics.setDepth(7);
+    this.editorSelectionGraphics.setDepth(132);
 
     this.editorOverlayText = this.add.text(0, 0, "", {
       fontSize: "13px",
@@ -169,7 +238,7 @@ export class GameScene extends Phaser.Scene {
       color: "#ffffff",
       padding: { x: 10, y: 6 },
     });
-    this.editorOverlayText.setDepth(8);
+    this.editorOverlayText.setDepth(135);
     this.editorOverlayText.setVisible(false);
 
     // Outer perimeter boundary border
@@ -227,6 +296,14 @@ export class GameScene extends Phaser.Scene {
     });
     if (this.multiplayer.currentTiles && Object.keys(this.multiplayer.currentTiles).length > 0) {
       this.applyTileUpdates(this.multiplayer.currentTiles);
+    }
+
+    // Hook up private zones updates from multiplayer
+    this.multiplayer.onPrivateZonesUpdated((zones) => {
+      this.applyPrivateZones(zones);
+    });
+    if (this.multiplayer.currentPrivateZones && this.multiplayer.currentPrivateZones.length > 0) {
+      this.applyPrivateZones(this.multiplayer.currentPrivateZones);
     }
 
     // Pointer events for Map Editor (click and drag to select area)
@@ -541,8 +618,161 @@ export class GameScene extends Phaser.Scene {
     this.cleanupCustomAvatars(sessionId);
     const visual = this.playerVisuals.get(sessionId);
     if (visual) {
+      if (visual.speechBubbleTimer) {
+        visual.speechBubbleTimer.remove(false);
+      }
       visual.container.destroy();
       this.playerVisuals.delete(sessionId);
+    }
+  }
+
+  public showSpeechBubble(sessionId: string, text: string) {
+    const visual = this.playerVisuals.get(sessionId);
+    if (!visual) return;
+
+    // Clean up existing speech bubble if any
+    if (visual.speechBubbleTimer) {
+      visual.speechBubbleTimer.remove(false);
+      visual.speechBubbleTimer = undefined;
+    }
+    if (visual.speechBubble) {
+      visual.speechBubble.destroy();
+      visual.speechBubble = undefined;
+    }
+
+    // Limit text length for bubble
+    const cleanText = text.length > 55 ? text.slice(0, 52) + "..." : text;
+
+    // Create speech bubble container
+    const bubbleContainer = this.add.container(0, -CHARACTER_MAX_SIZE / 2 - 34);
+
+    const bubbleText = this.add.text(0, 0, cleanText, {
+      fontFamily: "Outfit, sans-serif",
+      fontSize: "11px",
+      fontStyle: "600",
+      color: "#0f172a",
+      align: "center",
+      wordWrap: { width: 160 },
+    });
+    bubbleText.setOrigin(0.5, 0.5);
+
+    const padX = 10;
+    const padY = 6;
+    const bw = Math.max(36, bubbleText.width + padX * 2);
+    const bh = bubbleText.height + padY * 2;
+
+    const bgGraphics = this.add.graphics();
+    // Drop shadow
+    bgGraphics.fillStyle(0x000000, 0.25);
+    bgGraphics.fillRoundedRect(-bw / 2 + 1, -bh / 2 + 2, bw, bh, 8);
+    // Bubble body
+    bgGraphics.fillStyle(0xffffff, 0.98);
+    bgGraphics.fillRoundedRect(-bw / 2, -bh / 2, bw, bh, 8);
+    bgGraphics.lineStyle(1.5, 0x3b8282, 0.8);
+    bgGraphics.strokeRoundedRect(-bw / 2, -bh / 2, bw, bh, 8);
+
+    // Pointer tail
+    bgGraphics.fillStyle(0xffffff, 0.98);
+    bgGraphics.beginPath();
+    bgGraphics.moveTo(-4, bh / 2 - 0.5);
+    bgGraphics.lineTo(4, bh / 2 - 0.5);
+    bgGraphics.lineTo(0, bh / 2 + 5);
+    bgGraphics.closePath();
+    bgGraphics.fillPath();
+
+    bubbleContainer.add([bgGraphics, bubbleText]);
+    visual.container.add(bubbleContainer);
+    visual.speechBubble = bubbleContainer;
+
+    // Pop-in animation
+    bubbleContainer.setScale(0.7);
+    bubbleContainer.setAlpha(0);
+    this.tweens.add({
+      targets: bubbleContainer,
+      scaleX: 1,
+      scaleY: 1,
+      alpha: 1,
+      duration: 180,
+      ease: "Back.easeOut",
+    });
+
+    // Auto fade-out after 4.5s
+    visual.speechBubbleTimer = this.time.delayedCall(4500, () => {
+      if (visual.speechBubble === bubbleContainer) {
+        this.tweens.add({
+          targets: bubbleContainer,
+          alpha: 0,
+          scaleY: 0.8,
+          duration: 300,
+          ease: "Cubic.easeIn",
+          onComplete: () => {
+            if (visual.speechBubble === bubbleContainer) {
+              visual.speechBubble.destroy();
+              visual.speechBubble = undefined;
+            }
+          },
+        });
+      }
+    });
+  }
+
+  public setPlayerSpeaking(sessionId: string, speaking: boolean) {
+    const visual = this.playerVisuals.get(sessionId);
+    if (!visual) return;
+
+    if (speaking) {
+      this.speakingPlayers.add(sessionId);
+      if (visual.speakingIndicator) {
+        if (sessionId !== this.localPlayerId && this.voiceManager) {
+          const vol = this.voiceManager.getPeerVolume(sessionId);
+          visual.speakingIndicator.setVisible(vol > 0.02);
+        }
+        return;
+      }
+
+      const indicator = this.add.container(0, -CHARACTER_MAX_SIZE / 2 - 24);
+
+      // Outer glowing ring
+      const ring = this.add.graphics();
+      ring.lineStyle(2, 0x10b981, 0.9);
+      ring.strokeCircle(0, 0, 11);
+      ring.fillStyle(0x10b981, 0.25);
+      ring.fillCircle(0, 0, 11);
+
+      // Inner icon
+      const micText = this.add.text(0, 0, "🎙️", {
+        fontSize: "10px",
+      });
+      micText.setOrigin(0.5, 0.5);
+
+      indicator.add([ring, micText]);
+      indicator.setScale(0.85);
+
+      this.tweens.add({
+        targets: indicator,
+        scaleX: 1.12,
+        scaleY: 1.12,
+        alpha: 0.85,
+        yoyo: true,
+        repeat: -1,
+        duration: 380,
+        ease: "Sine.easeInOut",
+      });
+
+      // If remote peer, check if audible
+      if (sessionId !== this.localPlayerId && this.voiceManager) {
+        const vol = this.voiceManager.getPeerVolume(sessionId);
+        indicator.setVisible(vol > 0.02);
+      }
+
+      visual.container.add(indicator);
+      visual.speakingIndicator = indicator;
+    } else {
+      this.speakingPlayers.delete(sessionId);
+      if (visual.speakingIndicator) {
+        visual.speakingIndicator.destroy();
+        visual.speakingIndicator = undefined;
+      }
     }
   }
 
@@ -804,6 +1034,111 @@ export class GameScene extends Phaser.Scene {
         }
       }
     });
+
+    // 5. Private Area Detection & Dynamic Outside Dimming
+    let insideZone: PrivateZone | null = null;
+    if (this.localPlayerId) {
+      const localVisual = this.playerVisuals.get(this.localPlayerId);
+      if (localVisual) {
+        // Evaluate feet center position of the character
+        const px = localVisual.container.x;
+        const py = localVisual.container.y + (PLAYER_FEET_TOP_OFFSET + PLAYER_FEET_BOTTOM_OFFSET) / 2;
+        const col = Math.floor(px / TILE_SIZE);
+        const row = Math.floor(py / TILE_SIZE);
+
+        insideZone = this.privateZones.find(
+          (z) =>
+            col >= z.bounds.minCol &&
+            col <= z.bounds.maxCol &&
+            row >= z.bounds.minRow &&
+            row <= z.bounds.maxRow
+        ) || null;
+      }
+    }
+
+    const prevInsideId = this.currentInsideZone?.id || null;
+    const newInsideId = insideZone?.id || null;
+    if (prevInsideId !== newInsideId) {
+      this.currentInsideZone = insideZone;
+      this.notifyZoneChanged(insideZone);
+    }
+
+    // Modal-like darkening: when inside a private area, everything outside dims to 72% opacity
+    this.targetDarknessAlpha = insideZone ? 0.72 : 0;
+    if (Math.abs(this.darknessAlpha - this.targetDarknessAlpha) > 0.003) {
+      this.darknessAlpha = Phaser.Math.Linear(this.darknessAlpha, this.targetDarknessAlpha, 0.14);
+    } else {
+      this.darknessAlpha = this.targetDarknessAlpha;
+    }
+
+    this.drawOutsideDarkness();
+
+    // 6. Proximity & Private Zone Voice Audio Attenuation
+    if (this.voiceManager && this.localPlayerId) {
+      const localVisual = this.playerVisuals.get(this.localPlayerId);
+      if (localVisual) {
+        const lx = localVisual.container.x;
+        const ly = localVisual.container.y;
+        const localZone = this.currentInsideZone;
+
+        this.playerVisuals.forEach((peerVisual, peerSessionId) => {
+          if (peerSessionId === this.localPlayerId) return;
+
+          const px = peerVisual.container.x;
+          const py = peerVisual.container.y;
+
+          // Check if peer is in any private zone
+          const pCol = Math.floor(px / TILE_SIZE);
+          const pRow = Math.floor(py / TILE_SIZE);
+          const peerZone = this.privateZones.find(
+            (z) =>
+              pCol >= z.bounds.minCol &&
+              pCol <= z.bounds.maxCol &&
+              pRow >= z.bounds.minRow &&
+              pRow <= z.bounds.maxRow,
+          ) || null;
+
+          let volume = 0;
+          if (localZone) {
+            // Local player is in private area:
+            // "if user in private area, no proximity in the private area. everyone hear the same."
+            if (peerZone && peerZone.id === localZone.id) {
+              volume = 1.0;
+            } else {
+              volume = 0.0;
+            }
+          } else {
+            // Local player is in public area:
+            // "if user in public area, it will be a proximity voice chat."
+            if (peerZone) {
+              // Peer is in a private area: completely muted from outside
+              volume = 0.0;
+            } else {
+              // Both in public area: proximity voice chat
+              const dist = Phaser.Math.Distance.Between(lx, ly, px, py);
+              const MIN_DIST = 1 * TILE_SIZE; // 1 tile (48px): 100% volume
+              const MAX_DIST = 3 * TILE_SIZE; // 3 tiles (144px): 0% volume (cannot hear each other)
+              if (dist <= MIN_DIST) {
+                volume = 1.0;
+              } else if (dist >= MAX_DIST) {
+                volume = 0.0;
+              } else {
+                // Smooth natural cosine acoustic rolloff
+                const factor = (dist - MIN_DIST) / (MAX_DIST - MIN_DIST);
+                volume = Math.cos(factor * (Math.PI / 2));
+              }
+            }
+          }
+
+          this.voiceManager!.setPeerVolume(peerSessionId, volume);
+
+          // Update speaking indicator visibility: only show if audible to local player
+          if (peerVisual.speakingIndicator) {
+            peerVisual.speakingIndicator.setVisible(volume > 0.02);
+          }
+        });
+      }
+    }
   }
 
   // ==========================================
@@ -886,14 +1221,54 @@ export class GameScene extends Phaser.Scene {
         this.selectionCurrentTile = { x: col, y: row };
         this.updateSelectionVisuals();
       } else {
-        const isWall = isWallTile(this.selectedAssetKey);
-        const defaultHover = isWall ? 0xdb5b47 : 0xeca239;
-        const hoverColor = this.selectedTileColor ? this.parseColor(this.selectedTileColor) : defaultHover;
         this.editorHoverGraphics.clear();
-        this.editorHoverGraphics.lineStyle(2, hoverColor, 0.95);
-        this.editorHoverGraphics.strokeRect(col * TILE_SIZE, row * TILE_SIZE, TILE_SIZE, TILE_SIZE);
-        this.editorHoverGraphics.fillStyle(hoverColor, 0.22);
-        this.editorHoverGraphics.fillRect(col * TILE_SIZE, row * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+
+        if (this.activeEditorTool === "private_zone") {
+          const hoverColor = 0x8b5cf6;
+          this.editorHoverGraphics.lineStyle(2, hoverColor, 0.95);
+          this.editorHoverGraphics.strokeRect(col * TILE_SIZE, row * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+          this.editorHoverGraphics.fillStyle(hoverColor, 0.28);
+          this.editorHoverGraphics.fillRect(col * TILE_SIZE, row * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+        } else if (this.activeEditorTool === "clear_private_zone") {
+          const hoverColor = 0xf43f5e;
+          this.editorHoverGraphics.lineStyle(2, hoverColor, 0.95);
+          this.editorHoverGraphics.strokeRect(col * TILE_SIZE, row * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+          this.editorHoverGraphics.fillStyle(hoverColor, 0.28);
+          this.editorHoverGraphics.fillRect(col * TILE_SIZE, row * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+        } else if (this.activeEditorTool === "obstacle") {
+          const hoverColor = 0xef4444;
+          this.editorHoverGraphics.lineStyle(2, hoverColor, 0.95);
+          this.editorHoverGraphics.strokeRect(col * TILE_SIZE, row * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+          this.editorHoverGraphics.fillStyle(hoverColor, 0.32);
+          this.editorHoverGraphics.fillRect(col * TILE_SIZE, row * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+        } else if (this.activeEditorTool === "clear_obstacle") {
+          const hoverColor = 0xf43f5e;
+          this.editorHoverGraphics.lineStyle(2, hoverColor, 0.95);
+          this.editorHoverGraphics.strokeRect(col * TILE_SIZE, row * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+          this.editorHoverGraphics.fillStyle(hoverColor, 0.28);
+          this.editorHoverGraphics.fillRect(col * TILE_SIZE, row * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+        } else if (this.activeEditorTool === "clear_decoration") {
+          const hoverColor = 0xf59e0b;
+          this.editorHoverGraphics.lineStyle(2, hoverColor, 0.95);
+          this.editorHoverGraphics.strokeRect(col * TILE_SIZE, row * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+          this.editorHoverGraphics.fillStyle(hoverColor, 0.28);
+          this.editorHoverGraphics.fillRect(col * TILE_SIZE, row * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+        } else if (this.activeEditorTool === "decoration") {
+          const defaultHover = 0x10b981;
+          const hoverColor = this.selectedTileColor ? this.parseColor(this.selectedTileColor) : defaultHover;
+          this.editorHoverGraphics.lineStyle(2, hoverColor, 0.95);
+          this.editorHoverGraphics.strokeRect(col * TILE_SIZE, row * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+          this.editorHoverGraphics.fillStyle(hoverColor, 0.26);
+          this.editorHoverGraphics.fillRect(col * TILE_SIZE, row * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+        } else {
+          const isWall = isWallTile(this.selectedAssetKey);
+          const defaultHover = isWall ? 0xdb5b47 : 0xeca239;
+          const hoverColor = this.selectedTileColor ? this.parseColor(this.selectedTileColor) : defaultHover;
+          this.editorHoverGraphics.lineStyle(2, hoverColor, 0.95);
+          this.editorHoverGraphics.strokeRect(col * TILE_SIZE, row * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+          this.editorHoverGraphics.fillStyle(hoverColor, 0.22);
+          this.editorHoverGraphics.fillRect(col * TILE_SIZE, row * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+        }
       }
     });
 
@@ -911,21 +1286,189 @@ export class GameScene extends Phaser.Scene {
         const minRow = Math.min(this.selectionStartTile.y, this.selectionCurrentTile.y);
         const maxRow = Math.max(this.selectionStartTile.y, this.selectionCurrentTile.y);
 
-        const tileVal = this.selectedTileColor
-          ? `${this.selectedAssetKey}|${this.selectedTileColor}`
-          : this.selectedAssetKey;
+        if (this.activeEditorTool === "private_zone") {
+          // Flag this area as a private zone
+          const zoneNumber = this.privateZones.length + 1;
+          const defaultName = `Private Area ${zoneNumber}`;
+          const bounds = { minCol, minRow, maxCol, maxRow };
 
-        const updates: Record<string, string> = {};
-        for (let r = minRow; r <= maxRow; r++) {
-          for (let c = minCol; c <= maxCol; c++) {
-            updates[`${c},${r}`] = tileVal;
+          if (this.onRequestNameForNewZone) {
+            this.onRequestNameForNewZone(bounds, defaultName);
+          } else {
+            this.createPrivateZone(bounds, defaultName);
           }
-        }
+        } else if (this.activeEditorTool === "clear_private_zone") {
+          // Remove any private zones that overlap with the selected rectangle
+          const prevLen = this.privateZones.length;
+          this.privateZones = this.privateZones.filter((z) => {
+            const noOverlap =
+              maxCol < z.bounds.minCol ||
+              minCol > z.bounds.maxCol ||
+              maxRow < z.bounds.minRow ||
+              minRow > z.bounds.maxRow;
+            return noOverlap;
+          });
 
-        this.applyTileUpdates(updates);
+          if (this.privateZones.length !== prevLen) {
+            if (
+              this.currentInsideZone &&
+              !this.privateZones.some((z) => z.id === this.currentInsideZone?.id)
+            ) {
+              this.currentInsideZone = null;
+              this.notifyZoneChanged(null);
+            }
+            if (this.multiplayer) {
+              this.multiplayer.sendUpdatePrivateZones(this.privateZones);
+            }
+            this.drawPrivateZones();
+            this.notifyPrivateZonesListChange();
+          }
+        } else if (this.activeEditorTool === "obstacle") {
+          // Place obstacle barrier layer onto selected rectangle
+          const updates: Record<string, string> = {};
+          for (let r = minRow; r <= maxRow; r++) {
+            for (let c = minCol; c <= maxCol; c++) {
+              const existing = this.currentTilesMap.get(`${c},${r}`);
+              if (existing) {
+                const parts = existing.split("::");
+                if (!parts.includes("obstacle")) {
+                  updates[`${c},${r}`] = `${existing}::obstacle`;
+                }
+              } else {
+                updates[`${c},${r}`] = "grass_150::obstacle";
+              }
+            }
+          }
 
-        if (this.multiplayer) {
-          this.multiplayer.sendUpdateTiles(updates);
+          if (Object.keys(updates).length > 0) {
+            this.applyTileUpdates(updates);
+            if (this.multiplayer) {
+              this.multiplayer.sendUpdateTiles(updates);
+            }
+          }
+        } else if (this.activeEditorTool === "clear_obstacle") {
+          // Remove obstacle layer from selected rectangle
+          const updates: Record<string, string> = {};
+          for (let r = minRow; r <= maxRow; r++) {
+            for (let c = minCol; c <= maxCol; c++) {
+              const existing = this.currentTilesMap.get(`${c},${r}`);
+              if (existing && existing.includes("obstacle")) {
+                const parts = existing
+                  .split("::")
+                  .filter((p) => p !== "obstacle" && !p.startsWith("obstacle|"));
+                const newVal = parts.join("::") || "grass_150";
+                if (newVal !== existing) {
+                  updates[`${c},${r}`] = newVal;
+                }
+              }
+            }
+          }
+
+          if (Object.keys(updates).length > 0) {
+            this.applyTileUpdates(updates);
+            if (this.multiplayer) {
+              this.multiplayer.sendUpdateTiles(updates);
+            }
+          }
+        } else if (this.activeEditorTool === "clear_decoration") {
+          // Remove decoration layer from selected rectangle, keeping the bottom tile & obstacle
+          const updates: Record<string, string> = {};
+          for (let r = minRow; r <= maxRow; r++) {
+            for (let c = minCol; c <= maxCol; c++) {
+              const existing = this.currentTilesMap.get(`${c},${r}`);
+              if (existing && existing.includes("::")) {
+                const parts = existing.split("::");
+                const basePart = parts[0] || "grass_150";
+                const hasObs = parts.includes("obstacle");
+                const newVal = hasObs ? `${basePart}::obstacle` : basePart;
+                if (newVal !== existing) {
+                  updates[`${c},${r}`] = newVal;
+                }
+              }
+            }
+          }
+
+          if (Object.keys(updates).length > 0) {
+            this.applyTileUpdates(updates);
+            if (this.multiplayer) {
+              this.multiplayer.sendUpdateTiles(updates);
+            }
+          }
+        } else if (this.activeEditorTool === "decoration") {
+          // Decoration placed on top of existing bottom tile, preserving obstacle if present
+          const decoVal = this.selectedTileColor
+            ? `${this.selectedAssetKey}|${this.selectedTileColor}`
+            : this.selectedAssetKey;
+
+          const updates: Record<string, string> = {};
+          for (let r = minRow; r <= maxRow; r++) {
+            for (let c = minCol; c <= maxCol; c++) {
+              const existing = this.currentTilesMap.get(`${c},${r}`);
+              let basePart = "grass_150";
+              let hasObs = false;
+              if (existing) {
+                const parts = existing.split("::");
+                basePart = parts[0] || "grass_150";
+                hasObs = parts.includes("obstacle");
+              }
+              updates[`${c},${r}`] = hasObs
+                ? `${basePart}::${decoVal}::obstacle`
+                : `${basePart}::${decoVal}`;
+            }
+          }
+
+          this.applyTileUpdates(updates);
+
+          if (this.multiplayer) {
+            this.multiplayer.sendUpdateTiles(updates);
+          }
+        } else {
+          // Normal tile flooring / wall update:
+          // Wall tiles come together with the obstacle tile
+          const isWall =
+            this.selectedAssetKey === "wall_half_150" ||
+            this.selectedAssetKey === "wall_top_150";
+          const tileVal = this.selectedTileColor
+            ? `${this.selectedAssetKey}|${this.selectedTileColor}`
+            : this.selectedAssetKey;
+
+          const updates: Record<string, string> = {};
+          for (let r = minRow; r <= maxRow; r++) {
+            for (let c = minCol; c <= maxCol; c++) {
+              const existing = this.currentTilesMap.get(`${c},${r}`);
+              if (existing && existing.includes("::")) {
+                const parts = existing.split("::");
+                const hasObs = parts.includes("obstacle");
+                const nonObs = parts.filter((p) => p !== "obstacle");
+                const decoPart = nonObs.length > 1 ? nonObs[1] : null;
+
+                const newParts = [tileVal];
+                if (decoPart) newParts.push(decoPart);
+
+                // The wall will come together with the obstacle tile.
+                // If replacing a wall with non-wall floor, remove the wall's obstacle.
+                const existingIsWall = parts.some(
+                  (p) => p.startsWith("wall_half_150") || p.startsWith("wall_top_150")
+                );
+                const shouldHaveObstacle = isWall || (hasObs && !existingIsWall);
+                if (shouldHaveObstacle) newParts.push("obstacle");
+
+                updates[`${c},${r}`] = newParts.join("::");
+              } else {
+                if (isWall) {
+                  updates[`${c},${r}`] = `${tileVal}::obstacle`;
+                } else {
+                  updates[`${c},${r}`] = tileVal;
+                }
+              }
+            }
+          }
+
+          this.applyTileUpdates(updates);
+
+          if (this.multiplayer) {
+            this.multiplayer.sendUpdateTiles(updates);
+          }
         }
 
         this.isSelectingArea = false;
@@ -963,40 +1506,182 @@ export class GameScene extends Phaser.Scene {
 
     this.editorSelectionGraphics.clear();
 
-    const isWall = isWallTile(this.selectedAssetKey);
-    const defaultFill = isWall ? 0xdb5b47 : 0x3b8282;
-    const defaultStroke = isWall ? 0xff6b55 : 0xeca239;
-    const fillColor = this.selectedTileColor ? this.parseColor(this.selectedTileColor) : defaultFill;
-    // Fill
-    this.editorSelectionGraphics.fillStyle(fillColor, 0.32);
-    this.editorSelectionGraphics.fillRect(rx, ry, rw, rh);
+    if (this.activeEditorTool === "private_zone") {
+      // Violet private area selection visuals
+      this.editorSelectionGraphics.fillStyle(0x8b5cf6, 0.32);
+      this.editorSelectionGraphics.fillRect(rx, ry, rw, rh);
 
-    // Outer border
-    const strokeColor = this.selectedTileColor ? this.parseColor(this.selectedTileColor) : defaultStroke;
-    this.editorSelectionGraphics.lineStyle(2.5, strokeColor, 1);
-    this.editorSelectionGraphics.strokeRect(rx, ry, rw, rh);
+      this.editorSelectionGraphics.lineStyle(2.5, 0xa78bfa, 1);
+      this.editorSelectionGraphics.strokeRect(rx, ry, rw, rh);
 
-    // Inner grid dashed lines
-    this.editorSelectionGraphics.lineStyle(1, 0xffffff, 0.35);
-    for (let c = 1; c < cols; c++) {
-      const gx = rx + c * TILE_SIZE;
-      this.editorSelectionGraphics.lineBetween(gx, ry, gx, ry + rh);
+      // Inner grid dashed lines
+      this.editorSelectionGraphics.lineStyle(1, 0xffffff, 0.35);
+      for (let c = 1; c < cols; c++) {
+        const gx = rx + c * TILE_SIZE;
+        this.editorSelectionGraphics.lineBetween(gx, ry, gx, ry + rh);
+      }
+      for (let r = 1; r < rows; r++) {
+        const gy = ry + r * TILE_SIZE;
+        this.editorSelectionGraphics.lineBetween(rx, gy, rx + rw, gy);
+      }
+
+      this.editorOverlayText.setText(
+        `🔒 ${cols} × ${rows} (${totalTiles} ${totalTiles === 1 ? "tile" : "tiles"}) • Flag as Private Area`
+      );
+    } else if (this.activeEditorTool === "clear_private_zone") {
+      // Rose clear selection visuals
+      this.editorSelectionGraphics.fillStyle(0xf43f5e, 0.32);
+      this.editorSelectionGraphics.fillRect(rx, ry, rw, rh);
+
+      this.editorSelectionGraphics.lineStyle(2.5, 0xfb7185, 1);
+      this.editorSelectionGraphics.strokeRect(rx, ry, rw, rh);
+
+      // Inner grid dashed lines
+      this.editorSelectionGraphics.lineStyle(1, 0xffffff, 0.35);
+      for (let c = 1; c < cols; c++) {
+        const gx = rx + c * TILE_SIZE;
+        this.editorSelectionGraphics.lineBetween(gx, ry, gx, ry + rh);
+      }
+      for (let r = 1; r < rows; r++) {
+        const gy = ry + r * TILE_SIZE;
+        this.editorSelectionGraphics.lineBetween(rx, gy, rx + rw, gy);
+      }
+
+      this.editorOverlayText.setText(
+        `✕ ${cols} × ${rows} (${totalTiles} ${totalTiles === 1 ? "tile" : "tiles"}) • Clear Private Area`
+      );
+    } else if (this.activeEditorTool === "obstacle") {
+      // Crimson barrier obstacle selection visuals
+      this.editorSelectionGraphics.fillStyle(0xef4444, 0.32);
+      this.editorSelectionGraphics.fillRect(rx, ry, rw, rh);
+
+      this.editorSelectionGraphics.lineStyle(2.5, 0xf87171, 1);
+      this.editorSelectionGraphics.strokeRect(rx, ry, rw, rh);
+
+      // Inner grid lines
+      this.editorSelectionGraphics.lineStyle(1, 0xffffff, 0.35);
+      for (let c = 1; c < cols; c++) {
+        const gx = rx + c * TILE_SIZE;
+        this.editorSelectionGraphics.lineBetween(gx, ry, gx, ry + rh);
+      }
+      for (let r = 1; r < rows; r++) {
+        const gy = ry + r * TILE_SIZE;
+        this.editorSelectionGraphics.lineBetween(rx, gy, rx + rw, gy);
+      }
+
+      this.editorOverlayText.setText(
+        `🚫 ${cols} × ${rows} (${totalTiles} ${totalTiles === 1 ? "tile" : "tiles"}) • Place Obstacle (Impassable)`
+      );
+    } else if (this.activeEditorTool === "clear_obstacle") {
+      // Rose clear obstacle selection visuals
+      this.editorSelectionGraphics.fillStyle(0xf43f5e, 0.32);
+      this.editorSelectionGraphics.fillRect(rx, ry, rw, rh);
+
+      this.editorSelectionGraphics.lineStyle(2.5, 0xfb7185, 1);
+      this.editorSelectionGraphics.strokeRect(rx, ry, rw, rh);
+
+      // Inner grid lines
+      this.editorSelectionGraphics.lineStyle(1, 0xffffff, 0.35);
+      for (let c = 1; c < cols; c++) {
+        const gx = rx + c * TILE_SIZE;
+        this.editorSelectionGraphics.lineBetween(gx, ry, gx, ry + rh);
+      }
+      for (let r = 1; r < rows; r++) {
+        const gy = ry + r * TILE_SIZE;
+        this.editorSelectionGraphics.lineBetween(rx, gy, rx + rw, gy);
+      }
+
+      this.editorOverlayText.setText(
+        `✕ ${cols} × ${rows} (${totalTiles} ${totalTiles === 1 ? "tile" : "tiles"}) • Clear Obstacle`
+      );
+    } else if (this.activeEditorTool === "clear_decoration") {
+      // Amber clear decoration visuals
+      this.editorSelectionGraphics.fillStyle(0xf59e0b, 0.32);
+      this.editorSelectionGraphics.fillRect(rx, ry, rw, rh);
+
+      this.editorSelectionGraphics.lineStyle(2.5, 0xfbbf24, 1);
+      this.editorSelectionGraphics.strokeRect(rx, ry, rw, rh);
+
+      // Inner grid dashed lines
+      this.editorSelectionGraphics.lineStyle(1, 0xffffff, 0.35);
+      for (let c = 1; c < cols; c++) {
+        const gx = rx + c * TILE_SIZE;
+        this.editorSelectionGraphics.lineBetween(gx, ry, gx, ry + rh);
+      }
+      for (let r = 1; r < rows; r++) {
+        const gy = ry + r * TILE_SIZE;
+        this.editorSelectionGraphics.lineBetween(rx, gy, rx + rw, gy);
+      }
+
+      this.editorOverlayText.setText(
+        `✕ ${cols} × ${rows} (${totalTiles} ${totalTiles === 1 ? "tile" : "tiles"}) • Clear Decoration`
+      );
+    } else if (this.activeEditorTool === "decoration") {
+      const defaultFill = 0x10b981;
+      const defaultStroke = 0x34d399;
+      const fillColor = this.selectedTileColor ? this.parseColor(this.selectedTileColor) : defaultFill;
+      const strokeColor = this.selectedTileColor ? this.parseColor(this.selectedTileColor) : defaultStroke;
+
+      this.editorSelectionGraphics.fillStyle(fillColor, 0.32);
+      this.editorSelectionGraphics.fillRect(rx, ry, rw, rh);
+
+      this.editorSelectionGraphics.lineStyle(2.5, strokeColor, 1);
+      this.editorSelectionGraphics.strokeRect(rx, ry, rw, rh);
+
+      // Inner grid dashed lines
+      this.editorSelectionGraphics.lineStyle(1, 0xffffff, 0.35);
+      for (let c = 1; c < cols; c++) {
+        const gx = rx + c * TILE_SIZE;
+        this.editorSelectionGraphics.lineBetween(gx, ry, gx, ry + rh);
+      }
+      for (let r = 1; r < rows; r++) {
+        const gy = ry + r * TILE_SIZE;
+        this.editorSelectionGraphics.lineBetween(rx, gy, rx + rw, gy);
+      }
+
+      let labelName = "Table Left";
+      if (this.selectedAssetKey === "table_left_150") labelName = "Table Left";
+      const colorBadge = this.selectedTileColor ? ` • ${this.selectedTileColor.toUpperCase()}` : "";
+      this.editorOverlayText.setText(
+        `🪴 ${cols} × ${rows} (${totalTiles} ${totalTiles === 1 ? "tile" : "tiles"}) • ${labelName} (Decoration)${colorBadge}`
+      );
+    } else {
+      const isWall = isWallTile(this.selectedAssetKey);
+      const defaultFill = isWall ? 0xdb5b47 : 0x3b8282;
+      const defaultStroke = isWall ? 0xff6b55 : 0xeca239;
+      const fillColor = this.selectedTileColor ? this.parseColor(this.selectedTileColor) : defaultFill;
+      // Fill
+      this.editorSelectionGraphics.fillStyle(fillColor, 0.32);
+      this.editorSelectionGraphics.fillRect(rx, ry, rw, rh);
+
+      // Outer border
+      const strokeColor = this.selectedTileColor ? this.parseColor(this.selectedTileColor) : defaultStroke;
+      this.editorSelectionGraphics.lineStyle(2.5, strokeColor, 1);
+      this.editorSelectionGraphics.strokeRect(rx, ry, rw, rh);
+
+      // Inner grid dashed lines
+      this.editorSelectionGraphics.lineStyle(1, 0xffffff, 0.35);
+      for (let c = 1; c < cols; c++) {
+        const gx = rx + c * TILE_SIZE;
+        this.editorSelectionGraphics.lineBetween(gx, ry, gx, ry + rh);
+      }
+      for (let r = 1; r < rows; r++) {
+        const gy = ry + r * TILE_SIZE;
+        this.editorSelectionGraphics.lineBetween(rx, gy, rx + rw, gy);
+      }
+
+      let labelName = "Birch Floor";
+      if (this.selectedAssetKey === "grass_150") labelName = "Grass Tile";
+      else if (this.selectedAssetKey === "color_tile") labelName = "Plain Tile";
+      else if (this.selectedAssetKey === "wall_half_150") labelName = "Half Wall (with Obstacle)";
+      else if (this.selectedAssetKey === "wall_top_150") labelName = "Top Wall (with Obstacle)";
+
+      const colorBadge = this.selectedTileColor ? ` • ${this.selectedTileColor.toUpperCase()}` : "";
+      this.editorOverlayText.setText(
+        `📐 ${cols} × ${rows} (${totalTiles} ${totalTiles === 1 ? "tile" : "tiles"}) • ${labelName}${colorBadge}`
+      );
     }
-    for (let r = 1; r < rows; r++) {
-      const gy = ry + r * TILE_SIZE;
-      this.editorSelectionGraphics.lineBetween(rx, gy, rx + rw, gy);
-    }
 
-    let labelName = "Birch Floor";
-    if (this.selectedAssetKey === "grass_150") labelName = "Grass Tile";
-    else if (this.selectedAssetKey === "color_tile") labelName = "Plain Tile";
-    else if (this.selectedAssetKey === "wall_half_150") labelName = "Half Wall (Impassable)";
-    else if (this.selectedAssetKey === "wall_top_150") labelName = "Top Wall (Impassable)";
-
-    const colorBadge = this.selectedTileColor ? ` • ${this.selectedTileColor.toUpperCase()}` : "";
-    this.editorOverlayText.setText(
-      `📐 ${cols} × ${rows} (${totalTiles} ${totalTiles === 1 ? "tile" : "tiles"}) • ${labelName}${colorBadge}`
-    );
     this.editorOverlayText.setPosition(rx + 8, Math.max(8, ry - 32));
     this.editorOverlayText.setVisible(true);
   }
@@ -1004,6 +1689,8 @@ export class GameScene extends Phaser.Scene {
   public setEditMode(enabled: boolean) {
     this.isEditMode = enabled;
     this.drawGrid(enabled);
+    this.drawPrivateZones();
+    this.drawObstacles();
 
     if (enabled) {
       this.cameras.main.stopFollow();
@@ -1044,21 +1731,52 @@ export class GameScene extends Phaser.Scene {
       const row = parseInt(rowStr, 10);
       if (row >= 0 && row < GRID_ROWS && col >= 0 && col < GRID_COLS) {
         const img = this.tileImages[row]?.[col];
+        const decoImg = this.decorationImages[row]?.[col];
+
+        let baseStr = "grass_150";
+        let decoStr: string | null = null;
+        let isObs = false;
+
+        const parts = rawValue.includes("::") ? rawValue.split("::") : [rawValue];
+        const nonObsParts: string[] = [];
+        for (const p of parts) {
+          const baseKey = p.includes("|") ? p.split("|")[0] : p;
+          if (baseKey === "obstacle") {
+            isObs = true;
+          } else {
+            nonObsParts.push(p);
+          }
+        }
+
+        if (nonObsParts.length > 0) {
+          baseStr = nonObsParts[0] || "grass_150";
+          decoStr = nonObsParts[1] || null;
+        } else {
+          baseStr = "grass_150";
+          decoStr = null;
+        }
+
+        if (isObs) {
+          this.obstacleTiles.add(key);
+        } else {
+          this.obstacleTiles.delete(key);
+        }
+
         if (img) {
           let assetKey = "birch_floor_150";
           let tintColor: number | null = null;
 
-          if (rawValue.includes("|")) {
-            const [parsedAsset, colorPart] = rawValue.split("|");
+          if (baseStr.includes("|")) {
+            const [parsedAsset, colorPart] = baseStr.split("|");
             assetKey = parsedAsset || "birch_floor_150";
             if (colorPart && colorPart !== "none") {
               tintColor = this.parseColor(colorPart);
             }
-          } else if (rawValue.startsWith("#")) {
+          } else if (baseStr.startsWith("#")) {
             assetKey = "color_tile";
-            tintColor = this.parseColor(rawValue);
+            tintColor = this.parseColor(baseStr);
           } else {
-            assetKey = rawValue;
+            assetKey = baseStr;
           }
 
           if (assetKey === "grass_100") assetKey = "grass_150";
@@ -1074,12 +1792,71 @@ export class GameScene extends Phaser.Scene {
             img.clearTint();
           }
         }
+
+        if (decoImg) {
+          if (decoStr) {
+            let decoAssetKey = decoStr;
+            let decoTintColor: number | null = null;
+            if (decoStr.includes("|")) {
+              const [parsedDecoAsset, decoColorPart] = decoStr.split("|");
+              decoAssetKey = parsedDecoAsset;
+              if (decoColorPart && decoColorPart !== "none") {
+                decoTintColor = this.parseColor(decoColorPart);
+              }
+            }
+            const decoTexture = this.textures.exists(decoAssetKey) ? decoAssetKey : "table_left_150";
+            decoImg.setTexture(decoTexture);
+            decoImg.setDisplaySize(TILE_SIZE, TILE_SIZE);
+            if (decoTintColor !== null) {
+              decoImg.setTint(decoTintColor);
+            } else {
+              decoImg.clearTint();
+            }
+            decoImg.setVisible(true);
+          } else {
+            decoImg.setVisible(false);
+          }
+        }
       }
+    }
+    this.drawObstacles();
+  }
+
+  private drawObstacles() {
+    if (!this.obstaclesGraphics) return;
+    this.obstaclesGraphics.clear();
+
+    // "it will only show highlight in edit mode. in map, it wont show the obstacle highlight."
+    if (!this.isEditMode) return;
+    if (this.obstacleTiles.size === 0) return;
+
+    for (const key of this.obstacleTiles) {
+      const [colStr, rowStr] = key.split(",");
+      const col = parseInt(colStr, 10);
+      const row = parseInt(rowStr, 10);
+      if (isNaN(col) || isNaN(row)) continue;
+
+      const x = col * TILE_SIZE;
+      const y = row * TILE_SIZE;
+
+      // Semi-transparent barrier highlight
+      this.obstaclesGraphics.fillStyle(0xef4444, 0.28);
+      this.obstaclesGraphics.fillRect(x, y, TILE_SIZE, TILE_SIZE);
+
+      // Barrier border
+      this.obstaclesGraphics.lineStyle(2, 0xef4444, 0.85);
+      this.obstaclesGraphics.strokeRect(x, y, TILE_SIZE, TILE_SIZE);
+
+      // Diagonal cross indicating blocked passage
+      this.obstaclesGraphics.lineStyle(1.5, 0xffffff, 0.4);
+      this.obstaclesGraphics.lineBetween(x + 5, y + 5, x + TILE_SIZE - 5, y + TILE_SIZE - 5);
+      this.obstaclesGraphics.lineBetween(x + TILE_SIZE - 5, y + 5, x + 5, y + TILE_SIZE - 5);
     }
   }
 
   public resetTiles() {
     this.currentTilesMap.clear();
+    this.obstacleTiles.clear();
     for (let r = 0; r < GRID_ROWS; r++) {
       for (let c = 0; c < GRID_COLS; c++) {
         const img = this.tileImages[r]?.[c];
@@ -1088,7 +1865,239 @@ export class GameScene extends Phaser.Scene {
           img.setDisplaySize(TILE_SIZE, TILE_SIZE);
           img.clearTint();
         }
+        const decoImg = this.decorationImages[r]?.[c];
+        if (decoImg) {
+          decoImg.setVisible(false);
+          decoImg.clearTint();
+        }
       }
     }
+    this.privateZones = [];
+    this.currentInsideZone = null;
+    this.darknessAlpha = 0;
+    this.targetDarknessAlpha = 0;
+    this.drawPrivateZones();
+    this.drawOutsideDarkness();
+    this.drawObstacles();
+    this.notifyPrivateZonesListChange();
+  }
+
+  public setActiveEditorTool(
+    tool:
+      | "flooring"
+      | "decoration"
+      | "clear_decoration"
+      | "private_zone"
+      | "clear_private_zone"
+      | "obstacle"
+      | "clear_obstacle"
+  ) {
+    this.activeEditorTool = tool;
+  }
+
+  public applyPrivateZones(zones: PrivateZone[]) {
+    if (!Array.isArray(zones)) return;
+    this.privateZones = [...zones];
+    if (this.currentInsideZone) {
+      const updated = this.privateZones.find((z) => z.id === this.currentInsideZone?.id);
+      if (updated) {
+        this.currentInsideZone = updated;
+        this.notifyZoneChanged(this.currentInsideZone);
+      } else {
+        this.currentInsideZone = null;
+        this.notifyZoneChanged(null);
+      }
+    }
+    this.drawPrivateZones();
+    this.notifyPrivateZonesListChange();
+  }
+
+  public createPrivateZone(
+    bounds: { minCol: number; minRow: number; maxCol: number; maxRow: number },
+    name?: string
+  ) {
+    const defaultName = `Private Area ${this.privateZones.length + 1}`;
+    const cleanName = name && name.trim().length > 0 ? name.trim().slice(0, 30) : defaultName;
+    const newZone: PrivateZone = {
+      id: `pz_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      name: cleanName,
+      bounds,
+      createdAt: Date.now(),
+    };
+
+    this.privateZones.push(newZone);
+    if (this.multiplayer) {
+      this.multiplayer.sendUpdatePrivateZones(this.privateZones);
+    }
+    this.drawPrivateZones();
+    this.notifyPrivateZonesListChange();
+  }
+
+  public renamePrivateZone(zoneId: string, newName: string) {
+    const zone = this.privateZones.find((z) => z.id === zoneId);
+    if (!zone) return;
+    const cleanName = newName && newName.trim().length > 0 ? newName.trim().slice(0, 30) : zone.name;
+    zone.name = cleanName;
+    if (this.multiplayer) {
+      this.multiplayer.sendUpdatePrivateZones(this.privateZones);
+    }
+    this.drawPrivateZones();
+    this.notifyPrivateZonesListChange();
+
+    if (this.currentInsideZone && this.currentInsideZone.id === zoneId) {
+      this.currentInsideZone.name = cleanName;
+      this.notifyZoneChanged(this.currentInsideZone);
+    }
+  }
+
+  public removePrivateZone(zoneId: string) {
+    this.privateZones = this.privateZones.filter((z) => z.id !== zoneId);
+    if (this.currentInsideZone && this.currentInsideZone.id === zoneId) {
+      this.currentInsideZone = null;
+      this.notifyZoneChanged(null);
+    }
+    if (this.multiplayer) {
+      this.multiplayer.sendUpdatePrivateZones(this.privateZones);
+    }
+    this.drawPrivateZones();
+    this.notifyPrivateZonesListChange();
+  }
+
+  public onZoneChange(cb: (zone: PrivateZone | null) => void) {
+    this.onZoneChangeCallbacks.push(cb);
+  }
+
+  private notifyZoneChanged(zone: PrivateZone | null) {
+    this.onZoneChangeCallbacks.forEach((cb) => {
+      try {
+        cb(zone);
+      } catch (e) {
+        console.error("onZoneChange callback error:", e);
+      }
+    });
+  }
+
+  public onPrivateZonesListChange(cb: (zones: PrivateZone[]) => void) {
+    this.onPrivateZonesListChangeCallbacks.push(cb);
+    cb(this.privateZones);
+  }
+
+  private notifyPrivateZonesListChange() {
+    this.onPrivateZonesListChangeCallbacks.forEach((cb) => {
+      try {
+        cb(this.privateZones);
+      } catch (e) {
+        console.error("onPrivateZonesListChange callback error:", e);
+      }
+    });
+  }
+
+  private drawPrivateZones() {
+    this.privateZonesGraphics.clear();
+
+    if (!this.privateZones || this.privateZones.length === 0) return;
+
+    this.privateZones.forEach((zone) => {
+      const zx = zone.bounds.minCol * TILE_SIZE;
+      const zy = zone.bounds.minRow * TILE_SIZE;
+      const zw = (zone.bounds.maxCol - zone.bounds.minCol + 1) * TILE_SIZE;
+      const zh = (zone.bounds.maxRow - zone.bounds.minRow + 1) * TILE_SIZE;
+      const cols = zone.bounds.maxCol - zone.bounds.minCol + 1;
+      const rows = zone.bounds.maxRow - zone.bounds.minRow + 1;
+
+      if (this.isEditMode) {
+        // Edit Mode: High-contrast purple styling with tile bounds
+        this.privateZonesGraphics.fillStyle(0x8b5cf6, 0.22);
+        this.privateZonesGraphics.fillRect(zx, zy, zw, zh);
+
+        this.privateZonesGraphics.lineStyle(2, 0x8b5cf6, 0.95);
+        this.privateZonesGraphics.strokeRect(zx, zy, zw, zh);
+
+        // Dashed inner lines for each tile
+        this.privateZonesGraphics.lineStyle(1, 0xffffff, 0.16);
+        for (let c = 1; c < cols; c++) {
+          const gx = zx + c * TILE_SIZE;
+          this.privateZonesGraphics.lineBetween(gx, zy, gx, zy + zh);
+        }
+        for (let r = 1; r < rows; r++) {
+          const gy = zy + r * TILE_SIZE;
+          this.privateZonesGraphics.lineBetween(zx, gy, zx + zw, gy);
+        }
+      } else {
+        // Normal Mode: Elegant, subtle ambient zone boundary on floor
+        this.privateZonesGraphics.fillStyle(0x8b5cf6, 0.06);
+        this.privateZonesGraphics.fillRect(zx, zy, zw, zh);
+
+        this.privateZonesGraphics.lineStyle(1.5, 0x8b5cf6, 0.45);
+        this.privateZonesGraphics.strokeRect(zx, zy, zw, zh);
+
+        // Stylish corner brackets
+        const cornerLen = Math.min(12, Math.min(zw, zh) / 3);
+        this.privateZonesGraphics.lineStyle(2.5, 0xc4b5fd, 0.8);
+        // Top-left
+        this.privateZonesGraphics.lineBetween(zx, zy, zx + cornerLen, zy);
+        this.privateZonesGraphics.lineBetween(zx, zy, zx, zy + cornerLen);
+        // Top-right
+        this.privateZonesGraphics.lineBetween(zx + zw, zy, zx + zw - cornerLen, zy);
+        this.privateZonesGraphics.lineBetween(zx + zw, zy, zx + zw, zy + cornerLen);
+        // Bottom-left
+        this.privateZonesGraphics.lineBetween(zx, zy + zh, zx + cornerLen, zy + zh);
+        this.privateZonesGraphics.lineBetween(zx, zy + zh, zx, zy + zh - cornerLen);
+        // Bottom-right
+        this.privateZonesGraphics.lineBetween(zx + zw, zy + zh, zx + zw - cornerLen, zy + zh);
+        this.privateZonesGraphics.lineBetween(zx + zw, zy + zh, zx + zw, zy + zh - cornerLen);
+      }
+    });
+  }
+
+  private drawOutsideDarkness() {
+    this.outsideDarkGraphics.clear();
+    this.privateSpotlightGraphics.clear();
+
+    if (this.darknessAlpha <= 0.005 || !this.currentInsideZone) {
+      return;
+    }
+
+    const zone = this.currentInsideZone;
+    const zx = zone.bounds.minCol * TILE_SIZE;
+    const zy = zone.bounds.minRow * TILE_SIZE;
+    const zw = (zone.bounds.maxCol - zone.bounds.minCol + 1) * TILE_SIZE;
+    const zh = (zone.bounds.maxRow - zone.bounds.minRow + 1) * TILE_SIZE;
+
+    // Darken everything outside this private zone like a modal backdrop
+    this.outsideDarkGraphics.fillStyle(0x060b0d, this.darknessAlpha);
+
+    // 1. Top region
+    if (zy > 0) {
+      this.outsideDarkGraphics.fillRect(0, 0, WORLD_WIDTH, zy);
+    }
+    // 2. Bottom region
+    if (zy + zh < WORLD_HEIGHT) {
+      this.outsideDarkGraphics.fillRect(0, zy + zh, WORLD_WIDTH, WORLD_HEIGHT - (zy + zh));
+    }
+    // 3. Left region
+    if (zx > 0) {
+      this.outsideDarkGraphics.fillRect(0, zy, zx, zh);
+    }
+    // 4. Right region
+    if (zx + zw < WORLD_WIDTH) {
+      this.outsideDarkGraphics.fillRect(zx + zw, zy, WORLD_WIDTH - (zx + zw), zh);
+    }
+
+    // Luminous glowing spotlight border around the bright private area
+    this.privateSpotlightGraphics.lineStyle(2.5, 0xa78bfa, Math.min(1, this.darknessAlpha * 1.3));
+    this.privateSpotlightGraphics.strokeRect(zx, zy, zw, zh);
+
+    // Corner neon brackets around the bright area
+    const cornerLen = Math.min(18, Math.min(zw, zh) / 2);
+    this.privateSpotlightGraphics.lineStyle(3.5, 0xc4b5fd, Math.min(1, this.darknessAlpha * 1.4));
+    this.privateSpotlightGraphics.lineBetween(zx, zy, zx + cornerLen, zy);
+    this.privateSpotlightGraphics.lineBetween(zx, zy, zx, zy + cornerLen);
+    this.privateSpotlightGraphics.lineBetween(zx + zw, zy, zx + zw - cornerLen, zy);
+    this.privateSpotlightGraphics.lineBetween(zx + zw, zy, zx + zw, zy + cornerLen);
+    this.privateSpotlightGraphics.lineBetween(zx, zy + zh, zx + cornerLen, zy + zh);
+    this.privateSpotlightGraphics.lineBetween(zx, zy + zh, zx, zy + zh - cornerLen);
+    this.privateSpotlightGraphics.lineBetween(zx + zw, zy + zh, zx + zw - cornerLen, zy + zh);
+    this.privateSpotlightGraphics.lineBetween(zx + zw, zy + zh, zx + zw, zy + zh - cornerLen);
   }
 }

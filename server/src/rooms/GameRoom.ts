@@ -16,6 +16,12 @@ import {
   isWallTile,
   resolveMovement,
   findSafeSpawnCenter,
+  PrivateZone,
+  ChatMessage,
+  SendChatMessagePayload,
+  VoiceChannelType,
+  VoicePeer,
+  VoiceSignalPayload,
 } from "shared";
 import {
   upsertPlayer,
@@ -23,6 +29,8 @@ import {
   getSpaceById,
   getSpaceTiles,
   updateSpaceTiles,
+  getSpacePrivateZones,
+  updateSpacePrivateZones,
 } from "../db";
 import { verifyToken } from "../auth";
 
@@ -39,6 +47,8 @@ export class GameRoom extends Room<GameState> {
   private playerInputs: Map<string, PlayerInputPayload> = new Map();
   private playerAvatars: Map<string, PlayerAvatars> = new Map();
   private tiles: Record<string, string> = {};
+  private privateZones: PrivateZone[] = [];
+  private voiceParticipants: Set<string> = new Set();
   private spaceOwnerId: number | null = null;
   private clientAuthMap: Map<string, any> = new Map();
   private dbSyncCounter: number = 0;
@@ -193,6 +203,12 @@ export class GameRoom extends Room<GameState> {
       })
       .catch((err) => console.warn("Failed loading space metadata:", err));
 
+    getSpacePrivateZones(this.spaceId)
+      .then((loadedZones) => {
+        this.privateZones = loadedZones || [];
+      })
+      .catch((err) => console.warn("Failed loading space private zones:", err));
+
     // Handle tile updates from clients with edit permissions
     this.onMessage(
       "UPDATE_TILES",
@@ -219,6 +235,220 @@ export class GameRoom extends Room<GameState> {
           this.broadcast("TILES_UPDATED", data.updates);
           await updateSpaceTiles(this.spaceId, this.tiles);
         }
+      },
+    );
+
+    // Handle private zones updates from clients with edit permissions
+    this.onMessage(
+      "UPDATE_PRIVATE_ZONES",
+      async (client: Client, data: { zones: PrivateZone[] }) => {
+        const auth = this.clientAuthMap.get(client.sessionId);
+        const user = auth?.user;
+        const isSuperadmin = user?.role === "superadmin";
+        const isOwner =
+          user && this.spaceOwnerId !== null && user.id === this.spaceOwnerId;
+
+        if (!isSuperadmin && !isOwner) {
+          console.warn(
+            `[GameRoom] Unauthorized private zones edit attempt by ${client.sessionId} in space ${this.spaceId}`,
+          );
+          client.send("ERROR", {
+            message:
+              "Permission denied: Only space owner or superadmin can edit map.",
+          });
+          return;
+        }
+
+        if (data && Array.isArray(data.zones)) {
+          this.privateZones = data.zones;
+          this.broadcast("PRIVATE_ZONES_UPDATED", this.privateZones);
+          await updateSpacePrivateZones(this.spaceId, this.privateZones);
+        }
+      },
+    );
+
+    // Handle chat messages from clients
+    this.onMessage(
+      "SEND_CHAT_MESSAGE",
+      (client: Client, data: SendChatMessagePayload) => {
+        if (!data || typeof data.text !== "string") return;
+        const cleanText = data.text.trim().slice(0, 300);
+        if (!cleanText) return;
+
+        const player = this.state.players.get(client.sessionId);
+        if (!player) return;
+
+        const auth = this.clientAuthMap.get(client.sessionId);
+        const isSuperadmin =
+          player.isSuperadmin ||
+          (auth && auth.user && auth.user.role === "superadmin") ||
+          false;
+
+        const msgId = `msg_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+        const timestamp = Date.now();
+
+        if (data.roomType === "zone") {
+          // Find target private zone (either by provided roomId or player's current location)
+          let targetZone = this.privateZones.find((z) => z.id === data.roomId);
+          if (!targetZone) {
+            const playerCol = Math.floor(player.x / TILE_SIZE);
+            const playerRow = Math.floor(player.y / TILE_SIZE);
+            targetZone = this.privateZones.find(
+              (z) =>
+                playerCol >= z.bounds.minCol &&
+                playerCol <= z.bounds.maxCol &&
+                playerRow >= z.bounds.minRow &&
+                playerRow <= z.bounds.maxRow,
+            );
+          }
+
+          if (!targetZone) {
+            console.warn(
+              `[GameRoom] Chat message to unknown or inactive zone by ${client.sessionId}`,
+            );
+            return;
+          }
+
+          const chatMsg: ChatMessage = {
+            id: msgId,
+            senderId: client.sessionId,
+            senderName: player.name,
+            senderColor: player.color,
+            isSuperadmin,
+            roomType: "zone",
+            roomId: targetZone.id,
+            roomName: targetZone.name || "Private Area",
+            text: cleanText,
+            timestamp,
+          };
+
+          // Send message strictly to clients physically inside this private zone
+          let senderReceived = false;
+          this.clients.forEach((c) => {
+            const p = this.state.players.get(c.sessionId);
+            if (p) {
+              const col = Math.floor(p.x / TILE_SIZE);
+              const row = Math.floor(p.y / TILE_SIZE);
+              const isInZone =
+                col >= targetZone!.bounds.minCol &&
+                col <= targetZone!.bounds.maxCol &&
+                row >= targetZone!.bounds.minRow &&
+                row <= targetZone!.bounds.maxRow;
+              if (isInZone) {
+                if (c.sessionId === client.sessionId) {
+                  senderReceived = true;
+                }
+                c.send("CHAT_MESSAGE", chatMsg);
+              }
+            }
+          });
+
+          // Ensure sender receives their own message even if standing near boundary
+          if (!senderReceived) {
+            client.send("CHAT_MESSAGE", chatMsg);
+          }
+        } else {
+          // Default: Map / Area chat
+          const chatMsg: ChatMessage = {
+            id: msgId,
+            senderId: client.sessionId,
+            senderName: player.name,
+            senderColor: player.color,
+            isSuperadmin,
+            roomType: "map",
+            roomId: this.spaceId,
+            roomName: "Map Chat",
+            text: cleanText,
+            timestamp,
+          };
+
+          this.broadcast("CHAT_MESSAGE", chatMsg);
+        }
+      },
+    );
+
+    // ==========================================
+    // Voice Chat WebRTC Signaling & Channel Sync
+    // ==========================================
+
+    this.onMessage(
+      "VOICE_JOIN",
+      (client: Client) => {
+        const player = this.state.players.get(client.sessionId);
+        if (!player) return;
+
+        this.voiceParticipants.add(client.sessionId);
+
+        // Gather existing peers in room
+        const peersInRoom: VoicePeer[] = [];
+        this.voiceParticipants.forEach((sid) => {
+          if (sid !== client.sessionId) {
+            const p = this.state.players.get(sid);
+            if (p) {
+              peersInRoom.push({
+                sessionId: sid,
+                name: p.name,
+                color: p.color,
+                isSuperadmin: p.isSuperadmin,
+              });
+            }
+          }
+        });
+
+        // Send existing peers list to the joining client
+        client.send("VOICE_CHANNEL_STATE", {
+          peers: peersInRoom,
+        });
+
+        // Notify other clients in room about the new peer
+        const newPeerPayload: VoicePeer = {
+          sessionId: client.sessionId,
+          name: player.name,
+          color: player.color,
+          isSuperadmin: player.isSuperadmin,
+        };
+
+        this.clients.forEach((c) => {
+          if (c.sessionId !== client.sessionId && this.voiceParticipants.has(c.sessionId)) {
+            c.send("VOICE_PEER_JOINED", newPeerPayload);
+          }
+        });
+      },
+    );
+
+    this.onMessage("VOICE_LEAVE", (client: Client) => {
+      this.removeClientFromVoice(client.sessionId);
+    });
+
+    this.onMessage(
+      "VOICE_SIGNAL",
+      (client: Client, data: VoiceSignalPayload) => {
+        if (!data || !data.targetSessionId || !data.signal) return;
+        const targetClient = this.clients.find(
+          (c) => c.sessionId === data.targetSessionId,
+        );
+        if (targetClient) {
+          targetClient.send("VOICE_SIGNAL", {
+            fromSessionId: client.sessionId,
+            signal: data.signal,
+          });
+        }
+      },
+    );
+
+    this.onMessage(
+      "VOICE_SPEAKING",
+      (client: Client, data: { speaking: boolean }) => {
+        if (!this.voiceParticipants.has(client.sessionId)) return;
+
+        this.clients.forEach((c) => {
+          if (c.sessionId !== client.sessionId && this.voiceParticipants.has(c.sessionId)) {
+            c.send("VOICE_SPEAKING", {
+              sessionId: client.sessionId,
+              speaking: !!data.speaking,
+            });
+          }
+        });
       },
     );
   }
@@ -301,11 +531,17 @@ export class GameRoom extends Room<GameState> {
 
     // Send current space tiles to joining client
     client.send("CURRENT_TILES", this.tiles);
+
+    // Send current space private zones to joining client
+    client.send("CURRENT_PRIVATE_ZONES", this.privateZones);
   }
 
   onLeave(client: Client, consented?: boolean) {
     const count = activeSpaceCounts.get(this.spaceId) || 1;
     activeSpaceCounts.set(this.spaceId, Math.max(0, count - 1));
+
+    // Cleanup voice channel membership if user was in voice
+    this.removeClientFromVoice(client.sessionId);
 
     const player = this.state.players.get(client.sessionId);
     if (player) {
@@ -318,6 +554,17 @@ export class GameRoom extends Room<GameState> {
     this.playerInputs.delete(client.sessionId);
     this.playerAvatars.delete(client.sessionId);
     this.clientAuthMap.delete(client.sessionId);
+  }
+
+  private removeClientFromVoice(sessionId: string) {
+    if (!this.voiceParticipants.has(sessionId)) return;
+    this.voiceParticipants.delete(sessionId);
+
+    this.clients.forEach((c) => {
+      if (this.voiceParticipants.has(c.sessionId)) {
+        c.send("VOICE_PEER_LEFT", { sessionId });
+      }
+    });
   }
 
   update(deltaTime: number) {

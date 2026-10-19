@@ -1,6 +1,7 @@
 import { Pool } from "pg";
 import dotenv from "dotenv";
 import { hashPassword } from "../auth";
+import { PrivateZone } from "shared";
 
 dotenv.config();
 
@@ -36,6 +37,7 @@ export interface SpaceRecord {
   is_superadmin_space: boolean;
   whitelist: string[]; // usernames allowed if private
   tiles?: Record<string, string>;
+  private_zones?: PrivateZone[];
   created_at: Date;
   updated_at: Date;
 }
@@ -240,6 +242,7 @@ export async function initDb(): Promise<boolean> {
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
       ALTER TABLE spaces ADD COLUMN IF NOT EXISTS tiles JSONB DEFAULT '{}'::jsonb;
+      ALTER TABLE spaces ADD COLUMN IF NOT EXISTS private_zones JSONB DEFAULT '[]'::jsonb;
       CREATE INDEX IF NOT EXISTS idx_spaces_superadmin ON spaces (is_superadmin_space, category);
     `);
 
@@ -429,6 +432,17 @@ function parseWhitelist(raw: any): string[] {
   return [];
 }
 
+export function parsePrivateZones(raw: any): PrivateZone[] {
+  if (Array.isArray(raw)) return raw;
+  if (typeof raw === "string") {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    } catch {}
+  }
+  return [];
+}
+
 /**
  * Get all superadmin spaces (visible in listing), grouped or filterable by category.
  */
@@ -477,7 +491,7 @@ export async function getSpaceById(id: string): Promise<SpaceRecord | null> {
   if (isDbConnected) {
     try {
       const res = await pool.query(
-        `SELECT s.id, s.name, s.category, s.owner_id, s.is_public, s.is_superadmin_space, s.whitelist, s.created_at, s.updated_at,
+        `SELECT s.id, s.name, s.category, s.owner_id, s.is_public, s.is_superadmin_space, s.whitelist, s.private_zones, s.created_at, s.updated_at,
                 u.username as owner_username
          FROM spaces s
          LEFT JOIN users u ON s.owner_id = u.id
@@ -495,6 +509,7 @@ export async function getSpaceById(id: string): Promise<SpaceRecord | null> {
           is_public: row.is_public,
           is_superadmin_space: row.is_superadmin_space,
           whitelist: parseWhitelist(row.whitelist),
+          private_zones: parsePrivateZones(row.private_zones),
           created_at: row.created_at,
           updated_at: row.updated_at,
         };
@@ -507,7 +522,13 @@ export async function getSpaceById(id: string): Promise<SpaceRecord | null> {
   }
 
   const space = inMemorySpaces.get(id);
-  return space ? { ...space, whitelist: [...space.whitelist] } : null;
+  return space
+    ? {
+        ...space,
+        whitelist: [...space.whitelist],
+        private_zones: space.private_zones ? [...space.private_zones] : [],
+      }
+    : null;
 }
 
 /**
@@ -786,6 +807,51 @@ export async function updateSpaceTiles(
   const inMem = inMemorySpaces.get(spaceId);
   if (inMem) {
     inMem.tiles = { ...tiles };
+    inMem.updated_at = new Date();
+  }
+  return true;
+}
+
+/**
+ * Get custom private zones for a space
+ */
+export async function getSpacePrivateZones(spaceId: string): Promise<PrivateZone[]> {
+  if (isDbConnected) {
+    try {
+      const res = await pool.query("SELECT private_zones FROM spaces WHERE id = $1", [spaceId]);
+      if (res.rows[0]?.private_zones) {
+        return parsePrivateZones(res.rows[0].private_zones);
+      }
+    } catch (err) {
+      console.error("Error fetching space private zones from DB:", err);
+    }
+  }
+
+  const inMem = inMemorySpaces.get(spaceId);
+  return inMem?.private_zones ? [...inMem.private_zones] : [];
+}
+
+/**
+ * Update and persist private zones for a space
+ */
+export async function updateSpacePrivateZones(
+  spaceId: string,
+  zones: PrivateZone[]
+): Promise<boolean> {
+  if (isDbConnected) {
+    try {
+      await pool.query(
+        "UPDATE spaces SET private_zones = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1",
+        [spaceId, JSON.stringify(zones)]
+      );
+    } catch (err) {
+      console.error("Error updating space private zones in DB:", err);
+    }
+  }
+
+  const inMem = inMemorySpaces.get(spaceId);
+  if (inMem) {
+    inMem.private_zones = [...zones];
     inMem.updated_at = new Date();
   }
   return true;

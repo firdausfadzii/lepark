@@ -65,6 +65,20 @@ export interface AuthResponse {
   error?: string;
 }
 
+export interface PrivateZoneBounds {
+  minCol: number;
+  minRow: number;
+  maxCol: number;
+  maxRow: number;
+}
+
+export interface PrivateZone {
+  id: string;
+  name?: string;
+  bounds: PrivateZoneBounds;
+  createdAt?: number;
+}
+
 export interface Space {
   id: string;
   name: string;
@@ -75,6 +89,7 @@ export interface Space {
   isSuperadminSpace: boolean;
   whitelist: string[]; // usernames allowed if private
   tiles?: Record<string, string>;
+  privateZones?: PrivateZone[];
   playerCount?: number;
   createdAt?: string;
   updatedAt?: string;
@@ -92,4 +107,42 @@ export interface SpaceResponse {
   success: boolean;
   space?: Space;
   error?: string;
+}
+
+export type ChatRoomType = "map" | "zone";
+
+export interface ChatMessage {
+  id: string;
+  senderId: string;
+  senderName: string;
+  senderColor?: string;
+  isSuperadmin?: boolean;
+  roomType: ChatRoomType;
+  roomId: string;
+  roomName: string;
+  text: string;
+  timestamp: number;
+}
+
+export interface SendChatMessagePayload {
+  roomType: ChatRoomType;
+  roomId?: string;
+  text: string;
+}
+
+export type VoiceChannelType = "map" | "zone";
+
+export interface VoicePeer {
+  sessionId: string;
+  name: string;
+  color: string;
+  isSuperadmin?: boolean;
+  speaking?: boolean;
+  channelType?: VoiceChannelType;
+  channelId?: string;
+}
+
+export interface VoiceSignalPayload {
+  targetSessionId: string;
+  signal: any;
 }

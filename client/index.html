@@ -32,6 +32,125 @@
       </button>
     </div>
 
+    <!-- Top-Right Action Controls (Chat & Voice toggle triggers) -->
+    <div id="topright-bar" class="topright-bar">
+      <!-- Message Chat Bubble -->
+      <button type="button" id="btn-toggle-chat" class="topright-action-btn topright-chat-btn active" title="Toggle Chat Bar" aria-label="Toggle Chat">
+        <svg class="chat-bubble-svg" viewBox="0 0 24 24">
+          <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H5.17L4 17.17V4h16v12z"/>
+        </svg>
+        <span id="chat-unread-badge" class="chat-unread-badge hidden"></span>
+      </button>
+
+      <!-- Microphone Control Group (toggle + device settings dropdown) -->
+      <div id="mic-control-group" class="mic-control-group">
+        <button type="button" id="btn-toggle-mic" class="topright-action-btn topright-mic-btn" title="Microphone: Off (Click or press M to turn on)" aria-label="Toggle Microphone">
+          <svg class="mic-svg mic-svg-off" viewBox="0 0 24 24">
+            <path d="M19 11h-1.7c0 .74-.16 1.43-.43 2.05l1.23 1.23c.56-.98.9-2.09.9-3.28zm-4.02.17c0-.06.02-.11.02-.17V5c0-1.66-1.34-3-3-3S9 3.34 9 5v.18l5.98 5.99zM4.27 3L3 4.27l6.01 6.01V11c0 1.66 1.33 3 2.99 3 .22 0 .44-.03.65-.08l1.66 1.66c-.71.33-1.5.52-2.31.52-2.76 0-5.3-2.1-5.3-5.1H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c.91-.13 1.77-.45 2.54-.9L19.73 21 21 19.73 4.27 3z"/>
+          </svg>
+          <svg class="mic-svg mic-svg-on hidden" viewBox="0 0 24 24">
+            <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z"/>
+          </svg>
+          <span id="mic-status-dot" class="mic-status-dot"></span>
+        </button>
+
+        <button type="button" id="btn-mic-settings" class="mic-settings-chevron-btn" title="Audio Device Settings (Input & Output)" aria-label="Audio Device Settings">
+          <svg class="chevron-down-svg" viewBox="0 0 20 20" fill="currentColor">
+            <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"/>
+          </svg>
+        </button>
+
+        <!-- Audio Device Settings Dropdown -->
+        <div id="audio-settings-dropdown" class="audio-settings-dropdown hidden">
+          <div class="audio-settings-header">
+            <div class="audio-settings-title-row">
+              <svg class="audio-settings-icon" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/>
+              </svg>
+              <span class="audio-settings-title">Audio Settings</span>
+            </div>
+            <button type="button" id="btn-close-audio-settings" class="audio-settings-close-btn" title="Close">✕</button>
+          </div>
+
+          <div class="audio-settings-body">
+            <!-- Input Device Section -->
+            <div class="audio-setting-item">
+              <div class="audio-setting-label-row">
+                <label for="audio-input-select" class="audio-setting-label">
+                  <svg class="setting-item-icon" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z"/>
+                  </svg>
+                  Microphone (Input)
+                </label>
+                <span id="mic-live-indicator" class="mic-live-pill">Mic Off</span>
+              </div>
+              <div class="select-wrapper">
+                <select id="audio-input-select" class="audio-device-select">
+                  <option value="default">Default Microphone</option>
+                </select>
+                <span class="select-arrow">▾</span>
+              </div>
+              <div class="mic-level-container" title="Microphone Input Level">
+                <div id="mic-level-bar" class="mic-level-bar" style="width: 0%;"></div>
+              </div>
+            </div>
+
+            <!-- Output Device Section -->
+            <div class="audio-setting-item">
+              <div class="audio-setting-label-row">
+                <label for="audio-output-select" class="audio-setting-label">
+                  <svg class="setting-item-icon" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>
+                  </svg>
+                  Speakers / Earphones (Output)
+                </label>
+                <button type="button" id="btn-test-audio-output" class="btn-test-output" title="Play test chime to verify output device">
+                  🔊 Test Sound
+                </button>
+              </div>
+              <div class="select-wrapper">
+                <select id="audio-output-select" class="audio-device-select">
+                  <option value="default">Default Speaker / Earphones</option>
+                </select>
+                <span class="select-arrow">▾</span>
+              </div>
+              <div id="output-sink-note" class="output-sink-note hidden">
+                * Browser output follows system default audio device.
+              </div>
+            </div>
+
+            <!-- Output Volume Section -->
+            <div class="audio-setting-item">
+              <div class="audio-setting-label-row">
+                <label for="audio-output-volume" class="audio-setting-label">
+                  <svg class="setting-item-icon" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/>
+                  </svg>
+                  Output Volume
+                </label>
+                <span id="output-volume-value" class="audio-volume-badge">100%</span>
+              </div>
+              <div class="volume-slider-row">
+                <span class="vol-icon-min">🔈</span>
+                <input type="range" id="audio-output-volume" min="0" max="100" value="100" step="1" class="audio-volume-slider" title="Adjust voice output volume" />
+                <span class="vol-icon-max">🔊</span>
+              </div>
+            </div>
+
+            <!-- Refresh Devices Button -->
+            <div class="audio-settings-footer">
+              <button type="button" id="btn-refresh-devices" class="btn-refresh-audio-devices" title="Scan for newly connected or unplugged devices">
+                <svg viewBox="0 0 24 24" fill="currentColor" class="refresh-icon">
+                  <path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
+                </svg>
+                Refresh Devices
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Top Edit Mode Floating Notice Banner -->
     <div id="map-edit-banner" class="map-edit-banner hidden">
       <div class="edit-banner-capsule">
@@ -40,6 +159,39 @@
         <span class="edit-banner-sep">•</span>
         <span id="edit-banner-asset-text" class="edit-banner-asset-text">Active: <strong>Birch Floor</strong></span>
         <button type="button" id="btn-banner-done" class="edit-banner-done-btn">Done Editing</button>
+      </div>
+    </div>
+
+    <!-- Voice / Microphone Persistent Notification Banner (Does NOT auto-hide) -->
+    <div id="voice-notification-banner" class="voice-notification-banner hidden" role="alert" aria-live="assertive">
+      <div class="voice-notification-card">
+        <div class="voice-notification-icon" id="voice-notif-icon">🎙️</div>
+        <div class="voice-notification-content">
+          <div class="voice-notification-header">
+            <span class="voice-notification-title" id="voice-notif-title">Microphone Access Error</span>
+            <span class="voice-notification-badge" id="voice-notif-badge">Voice Alert</span>
+          </div>
+          <p class="voice-notification-msg" id="voice-notif-msg"></p>
+          <div class="voice-notification-hint hidden" id="voice-notif-hint"></div>
+          <div class="voice-notification-actions" id="voice-notif-actions"></div>
+        </div>
+        <button type="button" class="voice-notification-close" id="btn-close-voice-notif" title="Dismiss notification" aria-label="Dismiss">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Private Area Active In-Game HUD Chip -->
+    <div id="private-area-hud" class="private-area-hud hidden" aria-live="polite">
+      <div class="private-area-hud-capsule">
+        <span class="private-area-hud-icon">🔒</span>
+        <div class="private-area-hud-info">
+          <span class="private-area-hud-title" id="private-area-hud-name">Private Area</span>
+          <span class="private-area-hud-subtitle">Outside dimmed • Future audio & chat isolation</span>
+        </div>
       </div>
     </div>
 
@@ -128,12 +280,68 @@
           </div>
         </div>
 
-        <!-- Walls Category (Solid / Impassable) -->
+        <!-- Decoration Category (Placed on top of bottom tile) -->
+        <div class="editor-category-group">
+          <div class="editor-category-header">
+            <div class="editor-category-name-wrap">
+              <span class="category-icon">🪴</span>
+              <span class="category-title">Decoration</span>
+            </div>
+            <span class="category-count">1 style</span>
+          </div>
+
+          <div class="editor-assets-grid">
+            <!-- Asset: Table Left (table_left_150) -->
+            <button
+              type="button"
+              class="editor-asset-card"
+              data-asset-id="table_left_150"
+              data-asset-name="Table Left"
+              data-tile-type="decoration"
+              title="Table Left (table_left_150) - Decorative tile placed on top of other tiles"
+            >
+              <div class="asset-card-thumb">
+                <img src="/assets/table_left_150.png" alt="Table Left" class="asset-thumb-img" />
+                <span class="asset-card-badge decoration-badge">Deco</span>
+                <span class="asset-card-check">✓</span>
+              </div>
+              <div class="asset-card-info">
+                <span class="asset-card-name">Table Left</span>
+                <span class="asset-card-code">table_left_150</span>
+              </div>
+            </button>
+
+            <!-- Tool: Clear Decoration -->
+            <button
+              type="button"
+              class="editor-asset-card"
+              id="tool-clear-decoration"
+              data-tool-type="clear_decoration"
+              data-asset-id="clear_decoration"
+              data-asset-name="Clear Decoration"
+              title="Clear Decoration - Remove decoration layer without replacing floor"
+            >
+              <div class="asset-card-thumb clear-tool-thumb">
+                <svg class="private-card-svg" viewBox="0 0 24 24">
+                  <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+                </svg>
+                <span class="asset-card-badge clear-badge">Clear</span>
+                <span class="asset-card-check">✓</span>
+              </div>
+              <div class="asset-card-info">
+                <span class="asset-card-name">Clear Deco</span>
+                <span class="asset-card-code">Remove Top</span>
+              </div>
+            </button>
+          </div>
+        </div>
+
+        <!-- Walls Category (With Obstacle Tile) -->
         <div class="editor-category-group">
           <div class="editor-category-header">
             <div class="editor-category-name-wrap">
               <span class="category-icon">🧱</span>
-              <span class="category-title">Walls (Solid Obstacles)</span>
+              <span class="category-title">Walls</span>
             </div>
             <span class="category-count">2 styles</span>
           </div>
@@ -146,7 +354,7 @@
               data-asset-id="wall_half_150"
               data-asset-name="Half Wall"
               data-is-wall="true"
-              title="Half Wall (wall_half_150) - Solid obstacle (not walkable on top)"
+              title="Half Wall (wall_half_150) - Comes with Obstacle tile. Can be cleared using Clear Obstacle to allow passage."
             >
               <div class="asset-card-thumb">
                 <img src="/assets/wall_half_150.png" alt="Half Wall" class="asset-thumb-img" />
@@ -166,7 +374,7 @@
               data-asset-id="wall_top_150"
               data-asset-name="Top Wall"
               data-is-wall="true"
-              title="Top Wall (wall_top_150) - Solid obstacle (not walkable on top)"
+              title="Top Wall (wall_top_150) - Comes with Obstacle tile. Can be cleared using Clear Obstacle to allow passage."
             >
               <div class="asset-card-thumb">
                 <img src="/assets/wall_top_150.png" alt="Top Wall" class="asset-thumb-img" />
@@ -178,6 +386,120 @@
                 <span class="asset-card-code">wall_top_150</span>
               </div>
             </button>
+          </div>
+        </div>
+
+        <!-- Utilities Category -->
+        <div class="editor-category-group editor-utilities-group">
+          <div class="editor-category-header">
+            <div class="editor-category-name-wrap">
+              <span class="category-icon">🛠️</span>
+              <span class="category-title">Utilities</span>
+            </div>
+            <span class="category-count">Utility Tools</span>
+          </div>
+
+          <div class="editor-assets-grid" style="grid-template-columns: repeat(2, 1fr);">
+            <!-- Tool 1: Flag Private Area -->
+            <button
+              type="button"
+              class="editor-asset-card editor-tool-card"
+              id="tool-flag-private"
+              data-tool-type="private_zone"
+              data-tool-name="Flag Private Area"
+              title="Flag Private Area - Drag area on map to designate private area"
+            >
+              <div class="asset-card-thumb private-tool-thumb">
+                <svg class="private-card-svg" viewBox="0 0 24 24">
+                  <path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/>
+                </svg>
+                <span class="asset-card-badge private-badge">Flag</span>
+                <span class="asset-card-check">✓</span>
+              </div>
+              <div class="asset-card-info">
+                <span class="asset-card-name">Flag Private</span>
+                <span class="asset-card-code">Area Select</span>
+              </div>
+            </button>
+
+            <!-- Tool 2: Obstacle Tile -->
+            <button
+              type="button"
+              class="editor-asset-card editor-tool-card"
+              id="tool-obstacle"
+              data-tool-type="obstacle"
+              data-asset-id="obstacle"
+              data-asset-name="Obstacle Tile"
+              data-is-wall="true"
+              title="Obstacle Tile - Impassable barrier tile. Blocks movement; highlight visible only in edit mode."
+            >
+              <div class="asset-card-thumb obstacle-tool-thumb">
+                <svg class="obstacle-card-svg" viewBox="0 0 24 24">
+                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.42 0-8-3.58-8-8 0-1.85.63-3.55 1.69-4.9L16.9 18.31C15.55 19.37 13.85 20 12 20zm6.31-3.1L7.1 5.69C8.45 4.63 10.15 4 12 4c4.42 0 8 3.58 8 8 0 1.85-.63 3.55-1.69 4.9z"/>
+                </svg>
+                <span class="asset-card-badge obstacle-badge">Obstacle</span>
+                <span class="asset-card-check">✓</span>
+              </div>
+              <div class="asset-card-info">
+                <span class="asset-card-name">Obstacle</span>
+                <span class="asset-card-code">No Passage</span>
+              </div>
+            </button>
+
+            <!-- Tool 3: Clear Private Area -->
+            <button
+              type="button"
+              class="editor-asset-card editor-tool-card"
+              id="tool-clear-private"
+              data-tool-type="clear_private_zone"
+              data-tool-name="Clear Private Area"
+              title="Clear Private Area - Drag area on map to remove private flag"
+            >
+              <div class="asset-card-thumb clear-tool-thumb">
+                <svg class="private-card-svg" viewBox="0 0 24 24">
+                  <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+                </svg>
+                <span class="asset-card-badge clear-badge">Clear</span>
+                <span class="asset-card-check">✓</span>
+              </div>
+              <div class="asset-card-info">
+                <span class="asset-card-name">Clear Private</span>
+                <span class="asset-card-code">Remove Flag</span>
+              </div>
+            </button>
+
+            <!-- Tool 4: Clear Obstacle -->
+            <button
+              type="button"
+              class="editor-asset-card editor-tool-card"
+              id="tool-clear-obstacle"
+              data-tool-type="clear_obstacle"
+              data-tool-name="Clear Obstacle"
+              title="Clear Obstacle - Drag area on map to remove obstacle barrier"
+            >
+              <div class="asset-card-thumb clear-tool-thumb">
+                <svg class="private-card-svg" viewBox="0 0 24 24">
+                  <path d="M12 2C6.47 2 2 6.47 2 12s4.47 10 10 10 10-4.47 10-10S17.53 2 12 2zm5 13.59L15.59 17 12 13.41 8.41 17 7 15.59 10.59 12 7 8.41 8.41 7 12 10.59 15.59 7 17 8.41 13.41 12 17 15.59z"/>
+                </svg>
+                <span class="asset-card-badge clear-badge">Clear</span>
+                <span class="asset-card-check">✓</span>
+              </div>
+              <div class="asset-card-info">
+                <span class="asset-card-name">Clear Obstacle</span>
+                <span class="asset-card-code">Remove Barrier</span>
+              </div>
+            </button>
+          </div>
+
+          <!-- Existing Private Zones Mini-Manager -->
+          <div class="editor-zones-list-wrap">
+            <div class="editor-zones-list-header">
+              <span class="zones-list-label">Flagged Private Areas:</span>
+              <span class="category-count" id="editor-private-zones-count" style="margin-left: auto;">0 zones</span>
+            </div>
+            <div id="editor-zones-list" class="editor-zones-list">
+              <div class="editor-zones-empty">None yet. Drag on map to flag area.</div>
+            </div>
           </div>
         </div>
 
@@ -249,6 +571,104 @@
         <button type="button" id="btn-close-map-editor" class="editor-finish-btn">
           <span>✓</span> Done Editing
         </button>
+      </div>
+    </aside>
+
+    <!-- Right-Side Chat Bar (Default Open) -->
+    <aside id="chat-sidebar" class="chat-sidebar" aria-label="Game Chat">
+      <!-- Chat Bar Header with Room Tabs -->
+      <div class="chat-sidebar-header">
+        <div class="chat-header-top-row">
+          <div class="chat-header-title-box">
+            <span class="chat-header-badge">
+              <svg class="chat-header-svg" viewBox="0 0 24 24">
+                <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H5.17L4 17.17V4h16v12z"/>
+              </svg>
+            </span>
+            <div>
+              <h3 class="chat-title">Chat</h3>
+              <span class="chat-subtitle" id="chat-active-channel-label">Area Channel</span>
+            </div>
+          </div>
+          <button type="button" id="btn-close-chat" class="chat-close-btn" title="Collapse Chat" aria-label="Collapse Chat">
+            ✕
+          </button>
+        </div>
+
+        <!-- Room Tabs Strip -->
+        <div id="chat-tabs-container" class="chat-tabs-container" role="tablist">
+          <!-- Tab 1: Map / Area Chat (Default) -->
+          <button
+            type="button"
+            id="chat-tab-map"
+            class="chat-tab active"
+            role="tab"
+            aria-selected="true"
+            data-room="map"
+            title="Area Chat"
+          >
+            <span class="chat-tab-icon">🗺️</span>
+            <span class="chat-tab-name" id="chat-tab-map-name">Central Plaza</span>
+            <span class="chat-tab-badge hidden" id="chat-map-badge"></span>
+          </button>
+
+          <!-- Tab 2: Private Area Chat (Shown only when inside private area!) -->
+          <button
+            type="button"
+            id="chat-tab-zone"
+            class="chat-tab chat-tab-private hidden"
+            role="tab"
+            aria-selected="false"
+            data-room="zone"
+            title="Private Area Chat"
+          >
+            <span class="chat-tab-icon">🔒</span>
+            <span class="chat-tab-name" id="chat-tab-zone-name">Private Area</span>
+            <span class="chat-tab-badge hidden" id="chat-zone-badge"></span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Channel Notice Banner -->
+      <div class="chat-channel-banner" id="chat-channel-banner">
+        <span class="chat-channel-dot" id="chat-channel-dot"></span>
+        <span class="chat-channel-desc" id="chat-channel-desc">Area chat • visible to all in this map</span>
+      </div>
+
+      <!-- Messages Scroll Area -->
+      <div class="chat-messages-container" id="chat-messages-container">
+        <div id="chat-messages-list" class="chat-messages-list">
+          <div class="chat-welcome-notice">
+            <div class="chat-welcome-icon">💬</div>
+            <div class="chat-welcome-title">Welcome to Chat!</div>
+            <div class="chat-welcome-sub">Say hello to nearby players. Use tabs above to switch channels.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Footer: Input Form -->
+      <div class="chat-sidebar-footer">
+        <form id="chat-input-form" class="chat-input-form">
+          <div class="chat-input-wrap">
+            <input
+              type="text"
+              id="chat-input-field"
+              class="chat-input-field"
+              placeholder="Message #Central Plaza..."
+              maxlength="250"
+              autocomplete="off"
+              spellcheck="false"
+            />
+            <button type="submit" id="btn-send-chat" class="chat-send-btn" title="Send (Enter)" aria-label="Send">
+              <svg viewBox="0 0 24 24" class="send-svg-icon">
+                <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+              </svg>
+            </button>
+          </div>
+          <div class="chat-input-hint">
+            <span>Press <kbd>Enter</kbd> to send • <kbd>Esc</kbd> to unfocus</span>
+          </div>
+        </form>
       </div>
     </aside>
 
@@ -878,6 +1298,47 @@
           <div class="modal-footer-actions">
             <button type="submit" id="btn-submit-admin-space" class="btn-primary">
               Save Space
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Modal: Name / Rename Private Area (Channel / Room) -->
+    <div id="private-zone-name-modal" class="modal-overlay hidden">
+      <div class="modal-card private-zone-modal-card">
+        <div class="modal-header">
+          <div class="modal-header-row">
+            <h2 class="modal-title" id="private-zone-modal-title">🔒 Name Private Area</h2>
+            <button type="button" id="btn-close-private-zone-modal" class="btn-modal-close" title="Close">✕</button>
+          </div>
+          <p class="modal-subtitle" id="private-zone-modal-subtitle">Set a name for this private area (chat room, voice room, or video room)</p>
+        </div>
+
+        <form id="private-zone-name-form">
+          <input type="hidden" id="private-zone-modal-zone-id" value="" />
+          <div class="form-group">
+            <label class="form-label" for="private-zone-input-name">Area Name</label>
+            <div class="input-with-icon">
+              <span class="input-icon">🏷️</span>
+              <input
+                id="private-zone-input-name"
+                class="form-input"
+                type="text"
+                maxlength="30"
+                placeholder="e.g. Meeting Room A, Chill Lounge, Voice 1, Video Room"
+                spellcheck="false"
+              />
+            </div>
+            <span class="form-hint">Users inside this area will see this name. Used for private chat, voice, and video rooms.</span>
+          </div>
+
+          <div class="modal-footer-actions">
+            <button type="button" id="btn-cancel-private-zone-name" class="btn-secondary">
+              Cancel
+            </button>
+            <button type="submit" id="btn-save-private-zone-name" class="btn-primary">
+              Save Area Name
             </button>
           </div>
         </form>

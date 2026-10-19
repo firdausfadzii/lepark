@@ -11,16 +11,39 @@ import {
   PLAYER_FEET_BOTTOM_OFFSET,
 } from "./constants";
 
-export const WALL_ASSET_KEYS = ["wall_half_150", "wall_top_150"] as const;
+export const WALL_ASSET_KEYS = ["wall_half_150", "wall_top_150", "obstacle"] as const;
 export type WallAssetKey = (typeof WALL_ASSET_KEYS)[number];
 
 /**
- * Checks whether a tile data string represents an impassable wall tile.
+ * Checks whether a tile data string represents an impassable wall or obstacle tile.
+ * Wall tiles come together with an obstacle tile. The presence of the obstacle tile
+ * determines whether the tile is impassable. Removing the obstacle tile permits passage.
  */
 export function isWallTile(tileValue: string | undefined | null): boolean {
   if (!tileValue) return false;
-  const baseKey = tileValue.includes("|") ? tileValue.split("|")[0] : tileValue;
-  return baseKey === "wall_half_150" || baseKey === "wall_top_150";
+  const parts = tileValue.includes("::") ? tileValue.split("::") : [tileValue];
+  for (const part of parts) {
+    const baseKey = part.includes("|") ? part.split("|")[0] : part;
+    if (baseKey === "obstacle") {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Checks whether a tile data string contains an obstacle layer.
+ */
+export function hasObstacleTile(tileValue: string | undefined | null): boolean {
+  if (!tileValue) return false;
+  const parts = tileValue.includes("::") ? tileValue.split("::") : [tileValue];
+  for (const part of parts) {
+    const baseKey = part.includes("|") ? part.split("|")[0] : part;
+    if (baseKey === "obstacle") {
+      return true;
+    }
+  }
+  return false;
 }
 
 export type TileBlockedChecker = (col: number, row: number) => boolean;

@@ -2,7 +2,7 @@ import http from "http";
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
-import { Server } from "colyseus";
+import { Server, matchMaker } from "colyseus";
 import { WebSocketTransport, WebSocketClient } from "@colyseus/ws-transport";
 import { GameRoom, getSpacePlayerCount } from "./rooms/GameRoom";
 import {
@@ -26,6 +26,19 @@ import { AuthUser, Space, SpacesListResponse, SpaceResponse } from "shared";
 
 dotenv.config();
 
+// Configure Colyseus matchmaking CORS to dynamically allow all requested headers
+(matchMaker.controller.DEFAULT_CORS_HEADERS as any)["Access-Control-Allow-Headers"] = "*";
+matchMaker.controller.getCorsHeaders = function (req: any) {
+  const origin = (req.headers && req.headers["origin"]) || "*";
+  const requestedHeaders = req.headers && req.headers["access-control-request-headers"];
+  return {
+    "Access-Control-Allow-Origin": origin,
+    "Access-Control-Allow-Headers": requestedHeaders || "*",
+    "Access-Control-Allow-Credentials": "true",
+    "Access-Control-Allow-Methods": "OPTIONS, POST, GET",
+  };
+};
+
 // Colyseus 0.15 sends state/patch payloads as plain `number[]`.
 // Ensure array payloads are converted into binary buffers before transmission.
 const originalRaw = WebSocketClient.prototype.raw;
@@ -37,7 +50,13 @@ WebSocketClient.prototype.raw = function (data: any, options?: any, cb?: any) {
 const PORT = parseInt(process.env.PORT || "2567", 10);
 const app = express();
 
-app.use(cors());
+const corsOptions: cors.CorsOptions = {
+  origin: true,
+  credentials: true,
+  methods: ["GET", "HEAD", "PUT", "PATCH", "POST", "DELETE", "OPTIONS"],
+};
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions));
 app.use(express.json());
 
 // Helper for extracting AuthUser from Bearer token
@@ -615,8 +634,8 @@ gameServer.define("game_room", GameRoom).filterBy(["spaceId"]);
 
 async function start() {
   await initDb();
-  await gameServer.listen(PORT);
-  console.log(`🎮 Game Server is listening on ws://localhost:${PORT}`);
+  await gameServer.listen(PORT, "0.0.0.0");
+  console.log(`🎮 Game Server is listening on ws://0.0.0.0:${PORT}`);
   console.log(`📡 Health endpoint: http://localhost:${PORT}/health`);
   console.log(`👥 Database players API: http://localhost:${PORT}/api/players`);
   console.log(`🌌 Spaces API: http://localhost:${PORT}/api/spaces`);

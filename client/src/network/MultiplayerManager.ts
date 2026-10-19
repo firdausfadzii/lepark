@@ -1,6 +1,14 @@
 import { Client, Room } from "colyseus.js";
 import { SnapshotInterpolation } from "@geckos.io/snapshot-interpolation";
-import { PlayerInputPayload, PlayerJoinOptions, PlayerAvatars, SERVER_TICK_RATE } from "shared";
+import {
+  PlayerInputPayload,
+  PlayerJoinOptions,
+  PlayerAvatars,
+  SERVER_TICK_RATE,
+  PrivateZone,
+  ChatMessage,
+  SendChatMessagePayload,
+} from "shared";
 
 export interface NetworkStats {
   pingMs: number;
@@ -11,6 +19,8 @@ export type PlayerRemoveCallback = (sessionId: string) => void;
 export type PlayerAvatarCallback = (sessionId: string, avatars: PlayerAvatars | null) => void;
 export type NetworkStatsCallback = (stats: NetworkStats) => void;
 export type TilesUpdateCallback = (updates: Record<string, string>) => void;
+export type PrivateZonesUpdateCallback = (zones: PrivateZone[]) => void;
+export type ChatMessageCallback = (message: ChatMessage) => void;
 
 export class MultiplayerManager {
   private client!: Client;
@@ -25,7 +35,11 @@ export class MultiplayerManager {
   private onPlayerAvatarCallbacks: PlayerAvatarCallback[] = [];
   private onNetworkStatsCallbacks: NetworkStatsCallback[] = [];
   private onTilesUpdateCallbacks: TilesUpdateCallback[] = [];
+  private onPrivateZonesUpdateCallbacks: PrivateZonesUpdateCallback[] = [];
+  private onChatMessageCallbacks: ChatMessageCallback[] = [];
+  private onRoomJoinedCallbacks: (() => void)[] = [];
   public currentTiles: Record<string, string> = {};
+  public currentPrivateZones: PrivateZone[] = [];
   public playerAvatarsMap = new Map<string, PlayerAvatars>();
 
   private pingTimer: number | null = null;
@@ -34,6 +48,9 @@ export class MultiplayerManager {
   private readonly MAX_PING_HISTORY = 15;
 
   constructor() {
+    const envUrl = (import.meta as any).env?.VITE_SERVER_URL;
+    let serverUrl: string;
+
     const wsProtocol =
       typeof window !== "undefined" && window.location.protocol === "https:"
         ? "wss:"
@@ -42,7 +59,27 @@ export class MultiplayerManager {
       typeof window !== "undefined" && window.location.hostname
         ? window.location.hostname
         : "localhost";
-    const serverUrl = `${wsProtocol}//${host}:2567`;
+
+    const isRemoteAccess = host !== "localhost" && host !== "127.0.0.1";
+    const isStaleCrossDomain =
+      envUrl &&
+      typeof envUrl === "string" &&
+      isRemoteAccess &&
+      !envUrl.includes(host);
+
+    if (envUrl && typeof envUrl === "string" && envUrl.trim().length > 0 && !isStaleCrossDomain) {
+      serverUrl = envUrl.trim().replace(/^http:/i, "ws:").replace(/^https:/i, "wss:");
+    } else if (window.location.protocol === "http:" && (host === "localhost" || host === "127.0.0.1")) {
+      serverUrl = `ws://${host}:2567`;
+    } else {
+      // Connect to the same origin host via /colyseus proxy (handles HTTPS -> WSS cleanly)
+      const portStr =
+        window.location.port && window.location.port !== "80" && window.location.port !== "443"
+          ? `:${window.location.port}`
+          : "";
+      serverUrl = `${wsProtocol}//${host}${portStr}/colyseus`;
+    }
+
     this.client = new Client(serverUrl);
   }
 
@@ -60,6 +97,7 @@ export class MultiplayerManager {
     this.stopPingLoop();
     this.playerAvatarsMap.clear();
     this.currentTiles = {};
+    this.currentPrivateZones = [];
     if (this.room) {
       try {
         this.room.leave();
@@ -93,6 +131,7 @@ export class MultiplayerManager {
         }
       });
 
+      this.notifyRoomJoined();
       return this.room;
     } catch (err) {
       console.error("Failed to connect to game room:", err);
@@ -144,6 +183,26 @@ export class MultiplayerManager {
     this.room.onMessage("TILES_UPDATED", (updates: Record<string, string>) => {
       if (updates && typeof updates === "object") {
         this.notifyTilesUpdate(updates);
+      }
+    });
+
+    this.room.onMessage("CURRENT_PRIVATE_ZONES", (zones: PrivateZone[]) => {
+      if (Array.isArray(zones)) {
+        this.currentPrivateZones = [...zones];
+        this.notifyPrivateZonesUpdate(this.currentPrivateZones);
+      }
+    });
+
+    this.room.onMessage("PRIVATE_ZONES_UPDATED", (zones: PrivateZone[]) => {
+      if (Array.isArray(zones)) {
+        this.currentPrivateZones = [...zones];
+        this.notifyPrivateZonesUpdate(this.currentPrivateZones);
+      }
+    });
+
+    this.room.onMessage("CHAT_MESSAGE", (message: ChatMessage) => {
+      if (message && typeof message === "object") {
+        this.notifyChatMessage(message);
       }
     });
 
@@ -270,6 +329,47 @@ export class MultiplayerManager {
     this.onPlayerCountCallbacks.forEach((cb) => cb(count));
   }
 
+  public onChatMessage(cb: ChatMessageCallback) {
+    this.onChatMessageCallbacks.push(cb);
+  }
+
+  private notifyChatMessage(message: ChatMessage) {
+    this.onChatMessageCallbacks.forEach((cb) => {
+      try {
+        cb(message);
+      } catch (err) {
+        console.error("Chat message callback error:", err);
+      }
+    });
+  }
+
+  public sendChatMessage(payload: SendChatMessagePayload) {
+    if (this.room) {
+      this.room.send("SEND_CHAT_MESSAGE", payload);
+    }
+  }
+
+  public onRoomJoined(cb: () => void) {
+    this.onRoomJoinedCallbacks.push(cb);
+    if (this.room) {
+      try {
+        cb();
+      } catch (err) {
+        console.error("onRoomJoined callback error:", err);
+      }
+    }
+  }
+
+  private notifyRoomJoined() {
+    this.onRoomJoinedCallbacks.forEach((cb) => {
+      try {
+        cb();
+      } catch (err) {
+        console.error("onRoomJoined callback error:", err);
+      }
+    });
+  }
+
   public onNetworkStats(cb: NetworkStatsCallback) {
     this.onNetworkStatsCallbacks.push(cb);
   }
@@ -367,6 +467,30 @@ export class MultiplayerManager {
   public sendUpdateTiles(updates: Record<string, string>) {
     if (this.room) {
       this.room.send("UPDATE_TILES", { updates });
+    }
+  }
+
+  public onPrivateZonesUpdated(callback: PrivateZonesUpdateCallback) {
+    this.onPrivateZonesUpdateCallbacks.push(callback);
+    if (this.currentPrivateZones.length > 0) {
+      callback(this.currentPrivateZones);
+    }
+  }
+
+  private notifyPrivateZonesUpdate(zones: PrivateZone[]) {
+    this.currentPrivateZones = zones;
+    this.onPrivateZonesUpdateCallbacks.forEach((cb) => {
+      try {
+        cb(zones);
+      } catch (err) {
+        console.error("Error in onPrivateZonesUpdated callback:", err);
+      }
+    });
+  }
+
+  public sendUpdatePrivateZones(zones: PrivateZone[]) {
+    if (this.room) {
+      this.room.send("UPDATE_PRIVATE_ZONES", { zones });
     }
   }
 }

@@ -11,7 +11,11 @@ import {
   SpaceResponse,
   MAX_AVATAR_FRAMES,
   DEFAULT_AVATARS,
+  ChatMessage,
+  PrivateZone,
+  VoicePeer,
 } from "shared";
+import { VoiceManager, VoiceError } from "./network/VoiceManager";
 
 // Types
 type DirectionSlot = "idle" | "left" | "right" | "up" | "down";
@@ -298,6 +302,105 @@ const adminSpaceTagsContainer = document.getElementById(
   "admin-space-tags-container",
 ) as HTMLElement;
 
+// DOM Elements - Private Zone Name Modal
+const privateZoneNameModal = document.getElementById(
+  "private-zone-name-modal",
+) as HTMLDivElement | null;
+const privateZoneModalTitle = document.getElementById(
+  "private-zone-modal-title",
+) as HTMLElement | null;
+const privateZoneModalSubtitle = document.getElementById(
+  "private-zone-modal-subtitle",
+) as HTMLElement | null;
+const privateZoneNameForm = document.getElementById(
+  "private-zone-name-form",
+) as HTMLFormElement | null;
+const privateZoneModalZoneId = document.getElementById(
+  "private-zone-modal-zone-id",
+) as HTMLInputElement | null;
+const privateZoneInputName = document.getElementById(
+  "private-zone-input-name",
+) as HTMLInputElement | null;
+const btnClosePrivateZoneModal = document.getElementById(
+  "btn-close-private-zone-modal",
+) as HTMLButtonElement | null;
+const btnCancelPrivateZoneName = document.getElementById(
+  "btn-cancel-private-zone-name",
+) as HTMLButtonElement | null;
+const btnSavePrivateZoneName = document.getElementById(
+  "btn-save-private-zone-name",
+) as HTMLButtonElement | null;
+
+let pendingZoneBounds: {
+  minCol: number;
+  minRow: number;
+  maxCol: number;
+  maxRow: number;
+} | null = null;
+
+// ==========================================
+// In-Game Chat DOM Elements & State
+// ==========================================
+const btnToggleChat = document.getElementById("btn-toggle-chat") as HTMLButtonElement | null;
+const chatUnreadBadge = document.getElementById("chat-unread-badge");
+const chatSidebar = document.getElementById("chat-sidebar") as HTMLElement | null;
+const btnCloseChat = document.getElementById("btn-close-chat") as HTMLButtonElement | null;
+const chatTabMap = document.getElementById("chat-tab-map") as HTMLButtonElement | null;
+const chatTabZone = document.getElementById("chat-tab-zone") as HTMLButtonElement | null;
+const chatTabMapName = document.getElementById("chat-tab-map-name");
+const chatTabZoneName = document.getElementById("chat-tab-zone-name");
+const chatMapBadge = document.getElementById("chat-map-badge");
+const chatZoneBadge = document.getElementById("chat-zone-badge");
+const chatChannelBanner = document.getElementById("chat-channel-banner");
+const chatChannelDesc = document.getElementById("chat-channel-desc");
+const chatActiveChannelLabel = document.getElementById("chat-active-channel-label");
+const chatMessagesContainer = document.getElementById("chat-messages-container");
+const chatMessagesList = document.getElementById("chat-messages-list");
+const chatInputForm = document.getElementById("chat-input-form") as HTMLFormElement | null;
+const chatInputField = document.getElementById("chat-input-field") as HTMLInputElement | null;
+
+let isChatOpen = true; // Default open as requested
+let activeChatRoom: "map" | "zone" = "map";
+let currentInsideZone: PrivateZone | null = null;
+const chatMessagesMap: ChatMessage[] = [];
+const chatMessagesZone = new Map<string, ChatMessage[]>();
+let unreadMapCount = 0;
+const unreadZoneCount = new Map<string, number>();
+let totalClosedUnreadCount = 0;
+
+// ==========================================
+// Microphone Controls & Proximity Voice State
+// ==========================================
+const btnToggleMic = document.getElementById("btn-toggle-mic") as HTMLButtonElement | null;
+const micSvgOff = btnToggleMic?.querySelector(".mic-svg-off") as SVGElement | null;
+const micSvgOn = btnToggleMic?.querySelector(".mic-svg-on") as SVGElement | null;
+const micStatusDot = document.getElementById("mic-status-dot");
+
+// Microphone Device Settings Dropdown Elements
+const btnMicSettings = document.getElementById("btn-mic-settings") as HTMLButtonElement | null;
+const audioSettingsDropdown = document.getElementById("audio-settings-dropdown") as HTMLDivElement | null;
+const btnCloseAudioSettings = document.getElementById("btn-close-audio-settings") as HTMLButtonElement | null;
+const audioInputSelect = document.getElementById("audio-input-select") as HTMLSelectElement | null;
+const audioOutputSelect = document.getElementById("audio-output-select") as HTMLSelectElement | null;
+const btnTestAudioOutput = document.getElementById("btn-test-audio-output") as HTMLButtonElement | null;
+const btnRefreshDevices = document.getElementById("btn-refresh-devices") as HTMLButtonElement | null;
+const micLevelBar = document.getElementById("mic-level-bar") as HTMLDivElement | null;
+const micLiveIndicator = document.getElementById("mic-live-indicator") as HTMLSpanElement | null;
+const outputSinkNote = document.getElementById("output-sink-note") as HTMLDivElement | null;
+const audioOutputVolume = document.getElementById("audio-output-volume") as HTMLInputElement | null;
+const outputVolumeValue = document.getElementById("output-volume-value") as HTMLSpanElement | null;
+let isAudioSettingsOpen = false;
+
+// Voice Notification Banner (Persistent Alert)
+const voiceNotificationBanner = document.getElementById("voice-notification-banner") as HTMLDivElement | null;
+const voiceNotifTitle = document.getElementById("voice-notif-title") as HTMLSpanElement | null;
+const voiceNotifMsg = document.getElementById("voice-notif-msg") as HTMLParagraphElement | null;
+const voiceNotifHint = document.getElementById("voice-notif-hint") as HTMLDivElement | null;
+const voiceNotifActions = document.getElementById("voice-notif-actions") as HTMLDivElement | null;
+const btnCloseVoiceNotif = document.getElementById("btn-close-voice-notif") as HTMLButtonElement | null;
+
+let voiceManager: VoiceManager | null = null;
+
 // Application State
 let currentUser: AuthUser | null = null;
 let authToken: string | null = null;
@@ -330,9 +433,26 @@ let previewAnimTimer: number | null = null;
 let previewFrameIndex = 0;
 
 function getApiUrl(path: string): string {
-  const protocol = window.location.protocol;
+  const envUrl = (import.meta as any).env?.VITE_SERVER_URL;
   const host = window.location.hostname || "localhost";
-  return `${protocol}//${host}:2567${path}`;
+  const isRemoteAccess = host !== "localhost" && host !== "127.0.0.1";
+  const isStaleCrossDomain =
+    envUrl &&
+    typeof envUrl === "string" &&
+    isRemoteAccess &&
+    !envUrl.includes(host);
+
+  if (envUrl && typeof envUrl === "string" && envUrl.trim().length > 0 && !isStaleCrossDomain) {
+    const base = envUrl.trim().replace(/\/+$/, "");
+    const cleanPath = path.startsWith("/") ? path : `/${path}`;
+    return `${base}${cleanPath}`;
+  }
+  if (window.location.protocol === "http:" && (host === "localhost" || host === "127.0.0.1")) {
+    return `http://${host}:2567${path}`;
+  }
+  // When accessed via HTTPS, LAN IP, or any host without explicit VITE_SERVER_URL,
+  // use same-origin which routes to backend via Vite proxy
+  return path;
 }
 
 /**
@@ -1078,6 +1198,7 @@ function toggleProfileDropdown() {
 }
 
 function openProfileDropdown() {
+  closeAudioSettingsDropdown();
   userProfileDropdown.classList.remove("hidden");
   topbarProfileTrigger.classList.add("active");
 }
@@ -1293,6 +1414,10 @@ function updateBrushPreview() {
     } else if (currentSelectedAssetId === "grass_150") {
       brushPatternLayer.style.backgroundImage = 'url("/assets/grass_150.png")';
       brushPatternLayer.style.backgroundColor = "transparent";
+    } else if (currentSelectedAssetId === "table_left_150") {
+      brushPatternLayer.style.backgroundImage =
+        'url("/assets/table_left_150.png")';
+      brushPatternLayer.style.backgroundColor = "transparent";
     } else if (currentSelectedAssetId === "wall_half_150") {
       brushPatternLayer.style.backgroundImage =
         'url("/assets/wall_half_150.png")';
@@ -1317,13 +1442,51 @@ function updateBrushPreview() {
   }
 }
 
+let activeEditorTool:
+  | "flooring"
+  | "decoration"
+  | "clear_decoration"
+  | "private_zone"
+  | "clear_private_zone"
+  | "obstacle"
+  | "clear_obstacle" = "flooring";
+
 function updateEditBannerText() {
   if (!editBannerAssetText) return;
+
+  if (activeEditorTool === "private_zone") {
+    editBannerAssetText.innerHTML = `<span class="banner-private-tag">🔒 Flag Private Area</span> Active: <strong>Private Tile Flagging</strong> • <em>Drag area on map to mark</em>`;
+    return;
+  }
+  if (activeEditorTool === "clear_private_zone") {
+    editBannerAssetText.innerHTML = `<span class="banner-clear-tag">✕ Clear Private</span> Active: <strong>Remove Private Area</strong> • <em>Drag area on map to clear</em>`;
+    return;
+  }
+  if (activeEditorTool === "obstacle") {
+    editBannerAssetText.innerHTML = `<span class="banner-obstacle-tag">🚫 Obstacle</span> Active: <strong>Obstacle Tile (Impassable)</strong> • <em>Drag area to place barrier (highlighted only in edit mode)</em>`;
+    return;
+  }
+  if (activeEditorTool === "clear_obstacle") {
+    editBannerAssetText.innerHTML = `<span class="banner-clear-tag">✕ Clear Obstacle</span> Active: <strong>Remove Obstacle</strong> • <em>Drag area on map to clear barrier</em>`;
+    return;
+  }
+  if (activeEditorTool === "clear_decoration") {
+    editBannerAssetText.innerHTML = `<span class="banner-clear-tag">✕ Clear Deco</span> Active: <strong>Remove Decoration</strong> • <em>Drag area on map to remove decoration layer</em>`;
+    return;
+  }
+  if (activeEditorTool === "decoration") {
+    const colorMarkup = currentSelectedTileColor
+      ? `<span class="banner-color-indicator" style="background:${currentSelectedTileColor};"></span><strong>${currentSelectedTileColor.toUpperCase()}</strong>`
+      : `<em>(No Tint)</em>`;
+    editBannerAssetText.innerHTML = `<span class="banner-deco-tag">🪴 Decoration</span> Active: <strong>${currentSelectedAssetName}</strong> • <em>Places on top of tile</em> • Color: ${colorMarkup}`;
+    return;
+  }
+
   const isWall =
     currentSelectedAssetId === "wall_half_150" ||
     currentSelectedAssetId === "wall_top_150";
   const wallTag = isWall
-    ? `<span class="banner-wall-tag">🧱 Impassable Wall</span> `
+    ? `<span class="banner-wall-tag">🧱 Wall + Obstacle</span> `
     : "";
   const colorMarkup = currentSelectedTileColor
     ? `<span class="banner-color-indicator" style="background:${currentSelectedTileColor};"></span><strong>${currentSelectedTileColor.toUpperCase()}</strong>`
@@ -1350,7 +1513,9 @@ function enterEditMode() {
   if (gameInstance) {
     const scene = gameInstance.scene.getScene("GameScene") as GameScene;
     if (scene) {
+      setupScenePrivateZoneEvents(scene);
       scene.setEditMode(true);
+      scene.setActiveEditorTool(activeEditorTool);
       scene.setSelectedAsset(currentSelectedAssetId);
       scene.setSelectedColor(currentSelectedTileColor);
     }
@@ -1390,12 +1555,13 @@ function toggleEditMode() {
 }
 
 function selectEditorAsset(assetId: string, assetName: string) {
+  activeEditorTool = "flooring";
   currentSelectedAssetId = assetId;
   currentSelectedAssetName = assetName;
 
   const cards = document.querySelectorAll(".editor-asset-card");
   cards.forEach((card) => {
-    if ((card as HTMLElement).dataset.assetId === assetId) {
+    if ((card as HTMLElement).dataset.assetId === assetId && !(card as HTMLElement).dataset.toolType) {
       card.classList.add("selected");
     } else {
       card.classList.remove("selected");
@@ -1408,10 +1574,1121 @@ function selectEditorAsset(assetId: string, assetName: string) {
   if (gameInstance) {
     const scene = gameInstance.scene.getScene("GameScene") as GameScene;
     if (scene) {
+      scene.setActiveEditorTool("flooring");
       scene.setSelectedAsset(assetId);
     }
   }
 }
+
+function selectDecorationAsset(assetId: string, assetName: string) {
+  activeEditorTool = "decoration";
+  currentSelectedAssetId = assetId;
+  currentSelectedAssetName = assetName;
+
+  const cards = document.querySelectorAll(".editor-asset-card");
+  cards.forEach((card) => {
+    if ((card as HTMLElement).dataset.assetId === assetId && !(card as HTMLElement).dataset.toolType) {
+      card.classList.add("selected");
+    } else {
+      card.classList.remove("selected");
+    }
+  });
+
+  updateBrushPreview();
+  updateEditBannerText();
+
+  if (gameInstance) {
+    const scene = gameInstance.scene.getScene("GameScene") as GameScene;
+    if (scene) {
+      scene.setActiveEditorTool("decoration");
+      scene.setSelectedAsset(assetId);
+    }
+  }
+}
+
+function selectClearDecorationTool() {
+  activeEditorTool = "clear_decoration";
+
+  const cards = document.querySelectorAll(".editor-asset-card");
+  cards.forEach((card) => {
+    if ((card as HTMLElement).dataset.toolType === "clear_decoration") {
+      card.classList.add("selected");
+    } else {
+      card.classList.remove("selected");
+    }
+  });
+
+  updateEditBannerText();
+
+  if (gameInstance) {
+    const scene = gameInstance.scene.getScene("GameScene") as GameScene;
+    if (scene) {
+      scene.setActiveEditorTool("clear_decoration");
+    }
+  }
+}
+
+function selectPrivateTool(toolType: "private_zone" | "clear_private_zone") {
+  activeEditorTool = toolType;
+
+  const cards = document.querySelectorAll(".editor-asset-card");
+  cards.forEach((card) => {
+    if ((card as HTMLElement).dataset.toolType === toolType) {
+      card.classList.add("selected");
+    } else {
+      card.classList.remove("selected");
+    }
+  });
+
+  updateEditBannerText();
+
+  if (gameInstance) {
+    const scene = gameInstance.scene.getScene("GameScene") as GameScene;
+    if (scene) {
+      scene.setActiveEditorTool(toolType);
+    }
+  }
+}
+
+function selectObstacleTool(toolType: "obstacle" | "clear_obstacle") {
+  activeEditorTool = toolType;
+
+  const cards = document.querySelectorAll(".editor-asset-card");
+  cards.forEach((card) => {
+    if ((card as HTMLElement).dataset.toolType === toolType) {
+      card.classList.add("selected");
+    } else {
+      card.classList.remove("selected");
+    }
+  });
+
+  updateEditBannerText();
+
+  if (gameInstance) {
+    const scene = gameInstance.scene.getScene("GameScene") as GameScene;
+    if (scene) {
+      scene.setActiveEditorTool(toolType);
+    }
+  }
+}
+
+function openPrivateZoneNameModal(
+  mode: "create" | "rename",
+  options: {
+    zoneId?: string;
+    defaultName?: string;
+    bounds?: { minCol: number; minRow: number; maxCol: number; maxRow: number };
+  },
+) {
+  if (!privateZoneNameModal || !privateZoneInputName) return;
+
+  if (gameInstance) {
+    const s = gameInstance.scene.getScene("GameScene") as GameScene;
+    if (s && typeof s.setControlsActive === "function") {
+      s.setControlsActive(false);
+    }
+  }
+
+  if (mode === "create") {
+    pendingZoneBounds = options.bounds || null;
+    if (privateZoneModalZoneId) privateZoneModalZoneId.value = "";
+    if (privateZoneModalTitle) {
+      privateZoneModalTitle.textContent = "🔒 Name Private Area";
+    }
+    if (privateZoneModalSubtitle) {
+      privateZoneModalSubtitle.textContent =
+        "Set a name for this private area (chat room, voice room, or video room)";
+    }
+    if (btnSavePrivateZoneName) {
+      btnSavePrivateZoneName.textContent = "Save Area Name";
+    }
+    privateZoneInputName.value = options.defaultName || "";
+  } else {
+    pendingZoneBounds = null;
+    if (privateZoneModalZoneId) {
+      privateZoneModalZoneId.value = options.zoneId || "";
+    }
+    if (privateZoneModalTitle) {
+      privateZoneModalTitle.textContent = "✏️ Rename Private Area";
+    }
+    if (privateZoneModalSubtitle) {
+      privateZoneModalSubtitle.textContent =
+        "Change the name of this private room / channel";
+    }
+    if (btnSavePrivateZoneName) {
+      btnSavePrivateZoneName.textContent = "Update Name";
+    }
+    privateZoneInputName.value = options.defaultName || "";
+  }
+
+  privateZoneNameModal.classList.remove("hidden");
+  setTimeout(() => {
+    if (privateZoneInputName) {
+      privateZoneInputName.focus();
+      privateZoneInputName.select();
+    }
+  }, 50);
+}
+
+function closePrivateZoneNameModal() {
+  if (!privateZoneNameModal) return;
+  privateZoneNameModal.classList.add("hidden");
+  pendingZoneBounds = null;
+  if (privateZoneModalZoneId) privateZoneModalZoneId.value = "";
+
+  if (gameInstance) {
+    const s = gameInstance.scene.getScene("GameScene") as GameScene;
+    if (s && typeof s.setControlsActive === "function") {
+      s.setControlsActive(true);
+    }
+  }
+}
+
+function renderEditorZonesList(zones: any[]) {
+  const countEl = document.getElementById("editor-private-zones-count");
+  const listEl = document.getElementById("editor-zones-list");
+  if (countEl) {
+    countEl.textContent = `${zones.length} ${zones.length === 1 ? "zone" : "zones"}`;
+  }
+  if (!listEl) return;
+
+  if (!zones || zones.length === 0) {
+    listEl.innerHTML = `<div class="editor-zones-empty">None yet. Drag on map to flag area.</div>`;
+    return;
+  }
+
+  listEl.innerHTML = "";
+  zones.forEach((zone, idx) => {
+    const cols = zone.bounds.maxCol - zone.bounds.minCol + 1;
+    const rows = zone.bounds.maxRow - zone.bounds.minRow + 1;
+    const totalTiles = cols * rows;
+
+    const item = document.createElement("div");
+    item.className = "editor-zone-item";
+    item.title = "Click to rename this private area";
+    item.innerHTML = `
+      <div class="zone-item-left">
+        <span class="zone-item-icon">🔒</span>
+        <div class="zone-item-details">
+          <span class="zone-item-name">${escapeHtml(zone.name || `Area ${idx + 1}`)}</span>
+          <span class="zone-item-meta">${cols}×${rows} (${totalTiles} tiles)</span>
+        </div>
+      </div>
+      <div class="zone-item-actions">
+        <button type="button" class="zone-item-edit-btn" title="Rename this private area" data-zone-id="${zone.id}">✏️</button>
+        <button type="button" class="zone-item-del-btn" title="Remove this private area" data-zone-id="${zone.id}">✕</button>
+      </div>
+    `;
+
+    const editBtn = item.querySelector(".zone-item-edit-btn");
+    if (editBtn) {
+      editBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        openPrivateZoneNameModal("rename", {
+          zoneId: zone.id,
+          defaultName: zone.name,
+        });
+      });
+    }
+
+    const delBtn = item.querySelector(".zone-item-del-btn");
+    if (delBtn) {
+      delBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (gameInstance) {
+          const s = gameInstance.scene.getScene("GameScene") as GameScene;
+          if (s) s.removePrivateZone(zone.id);
+        }
+      });
+    }
+
+    item.addEventListener("click", () => {
+      openPrivateZoneNameModal("rename", {
+        zoneId: zone.id,
+        defaultName: zone.name,
+      });
+    });
+
+    listEl.appendChild(item);
+  });
+}
+
+// ==========================================
+// In-Game Chat System Handlers & Logic
+// ==========================================
+
+function scrollChatToBottom() {
+  if (chatMessagesContainer) {
+    requestAnimationFrame(() => {
+      chatMessagesContainer.scrollTop = chatMessagesContainer.scrollHeight;
+    });
+  }
+}
+
+function setChatOpen(open: boolean) {
+  isChatOpen = open;
+  if (!chatSidebar || !btnToggleChat) return;
+
+  if (isChatOpen) {
+    chatSidebar.classList.remove("collapsed");
+    btnToggleChat.classList.add("active");
+    totalClosedUnreadCount = 0;
+    if (chatUnreadBadge) {
+      chatUnreadBadge.classList.add("hidden");
+      chatUnreadBadge.textContent = "";
+    }
+    scrollChatToBottom();
+  } else {
+    chatSidebar.classList.add("collapsed");
+    btnToggleChat.classList.remove("active");
+    if (document.activeElement === chatInputField) {
+      chatInputField?.blur();
+      setGameControlsActive(true);
+    }
+  }
+}
+
+function toggleChatBar() {
+  setChatOpen(!isChatOpen);
+}
+
+function updateChatTabNames() {
+  if (chatTabMapName) {
+    chatTabMapName.textContent = currentSpaceName || "Area";
+  }
+  if (currentInsideZone && chatTabZoneName) {
+    chatTabZoneName.textContent = currentInsideZone.name || "Private Area";
+  }
+}
+
+function switchChatTab(target: "map" | "zone") {
+  if (target === "zone" && !currentInsideZone) {
+    target = "map";
+  }
+  activeChatRoom = target;
+
+  if (target === "map") {
+    chatTabMap?.classList.add("active");
+    chatTabMap?.setAttribute("aria-selected", "true");
+    chatTabZone?.classList.remove("active");
+    chatTabZone?.setAttribute("aria-selected", "false");
+
+    unreadMapCount = 0;
+    chatMapBadge?.classList.add("hidden");
+
+    if (chatChannelBanner) chatChannelBanner.classList.remove("private");
+    if (chatChannelDesc) chatChannelDesc.textContent = "Area chat • visible to all in this map";
+    if (chatActiveChannelLabel) chatActiveChannelLabel.textContent = "Area Channel";
+    if (chatInputField) chatInputField.placeholder = `Message #${currentSpaceName}...`;
+  } else {
+    chatTabZone?.classList.add("active");
+    chatTabZone?.setAttribute("aria-selected", "true");
+    chatTabMap?.classList.remove("active");
+    chatTabMap?.setAttribute("aria-selected", "false");
+
+    const zoneId = currentInsideZone?.id || "";
+    unreadZoneCount.set(zoneId, 0);
+    chatZoneBadge?.classList.add("hidden");
+
+    const zoneName = currentInsideZone?.name || "Private Area";
+    if (chatChannelBanner) chatChannelBanner.classList.add("private");
+    if (chatChannelDesc) {
+      chatChannelDesc.textContent = `🔒 Private Area • Only players inside "${zoneName}" can see messages`;
+    }
+    if (chatActiveChannelLabel) chatActiveChannelLabel.textContent = zoneName;
+    if (chatInputField) chatInputField.placeholder = `Message #${zoneName} (Private)...`;
+  }
+
+  renderCurrentChatMessages();
+}
+
+function renderCurrentChatMessages() {
+  if (!chatMessagesList) return;
+  chatMessagesList.innerHTML = "";
+
+  const messagesToRender =
+    activeChatRoom === "map"
+      ? chatMessagesMap
+      : currentInsideZone
+      ? chatMessagesZone.get(currentInsideZone.id) || []
+      : [];
+
+  if (messagesToRender.length === 0) {
+    const welcome = document.createElement("div");
+    welcome.className = "chat-welcome-notice";
+    const title =
+      activeChatRoom === "map"
+        ? `Welcome to ${escapeHtml(currentSpaceName)}!`
+        : `Welcome to ${escapeHtml(currentInsideZone?.name || "Private Area")}!`;
+    const sub =
+      activeChatRoom === "map"
+        ? "Talk to everyone exploring this space."
+        : "This is an isolated private channel. Only players currently inside this area can read or send messages.";
+    welcome.innerHTML = `
+      <div class="chat-welcome-icon">${activeChatRoom === "map" ? "🗺️" : "🔒"}</div>
+      <div class="chat-welcome-title">${title}</div>
+      <div class="chat-welcome-sub">${sub}</div>
+    `;
+    chatMessagesList.appendChild(welcome);
+  } else {
+    messagesToRender.forEach((msg) => {
+      appendChatMessageElement(msg, false);
+    });
+  }
+
+  scrollChatToBottom();
+}
+
+function appendChatMessageElement(msg: ChatMessage, autoScroll = true) {
+  if (!chatMessagesList) return;
+
+  const welcome = chatMessagesList.querySelector(".chat-welcome-notice");
+  if (welcome) {
+    welcome.remove();
+  }
+
+  const isOwn = multiplayer && multiplayer.sessionId === msg.senderId;
+  const item = document.createElement("div");
+  item.className = `chat-msg-item${isOwn ? " own" : ""}${msg.roomType === "zone" ? " zone-msg" : ""}`;
+
+  const timeStr = new Date(msg.timestamp).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
+  const crownHtml = msg.isSuperadmin ? `<span class="chat-msg-crown" title="Superadmin">👑</span>` : "";
+  const zoneTagHtml =
+    msg.roomType === "zone"
+      ? `<span class="chat-msg-tag-zone">🔒 ${escapeHtml(msg.roomName)}</span>`
+      : "";
+
+  item.innerHTML = `
+    <div class="chat-msg-header">
+      <span class="chat-msg-author-dot" style="background-color: ${escapeHtml(msg.senderColor || "#3b82f6")};"></span>
+      <span class="chat-msg-author">${crownHtml}${escapeHtml(msg.senderName)}</span>
+      ${zoneTagHtml}
+      <span class="chat-msg-time">${timeStr}</span>
+    </div>
+    <div class="chat-msg-body">${escapeHtml(msg.text)}</div>
+  `;
+
+  chatMessagesList.appendChild(item);
+
+  if (autoScroll) {
+    scrollChatToBottom();
+  }
+}
+
+function handleIncomingChatMessage(msg: ChatMessage) {
+  if (msg.roomType === "map") {
+    chatMessagesMap.push(msg);
+    if (activeChatRoom === "map") {
+      appendChatMessageElement(msg, true);
+    } else {
+      unreadMapCount++;
+      if (chatMapBadge) {
+        chatMapBadge.classList.remove("hidden");
+      }
+    }
+  } else if (msg.roomType === "zone") {
+    const list = chatMessagesZone.get(msg.roomId) || [];
+    list.push(msg);
+    chatMessagesZone.set(msg.roomId, list);
+
+    if (activeChatRoom === "zone" && currentInsideZone && currentInsideZone.id === msg.roomId) {
+      appendChatMessageElement(msg, true);
+    } else {
+      const prev = unreadZoneCount.get(msg.roomId) || 0;
+      unreadZoneCount.set(msg.roomId, prev + 1);
+      if (chatZoneBadge) {
+        chatZoneBadge.classList.remove("hidden");
+      }
+    }
+  }
+
+  if (!isChatOpen) {
+    totalClosedUnreadCount++;
+    if (chatUnreadBadge) {
+      chatUnreadBadge.textContent =
+        totalClosedUnreadCount > 9 ? "9+" : String(totalClosedUnreadCount);
+      chatUnreadBadge.classList.remove("hidden");
+    }
+  }
+
+  // Floating speech bubble over character in Phaser scene
+  if (gameInstance) {
+    const scene = gameInstance.scene.getScene("GameScene") as GameScene;
+    if (scene && typeof (scene as any).showSpeechBubble === "function") {
+      (scene as any).showSpeechBubble(msg.senderId, msg.text);
+    }
+  }
+}
+
+function handleChatZoneChange(zone: PrivateZone | null) {
+  currentInsideZone = zone;
+  if (zone) {
+    if (chatTabZoneName) {
+      chatTabZoneName.textContent = zone.name || "Private Area";
+    }
+    chatTabZone?.classList.remove("hidden");
+    // Enter private area: activate private tab
+    switchChatTab("zone");
+  } else {
+    chatTabZone?.classList.add("hidden");
+    if (activeChatRoom === "zone") {
+      switchChatTab("map");
+    }
+  }
+}
+
+function onSpaceChanged(newSpaceName: string) {
+  updateChatTabNames();
+  if (activeChatRoom === "map") {
+    if (chatInputField) chatInputField.placeholder = `Message #${newSpaceName}...`;
+    renderCurrentChatMessages();
+  }
+  if (voiceManager) {
+    voiceManager.connectToVoice();
+  }
+}
+
+function setupMultiplayerChatListeners(mgr: MultiplayerManager) {
+  mgr.onChatMessage((msg: ChatMessage) => {
+    handleIncomingChatMessage(msg);
+  });
+}
+
+function isAnyModalOpen(): boolean {
+  if (authModal && !authModal.classList.contains("hidden")) return true;
+  if (mapModal && !mapModal.classList.contains("hidden")) return true;
+  if (modal && !modal.classList.contains("hidden")) return true;
+  if (mySpaceSettingsModal && !mySpaceSettingsModal.classList.contains("hidden")) return true;
+  if (adminSpaceModal && !adminSpaceModal.classList.contains("hidden")) return true;
+  if (privateZoneNameModal && !privateZoneNameModal.classList.contains("hidden")) return true;
+  if (isEditModeActive) return true;
+  return false;
+}
+
+if (btnToggleChat) {
+  btnToggleChat.addEventListener("click", () => {
+    toggleChatBar();
+  });
+}
+
+if (btnCloseChat) {
+  btnCloseChat.addEventListener("click", () => {
+    setChatOpen(false);
+  });
+}
+
+if (chatTabMap) {
+  chatTabMap.addEventListener("click", () => {
+    switchChatTab("map");
+  });
+}
+
+if (chatTabZone) {
+  chatTabZone.addEventListener("click", () => {
+    switchChatTab("zone");
+  });
+}
+
+if (chatInputForm) {
+  chatInputForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    if (!chatInputField || !multiplayer) return;
+    const text = chatInputField.value.trim();
+    if (!text) return;
+
+    if (activeChatRoom === "zone") {
+      if (!currentInsideZone) return;
+      multiplayer.sendChatMessage({
+        roomType: "zone",
+        roomId: currentInsideZone.id,
+        text,
+      });
+    } else {
+      multiplayer.sendChatMessage({
+        roomType: "map",
+        text,
+      });
+    }
+
+    chatInputField.value = "";
+  });
+}
+
+if (chatInputField) {
+  chatInputField.addEventListener("focus", () => {
+    setGameControlsActive(false);
+  });
+
+  chatInputField.addEventListener("blur", () => {
+    setGameControlsActive(true);
+  });
+
+  chatInputField.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      chatInputField.blur();
+      setGameControlsActive(true);
+    }
+  });
+}
+
+// ==========================================
+// Microphone Controls & Proximity Voice Logic
+// ==========================================
+
+function updateMicButtonUI(isOn: boolean, isSpeaking: boolean = false) {
+  if (!btnToggleMic) return;
+
+  if (isOn) {
+    btnToggleMic.classList.add("active");
+    micSvgOff?.classList.add("hidden");
+    micSvgOn?.classList.remove("hidden");
+    btnToggleMic.title = isSpeaking
+      ? "Microphone: Speaking... (Click or press M to mute)"
+      : "Microphone: Live (Click or press M to mute)";
+    if (micLiveIndicator) {
+      micLiveIndicator.textContent = isSpeaking ? "Speaking..." : "Mic On";
+      micLiveIndicator.classList.add("live");
+    }
+  } else {
+    btnToggleMic.classList.remove("active");
+    btnToggleMic.classList.remove("speaking");
+    micSvgOn?.classList.add("hidden");
+    micSvgOff?.classList.remove("hidden");
+    btnToggleMic.title = "Microphone: Off (Click or press M to turn on)";
+    if (micLiveIndicator) {
+      micLiveIndicator.textContent = "Mic Off";
+      micLiveIndicator.classList.remove("live");
+    }
+    if (micLevelBar) {
+      micLevelBar.style.width = "0%";
+    }
+  }
+
+  if (isSpeaking && isOn) {
+    btnToggleMic.classList.add("speaking");
+  } else {
+    btnToggleMic.classList.remove("speaking");
+  }
+}
+
+// ==========================================
+// Audio Settings Dropdown (Input / Output)
+// ==========================================
+
+function openAudioSettingsDropdown() {
+  if (!audioSettingsDropdown) return;
+  closeProfileDropdown();
+  audioSettingsDropdown.classList.remove("hidden");
+  btnMicSettings?.classList.add("active");
+  isAudioSettingsOpen = true;
+  populateAudioDevices();
+}
+
+function closeAudioSettingsDropdown() {
+  if (!audioSettingsDropdown) return;
+  audioSettingsDropdown.classList.add("hidden");
+  btnMicSettings?.classList.remove("active");
+  isAudioSettingsOpen = false;
+}
+
+function toggleAudioSettingsDropdown() {
+  if (isAudioSettingsOpen) {
+    closeAudioSettingsDropdown();
+  } else {
+    openAudioSettingsDropdown();
+  }
+}
+
+async function populateAudioDevices() {
+  // Check if browser supports audio output selection (setSinkId)
+  const sinkSupported =
+    typeof (HTMLAudioElement.prototype as any).setSinkId === "function";
+  if (!sinkSupported) {
+    outputSinkNote?.classList.remove("hidden");
+  } else {
+    outputSinkNote?.classList.add("hidden");
+  }
+
+  let activeInputId = voiceManager?.selectedInputDeviceId || "default";
+  let activeOutputId = voiceManager?.selectedOutputDeviceId || "default";
+  try {
+    if (activeInputId === "default") {
+      activeInputId =
+        localStorage.getItem("lepark_audio_input_id") || "default";
+    }
+    if (activeOutputId === "default") {
+      activeOutputId =
+        localStorage.getItem("lepark_audio_output_id") || "default";
+    }
+  } catch (_) {}
+
+  let inputDevices: MediaDeviceInfo[] = [];
+  let outputDevices: MediaDeviceInfo[] = [];
+
+  if (voiceManager) {
+    inputDevices = await voiceManager.getAudioInputDevices();
+    outputDevices = await voiceManager.getAudioOutputDevices();
+  } else if (
+    typeof navigator !== "undefined" &&
+    navigator.mediaDevices?.enumerateDevices
+  ) {
+    try {
+      const all = await navigator.mediaDevices.enumerateDevices();
+      inputDevices = all.filter((d) => d.kind === "audioinput");
+      outputDevices = all.filter((d) => d.kind === "audiooutput");
+    } catch (e) {
+      console.warn("Failed to enumerate audio devices:", e);
+    }
+  }
+
+  // Populate Input Select (Microphone)
+  if (audioInputSelect) {
+    audioInputSelect.innerHTML = "";
+    const defaultInOpt = document.createElement("option");
+    defaultInOpt.value = "default";
+    defaultInOpt.textContent = "Default Microphone";
+    audioInputSelect.appendChild(defaultInOpt);
+
+    let micIdx = 1;
+    inputDevices.forEach((dev) => {
+      if (dev.deviceId === "default" || dev.deviceId === "") return;
+      const opt = document.createElement("option");
+      opt.value = dev.deviceId;
+      opt.textContent = dev.label || `Microphone ${micIdx++}`;
+      audioInputSelect.appendChild(opt);
+    });
+
+    const hasInput = Array.from(audioInputSelect.options).some(
+      (o) => o.value === activeInputId,
+    );
+    audioInputSelect.value = hasInput ? activeInputId : "default";
+  }
+
+  // Populate Output Select (Earphones / Speakers)
+  if (audioOutputSelect) {
+    audioOutputSelect.innerHTML = "";
+    const defaultOutOpt = document.createElement("option");
+    defaultOutOpt.value = "default";
+    defaultOutOpt.textContent = "Default Speaker / Earphones";
+    audioOutputSelect.appendChild(defaultOutOpt);
+
+    let speakerIdx = 1;
+    outputDevices.forEach((dev) => {
+      if (dev.deviceId === "default" || dev.deviceId === "") return;
+      const opt = document.createElement("option");
+      opt.value = dev.deviceId;
+      opt.textContent = dev.label || `Speaker / Earphones ${speakerIdx++}`;
+      audioOutputSelect.appendChild(opt);
+    });
+
+    const hasOutput = Array.from(audioOutputSelect.options).some(
+      (o) => o.value === activeOutputId,
+    );
+    audioOutputSelect.value = hasOutput ? activeOutputId : "default";
+  }
+
+  // Populate Output Volume Slider
+  if (audioOutputVolume) {
+    const vol = voiceManager
+      ? voiceManager.masterOutputVolume
+      : (() => {
+          try {
+            const s = localStorage.getItem("lepark_output_volume");
+            return s !== null ? parseFloat(s) : 1.0;
+          } catch (_) {
+            return 1.0;
+          }
+        })();
+    const pct = Math.round(vol * 100);
+    audioOutputVolume.value = pct.toString();
+    if (outputVolumeValue) {
+      outputVolumeValue.textContent = `${pct}%`;
+    }
+  }
+}
+
+if (btnMicSettings) {
+  btnMicSettings.addEventListener("click", (e) => {
+    e.stopPropagation();
+    toggleAudioSettingsDropdown();
+  });
+}
+
+if (btnCloseAudioSettings) {
+  btnCloseAudioSettings.addEventListener("click", (e) => {
+    e.stopPropagation();
+    closeAudioSettingsDropdown();
+  });
+}
+
+if (audioInputSelect) {
+  audioInputSelect.addEventListener("change", async () => {
+    const deviceId = audioInputSelect.value;
+    if (voiceManager) {
+      await voiceManager.setAudioInputDevice(deviceId);
+    } else {
+      try {
+        localStorage.setItem("lepark_audio_input_id", deviceId);
+      } catch (_) {}
+    }
+  });
+}
+
+if (audioOutputSelect) {
+  audioOutputSelect.addEventListener("change", async () => {
+    const deviceId = audioOutputSelect.value;
+    if (voiceManager) {
+      await voiceManager.setAudioOutputDevice(deviceId);
+    } else {
+      try {
+        localStorage.setItem("lepark_audio_output_id", deviceId);
+      } catch (_) {}
+    }
+  });
+}
+
+if (audioOutputVolume) {
+  audioOutputVolume.addEventListener("input", () => {
+    const val = parseInt(audioOutputVolume.value, 10);
+    const fraction = Math.max(0, Math.min(1, val / 100));
+    if (outputVolumeValue) {
+      outputVolumeValue.textContent = `${val}%`;
+    }
+    if (voiceManager) {
+      voiceManager.setMasterOutputVolume(fraction);
+    } else {
+      try {
+        localStorage.setItem("lepark_output_volume", fraction.toString());
+      } catch (_) {}
+    }
+  });
+}
+
+// User-gesture audio unlocker on window interaction
+window.addEventListener(
+  "pointerdown",
+  () => {
+    if (voiceManager) {
+      voiceManager.unlockAllAudio();
+    }
+  },
+  { passive: true },
+);
+
+if (btnTestAudioOutput) {
+  btnTestAudioOutput.addEventListener("click", async () => {
+    const origText = btnTestAudioOutput.textContent;
+    btnTestAudioOutput.textContent = "🔊 Playing...";
+    btnTestAudioOutput.disabled = true;
+
+    try {
+      if (voiceManager) {
+        await voiceManager.playTestSound(audioOutputSelect?.value);
+      } else {
+        const AudioCtxClass =
+          window.AudioContext || (window as any).webkitAudioContext;
+        if (AudioCtxClass) {
+          const ctx = new AudioCtxClass();
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.frequency.setValueAtTime(587.33, ctx.currentTime);
+          gain.gain.setValueAtTime(0.25, ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start();
+          osc.stop(ctx.currentTime + 0.4);
+          setTimeout(() => ctx.close().catch(() => {}), 500);
+        }
+      }
+    } catch (e) {
+      console.warn("Test audio error:", e);
+    }
+
+    setTimeout(() => {
+      btnTestAudioOutput.textContent = origText;
+      btnTestAudioOutput.disabled = false;
+    }, 600);
+  });
+}
+
+if (btnRefreshDevices) {
+  btnRefreshDevices.addEventListener("click", async () => {
+    btnRefreshDevices.classList.add("rotating");
+    await populateAudioDevices();
+    setTimeout(() => {
+      btnRefreshDevices.classList.remove("rotating");
+    }, 450);
+  });
+}
+
+// Close audio settings dropdown on click outside
+document.addEventListener("click", (e) => {
+  if (isAudioSettingsOpen) {
+    const micGroup = document.getElementById("mic-control-group");
+    if (micGroup && !micGroup.contains(e.target as Node)) {
+      closeAudioSettingsDropdown();
+    }
+  }
+});
+
+// Auto-refresh when audio devices are plugged in or unplugged
+if (
+  typeof navigator !== "undefined" &&
+  navigator.mediaDevices?.addEventListener
+) {
+  navigator.mediaDevices.addEventListener("devicechange", () => {
+    if (isAudioSettingsOpen) {
+      populateAudioDevices();
+    }
+  });
+}
+
+function hideVoiceNotification() {
+  if (voiceNotificationBanner) {
+    voiceNotificationBanner.classList.add("hidden");
+  }
+}
+
+function showVoiceNotification(error: VoiceError) {
+  if (!voiceNotificationBanner || !voiceNotifTitle || !voiceNotifMsg) return;
+
+  voiceNotifTitle.textContent = error.title;
+  voiceNotifMsg.textContent = error.message;
+
+  if (voiceNotifHint) {
+    if (error.hint) {
+      voiceNotifHint.textContent = error.hint;
+      voiceNotifHint.classList.remove("hidden");
+    } else {
+      voiceNotifHint.textContent = "";
+      voiceNotifHint.classList.add("hidden");
+    }
+  }
+
+  if (voiceNotifActions) {
+    voiceNotifActions.innerHTML = "";
+
+    // Action button (e.g. Switch to Localhost)
+    if (error.actionUrl && error.actionLabel) {
+      const actionBtn = document.createElement("button");
+      actionBtn.type = "button";
+      actionBtn.className = "voice-notif-btn voice-notif-btn-primary";
+      actionBtn.textContent = error.actionLabel;
+      actionBtn.addEventListener("click", () => {
+        window.location.href = error.actionUrl!;
+      });
+      voiceNotifActions.appendChild(actionBtn);
+    }
+
+    // Retry Microphone button
+    const retryBtn = document.createElement("button");
+    retryBtn.type = "button";
+    retryBtn.className = "voice-notif-btn voice-notif-btn-secondary";
+    retryBtn.textContent = "Retry Microphone";
+    retryBtn.addEventListener("click", async () => {
+      await toggleMic();
+    });
+    voiceNotifActions.appendChild(retryBtn);
+
+    // Dismiss button
+    const dismissBtn = document.createElement("button");
+    dismissBtn.type = "button";
+    dismissBtn.className = "voice-notif-btn voice-notif-btn-ghost";
+    dismissBtn.textContent = "Dismiss";
+    dismissBtn.addEventListener("click", () => {
+      hideVoiceNotification();
+    });
+    voiceNotifActions.appendChild(dismissBtn);
+  }
+
+  // Notice stays on screen permanently until dismissed or microphone is enabled
+  voiceNotificationBanner.classList.remove("hidden");
+}
+
+if (btnCloseVoiceNotif) {
+  btnCloseVoiceNotif.addEventListener("click", () => {
+    hideVoiceNotification();
+  });
+}
+
+async function toggleMic() {
+  if (!voiceManager) {
+    if (multiplayer) {
+      initVoiceManager(multiplayer);
+    } else {
+      showVoiceNotification({
+        code: "CONNECTING",
+        title: "Connecting to Space",
+        message: "Please wait for connection to establish before turning on microphone.",
+        hint: "Log in and make sure your character is in the space.",
+      });
+      return;
+    }
+  }
+  if (!voiceManager) return;
+  voiceManager.connectToVoice();
+  const isNowOn = await voiceManager.toggleMic();
+  updateMicButtonUI(isNowOn);
+  if (isNowOn) {
+    hideVoiceNotification();
+  }
+}
+
+function initVoiceManager(mgr: MultiplayerManager) {
+  if (voiceManager) {
+    voiceManager.setMultiplayer(mgr);
+    voiceManager.connectToVoice();
+    if (gameInstance) {
+      const scene = gameInstance.scene.getScene("GameScene") as GameScene;
+      if (scene) {
+        scene.voiceManager = voiceManager;
+      }
+    }
+    return;
+  }
+
+  voiceManager = new VoiceManager(mgr, {
+    onMicStateChange: (isOn) => {
+      updateMicButtonUI(isOn);
+      if (isOn) {
+        hideVoiceNotification();
+      }
+    },
+    onMicVolumeChange: (volume: number) => {
+      if (micLevelBar) {
+        const pct = Math.min(
+          100,
+          Math.round(Math.pow(volume * 2.2, 0.7) * 100),
+        );
+        micLevelBar.style.width = `${pct}%`;
+      }
+    },
+    onError: (error) => {
+      if (error) {
+        showVoiceNotification(error);
+      } else {
+        hideVoiceNotification();
+      }
+    },
+    onSpeakingChange: (sessionId, speaking) => {
+      if (gameInstance) {
+        const scene = gameInstance.scene.getScene("GameScene") as GameScene;
+        if (scene && typeof scene.setPlayerSpeaking === "function") {
+          scene.setPlayerSpeaking(sessionId, speaking);
+        }
+      }
+    },
+    onLocalSpeakingChange: (speaking) => {
+      updateMicButtonUI(voiceManager?.isMicOn ?? false, speaking);
+      if (gameInstance && multiplayer && multiplayer.sessionId) {
+        const scene = gameInstance.scene.getScene("GameScene") as GameScene;
+        if (scene && typeof scene.setPlayerSpeaking === "function") {
+          scene.setPlayerSpeaking(multiplayer.sessionId, speaking);
+        }
+      }
+    },
+  });
+
+  voiceManager.connectToVoice();
+
+  if (gameInstance) {
+    const scene = gameInstance.scene.getScene("GameScene") as GameScene;
+    if (scene) {
+      scene.voiceManager = voiceManager;
+    }
+  }
+}
+
+if (btnToggleMic) {
+  btnToggleMic.addEventListener("click", () => {
+    toggleMic();
+  });
+}
+
+function setupScenePrivateZoneEvents(scene: GameScene) {
+  if (!scene) return;
+  if (voiceManager) {
+    scene.voiceManager = voiceManager;
+  }
+  if ((scene as any)._privateZoneEventsBound) return;
+  (scene as any)._privateZoneEventsBound = true;
+
+  scene.onZoneChange((zone) => {
+    const hud = document.getElementById("private-area-hud");
+    const nameEl = document.getElementById("private-area-hud-name");
+    if (zone) {
+      if (nameEl) nameEl.textContent = zone.name || "Private Area";
+      if (hud) hud.classList.remove("hidden");
+    } else {
+      if (hud) hud.classList.add("hidden");
+    }
+    handleChatZoneChange(zone);
+  });
+
+  scene.onPrivateZonesListChange((zones) => {
+    renderEditorZonesList(zones);
+  });
+
+  scene.onRequestNameForNewZone = (bounds, defaultName) => {
+    openPrivateZoneNameModal("create", { bounds, defaultName });
+  };
+}
+
+if (privateZoneNameForm) {
+  privateZoneNameForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const name = privateZoneInputName?.value.trim() || "";
+    const zoneId = privateZoneModalZoneId?.value;
+
+    if (gameInstance) {
+      const s = gameInstance.scene.getScene("GameScene") as GameScene;
+      if (s) {
+        if (zoneId) {
+          s.renamePrivateZone(zoneId, name);
+        } else if (pendingZoneBounds) {
+          s.createPrivateZone(pendingZoneBounds, name);
+        }
+      }
+    }
+
+    closePrivateZoneNameModal();
+  });
+}
+
+if (btnClosePrivateZoneModal) {
+  btnClosePrivateZoneModal.addEventListener("click", () => {
+    closePrivateZoneNameModal();
+  });
+}
+
+if (btnCancelPrivateZoneName) {
+  btnCancelPrivateZoneName.addEventListener("click", () => {
+    closePrivateZoneNameModal();
+  });
+}
+
+if (privateZoneNameModal) {
+  privateZoneNameModal.addEventListener("click", (e) => {
+    if (e.target === privateZoneNameModal) {
+      closePrivateZoneNameModal();
+    }
+  });
+}
+
+window.addEventListener("keydown", (e) => {
+  if (
+    e.key === "Escape" &&
+    privateZoneNameModal &&
+    !privateZoneNameModal.classList.contains("hidden")
+  ) {
+    closePrivateZoneNameModal();
+  }
+});
 
 if (btnEditMap) {
   btnEditMap.addEventListener("click", () => {
@@ -1435,15 +2712,71 @@ const editorAssetCards =
   document.querySelectorAll<HTMLButtonElement>(".editor-asset-card");
 editorAssetCards.forEach((card) => {
   card.addEventListener("click", () => {
-    const id = card.dataset.assetId || "birch_floor_150";
-    const name = card.dataset.assetName || "Birch Floor";
-    selectEditorAsset(id, name);
+    const toolType = card.dataset.toolType;
+    if (toolType === "private_zone" || toolType === "clear_private_zone") {
+      selectPrivateTool(toolType);
+    } else if (toolType === "obstacle" || toolType === "clear_obstacle") {
+      selectObstacleTool(toolType);
+    } else if (toolType === "clear_decoration") {
+      selectClearDecorationTool();
+    } else {
+      const id = card.dataset.assetId || "birch_floor_150";
+      const name = card.dataset.assetName || "Birch Floor";
+      const tileType = card.dataset.tileType;
+      if (tileType === "decoration") {
+        selectDecorationAsset(id, name);
+      } else {
+        selectEditorAsset(id, name);
+      }
+    }
   });
 });
 
 window.addEventListener("keydown", (e: KeyboardEvent) => {
-  if (e.key === "Escape" && isEditModeActive) {
-    exitEditMode();
+  if (e.key === "Escape") {
+    if (isAudioSettingsOpen) {
+      closeAudioSettingsDropdown();
+      setGameControlsActive(true);
+      return;
+    }
+    if (document.activeElement === chatInputField) {
+      chatInputField?.blur();
+      setGameControlsActive(true);
+      return;
+    }
+    if (isEditModeActive) {
+      exitEditMode();
+      return;
+    }
+  }
+
+  // Pressing Enter when not in an active input or modal focuses chat
+  if (
+    e.key === "Enter" &&
+    document.activeElement !== chatInputField &&
+    !isAnyModalOpen() &&
+    !isAudioSettingsOpen
+  ) {
+    if (!isChatOpen) {
+      setChatOpen(true);
+    }
+    chatInputField?.focus();
+    setGameControlsActive(false);
+    e.preventDefault();
+  }
+
+  // Pressing 'm' or 'M' when not typing in an input toggles mic
+  if (
+    e.key.toLowerCase() === "m" &&
+    document.activeElement !== chatInputField &&
+    document.activeElement?.tagName !== "INPUT" &&
+    document.activeElement?.tagName !== "TEXTAREA" &&
+    document.activeElement?.tagName !== "SELECT" &&
+    !isAnyModalOpen() &&
+    !isAudioSettingsOpen
+  ) {
+    toggleMic();
+    e.preventDefault();
   }
 });
 
@@ -1758,6 +3091,7 @@ async function switchSpace(newSpaceId: string, newSpaceName: string) {
   currentSpaceName = newSpaceName;
   updateTopBarUI();
   renderSpacesList();
+  onSpaceChanged(newSpaceName);
 
   try {
     const effectiveName = getEffectivePlayerName();
@@ -1766,7 +3100,9 @@ async function switchSpace(newSpaceId: string, newSpaceName: string) {
 
     if (!multiplayer) {
       multiplayer = new MultiplayerManager();
+      setupMultiplayerChatListeners(multiplayer);
     }
+    initVoiceManager(multiplayer);
 
     await multiplayer.joinGame({
       name: effectiveName,
@@ -1775,6 +3111,10 @@ async function switchSpace(newSpaceId: string, newSpaceName: string) {
       spaceId: currentSpaceId,
       token: authToken || undefined,
     });
+
+    if (voiceManager) {
+      voiceManager.connectToVoice();
+    }
 
     if (gameInstance) {
       const scene = gameInstance.scene.getScene("GameScene") as GameScene;
@@ -2206,8 +3546,13 @@ async function enterGameSession() {
       topbarStatusSubtitle.textContent = "Disconnected";
       if (topbarPingStat) topbarPingStat.textContent = "-- ms";
       if (topbarLossStat) topbarLossStat.textContent = "-- loss";
+      voiceManager?.leaveVoice();
     }
   });
+
+  setupMultiplayerChatListeners(manager);
+  updateChatTabNames();
+  initVoiceManager(manager);
 
   try {
     await manager.joinGame({
@@ -2218,6 +3563,10 @@ async function enterGameSession() {
       token: authToken || undefined,
     });
     multiplayer = manager;
+
+    if (voiceManager) {
+      voiceManager.connectToVoice();
+    }
 
     const config: Phaser.Types.Core.GameConfig = {
       type: Phaser.AUTO,
@@ -2239,7 +3588,26 @@ async function enterGameSession() {
     };
 
     gameInstance = new Phaser.Game(config);
-    gameInstance.scene.add("GameScene", GameScene, true, { multiplayer });
+    gameInstance.scene.add("GameScene", GameScene, true, {
+      multiplayer,
+      voiceManager: voiceManager || undefined,
+    });
+
+    // Hook up private zone events once scene is loaded
+    const bindSceneEvents = () => {
+      if (gameInstance) {
+        const scene = gameInstance.scene.getScene("GameScene") as GameScene;
+        if (scene) {
+          if (voiceManager) {
+            scene.voiceManager = voiceManager;
+          }
+          setupScenePrivateZoneEvents(scene);
+        }
+      }
+    };
+    bindSceneEvents();
+    setTimeout(bindSceneEvents, 100);
+    setTimeout(bindSceneEvents, 400);
 
     // Initial Spaces fetch & periodic refresh
     await fetchSpaces();
@@ -2379,6 +3747,10 @@ async function init() {
     defaultCharacterSection?.classList.remove("hidden");
     uploadPicturesSection.classList.add("hidden");
   }
+
+  // Initialize Chat UI state
+  updateChatTabNames();
+  renderCurrentChatMessages();
 
   // Check stored auth session
   const storedToken = localStorage.getItem("lepark_auth_token");
