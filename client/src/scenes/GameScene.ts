@@ -28,6 +28,7 @@ interface PlayerVisual {
   nameTag: Phaser.GameObjects.Text;
   currentDirection: "idle" | "left" | "right" | "up" | "down";
   avatars?: PlayerAvatars;
+  player?: any;
   animTimer: number;
   currentFrameIdx: number;
   lastMoveTime: number;
@@ -60,6 +61,8 @@ export class GameScene extends Phaser.Scene {
     name: string;
     color: string;
     isSuperadmin: boolean;
+    userId?: number;
+    userSpaceId?: string;
     worldX: number;
     worldY: number;
   }) => void;
@@ -132,11 +135,14 @@ export class GameScene extends Phaser.Scene {
     this.load.image("grass_tile", "/assets/grass_150.png");
     this.load.image("grass_150", "/assets/grass_150.png");
     this.load.image("birch_floor_150", "/assets/birch_floor_150.png");
+    this.load.image("carpet_grey_150", "/assets/carpet_grey_150.png");
     this.load.image("grass_100", "/assets/grass_150.png");
     this.load.image("birch_floor_100", "/assets/birch_floor_150.png");
     this.load.image("wall_half_150", "/assets/wall_half_150.png");
     this.load.image("wall_top_150", "/assets/wall_top_150.png");
     this.load.image("table_left_150", "/assets/table_left_150.png");
+    this.load.image("table_middle_150", "/assets/table_middle_150.png");
+    this.load.image("table_right_150", "/assets/table_right_150.png");
 
     // Default character avatar frames
     this.load.image("default_avatar_idle", "/assets/man_still.png");
@@ -431,12 +437,15 @@ export class GameScene extends Phaser.Scene {
           if (!vis) return;
 
           this.activeMenuSessionId = sessionId;
+          const p = vis.player || player;
           if (this.onPlayerClick) {
             this.onPlayerClick({
               sessionId,
-              name: player.name || "Player",
-              color: player.color || "#3b82f6",
-              isSuperadmin: !!player.isSuperadmin,
+              name: p.name || "Player",
+              color: p.color || "#3b82f6",
+              isSuperadmin: !!p.isSuperadmin,
+              userId: p.userId || 0,
+              userSpaceId: p.userSpaceId || (p.userId ? `user_space_${p.userId}` : ""),
               worldX: vis.container.x,
               worldY: vis.container.y,
             });
@@ -450,6 +459,7 @@ export class GameScene extends Phaser.Scene {
       container,
       sprite,
       nameTag,
+      player,
       currentDirection: (player.direction as any) || "idle",
       animTimer: 0,
       currentFrameIdx: 0,
@@ -627,6 +637,8 @@ export class GameScene extends Phaser.Scene {
   private updatePlayerVisual(sessionId: string, player: any) {
     const visual = this.playerVisuals.get(sessionId);
     if (!visual) return;
+
+    visual.player = player;
 
     // Update name
     const crownPrefix = player.isSuperadmin ? "👑 " : "";
@@ -1620,7 +1632,7 @@ export class GameScene extends Phaser.Scene {
       }
 
       this.editorOverlayText.setText(
-        `🔒 ${cols} × ${rows} (${totalTiles} ${totalTiles === 1 ? "tile" : "tiles"}) • Flag as Private Area`
+        `🔒 ${cols} × ${rows} (${totalTiles} ${totalTiles === 1 ? "tile" : "tiles"}) • Flag as Private Area • Esc when done`
       );
     } else if (this.activeEditorTool === "clear_private_zone") {
       // Rose clear selection visuals
@@ -1642,7 +1654,7 @@ export class GameScene extends Phaser.Scene {
       }
 
       this.editorOverlayText.setText(
-        `✕ ${cols} × ${rows} (${totalTiles} ${totalTiles === 1 ? "tile" : "tiles"}) • Clear Private Area`
+        `✕ ${cols} × ${rows} (${totalTiles} ${totalTiles === 1 ? "tile" : "tiles"}) • Clear Private Area • Esc when done`
       );
     } else if (this.activeEditorTool === "obstacle") {
       // Crimson barrier obstacle selection visuals
@@ -1664,7 +1676,7 @@ export class GameScene extends Phaser.Scene {
       }
 
       this.editorOverlayText.setText(
-        `🚫 ${cols} × ${rows} (${totalTiles} ${totalTiles === 1 ? "tile" : "tiles"}) • Place Obstacle (Impassable)`
+        `🚫 ${cols} × ${rows} (${totalTiles} ${totalTiles === 1 ? "tile" : "tiles"}) • Place Obstacle • Esc when done`
       );
     } else if (this.activeEditorTool === "clear_obstacle") {
       // Rose clear obstacle selection visuals
@@ -1686,7 +1698,7 @@ export class GameScene extends Phaser.Scene {
       }
 
       this.editorOverlayText.setText(
-        `✕ ${cols} × ${rows} (${totalTiles} ${totalTiles === 1 ? "tile" : "tiles"}) • Clear Obstacle`
+        `✕ ${cols} × ${rows} (${totalTiles} ${totalTiles === 1 ? "tile" : "tiles"}) • Clear Obstacle • Esc when done`
       );
     } else if (this.activeEditorTool === "clear_decoration") {
       // Amber clear decoration visuals
@@ -1708,7 +1720,7 @@ export class GameScene extends Phaser.Scene {
       }
 
       this.editorOverlayText.setText(
-        `✕ ${cols} × ${rows} (${totalTiles} ${totalTiles === 1 ? "tile" : "tiles"}) • Clear Decoration`
+        `✕ ${cols} × ${rows} (${totalTiles} ${totalTiles === 1 ? "tile" : "tiles"}) • Clear Decoration • Esc when done`
       );
     } else if (this.activeEditorTool === "decoration") {
       const defaultFill = 0x10b981;
@@ -1735,9 +1747,11 @@ export class GameScene extends Phaser.Scene {
 
       let labelName = "Table Left";
       if (this.selectedAssetKey === "table_left_150") labelName = "Table Left";
+      else if (this.selectedAssetKey === "table_middle_150") labelName = "Table Middle";
+      else if (this.selectedAssetKey === "table_right_150") labelName = "Table Right";
       const colorBadge = this.selectedTileColor ? ` • ${this.selectedTileColor.toUpperCase()}` : "";
       this.editorOverlayText.setText(
-        `🪴 ${cols} × ${rows} (${totalTiles} ${totalTiles === 1 ? "tile" : "tiles"}) • ${labelName} (Decoration)${colorBadge}`
+        `🪴 ${cols} × ${rows} (${totalTiles} ${totalTiles === 1 ? "tile" : "tiles"}) • ${labelName} (Decoration)${colorBadge} • Esc when done`
       );
     } else {
       const isWall = isWallTile(this.selectedAssetKey);
@@ -1766,18 +1780,28 @@ export class GameScene extends Phaser.Scene {
 
       let labelName = "Birch Floor";
       if (this.selectedAssetKey === "grass_150") labelName = "Grass Tile";
+      else if (this.selectedAssetKey === "carpet_grey_150") labelName = "Grey Carpet";
       else if (this.selectedAssetKey === "color_tile") labelName = "Plain Tile";
       else if (this.selectedAssetKey === "wall_half_150") labelName = "Half Wall (with Obstacle)";
       else if (this.selectedAssetKey === "wall_top_150") labelName = "Top Wall (with Obstacle)";
 
       const colorBadge = this.selectedTileColor ? ` • ${this.selectedTileColor.toUpperCase()}` : "";
       this.editorOverlayText.setText(
-        `📐 ${cols} × ${rows} (${totalTiles} ${totalTiles === 1 ? "tile" : "tiles"}) • ${labelName}${colorBadge}`
+        `📐 ${cols} × ${rows} (${totalTiles} ${totalTiles === 1 ? "tile" : "tiles"}) • ${labelName}${colorBadge} • Esc when done`
       );
     }
 
     this.editorOverlayText.setPosition(rx + 8, Math.max(8, ry - 32));
     this.editorOverlayText.setVisible(true);
+  }
+
+  public cancelEditorSelection() {
+    this.isSelectingArea = false;
+    this.selectionStartTile = null;
+    this.selectionCurrentTile = null;
+    this.editorHoverGraphics.clear();
+    this.editorSelectionGraphics.clear();
+    this.editorOverlayText.setVisible(false);
   }
 
   public setEditMode(enabled: boolean) {

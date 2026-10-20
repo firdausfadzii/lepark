@@ -133,6 +133,18 @@ const mapEditorSidebar = document.getElementById(
 const btnCloseMapEditor = document.getElementById(
   "btn-close-map-editor",
 ) as HTMLButtonElement;
+const editorPlacingToast = document.getElementById(
+  "editor-placing-toast",
+) as HTMLElement | null;
+const placingToastName = document.getElementById(
+  "placing-toast-name",
+) as HTMLElement | null;
+const btnToastDonePlacing = document.getElementById(
+  "btn-toast-done-placing",
+) as HTMLButtonElement | null;
+const editorBrushCard = document.getElementById(
+  "editor-brush-card",
+) as HTMLElement | null;
 const btnResetTileColor = document.getElementById(
   "btn-reset-tile-color",
 ) as HTMLButtonElement | null;
@@ -368,6 +380,17 @@ const playerMenuName = document.getElementById("player-menu-name");
 const playerMenuColorDot = document.getElementById("player-menu-color-dot");
 const btnClosePlayerMenu = document.getElementById("btn-close-player-menu") as HTMLButtonElement | null;
 const btnPlayerMenuWhisper = document.getElementById("btn-player-menu-whisper") as HTMLButtonElement | null;
+const btnPlayerMenuVisitSpace = document.getElementById("btn-player-menu-visit-space") as HTMLButtonElement | null;
+
+// Space Access Error Modal DOM Elements
+const spaceErrorModal = document.getElementById("space-error-modal");
+const spaceErrorIcon = document.getElementById("space-error-icon");
+const spaceErrorTitle = document.getElementById("space-error-title");
+const spaceErrorSubtitle = document.getElementById("space-error-subtitle");
+const spaceErrorMessage = document.getElementById("space-error-message");
+const spaceErrorReturnName = document.getElementById("space-error-return-name");
+const btnCloseSpaceErrorModal = document.getElementById("btn-close-space-error-modal") as HTMLButtonElement | null;
+const btnSpaceErrorOk = document.getElementById("btn-space-error-ok") as HTMLButtonElement | null;
 
 interface DmConversation {
   sessionId: string;
@@ -394,6 +417,8 @@ let activeMenuPlayer: {
   name: string;
   color: string;
   isSuperadmin: boolean;
+  userId?: number;
+  userSpaceId?: string;
 } | null = null;
 let menuOpenTimestamp = 0;
 
@@ -1290,9 +1315,11 @@ if (btnMapSettings) {
 // ==========================================
 
 let isEditModeActive = false;
+let isEditorUIHidden = false;
 let currentSelectedAssetId = "birch_floor_150";
 let currentSelectedAssetName = "Birch Floor";
 let currentSelectedTileColor: string | null = null; // null = original/no tint
+let placingToastFadeTimeout: any = null;
 
 const MAP_EDITOR_PRESET_COLORS = [
   { name: "Original", hex: null },
@@ -1440,12 +1467,24 @@ function updateBrushPreview() {
       brushPatternLayer.style.backgroundImage =
         'url("/assets/birch_floor_150.png")';
       brushPatternLayer.style.backgroundColor = "transparent";
+    } else if (currentSelectedAssetId === "carpet_grey_150") {
+      brushPatternLayer.style.backgroundImage =
+        'url("/assets/carpet_grey_150.png")';
+      brushPatternLayer.style.backgroundColor = "transparent";
     } else if (currentSelectedAssetId === "grass_150") {
       brushPatternLayer.style.backgroundImage = 'url("/assets/grass_150.png")';
       brushPatternLayer.style.backgroundColor = "transparent";
     } else if (currentSelectedAssetId === "table_left_150") {
       brushPatternLayer.style.backgroundImage =
         'url("/assets/table_left_150.png")';
+      brushPatternLayer.style.backgroundColor = "transparent";
+    } else if (currentSelectedAssetId === "table_middle_150") {
+      brushPatternLayer.style.backgroundImage =
+        'url("/assets/table_middle_150.png")';
+      brushPatternLayer.style.backgroundColor = "transparent";
+    } else if (currentSelectedAssetId === "table_right_150") {
+      brushPatternLayer.style.backgroundImage =
+        'url("/assets/table_right_150.png")';
       brushPatternLayer.style.backgroundColor = "transparent";
     } else if (currentSelectedAssetId === "wall_half_150") {
       brushPatternLayer.style.backgroundImage =
@@ -1523,13 +1562,68 @@ function updateEditBannerText() {
   editBannerAssetText.innerHTML = `${wallTag}Active: <strong>${currentSelectedAssetName}</strong> • Color: ${colorMarkup}`;
 }
 
+function showPlacingToast(assetName: string) {
+  if (!editorPlacingToast) return;
+  if (placingToastName) {
+    placingToastName.textContent = assetName;
+  }
+  if (placingToastFadeTimeout) {
+    clearTimeout(placingToastFadeTimeout);
+    placingToastFadeTimeout = null;
+  }
+
+  editorPlacingToast.classList.remove("hidden");
+  editorPlacingToast.classList.remove("faded");
+
+  placingToastFadeTimeout = setTimeout(() => {
+    if (isEditorUIHidden && editorPlacingToast) {
+      editorPlacingToast.classList.add("faded");
+    }
+  }, 3000);
+}
+
+function hidePlacingToast() {
+  if (placingToastFadeTimeout) {
+    clearTimeout(placingToastFadeTimeout);
+    placingToastFadeTimeout = null;
+  }
+  if (editorPlacingToast) {
+    editorPlacingToast.classList.add("hidden");
+    editorPlacingToast.classList.remove("faded");
+  }
+}
+
+function hideEditorUIForPlacing(assetName?: string) {
+  if (!isEditModeActive) return;
+  isEditorUIHidden = true;
+  document.body.classList.add("editor-placing-mode");
+  showPlacingToast(assetName || currentSelectedAssetName);
+}
+
+function showEditorUI() {
+  if (!isEditModeActive) return;
+  isEditorUIHidden = false;
+  document.body.classList.remove("editor-placing-mode");
+  hidePlacingToast();
+
+  if (gameInstance) {
+    const scene = gameInstance.scene.getScene("GameScene") as GameScene;
+    if (scene && typeof scene.cancelEditorSelection === "function") {
+      scene.cancelEditorSelection();
+    }
+  }
+}
+
 function enterEditMode() {
   if (!canChangeCurrentSpaceSettings()) {
     alert("You do not have permission to edit this space's map.");
     return;
   }
   isEditModeActive = true;
+  isEditorUIHidden = false;
   document.body.classList.add("edit-mode-active");
+  document.body.classList.remove("editor-placing-mode");
+  hidePlacingToast();
 
   if (mapEditorSidebar) mapEditorSidebar.classList.remove("hidden");
   if (mapEditBanner) mapEditBanner.classList.remove("hidden");
@@ -1557,7 +1651,10 @@ function enterEditMode() {
 function exitEditMode() {
   if (!isEditModeActive) return;
   isEditModeActive = false;
+  isEditorUIHidden = false;
   document.body.classList.remove("edit-mode-active");
+  document.body.classList.remove("editor-placing-mode");
+  hidePlacingToast();
 
   if (mapEditorSidebar) mapEditorSidebar.classList.add("hidden");
   if (mapEditBanner) mapEditBanner.classList.add("hidden");
@@ -1607,6 +1704,8 @@ function selectEditorAsset(assetId: string, assetName: string) {
       scene.setSelectedAsset(assetId);
     }
   }
+
+  hideEditorUIForPlacing(assetName);
 }
 
 function selectDecorationAsset(assetId: string, assetName: string) {
@@ -1633,6 +1732,8 @@ function selectDecorationAsset(assetId: string, assetName: string) {
       scene.setSelectedAsset(assetId);
     }
   }
+
+  hideEditorUIForPlacing(`${assetName} (Decoration)`);
 }
 
 function selectClearDecorationTool() {
@@ -1655,6 +1756,8 @@ function selectClearDecorationTool() {
       scene.setActiveEditorTool("clear_decoration");
     }
   }
+
+  hideEditorUIForPlacing("Clear Decoration");
 }
 
 function selectPrivateTool(toolType: "private_zone" | "clear_private_zone") {
@@ -1677,6 +1780,8 @@ function selectPrivateTool(toolType: "private_zone" | "clear_private_zone") {
       scene.setActiveEditorTool(toolType);
     }
   }
+
+  hideEditorUIForPlacing(toolType === "private_zone" ? "Flag Private Area" : "Clear Private Area");
 }
 
 function selectObstacleTool(toolType: "obstacle" | "clear_obstacle") {
@@ -1699,6 +1804,8 @@ function selectObstacleTool(toolType: "obstacle" | "clear_obstacle") {
       scene.setActiveEditorTool(toolType);
     }
   }
+
+  hideEditorUIForPlacing(toolType === "obstacle" ? "Obstacle Tile (Impassable)" : "Clear Obstacle");
 }
 
 function openPrivateZoneNameModal(
@@ -1770,6 +1877,10 @@ function closePrivateZoneNameModal() {
     if (s && typeof s.setControlsActive === "function") {
       s.setControlsActive(true);
     }
+  }
+
+  if (isEditModeActive) {
+    showEditorUI();
   }
 }
 
@@ -1898,6 +2009,8 @@ function showPlayerContextMenu(player: {
   name: string;
   color: string;
   isSuperadmin: boolean;
+  userId?: number;
+  userSpaceId?: string;
   worldX: number;
   worldY: number;
 }) {
@@ -1928,7 +2041,7 @@ function showPlayerContextMenu(player: {
 function positionPlayerContextMenu(screenX: number, screenY: number) {
   if (!playerContextMenu) return;
   const menuWidth = 170;
-  const menuHeight = 85;
+  const menuHeight = 120;
   const padding = 12;
 
   const clampedX = Math.max(
@@ -2419,6 +2532,89 @@ if (btnPlayerMenuWhisper) {
     if (!activeMenuPlayer) return;
     const { sessionId, name, color, isSuperadmin } = activeMenuPlayer;
     openDirectMessageChat(sessionId, name, color, isSuperadmin);
+  });
+}
+
+if (btnPlayerMenuVisitSpace) {
+  btnPlayerMenuVisitSpace.addEventListener("click", async () => {
+    if (!activeMenuPlayer) return;
+    const target = { ...activeMenuPlayer };
+    closePlayerContextMenu();
+
+    let targetSpaceId = target.userSpaceId;
+    if (!targetSpaceId && target.userId) {
+      targetSpaceId = `user_space_${target.userId}`;
+    }
+
+    let targetSpaceName = `${target.name}'s Space`;
+
+    // Attempt to resolve custom space name or ID from backend
+    try {
+      const identifier = target.userId ? String(target.userId) : target.name;
+      const res = await fetch(getApiUrl(`/api/spaces/user-space/${encodeURIComponent(identifier)}`), {
+        headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+      });
+      const data = await res.json();
+      if (data.success && data.space) {
+        targetSpaceId = data.space.id;
+        if (data.space.name) {
+          targetSpaceName = data.space.name;
+        }
+      }
+    } catch (err) {
+      console.warn("Could not fetch user space info:", err);
+    }
+
+    if (!targetSpaceId) {
+      showSpaceErrorModal(
+        "Space Not Found",
+        `Could not find personal space for ${target.name}.`,
+        currentSpaceName,
+        "❓"
+      );
+      return;
+    }
+
+    if (currentSpaceId === targetSpaceId) {
+      return;
+    }
+
+    await switchSpace(targetSpaceId, targetSpaceName);
+  });
+}
+
+function showSpaceErrorModal(
+  title: string,
+  message: string,
+  returnSpaceName: string,
+  icon: string = "🔒"
+) {
+  if (spaceErrorTitle) spaceErrorTitle.textContent = title;
+  if (spaceErrorSubtitle) {
+    spaceErrorSubtitle.textContent =
+      title === "Access Denied" ? "Private Space" : "Space Notice";
+  }
+  if (spaceErrorMessage) spaceErrorMessage.textContent = message;
+  if (spaceErrorReturnName) spaceErrorReturnName.textContent = returnSpaceName;
+  if (spaceErrorIcon) spaceErrorIcon.textContent = icon;
+  spaceErrorModal?.classList.remove("hidden");
+}
+
+function closeSpaceErrorModal() {
+  spaceErrorModal?.classList.add("hidden");
+}
+
+if (btnCloseSpaceErrorModal) {
+  btnCloseSpaceErrorModal.addEventListener("click", closeSpaceErrorModal);
+}
+if (btnSpaceErrorOk) {
+  btnSpaceErrorOk.addEventListener("click", closeSpaceErrorModal);
+}
+if (spaceErrorModal) {
+  spaceErrorModal.addEventListener("click", (e) => {
+    if (e.target === spaceErrorModal) {
+      closeSpaceErrorModal();
+    }
   });
 }
 
@@ -3045,15 +3241,19 @@ if (privateZoneNameModal) {
   });
 }
 
-window.addEventListener("keydown", (e) => {
-  if (
-    e.key === "Escape" &&
-    privateZoneNameModal &&
-    !privateZoneNameModal.classList.contains("hidden")
-  ) {
-    closePrivateZoneNameModal();
-  }
-});
+if (btnToastDonePlacing) {
+  btnToastDonePlacing.addEventListener("click", () => {
+    showEditorUI();
+  });
+}
+
+if (editorBrushCard) {
+  editorBrushCard.style.cursor = "pointer";
+  editorBrushCard.title = "Click to start putting tiles (Hides UI)";
+  editorBrushCard.addEventListener("click", () => {
+    hideEditorUIForPlacing(currentSelectedAssetName);
+  });
+}
 
 if (btnEditMap) {
   btnEditMap.addEventListener("click", () => {
@@ -3099,6 +3299,13 @@ editorAssetCards.forEach((card) => {
 
 window.addEventListener("keydown", (e: KeyboardEvent) => {
   if (e.key === "Escape") {
+    if (
+      privateZoneNameModal &&
+      !privateZoneNameModal.classList.contains("hidden")
+    ) {
+      closePrivateZoneNameModal();
+      return;
+    }
     if (isAudioSettingsOpen) {
       closeAudioSettingsDropdown();
       setGameControlsActive(true);
@@ -3110,6 +3317,10 @@ window.addEventListener("keydown", (e: KeyboardEvent) => {
       return;
     }
     if (isEditModeActive) {
+      if (isEditorUIHidden) {
+        showEditorUI();
+        return;
+      }
       exitEditMode();
       return;
     }
@@ -3432,8 +3643,15 @@ function renderSpacesList() {
 /**
  * Switch space during active game session
  */
-async function switchSpace(newSpaceId: string, newSpaceName: string) {
+async function switchSpace(
+  newSpaceId: string,
+  newSpaceName: string,
+  isFallback: boolean = false
+) {
   if (currentSpaceId === newSpaceId) return;
+
+  const previousSpaceId = currentSpaceId;
+  const previousSpaceName = currentSpaceName;
 
   exitEditMode();
 
@@ -3493,13 +3711,37 @@ async function switchSpace(newSpaceId: string, newSpaceName: string) {
     await fetchSpaces();
   } catch (err: any) {
     console.error("Failed to switch space:", err);
-    alert(
-      err?.message ||
-        "Failed to join space. It might be private or require invitation.",
-    );
-    // Fall back to default Central Plaza if access denied
-    if (currentSpaceId !== "space_central_plaza") {
-      switchSpace("space_central_plaza", "Central Plaza");
+
+    if (!isFallback) {
+      const fallbackId = previousSpaceId || "space_central_plaza";
+      const fallbackName = previousSpaceName || "Central Plaza";
+
+      const rawMsg = err?.message || "";
+      const isPrivateOrForbidden =
+        rawMsg.toLowerCase().includes("private") ||
+        rawMsg.toLowerCase().includes("access denied") ||
+        rawMsg.toLowerCase().includes("permission") ||
+        rawMsg.toLowerCase().includes("invitation");
+
+      const title = isPrivateOrForbidden ? "Access Denied" : "Unable to Join Space";
+      const message = isPrivateOrForbidden
+        ? "This space is private and requires permission from the owner to enter."
+        : (rawMsg || "Failed to join space. It might be private or require invitation.");
+
+      showSpaceErrorModal(
+        title,
+        message,
+        fallbackName,
+        isPrivateOrForbidden ? "🔒" : "⚠️"
+      );
+
+      // Lead back to previous space
+      await switchSpace(fallbackId, fallbackName, true);
+    } else {
+      // Fall back to default Central Plaza if even fallback space failed
+      if (currentSpaceId !== "space_central_plaza") {
+        await switchSpace("space_central_plaza", "Central Plaza", true);
+      }
     }
   }
 }

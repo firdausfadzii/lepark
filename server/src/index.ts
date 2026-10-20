@@ -471,6 +471,47 @@ app.put("/api/spaces/my-space", async (req, res) => {
 });
 
 /**
+ * GET /api/spaces/user-space/:identifier
+ * - Get user personal space by user ID or username
+ */
+app.get("/api/spaces/user-space/:identifier", async (req, res) => {
+  try {
+    const { identifier } = req.params;
+    let user = null;
+    const parsedId = parseInt(identifier, 10);
+    if (!isNaN(parsedId)) {
+      user = await findUserById(parsedId);
+    }
+    if (!user) {
+      user = await findUserByUsername(identifier);
+    }
+    if (!user) {
+      return res.status(404).json({ success: false, error: "User not found." });
+    }
+
+    const personalSpace = await ensureUserPersonalSpace(user.id, user.username);
+    const space: Space = {
+      id: personalSpace.id,
+      name: personalSpace.name,
+      category: "Personal",
+      ownerId: personalSpace.owner_id,
+      ownerUsername: user.username,
+      isPublic: personalSpace.is_public,
+      isSuperadminSpace: false,
+      whitelist: personalSpace.whitelist,
+      playerCount: getSpacePlayerCount(personalSpace.id),
+      createdAt: personalSpace.created_at.toISOString(),
+      updatedAt: personalSpace.updated_at.toISOString(),
+    };
+
+    return res.json({ success: true, space });
+  } catch (err: any) {
+    console.error("Get user-space error:", err);
+    return res.status(500).json({ success: false, error: "Failed to fetch user space." });
+  }
+});
+
+/**
  * POST /api/spaces
  * - Superadmin creates a new space (public or private with category)
  */

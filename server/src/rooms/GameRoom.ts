@@ -31,6 +31,8 @@ import {
   updateSpaceTiles,
   getSpacePrivateZones,
   updateSpacePrivateZones,
+  findUserById,
+  ensureUserPersonalSpace,
 } from "../db";
 import { verifyToken } from "../auth";
 
@@ -55,7 +57,16 @@ export class GameRoom extends Room<GameState> {
 
   async onAuth(client: Client, options: PlayerJoinOptions, request?: any) {
     const spaceId = options?.spaceId || "space_central_plaza";
-    const space = await getSpaceById(spaceId);
+    let space = await getSpaceById(spaceId);
+    if (!space && spaceId.startsWith("user_space_")) {
+      const targetUserId = parseInt(spaceId.replace("user_space_", ""), 10);
+      if (!isNaN(targetUserId)) {
+        const targetUser = await findUserById(targetUserId);
+        if (targetUser) {
+          space = await ensureUserPersonalSpace(targetUser.id, targetUser.username);
+        }
+      }
+    }
     if (!space) {
       throw new ServerError(404, "Space not found");
     }
@@ -66,13 +77,28 @@ export class GameRoom extends Room<GameState> {
     }
 
     // 1. Personal user space rule:
-    // "for now, user dont have ways to travel to other user's space."
     if (!space.is_superadmin_space) {
-      if (!user || (user.id !== space.owner_id && user.role !== "superadmin")) {
-        throw new ServerError(
-          403,
-          "Access denied: Traveling to other users' spaces is currently disabled.",
-        );
+      if (!space.is_public) {
+        if (!user) {
+          throw new ServerError(
+            401,
+            "Authentication required to join private space.",
+          );
+        }
+        const isOwner = user.id === space.owner_id;
+        const isSuperadmin = user.role === "superadmin";
+        const isWhitelisted =
+          Array.isArray(space.whitelist) &&
+          space.whitelist.some(
+            (w) => w.toLowerCase() === user.username.toLowerCase(),
+          );
+
+        if (!isOwner && !isSuperadmin && !isWhitelisted) {
+          throw new ServerError(
+            403,
+            "Access denied: This space is private and requires permission.",
+          );
+        }
       }
     }
 
@@ -85,9 +111,11 @@ export class GameRoom extends Room<GameState> {
           "Authentication required to join private space.",
         );
       }
-      const isWhitelisted = space.whitelist.some(
-        (w) => w.toLowerCase() === user.username.toLowerCase(),
-      );
+      const isWhitelisted =
+        Array.isArray(space.whitelist) &&
+        space.whitelist.some(
+          (w) => w.toLowerCase() === user.username.toLowerCase(),
+        );
       if (!isWhitelisted && user.role !== "superadmin") {
         throw new ServerError(
           403,
@@ -521,6 +549,14 @@ export class GameRoom extends Room<GameState> {
     player.direction = "idle";
     player.isSuperadmin =
       (auth && auth.user && auth.user.role === "superadmin") || false;
+    player.userId = (auth && auth.user && auth.user.id) || 0;
+    player.userSpaceId = auth && auth.user ? `user_space_${auth.user.id}` : "";
+
+    if (auth && auth.user) {
+      ensureUserPersonalSpace(auth.user.id, auth.user.username).catch((err) => {
+        console.warn("Could not ensure personal space on join:", err);
+      });
+    }
     const defaultTileX = Math.floor(GRID_COLS / 2);
     const defaultTileY = Math.floor(GRID_ROWS / 2);
     const spawnCenter = findSafeSpawnCenter(

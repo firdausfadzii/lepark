@@ -2133,6 +2133,141 @@ body.edit-mode-active .middle-top-bar:hover {
   pointer-events: auto;
 }
 
+/* In tile placing mode (tile selected), hide all UI so user can see & place tiles unobstructed */
+body.editor-placing-mode .map-editor-sidebar,
+body.editor-placing-mode .map-edit-banner,
+body.editor-placing-mode .middle-top-bar,
+body.editor-placing-mode .topleft-bar,
+body.editor-placing-mode .topright-bar,
+body.editor-placing-mode .chat-sidebar,
+body.editor-placing-mode .hud-footer,
+body.editor-placing-mode .private-area-hud,
+body.editor-placing-mode .voice-notification-banner,
+body.editor-placing-mode .player-context-menu {
+  display: none !important;
+}
+
+/* ==========================================
+   Edit Mode Placing Tiles Toast
+   ========================================== */
+.editor-placing-toast {
+  position: fixed;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 9999;
+  pointer-events: none;
+  transition: opacity 0.35s cubic-bezier(0.16, 1, 0.3, 1), transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: bannerFadeDown 0.28s ease-out;
+}
+
+.editor-placing-toast.hidden {
+  display: none !important;
+}
+
+.editor-placing-toast.faded {
+  opacity: 0;
+  transform: translateX(-50%) translateY(-12px);
+  pointer-events: none !important;
+}
+
+.placing-toast-capsule {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  background: rgba(18, 30, 30, 0.94);
+  border: 1.5px solid rgba(59, 130, 130, 0.55);
+  border-radius: 999px;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.55), 0 0 24px rgba(59, 130, 130, 0.3);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.placing-toast-pulse {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #10b981;
+  box-shadow: 0 0 10px #10b981;
+  animation: editPulse 1.8s infinite;
+}
+
+.placing-toast-icon {
+  font-size: 15px;
+  line-height: 1;
+}
+
+.placing-toast-text {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.placing-toast-tag {
+  color: #34d399;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  background: rgba(16, 185, 129, 0.16);
+  padding: 2px 7px;
+  border-radius: 6px;
+}
+
+.placing-toast-sep {
+  color: var(--lepark-muted);
+  opacity: 0.6;
+}
+
+.placing-toast-name {
+  color: #ffffff;
+  font-weight: 700;
+}
+
+.placing-toast-hint {
+  font-size: 12px;
+  color: var(--lepark-muted);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.placing-kbd,
+.editor-tip-kbd {
+  display: inline-block;
+  padding: 1px 6px;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 5px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+.placing-toast-done-btn {
+  pointer-events: auto;
+  cursor: pointer;
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #ffffff;
+  background: rgba(59, 130, 130, 0.35);
+  border: 1px solid rgba(59, 130, 130, 0.6);
+  border-radius: 999px;
+  transition: all 0.15s ease;
+}
+
+.placing-toast-done-btn:hover {
+  background: var(--lepark-primary);
+  border-color: var(--lepark-secondary);
+  box-shadow: 0 2px 10px rgba(59, 130, 130, 0.4);
+}
+
 /* ==========================================
    Middle Top Floating Bar & Profile Dropdown
    ========================================== */
@@ -4525,5 +4660,96 @@ body.edit-mode-active .middle-top-bar:hover {
   border: 1px solid rgba(56, 189, 248, 0.35);
   letter-spacing: 0.02em;
 }
+
+/* ==========================================
+   Space Access Error Modal
+   ========================================== */
+.space-error-card {
+  max-width: 420px;
+  border-color: rgba(244, 63, 94, 0.35);
+  box-shadow: 0 25px 50px -12px rgba(10, 20, 20, 0.8), 0 0 25px rgba(244, 63, 94, 0.15);
+}
+
+.space-error-header-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.space-error-icon {
+  font-size: 22px;
+  line-height: 1;
+}
+
+.space-error-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-bottom: 22px;
+}
+
+.space-error-alert-box {
+  background: rgba(244, 63, 94, 0.08);
+  border: 1px solid rgba(244, 63, 94, 0.25);
+  border-radius: 14px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.space-error-badge {
+  align-self: flex-start;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: rgba(244, 63, 94, 0.2);
+  color: #fb7185;
+  border: 1px solid rgba(244, 63, 94, 0.35);
+}
+
+.space-error-desc {
+  font-size: 13px;
+  line-height: 1.5;
+  color: #cbd5e1;
+  margin: 0;
+}
+
+.space-error-return-box {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.space-error-return-label {
+  font-size: 12px;
+  color: #94a3b8;
+  font-weight: 500;
+}
+
+.space-error-return-target {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.space-error-return-icon {
+  font-size: 14px;
+}
+
+.space-error-return-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #38bdf8;
+}
+
 
 

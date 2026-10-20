@@ -162,6 +162,23 @@
       </div>
     </div>
 
+    <!-- Edit Mode Placing Tiles Hint Toast (Shown when tile is selected; UI disappears and Esc restores UI) -->
+    <div id="editor-placing-toast" class="editor-placing-toast hidden" aria-live="polite">
+      <div class="placing-toast-capsule">
+        <span class="placing-toast-pulse"></span>
+        <span class="placing-toast-icon">✨</span>
+        <div class="placing-toast-text">
+          <span class="placing-toast-tag">PLACING</span>
+          <span class="placing-toast-sep">•</span>
+          <span id="placing-toast-name" class="placing-toast-name">Birch Floor</span>
+        </div>
+        <span class="placing-toast-hint">Drag map to put tiles • Press <kbd class="placing-kbd">Esc</kbd> when done</span>
+        <button type="button" id="btn-toast-done-placing" class="placing-toast-done-btn" title="Show UI back (Esc)">
+          Done (Esc)
+        </button>
+      </div>
+    </div>
+
     <!-- Voice / Microphone Persistent Notification Banner (Does NOT auto-hide) -->
     <div id="voice-notification-banner" class="voice-notification-banner hidden" role="alert" aria-live="assertive">
       <div class="voice-notification-card">
@@ -220,7 +237,7 @@
               <span class="category-icon">🪵</span>
               <span class="category-title">Flooring Patterns</span>
             </div>
-            <span class="category-count">3 styles</span>
+            <span class="category-count">4 styles</span>
           </div>
 
           <div class="editor-assets-grid">
@@ -260,7 +277,25 @@
               </div>
             </button>
 
-            <!-- Asset 3: Plain / Solid Color Tile (color_tile) -->
+            <!-- Asset 3: Grey Carpet (carpet_grey_150) -->
+            <button
+              type="button"
+              class="editor-asset-card"
+              data-asset-id="carpet_grey_150"
+              data-asset-name="Grey Carpet"
+              title="Grey Carpet (carpet_grey_150)"
+            >
+              <div class="asset-card-thumb">
+                <img src="/assets/carpet_grey_150.png" alt="Grey Carpet" class="asset-thumb-img" />
+                <span class="asset-card-check">✓</span>
+              </div>
+              <div class="asset-card-info">
+                <span class="asset-card-name">Grey Carpet</span>
+                <span class="asset-card-code">carpet_grey_150</span>
+              </div>
+            </button>
+
+            <!-- Asset 4: Plain / Solid Color Tile (color_tile) -->
             <button
               type="button"
               class="editor-asset-card"
@@ -287,11 +322,11 @@
               <span class="category-icon">🪴</span>
               <span class="category-title">Decoration</span>
             </div>
-            <span class="category-count">1 style</span>
+            <span class="category-count">3 styles</span>
           </div>
 
           <div class="editor-assets-grid">
-            <!-- Asset: Table Left (table_left_150) -->
+            <!-- Asset 1: Table Left (table_left_150) -->
             <button
               type="button"
               class="editor-asset-card"
@@ -308,6 +343,46 @@
               <div class="asset-card-info">
                 <span class="asset-card-name">Table Left</span>
                 <span class="asset-card-code">table_left_150</span>
+              </div>
+            </button>
+
+            <!-- Asset 2: Table Middle (table_middle_150) -->
+            <button
+              type="button"
+              class="editor-asset-card"
+              data-asset-id="table_middle_150"
+              data-asset-name="Table Middle"
+              data-tile-type="decoration"
+              title="Table Middle (table_middle_150) - Decorative tile placed on top of other tiles"
+            >
+              <div class="asset-card-thumb">
+                <img src="/assets/table_middle_150.png" alt="Table Middle" class="asset-thumb-img" />
+                <span class="asset-card-badge decoration-badge">Deco</span>
+                <span class="asset-card-check">✓</span>
+              </div>
+              <div class="asset-card-info">
+                <span class="asset-card-name">Table Middle</span>
+                <span class="asset-card-code">table_middle_150</span>
+              </div>
+            </button>
+
+            <!-- Asset 3: Table Right (table_right_150) -->
+            <button
+              type="button"
+              class="editor-asset-card"
+              data-asset-id="table_right_150"
+              data-asset-name="Table Right"
+              data-tile-type="decoration"
+              title="Table Right (table_right_150) - Decorative tile placed on top of other tiles"
+            >
+              <div class="asset-card-thumb">
+                <img src="/assets/table_right_150.png" alt="Table Right" class="asset-thumb-img" />
+                <span class="asset-card-badge decoration-badge">Deco</span>
+                <span class="asset-card-check">✓</span>
+              </div>
+              <div class="asset-card-info">
+                <span class="asset-card-name">Table Right</span>
+                <span class="asset-card-code">table_right_150</span>
               </div>
             </button>
 
@@ -566,7 +641,7 @@
       <div class="editor-sidebar-footer">
         <div class="editor-tip-box">
           <span class="tip-icon">💡</span>
-          <p class="tip-text"><strong>Drag on map:</strong> Click and drag to replace tiles with the selected asset.</p>
+          <p class="tip-text"><strong>Select a tile to place:</strong> UI disappears so you can see behind bars. Press <kbd class="editor-tip-kbd">Esc</kbd> when done putting tiles.</p>
         </div>
         <button type="button" id="btn-close-map-editor" class="editor-finish-btn">
           <span>✓</span> Done Editing
@@ -761,6 +836,11 @@
             <span class="player-context-btn-icon">💬</span>
             <span class="player-context-btn-label">Whisper</span>
             <span class="player-context-btn-tag">DM</span>
+          </button>
+          <button type="button" class="player-context-btn" id="btn-player-menu-visit-space" title="Visit player's personal space">
+            <span class="player-context-btn-icon">🚀</span>
+            <span class="player-context-btn-label">Visit Space</span>
+            <span class="player-context-btn-tag">Space</span>
           </button>
         </div>
       </div>
@@ -1398,6 +1478,45 @@
           <div id="map-spaces-grid" class="map-spaces-grid">
             <!-- Dynamically populated grid of 4 space cards -->
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal: Space Access Error / Private Space Modal -->
+    <div id="space-error-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="space-error-title">
+      <div class="modal-card space-error-card">
+        <div class="modal-header">
+          <div class="modal-header-row">
+            <div class="space-error-header-title">
+              <span id="space-error-icon" class="space-error-icon">🔒</span>
+              <h2 id="space-error-title" class="modal-title">Access Denied</h2>
+            </div>
+            <button type="button" id="btn-close-space-error-modal" class="btn-modal-close" title="Close">✕</button>
+          </div>
+          <p id="space-error-subtitle" class="modal-subtitle">Private Space</p>
+        </div>
+
+        <div class="space-error-body">
+          <div class="space-error-alert-box">
+            <span class="space-error-badge">No Permission</span>
+            <p id="space-error-message" class="space-error-desc">
+              This space is private and requires permission from the owner to enter.
+            </p>
+          </div>
+
+          <div class="space-error-return-box">
+            <span class="space-error-return-label">Returned to:</span>
+            <div class="space-error-return-target">
+              <span class="space-error-return-icon">🏠</span>
+              <span id="space-error-return-name" class="space-error-return-name">Central Plaza</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer-actions">
+          <button type="button" id="btn-space-error-ok" class="btn-primary w-full">
+            Understood
+          </button>
         </div>
       </div>
     </div>
