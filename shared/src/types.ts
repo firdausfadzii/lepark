@@ -90,6 +90,7 @@ export interface Space {
   whitelist: string[]; // usernames allowed if private
   tiles?: Record<string, string>;
   privateZones?: PrivateZone[];
+  jukeboxes?: JukeboxState[];
   playerCount?: number;
   createdAt?: string;
   updatedAt?: string;
@@ -148,4 +149,63 @@ export interface VoicePeer {
 export interface VoiceSignalPayload {
   targetSessionId: string;
   signal: any;
+}
+
+export interface JukeboxTrack {
+  id: string; // Unique track queue ID (e.g. UUID)
+  youtubeId: string; // 11-char YouTube Video ID (e.g. "dQw4w9WgXcQ")
+  title: string; // Video title
+  duration: number; // Duration in seconds (approx/reported)
+  addedBySessionId: string; // Colyseus session ID
+  addedByName: string; // Player display name
+  addedAt: number; // Timestamp added (ms)
+}
+
+export interface JukeboxState {
+  id: string; // Jukebox entity ID
+  spaceId: string; // Space ID where jukebox is located
+  x: number; // Freeform world X coordinate (pixels, NOT snapped to grid)
+  y: number; // Freeform world Y coordinate (pixels, NOT snapped to grid)
+  isPlaying: boolean; // Playback active
+  currentTrackIndex: number; // Current index in playlist
+  trackStartedAt: number; // Server timestamp (ms) when current track started
+  playlist: JukeboxTrack[]; // Collaborative queue
+  passable?: boolean; // Whether players can walk through it (default false = solid obstacle)
+  ontop?: boolean; // Render on top of character (true) or behind character (false)
+}
+
+export interface JukeboxAddTrackPayload {
+  jukeboxId: string;
+  urlOrId: string;
+}
+
+export interface JukeboxAddPlaylistPayload {
+  jukeboxId: string;
+  playlistUrlOrId: string;
+}
+
+export interface JukeboxRemoveTrackPayload {
+  jukeboxId: string;
+  trackId: string;
+}
+
+export interface JukeboxSkipPayload {
+  jukeboxId: string;
+}
+
+export interface JukeboxPlacePayload {
+  x: number; // Freeform world X (pixels)
+  y: number; // Freeform world Y (pixels)
+  passable?: boolean;
+  ontop?: boolean;
+}
+
+export interface JukeboxMovePayload {
+  jukeboxId: string;
+  x: number; // Freeform world X (pixels)
+  y: number; // Freeform world Y (pixels)
+}
+
+export interface JukeboxDeletePayload {
+  jukeboxId: string;
 }

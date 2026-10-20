@@ -27,3 +27,10 @@ Thumbs.db
 
 # Docker volumes
 game_pgdata/
+
+# Local SSL Certificates
+certs/
+client/certs/
+*.pem
+*.key
+*.crt

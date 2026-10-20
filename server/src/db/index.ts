@@ -1,7 +1,7 @@
 import { Pool } from "pg";
 import dotenv from "dotenv";
 import { hashPassword } from "../auth";
-import { PrivateZone } from "shared";
+import { PrivateZone, JukeboxState } from "shared";
 
 dotenv.config();
 
@@ -38,6 +38,7 @@ export interface SpaceRecord {
   whitelist: string[]; // usernames allowed if private
   tiles?: Record<string, string>;
   private_zones?: PrivateZone[];
+  jukeboxes?: JukeboxState[];
   created_at: Date;
   updated_at: Date;
 }
@@ -243,6 +244,7 @@ export async function initDb(): Promise<boolean> {
       );
       ALTER TABLE spaces ADD COLUMN IF NOT EXISTS tiles JSONB DEFAULT '{}'::jsonb;
       ALTER TABLE spaces ADD COLUMN IF NOT EXISTS private_zones JSONB DEFAULT '[]'::jsonb;
+      ALTER TABLE spaces ADD COLUMN IF NOT EXISTS jukeboxes JSONB DEFAULT '[]'::jsonb;
       CREATE INDEX IF NOT EXISTS idx_spaces_superadmin ON spaces (is_superadmin_space, category);
     `);
 
@@ -443,6 +445,17 @@ export function parsePrivateZones(raw: any): PrivateZone[] {
   return [];
 }
 
+export function parseJukeboxes(raw: any): JukeboxState[] {
+  if (Array.isArray(raw)) return raw;
+  if (typeof raw === "string") {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    } catch {}
+  }
+  return [];
+}
+
 /**
  * Get all superadmin spaces (visible in listing), grouped or filterable by category.
  */
@@ -510,6 +523,7 @@ export async function getSpaceById(id: string): Promise<SpaceRecord | null> {
           is_superadmin_space: row.is_superadmin_space,
           whitelist: parseWhitelist(row.whitelist),
           private_zones: parsePrivateZones(row.private_zones),
+          jukeboxes: parseJukeboxes(row.jukeboxes),
           created_at: row.created_at,
           updated_at: row.updated_at,
         };
@@ -527,6 +541,7 @@ export async function getSpaceById(id: string): Promise<SpaceRecord | null> {
         ...space,
         whitelist: [...space.whitelist],
         private_zones: space.private_zones ? [...space.private_zones] : [],
+        jukeboxes: space.jukeboxes ? [...space.jukeboxes] : [],
       }
     : null;
 }
@@ -852,6 +867,51 @@ export async function updateSpacePrivateZones(
   const inMem = inMemorySpaces.get(spaceId);
   if (inMem) {
     inMem.private_zones = [...zones];
+    inMem.updated_at = new Date();
+  }
+  return true;
+}
+
+/**
+ * Get jukeboxes for a space
+ */
+export async function getSpaceJukeboxes(spaceId: string): Promise<JukeboxState[]> {
+  if (isDbConnected) {
+    try {
+      const res = await pool.query("SELECT jukeboxes FROM spaces WHERE id = $1", [spaceId]);
+      if (res.rows[0]?.jukeboxes) {
+        return parseJukeboxes(res.rows[0].jukeboxes);
+      }
+    } catch (err) {
+      console.error("Error fetching space jukeboxes from DB:", err);
+    }
+  }
+
+  const inMem = inMemorySpaces.get(spaceId);
+  return inMem?.jukeboxes ? [...inMem.jukeboxes] : [];
+}
+
+/**
+ * Update and persist jukeboxes for a space
+ */
+export async function updateSpaceJukeboxes(
+  spaceId: string,
+  jukeboxes: JukeboxState[]
+): Promise<boolean> {
+  if (isDbConnected) {
+    try {
+      await pool.query(
+        "UPDATE spaces SET jukeboxes = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1",
+        [spaceId, JSON.stringify(jukeboxes)]
+      );
+    } catch (err) {
+      console.error("Error updating space jukeboxes in DB:", err);
+    }
+  }
+
+  const inMem = inMemorySpaces.get(spaceId);
+  if (inMem) {
+    inMem.jukeboxes = [...jukeboxes];
     inMem.updated_at = new Date();
   }
   return true;

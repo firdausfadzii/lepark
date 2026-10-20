@@ -1,4 +1,8 @@
 import http from "http";
+import https from "https";
+import fs from "fs";
+import path from "path";
+import { execSync } from "child_process";
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
@@ -24,6 +28,8 @@ import {
 import { hashPassword, verifyPassword, generateToken, verifyToken } from "./auth";
 import { AuthUser, Space, SpacesListResponse, SpaceResponse } from "shared";
 
+dotenv.config({ path: path.resolve(__dirname, "../.env") });
+dotenv.config({ path: path.resolve(__dirname, "../../.env") });
 dotenv.config();
 
 // Configure Colyseus matchmaking CORS to dynamically allow all requested headers
@@ -49,6 +55,32 @@ WebSocketClient.prototype.raw = function (data: any, options?: any, cb?: any) {
 
 const PORT = parseInt(process.env.PORT || "2567", 10);
 const app = express();
+
+// Universal CORS Middleware: guarantees headers for all cross-origin requests & preflights
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Access-Control-Allow-Credentials", "true");
+  } else {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+  }
+  res.setHeader(
+    "Access-Control-Allow-Methods",
+    "GET, HEAD, PUT, PATCH, POST, DELETE, OPTIONS"
+  );
+  res.setHeader(
+    "Access-Control-Allow-Headers",
+    req.headers["access-control-request-headers"] ||
+      "Content-Type, Authorization, Accept, X-Requested-With, Origin, skip_zrok_interstitial"
+  );
+  res.setHeader("Access-Control-Max-Age", "86400");
+
+  if (req.method === "OPTIONS") {
+    return res.status(204).end();
+  }
+  next();
+});
 
 const corsOptions: cors.CorsOptions = {
   origin: true,
@@ -661,11 +693,119 @@ app.delete("/api/spaces/:id", async (req, res) => {
   }
 });
 
-const httpServer = http.createServer(app);
+// Helper to discover or auto-generate HTTPS certificates
+function getHttpsConfig(): { key: Buffer; cert: Buffer } | undefined {
+  // 1. Check custom paths from environment
+  const customKey = process.env.SSL_KEY_PATH;
+  const customCert = process.env.SSL_CERT_PATH;
+  if (customKey && customCert && fs.existsSync(customKey) && fs.existsSync(customCert)) {
+    try {
+      return {
+        key: fs.readFileSync(customKey),
+        cert: fs.readFileSync(customCert),
+      };
+    } catch (err) {
+      console.warn("[SSL] Failed to read custom SSL cert/key from environment paths:", err);
+    }
+  }
+
+  // 2. Candidate directories
+  const candidateDirs = [
+    path.resolve(__dirname, "../../certs"),
+    path.resolve(__dirname, "../certs"),
+    path.resolve(__dirname, "../../client/certs"),
+    path.resolve(__dirname, "../client/certs"),
+    path.resolve(__dirname, "certs"),
+  ];
+
+  for (const dir of candidateDirs) {
+    const keyPath = path.join(dir, "key.pem");
+    const certPath = path.join(dir, "cert.pem");
+    if (fs.existsSync(keyPath) && fs.existsSync(certPath)) {
+      try {
+        return {
+          key: fs.readFileSync(keyPath),
+          cert: fs.readFileSync(certPath),
+        };
+      } catch (err) {
+        console.warn(`[SSL] Failed to read SSL certs from ${dir}:`, err);
+      }
+    }
+  }
+
+  // 3. Fallback: auto-generate self-signed cert for lan.jomlepark.cc and localhost
+  const targetDir = path.resolve(__dirname, "../../certs");
+  const keyPath = path.join(targetDir, "key.pem");
+  const certPath = path.join(targetDir, "cert.pem");
+  try {
+    if (!fs.existsSync(targetDir)) {
+      fs.mkdirSync(targetDir, { recursive: true });
+    }
+    console.log(`[SSL] Generating self-signed certificates in ${targetDir}...`);
+    execSync(
+      `openssl req -x509 -newkey rsa:2048 -nodes -sha256 -subj "/CN=lan.jomlepark.cc" -addext "subjectAltName=DNS:lan.jomlepark.cc,DNS:jomlepark.cc,DNS:*.jomlepark.cc,DNS:localhost,IP:127.0.0.1" -keyout "${keyPath}" -out "${certPath}" -days 3650`,
+      { stdio: "ignore" }
+    );
+    if (fs.existsSync(keyPath) && fs.existsSync(certPath)) {
+      return {
+        key: fs.readFileSync(keyPath),
+        cert: fs.readFileSync(certPath),
+      };
+    }
+  } catch (err) {
+    console.warn("[SSL] Failed to auto-generate self-signed certificates:", err);
+  }
+  return undefined;
+}
+
+function shouldEnableHttps(): boolean {
+  if (process.env.SERVER_HTTPS === "false" || process.env.HTTPS === "false") {
+    return false;
+  }
+  if (
+    process.env.SERVER_HTTPS === "true" ||
+    process.env.HTTPS === "true" ||
+    process.env.VITE_HTTPS === "true"
+  ) {
+    return true;
+  }
+  const serverUrl = process.env.SERVER_URL || "";
+  if (serverUrl.startsWith("https://")) {
+    if (serverUrl.includes("shares.zrok.io") || serverUrl.includes("ngrok.app")) {
+      return false;
+    }
+    return true;
+  }
+  return false;
+}
+
+const isHttps = shouldEnableHttps();
+let serverInstance: http.Server | https.Server;
+
+if (isHttps) {
+  const sslConfig = getHttpsConfig();
+  if (sslConfig) {
+    serverInstance = https.createServer(sslConfig, app);
+    console.log("🔒 HTTPS enabled for game server");
+  } else {
+    console.warn("⚠️ HTTPS was requested but certificates could not be loaded. Falling back to HTTP.");
+    serverInstance = http.createServer(app);
+  }
+} else {
+  serverInstance = http.createServer(app);
+}
+
+// Graceful client error handler (prevents crashes from port scanners or plain HTTP requests hitting HTTPS)
+serverInstance.on("clientError", (err: any, socket) => {
+  if (err.code === "ECONNRESET" || !socket.writable) {
+    return;
+  }
+  socket.end("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\nClient sent plain HTTP request to HTTPS port.\r\n");
+});
 
 const gameServer = new Server({
   transport: new WebSocketTransport({
-    server: httpServer,
+    server: serverInstance,
     maxPayload: 10 * 1024 * 1024, // 10MB payload limit
   }),
 });
@@ -676,11 +816,21 @@ gameServer.define("game_room", GameRoom).filterBy(["spaceId"]);
 async function start() {
   await initDb();
   await gameServer.listen(PORT, "0.0.0.0");
-  console.log(`🎮 Game Server is listening on ws://0.0.0.0:${PORT}`);
-  console.log(`📡 Health endpoint: http://localhost:${PORT}/health`);
-  console.log(`👥 Database players API: http://localhost:${PORT}/api/players`);
-  console.log(`🌌 Spaces API: http://localhost:${PORT}/api/spaces`);
-  console.log(`🔐 Auth endpoints available at http://localhost:${PORT}/api/auth/*`);
+  const isTls = serverInstance instanceof https.Server;
+  const protocol = isTls ? "https" : "http";
+  const wsProtocol = isTls ? "wss" : "ws";
+  console.log(`🎮 Game Server is listening on ${wsProtocol}://0.0.0.0:${PORT}`);
+  if (process.env.SERVER_URL) {
+    console.log(`🌐 Server URL: ${process.env.SERVER_URL}`);
+  }
+  if (process.env.CLIENT_URL) {
+    console.log(`🌐 Client URL: ${process.env.CLIENT_URL}`);
+  }
+  console.log(`📡 Health endpoint: ${protocol}://localhost:${PORT}/health`);
+  console.log(`📡 Health endpoint (LAN): ${protocol}://lan.jomlepark.cc:${PORT}/health`);
+  console.log(`👥 Database players API: ${protocol}://localhost:${PORT}/api/players`);
+  console.log(`🌌 Spaces API: ${protocol}://localhost:${PORT}/api/spaces`);
+  console.log(`🔐 Auth endpoints available at ${protocol}://localhost:${PORT}/api/auth/*`);
 }
 
 start().catch((err) => {

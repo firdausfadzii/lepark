@@ -8,6 +8,7 @@ import {
   WORLD_WIDTH,
   WORLD_HEIGHT,
   PLAYER_RADIUS,
+  PLAYER_HITBOX_HALF_WIDTH,
   CHARACTER_MAX_SIZE,
   PLAYER_SPEED,
   PlayerAvatars,
@@ -17,10 +18,22 @@ import {
   getTileCoords,
   isWallTile,
   resolveMovement,
+  SolidBox,
   PLAYER_FEET_TOP_OFFSET,
   PLAYER_FEET_BOTTOM_OFFSET,
   PrivateZone,
+  JukeboxState,
 } from "shared";
+import { JukeboxManager } from "../audio/JukeboxManager";
+
+interface JukeboxVisual {
+  container: Phaser.GameObjects.Container;
+  sprite: Phaser.GameObjects.Image;
+  hitZone: Phaser.GameObjects.Rectangle;
+  promptText: Phaser.GameObjects.Text;
+  notesTimer: number;
+  state: JukeboxState;
+}
 
 interface PlayerVisual {
   container: Phaser.GameObjects.Container;
@@ -83,12 +96,24 @@ export class GameScene extends Phaser.Scene {
     | "private_zone"
     | "clear_private_zone"
     | "obstacle"
-    | "clear_obstacle" = "flooring";
+    | "clear_obstacle"
+    | "jukebox" = "flooring";
   public selectedAssetKey: string = "birch_floor_150";
   public selectedTileColor: string | null = null;
+  public decorationPassable: boolean = true;
+  public decorationOntop: boolean = false;
   private isSelectingArea: boolean = false;
   private selectionStartTile: { x: number; y: number } | null = null;
   private selectionCurrentTile: { x: number; y: number } | null = null;
+
+  // Jukebox State & Free-Placement Objects
+  public jukeboxManager: JukeboxManager | null = null;
+  private jukeboxVisuals: Map<string, JukeboxVisual> = new Map();
+  public onJukeboxClick?: (jukeboxId: string) => void;
+  public onJukeboxNearby?: (jukebox: JukeboxState | null) => void;
+  private nearbyJukeboxId: string | null = null;
+  private keyE: Phaser.Input.Keyboard.Key | null = null;
+  private editorJukeboxGhost: Phaser.GameObjects.Image | null = null;
 
   // Private Zones State & Effects
   public privateZones: PrivateZone[] = [];
@@ -124,10 +149,17 @@ export class GameScene extends Phaser.Scene {
     super({ key: "GameScene" });
   }
 
-  init(data: { multiplayer: MultiplayerManager; voiceManager?: VoiceManager }) {
+  init(data: {
+    multiplayer: MultiplayerManager;
+    voiceManager?: VoiceManager;
+    jukeboxManager?: JukeboxManager;
+  }) {
     this.multiplayer = data?.multiplayer;
     if (data?.voiceManager) {
       this.voiceManager = data.voiceManager;
+    }
+    if (data?.jukeboxManager) {
+      this.jukeboxManager = data.jukeboxManager;
     }
   }
 
@@ -143,6 +175,7 @@ export class GameScene extends Phaser.Scene {
     this.load.image("table_left_150", "/assets/table_left_150.png");
     this.load.image("table_middle_150", "/assets/table_middle_150.png");
     this.load.image("table_right_150", "/assets/table_right_150.png");
+    this.load.image("jukebox_150", "/assets/jukebox_150.png");
 
     // Default character avatar frames
     this.load.image("default_avatar_idle", "/assets/man_still.png");
@@ -327,6 +360,37 @@ export class GameScene extends Phaser.Scene {
     });
     if (this.multiplayer.currentPrivateZones && this.multiplayer.currentPrivateZones.length > 0) {
       this.applyPrivateZones(this.multiplayer.currentPrivateZones);
+    }
+
+    // Ghost preview for freeform jukebox placement
+    this.editorJukeboxGhost = this.add.image(0, 0, "jukebox_150");
+    this.editorJukeboxGhost.setDisplaySize(48, 48);
+    this.editorJukeboxGhost.setAlpha(0.65);
+    this.editorJukeboxGhost.setDepth(136);
+    this.editorJukeboxGhost.setVisible(false);
+
+    // E key for interacting with nearby jukebox
+    if (this.input.keyboard) {
+      this.keyE = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.E);
+      this.keyE.on("down", () => {
+        if (this.nearbyJukeboxId && !this.isEditMode && this.onJukeboxClick) {
+          this.onJukeboxClick(this.nearbyJukeboxId);
+        }
+      });
+    }
+
+    // Hook up jukeboxes updates from multiplayer
+    this.multiplayer.onJukeboxesSync((jukeboxes) => {
+      this.setJukeboxes(jukeboxes);
+    });
+    this.multiplayer.onJukeboxUpdate((jukebox) => {
+      this.updateJukebox(jukebox);
+    });
+    this.multiplayer.onJukeboxDelete((jukeboxId) => {
+      this.removeJukebox(jukeboxId);
+    });
+    if (this.multiplayer.currentJukeboxes && this.multiplayer.currentJukeboxes.size > 0) {
+      this.setJukeboxes(Array.from(this.multiplayer.currentJukeboxes.values()));
     }
 
     // Pointer events for Map Editor (click and drag to select area)
@@ -996,13 +1060,16 @@ export class GameScene extends Phaser.Scene {
           }
 
           try {
+            const solidBoxes = this.getSolidBoxes();
             const resolved = resolveMovement(
               localVisual.container.x,
               localVisual.container.y,
               vx,
               vy,
               dtSeconds,
-              (c, r) => isWallTile(this.currentTilesMap.get(`${c},${r}`))
+              (c, r) => isWallTile(this.currentTilesMap.get(`${c},${r}`)),
+              PLAYER_HITBOX_HALF_WIDTH,
+              solidBoxes
             );
 
             localVisual.container.x = resolved.x;
@@ -1221,6 +1288,116 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
+    // 6.5. Jukebox Proximity & Private Zone Audio Attenuation
+    if (this.localPlayerId) {
+      const localVisual = this.playerVisuals.get(this.localPlayerId);
+      if (localVisual) {
+        const lx = localVisual.container.x;
+        const ly = localVisual.container.y;
+        const localZone = this.currentInsideZone;
+
+        let bestJukebox: JukeboxState | null = null;
+        let highestVolume = 0;
+        let closestJukebox: JukeboxState | null = null;
+        let closestDist = Infinity;
+
+        this.jukeboxVisuals.forEach((jbVisual) => {
+          const jb = jbVisual.state;
+          const jx = jb.x;
+          const jy = jb.y;
+
+          // Check if jukebox is located in any private zone
+          const jCol = Math.floor(jx / TILE_SIZE);
+          const jRow = Math.floor(jy / TILE_SIZE);
+          const jbZone =
+            this.privateZones.find(
+              (z) =>
+                jCol >= z.bounds.minCol &&
+                jCol <= z.bounds.maxCol &&
+                jRow >= z.bounds.minRow &&
+                jRow <= z.bounds.maxRow,
+            ) || null;
+
+          const dist = Phaser.Math.Distance.Between(lx, ly, jx, jy);
+          if (dist < closestDist) {
+            closestDist = dist;
+            closestJukebox = jb;
+          }
+
+          // Show proximity prompt [Press E] if within 1.5 tiles (72px)
+          const isNearby = dist <= 1.5 * TILE_SIZE;
+          if (jbVisual.promptText) {
+            jbVisual.promptText.setVisible(isNearby && !this.isEditMode);
+          }
+
+          let volume = 0;
+          if (jbZone) {
+            // "if the jukebox in private area, it will not have proximity audio"
+            // Everyone in the same private area hears the same uniform sound (100% volume)
+            if (localZone && localZone.id === jbZone.id) {
+              volume = 1.0;
+            } else {
+              volume = 0.0;
+            }
+          } else {
+            // "if in the public area, it will have the proximity audio same as between player calculation"
+            if (localZone) {
+              // Player in private zone is isolated from outside public sound
+              volume = 0.0;
+            } else {
+              // Both in public area: proximity audio
+              const MIN_DIST = 1 * TILE_SIZE; // 1 tile (50px): 100% volume
+              const MAX_DIST = 8 * TILE_SIZE; // 8 tiles (400px): 0% volume
+              if (dist <= MIN_DIST) {
+                volume = 1.0;
+              } else if (dist >= MAX_DIST) {
+                volume = 0.0;
+              } else {
+                const factor = (dist - MIN_DIST) / (MAX_DIST - MIN_DIST);
+                volume = Math.cos(factor * (Math.PI / 2));
+              }
+            }
+          }
+
+          // Spawn musical note effects if playing and audible
+          if (jb.isPlaying && jb.playlist.length > 0 && volume > 0.05) {
+            jbVisual.notesTimer += delta;
+            if (jbVisual.notesTimer > 800) {
+              jbVisual.notesTimer = 0;
+              this.spawnJukeboxNote(jx, jy - 28);
+            }
+          }
+
+          if (jb.isPlaying && jb.playlist.length > 0 && volume > highestVolume) {
+            highestVolume = volume;
+            bestJukebox = jb;
+          }
+        });
+
+        // Update nearby jukebox state for HUD/interaction
+        const nearbyJb = closestDist <= 1.5 * TILE_SIZE ? closestJukebox : null;
+        const newNearbyId = nearbyJb ? (nearbyJb as JukeboxState).id : null;
+        if (newNearbyId !== this.nearbyJukeboxId) {
+          this.nearbyJukeboxId = newNearbyId;
+          if (this.onJukeboxNearby) {
+            this.onJukeboxNearby(nearbyJb);
+          }
+        }
+
+        // Apply audio attenuation to JukeboxManager
+        if (this.jukeboxManager) {
+          if (bestJukebox && highestVolume > 0) {
+            if (this.jukeboxManager.getActiveJukebox()?.id !== (bestJukebox as JukeboxState).id) {
+              this.jukeboxManager.updateJukeboxState(bestJukebox);
+            }
+            this.jukeboxManager.setProximityVolume(highestVolume);
+          } else {
+            this.jukeboxManager.setProximityVolume(0);
+          }
+        }
+      }
+    }
+
     // 7. Update active player menu screen position
     if (this.activeMenuSessionId) {
       const vis = this.playerVisuals.get(this.activeMenuSessionId);
@@ -1286,6 +1463,14 @@ export class GameScene extends Phaser.Scene {
       if (target && target.tagName !== "CANVAS") return;
 
       if (pointer.leftButtonDown()) {
+        if (this.activeEditorTool === "jukebox") {
+          // Unbounded free-placement (not snapped to grid):
+          const jx = Math.round(pointer.worldX);
+          const jy = Math.round(pointer.worldY);
+          this.multiplayer.placeJukebox(jx, jy, this.decorationPassable, this.decorationOntop);
+          return;
+        }
+
         const col = Math.max(0, Math.min(GRID_COLS - 1, Math.floor(pointer.worldX / TILE_SIZE)));
         const row = Math.max(0, Math.min(GRID_ROWS - 1, Math.floor(pointer.worldY / TILE_SIZE)));
         this.isSelectingArea = true;
@@ -1317,7 +1502,22 @@ export class GameScene extends Phaser.Scene {
       const target = pointer.event.target as HTMLElement;
       if (target && target.tagName !== "CANVAS") {
         this.editorHoverGraphics.clear();
+        if (this.editorJukeboxGhost) this.editorJukeboxGhost.setVisible(false);
+        if (this.game.canvas) this.game.canvas.style.cursor = "default";
         return;
+      }
+
+      if (this.activeEditorTool === "jukebox") {
+        this.editorHoverGraphics.clear();
+        if (this.editorJukeboxGhost) {
+          this.editorJukeboxGhost.setPosition(pointer.worldX, pointer.worldY);
+          this.editorJukeboxGhost.setVisible(true);
+        }
+        return;
+      } else {
+        if (this.editorJukeboxGhost) {
+          this.editorJukeboxGhost.setVisible(false);
+        }
       }
 
       const col = Math.max(0, Math.min(GRID_COLS - 1, Math.floor(pointer.worldX / TILE_SIZE)));
@@ -1354,18 +1554,52 @@ export class GameScene extends Phaser.Scene {
           this.editorHoverGraphics.fillStyle(hoverColor, 0.28);
           this.editorHoverGraphics.fillRect(col * TILE_SIZE, row * TILE_SIZE, TILE_SIZE, TILE_SIZE);
         } else if (this.activeEditorTool === "clear_decoration") {
-          const hoverColor = 0xf59e0b;
+          const hasDeco = this.hasDecoration(col, row);
+          const hoverColor = hasDeco ? 0xef4444 : 0xf59e0b;
           this.editorHoverGraphics.lineStyle(2, hoverColor, 0.95);
           this.editorHoverGraphics.strokeRect(col * TILE_SIZE, row * TILE_SIZE, TILE_SIZE, TILE_SIZE);
-          this.editorHoverGraphics.fillStyle(hoverColor, 0.28);
+          this.editorHoverGraphics.fillStyle(hoverColor, hasDeco ? 0.36 : 0.16);
           this.editorHoverGraphics.fillRect(col * TILE_SIZE, row * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+
+          if (hasDeco) {
+            // Draw cross mark signaling click on it to remove
+            const x = col * TILE_SIZE;
+            const y = row * TILE_SIZE;
+            this.editorHoverGraphics.lineStyle(2.5, 0xffffff, 0.92);
+            this.editorHoverGraphics.lineBetween(x + 10, y + 10, x + TILE_SIZE - 10, y + TILE_SIZE - 10);
+            this.editorHoverGraphics.lineBetween(x + TILE_SIZE - 10, y + 10, x + 10, y + TILE_SIZE - 10);
+            if (this.game.canvas) this.game.canvas.style.cursor = "pointer";
+          } else {
+            if (this.game.canvas) this.game.canvas.style.cursor = "crosshair";
+          }
         } else if (this.activeEditorTool === "decoration") {
-          const defaultHover = 0x10b981;
-          const hoverColor = this.selectedTileColor ? this.parseColor(this.selectedTileColor) : defaultHover;
-          this.editorHoverGraphics.lineStyle(2, hoverColor, 0.95);
-          this.editorHoverGraphics.strokeRect(col * TILE_SIZE, row * TILE_SIZE, TILE_SIZE, TILE_SIZE);
-          this.editorHoverGraphics.fillStyle(hoverColor, 0.26);
-          this.editorHoverGraphics.fillRect(col * TILE_SIZE, row * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+          const existingDeco = this.getDecorationKey(col, row);
+          const decoBaseKey = existingDeco ? existingDeco.split("|")[0] : null;
+          const isSameDeco = decoBaseKey === this.selectedAssetKey;
+
+          if (isSameDeco) {
+            // Hovering over placed decoration item signals click on it to remove
+            const hoverColor = 0xef4444;
+            this.editorHoverGraphics.lineStyle(2, hoverColor, 0.95);
+            this.editorHoverGraphics.strokeRect(col * TILE_SIZE, row * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+            this.editorHoverGraphics.fillStyle(hoverColor, 0.36);
+            this.editorHoverGraphics.fillRect(col * TILE_SIZE, row * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+
+            const x = col * TILE_SIZE;
+            const y = row * TILE_SIZE;
+            this.editorHoverGraphics.lineStyle(2.5, 0xffffff, 0.92);
+            this.editorHoverGraphics.lineBetween(x + 12, y + 12, x + TILE_SIZE - 12, y + TILE_SIZE - 12);
+            this.editorHoverGraphics.lineBetween(x + TILE_SIZE - 12, y + 12, x + 12, y + TILE_SIZE - 12);
+            if (this.game.canvas) this.game.canvas.style.cursor = "pointer";
+          } else {
+            const defaultHover = this.decorationPassable ? 0x10b981 : 0xef4444;
+            const hoverColor = this.selectedTileColor ? this.parseColor(this.selectedTileColor) : defaultHover;
+            this.editorHoverGraphics.lineStyle(2, hoverColor, 0.95);
+            this.editorHoverGraphics.strokeRect(col * TILE_SIZE, row * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+            this.editorHoverGraphics.fillStyle(hoverColor, 0.26);
+            this.editorHoverGraphics.fillRect(col * TILE_SIZE, row * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+            if (this.game.canvas) this.game.canvas.style.cursor = "crosshair";
+          }
         } else {
           const isWall = isWallTile(this.selectedAssetKey);
           const defaultHover = isWall ? 0xdb5b47 : 0xeca239;
@@ -1477,7 +1711,7 @@ export class GameScene extends Phaser.Scene {
             }
           }
         } else if (this.activeEditorTool === "clear_decoration") {
-          // Remove decoration layer from selected rectangle, keeping the bottom tile & obstacle
+          // Remove decoration layer from clicked tile or dragged area
           const updates: Record<string, string> = {};
           for (let r = minRow; r <= maxRow; r++) {
             for (let c = minCol; c <= maxCol; c++) {
@@ -1485,8 +1719,10 @@ export class GameScene extends Phaser.Scene {
               if (existing && existing.includes("::")) {
                 const parts = existing.split("::");
                 const basePart = parts[0] || "grass_150";
-                const hasObs = parts.includes("obstacle");
-                const newVal = hasObs ? `${basePart}::obstacle` : basePart;
+                const baseAsset = basePart.split("|")[0];
+                const isWall = baseAsset === "wall_half_150" || baseAsset === "wall_top_150";
+                // If base is a wall, it stays impassable; if base is regular floor, clear obstacle with decoration!
+                const newVal = isWall ? `${basePart}::obstacle` : basePart;
                 if (newVal !== existing) {
                   updates[`${c},${r}`] = newVal;
                 }
@@ -1501,32 +1737,79 @@ export class GameScene extends Phaser.Scene {
             }
           }
         } else if (this.activeEditorTool === "decoration") {
-          // Decoration placed on top of existing bottom tile, preserving obstacle if present
+          // Decoration placed on top of existing bottom tile, respecting passable option
           const decoVal = this.selectedTileColor
             ? `${this.selectedAssetKey}|${this.selectedTileColor}`
             : this.selectedAssetKey;
 
+          const isSingleClick = minCol === maxCol && minRow === maxRow;
           const updates: Record<string, string> = {};
-          for (let r = minRow; r <= maxRow; r++) {
-            for (let c = minCol; c <= maxCol; c++) {
-              const existing = this.currentTilesMap.get(`${c},${r}`);
-              let basePart = "grass_150";
-              let hasObs = false;
-              if (existing) {
-                const parts = existing.split("::");
-                basePart = parts[0] || "grass_150";
-                hasObs = parts.includes("obstacle");
+
+          if (isSingleClick) {
+            const key = `${minCol},${minRow}`;
+            const existing = this.currentTilesMap.get(key);
+            if (existing && existing.includes("::")) {
+              const parts = existing.split("::");
+              const nonObsParts = parts.filter((p) => p.split("|")[0] !== "obstacle");
+              const existingDeco = nonObsParts.length > 1 ? nonObsParts[1] : null;
+              const existingDecoKey = existingDeco ? existingDeco.split("|")[0] : null;
+
+              // If single clicked on an existing decoration of the same asset key:
+              // Remove it! ("to remove, need to click on it to remove")
+              if (existingDecoKey === this.selectedAssetKey) {
+                const basePart = parts[0] || "grass_150";
+                const baseAsset = basePart.split("|")[0];
+                const isWall = baseAsset === "wall_half_150" || baseAsset === "wall_top_150";
+                const newVal = isWall ? `${basePart}::obstacle` : basePart;
+                updates[key] = newVal;
+              } else {
+                // Different decoration or replace with current passable setting
+                const basePart = parts[0] || "grass_150";
+                const baseAsset = basePart.split("|")[0];
+                const isWall = baseAsset === "wall_half_150" || baseAsset === "wall_top_150";
+                const shouldHaveObs = isWall || !this.decorationPassable;
+                const layerPart = this.decorationOntop ? "::ontop" : "";
+                updates[key] = shouldHaveObs
+                  ? `${basePart}::${decoVal}${layerPart}::obstacle`
+                  : `${basePart}::${decoVal}${layerPart}`;
               }
-              updates[`${c},${r}`] = hasObs
-                ? `${basePart}::${decoVal}::obstacle`
-                : `${basePart}::${decoVal}`;
+            } else {
+              // Plain bottom tile -> place decoration
+              const basePart = existing || "grass_150";
+              const baseAsset = basePart.split("|")[0];
+              const isWall = baseAsset === "wall_half_150" || baseAsset === "wall_top_150";
+              const shouldHaveObs = isWall || !this.decorationPassable;
+              const layerPart = this.decorationOntop ? "::ontop" : "";
+              updates[key] = shouldHaveObs
+                ? `${basePart}::${decoVal}${layerPart}::obstacle`
+                : `${basePart}::${decoVal}${layerPart}`;
+            }
+          } else {
+            // Dragged area -> place decoration across selection
+            const layerPart = this.decorationOntop ? "::ontop" : "";
+            for (let r = minRow; r <= maxRow; r++) {
+              for (let c = minCol; c <= maxCol; c++) {
+                const existing = this.currentTilesMap.get(`${c},${r}`);
+                let basePart = "grass_150";
+                if (existing) {
+                  const parts = existing.split("::");
+                  basePart = parts[0] || "grass_150";
+                }
+                const baseAsset = basePart.split("|")[0];
+                const isWall = baseAsset === "wall_half_150" || baseAsset === "wall_top_150";
+                const shouldHaveObs = isWall || !this.decorationPassable;
+                updates[`${c},${r}`] = shouldHaveObs
+                  ? `${basePart}::${decoVal}${layerPart}::obstacle`
+                  : `${basePart}::${decoVal}${layerPart}`;
+              }
             }
           }
 
-          this.applyTileUpdates(updates);
-
-          if (this.multiplayer) {
-            this.multiplayer.sendUpdateTiles(updates);
+          if (Object.keys(updates).length > 0) {
+            this.applyTileUpdates(updates);
+            if (this.multiplayer) {
+              this.multiplayer.sendUpdateTiles(updates);
+            }
           }
         } else {
           // Normal tile flooring / wall update:
@@ -1720,11 +2003,12 @@ export class GameScene extends Phaser.Scene {
       }
 
       this.editorOverlayText.setText(
-        `✕ ${cols} × ${rows} (${totalTiles} ${totalTiles === 1 ? "tile" : "tiles"}) • Clear Decoration • Esc when done`
+        `✕ ${cols} × ${rows} (${totalTiles} ${totalTiles === 1 ? "tile" : "tiles"}) • Click to Remove Decoration • Esc when done`
       );
     } else if (this.activeEditorTool === "decoration") {
-      const defaultFill = 0x10b981;
-      const defaultStroke = 0x34d399;
+      const passableText = this.decorationPassable ? "Passable" : "Solid";
+      const defaultFill = this.decorationPassable ? 0x10b981 : 0xef4444;
+      const defaultStroke = this.decorationPassable ? 0x34d399 : 0xf87171;
       const fillColor = this.selectedTileColor ? this.parseColor(this.selectedTileColor) : defaultFill;
       const strokeColor = this.selectedTileColor ? this.parseColor(this.selectedTileColor) : defaultStroke;
 
@@ -1750,8 +2034,9 @@ export class GameScene extends Phaser.Scene {
       else if (this.selectedAssetKey === "table_middle_150") labelName = "Table Middle";
       else if (this.selectedAssetKey === "table_right_150") labelName = "Table Right";
       const colorBadge = this.selectedTileColor ? ` • ${this.selectedTileColor.toUpperCase()}` : "";
+      const layerText = this.decorationOntop ? "On Top" : "Behind";
       this.editorOverlayText.setText(
-        `🪴 ${cols} × ${rows} (${totalTiles} ${totalTiles === 1 ? "tile" : "tiles"}) • ${labelName} (Decoration)${colorBadge} • Esc when done`
+        `🪴 ${cols} × ${rows} (${totalTiles} ${totalTiles === 1 ? "tile" : "tiles"}) • ${labelName} (${passableText} • ${layerText})${colorBadge} • Esc when done`
       );
     } else {
       const isWall = isWallTile(this.selectedAssetKey);
@@ -1822,6 +2107,12 @@ export class GameScene extends Phaser.Scene {
       this.editorHoverGraphics.clear();
       this.editorSelectionGraphics.clear();
       this.editorOverlayText.setVisible(false);
+      if (this.editorJukeboxGhost) {
+        this.editorJukeboxGhost.setVisible(false);
+      }
+      if (this.game.canvas) {
+        this.game.canvas.style.cursor = "default";
+      }
 
       if (this.localPlayerId) {
         const localVisual = this.playerVisuals.get(this.localPlayerId);
@@ -1841,6 +2132,52 @@ export class GameScene extends Phaser.Scene {
     this.selectedTileColor = color;
   }
 
+  public setDecorationPassable(passable: boolean) {
+    this.decorationPassable = passable;
+  }
+
+  public setDecorationOntop(ontop: boolean) {
+    this.decorationOntop = ontop;
+  }
+
+  public hasDecoration(col: number, row: number): boolean {
+    const raw = this.currentTilesMap.get(`${col},${row}`);
+    if (!raw || !raw.includes("::")) return false;
+    const parts = raw.split("::");
+    const nonFlags = parts.filter((p) => {
+      const k = p.split("|")[0];
+      return k !== "obstacle" && k !== "ontop" && k !== "above" && k !== "behind" && k !== "below";
+    });
+    return nonFlags.length > 1;
+  }
+
+  public getDecorationKey(col: number, row: number): string | null {
+    const raw = this.currentTilesMap.get(`${col},${row}`);
+    if (!raw || !raw.includes("::")) return null;
+    const parts = raw.split("::");
+    const nonFlags = parts.filter((p) => {
+      const k = p.split("|")[0];
+      return k !== "obstacle" && k !== "ontop" && k !== "above" && k !== "behind" && k !== "below";
+    });
+    return nonFlags.length > 1 ? nonFlags[1] : null;
+  }
+
+  public getSolidBoxes(): SolidBox[] {
+    const boxes: SolidBox[] = [];
+    for (const visual of this.jukeboxVisuals.values()) {
+      const jb = visual.state;
+      if (jb.passable === false || (!jb.passable && (jb as any).isSolid)) {
+        boxes.push({
+          minX: jb.x - 22,
+          maxX: jb.x + 22,
+          minY: jb.y - 18,
+          maxY: jb.y + 20,
+        });
+      }
+    }
+    return boxes;
+  }
+
   public applyTileUpdates(updates: Record<string, string>) {
     if (!updates || typeof updates !== "object") return;
     for (const [key, rawValue] of Object.entries(updates)) {
@@ -1855,21 +2192,26 @@ export class GameScene extends Phaser.Scene {
         let baseStr = "grass_150";
         let decoStr: string | null = null;
         let isObs = false;
+        let isOntop = false;
 
         const parts = rawValue.includes("::") ? rawValue.split("::") : [rawValue];
-        const nonObsParts: string[] = [];
+        const nonFlagParts: string[] = [];
         for (const p of parts) {
           const baseKey = p.includes("|") ? p.split("|")[0] : p;
           if (baseKey === "obstacle") {
             isObs = true;
+          } else if (baseKey === "ontop" || baseKey === "above") {
+            isOntop = true;
+          } else if (baseKey === "behind" || baseKey === "below") {
+            isOntop = false;
           } else {
-            nonObsParts.push(p);
+            nonFlagParts.push(p);
           }
         }
 
-        if (nonObsParts.length > 0) {
-          baseStr = nonObsParts[0] || "grass_150";
-          decoStr = nonObsParts[1] || null;
+        if (nonFlagParts.length > 0) {
+          baseStr = nonFlagParts[0] || "grass_150";
+          decoStr = nonFlagParts[1] || null;
         } else {
           baseStr = "grass_150";
           decoStr = null;
@@ -1931,6 +2273,7 @@ export class GameScene extends Phaser.Scene {
             } else {
               decoImg.clearTint();
             }
+            decoImg.setDepth(isOntop ? 110 : 0.2);
             decoImg.setVisible(true);
           } else {
             decoImg.setVisible(false);
@@ -1947,7 +2290,6 @@ export class GameScene extends Phaser.Scene {
 
     // "it will only show highlight in edit mode. in map, it wont show the obstacle highlight."
     if (!this.isEditMode) return;
-    if (this.obstacleTiles.size === 0) return;
 
     for (const key of this.obstacleTiles) {
       const [colStr, rowStr] = key.split(",");
@@ -1970,6 +2312,26 @@ export class GameScene extends Phaser.Scene {
       this.obstaclesGraphics.lineStyle(1.5, 0xffffff, 0.4);
       this.obstaclesGraphics.lineBetween(x + 5, y + 5, x + TILE_SIZE - 5, y + TILE_SIZE - 5);
       this.obstaclesGraphics.lineBetween(x + TILE_SIZE - 5, y + 5, x + 5, y + TILE_SIZE - 5);
+    }
+
+    // Highlight solid jukeboxes in edit mode
+    for (const visual of this.jukeboxVisuals.values()) {
+      if (visual.state.passable === false || (!visual.state.passable && (visual.state as any).isSolid)) {
+        const bx = visual.state.x - 24;
+        const by = visual.state.y - 24;
+        const bw = 48;
+        const bh = 48;
+
+        this.obstaclesGraphics.fillStyle(0xef4444, 0.28);
+        this.obstaclesGraphics.fillRect(bx, by, bw, bh);
+
+        this.obstaclesGraphics.lineStyle(2, 0xef4444, 0.85);
+        this.obstaclesGraphics.strokeRect(bx, by, bw, bh);
+
+        this.obstaclesGraphics.lineStyle(1.5, 0xffffff, 0.4);
+        this.obstaclesGraphics.lineBetween(bx + 5, by + 5, bx + bw - 5, by + bh - 5);
+        this.obstaclesGraphics.lineBetween(bx + bw - 5, by + 5, bx + 5, by + bh - 5);
+      }
     }
   }
 
@@ -2010,8 +2372,15 @@ export class GameScene extends Phaser.Scene {
       | "clear_private_zone"
       | "obstacle"
       | "clear_obstacle"
+      | "jukebox"
   ) {
     this.activeEditorTool = tool;
+    if (this.game.canvas) {
+      this.game.canvas.style.cursor = tool === "clear_decoration" ? "pointer" : "default";
+    }
+    if (tool !== "jukebox" && this.editorJukeboxGhost) {
+      this.editorJukeboxGhost.setVisible(false);
+    }
   }
 
   public applyPrivateZones(zones: PrivateZone[]) {
@@ -2218,5 +2587,133 @@ export class GameScene extends Phaser.Scene {
     this.privateSpotlightGraphics.lineBetween(zx, zy + zh, zx, zy + zh - cornerLen);
     this.privateSpotlightGraphics.lineBetween(zx + zw, zy + zh, zx + zw - cornerLen, zy + zh);
     this.privateSpotlightGraphics.lineBetween(zx + zw, zy + zh, zx + zw, zy + zh - cornerLen);
+  }
+
+  // --- Jukebox World Visuals & Notes ---
+
+  public setJukeboxes(jukeboxes: JukeboxState[]) {
+    if (!Array.isArray(jukeboxes)) return;
+    const activeIds = new Set<string>();
+
+    for (const jb of jukeboxes) {
+      activeIds.add(jb.id);
+      this.updateJukebox(jb);
+    }
+
+    this.jukeboxVisuals.forEach((_vis, id) => {
+      if (!activeIds.has(id)) {
+        this.removeJukebox(id);
+      }
+    });
+  }
+
+  public updateJukebox(jb: JukeboxState) {
+    if (!jb || !jb.id) return;
+    const existing = this.jukeboxVisuals.get(jb.id);
+    if (existing) {
+      existing.state = jb;
+      existing.container.setPosition(jb.x, jb.y);
+      existing.container.setDepth(jb.ontop ? 110 : 0.2);
+    } else {
+      this.createJukeboxVisual(jb);
+    }
+    this.drawObstacles();
+  }
+
+  public removeJukebox(jbId: string) {
+    const existing = this.jukeboxVisuals.get(jbId);
+    if (existing) {
+      existing.container.destroy();
+      this.jukeboxVisuals.delete(jbId);
+      if (this.nearbyJukeboxId === jbId) {
+        this.nearbyJukeboxId = null;
+        if (this.onJukeboxNearby) this.onJukeboxNearby(null);
+      }
+      this.drawObstacles();
+    }
+  }
+
+  private createJukeboxVisual(jb: JukeboxState) {
+    const sprite = this.add.image(0, 0, "jukebox_150");
+    sprite.setDisplaySize(48, 48);
+
+    const hitZone = this.add.rectangle(0, 0, 52, 52, 0x000000, 0);
+    hitZone.setInteractive({ useHandCursor: true });
+    hitZone.on(
+      "pointerdown",
+      (
+        pointer: Phaser.Input.Pointer,
+        _lx: number,
+        _ly: number,
+        event: Phaser.Types.Input.EventData
+      ) => {
+        if (!pointer.leftButtonDown()) return;
+        event.stopPropagation();
+
+        if (this.isEditMode) {
+          if (this.activeEditorTool === "jukebox" || this.activeEditorTool === "clear_decoration") {
+            this.multiplayer.deleteJukebox(jb.id);
+          }
+        } else {
+          if (this.onJukeboxClick) {
+            this.onJukeboxClick(jb.id);
+          }
+        }
+      }
+    );
+
+    const promptText = this.add.text(0, -32, "Press E", {
+      fontFamily: "Outfit, sans-serif",
+      fontSize: "11px",
+      fontStyle: "bold",
+      color: "#ffffff",
+      backgroundColor: "rgba(15, 23, 42, 0.88)",
+      padding: { x: 6, y: 2.5 },
+    });
+    promptText.setOrigin(0.5, 0.5);
+    promptText.setVisible(false);
+
+    const container = this.add.container(jb.x, jb.y, [sprite, hitZone, promptText]);
+    container.setDepth(jb.ontop ? 110 : 0.2);
+
+    const visual: JukeboxVisual = {
+      container,
+      sprite,
+      hitZone,
+      promptText,
+      notesTimer: 0,
+      state: jb,
+    };
+    this.jukeboxVisuals.set(jb.id, visual);
+  }
+
+  private spawnJukeboxNote(worldX: number, worldY: number) {
+    const notes = ["♪", "♫", "♬", "♩"];
+    const char = notes[Math.floor(Math.random() * notes.length)];
+    const noteText = this.add.text(
+      worldX + (Math.random() * 20 - 10),
+      worldY,
+      char,
+      {
+        fontFamily: "Outfit, sans-serif",
+        fontSize: "15px",
+        fontStyle: "bold",
+        color: "#f59e0b",
+      }
+    );
+    noteText.setOrigin(0.5, 0.5);
+    noteText.setDepth(worldY + 50);
+
+    this.tweens.add({
+      targets: noteText,
+      y: worldY - 32,
+      x: noteText.x + (Math.random() * 18 - 9),
+      alpha: 0,
+      duration: 1300,
+      ease: "Cubic.easeOut",
+      onComplete: () => {
+        noteText.destroy();
+      },
+    });
   }
 }

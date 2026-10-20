@@ -6,6 +6,8 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
     />
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
+    <meta http-equiv="Permissions-Policy" content="compute-pressure=*, encrypted-media=*, autoplay=*" />
     <title>Lepark - Multiplayer Game</title>
     <link rel="icon" type="image/png" href="/assets/lepark_800.png" />
     <link rel="stylesheet" href="/src/style.css" />
@@ -212,6 +214,40 @@
       </div>
     </div>
 
+    <!-- YouTube Jukebox Active In-Game HUD Chip -->
+    <div id="jukebox-hud-pill" class="jukebox-hud-pill hidden" title="Click to view Jukebox playlist" aria-live="polite">
+      <div class="jukebox-hud-capsule">
+        <span class="jukebox-hud-icon">📻</span>
+        <div class="jukebox-hud-info">
+          <span class="jukebox-hud-title" id="jukebox-hud-track-title">Jukebox Playing</span>
+          <span class="jukebox-hud-subtitle" id="jukebox-hud-track-sub">Press E or Click to Open</span>
+        </div>
+        <button type="button" id="btn-jukebox-hud-mute" class="btn-jukebox-hud-mute" title="Mute/Unmute Jukebox">🔊</button>
+      </div>
+    </div>
+
+    <!-- YouTube Jukebox Floating Video Screen (Fully visible for YouTube embed compliance) -->
+    <div id="jukebox-player-card" class="jukebox-player-card hidden" role="region" aria-label="YouTube Jukebox Video">
+      <div class="jukebox-player-header">
+        <div class="jukebox-player-title-row">
+          <span class="jukebox-player-dot"></span>
+          <span class="jukebox-player-title" id="jukebox-player-header-title">YouTube Jukebox</span>
+        </div>
+        <div class="jukebox-player-actions">
+          <button type="button" id="btn-toggle-jukebox-collapse" class="btn-jukebox-player-action" title="Minimize / Expand Video">🗕</button>
+          <button type="button" id="btn-open-jukebox-from-player" class="btn-jukebox-player-action" title="Open Playlist Queue">📋</button>
+        </div>
+      </div>
+      <div class="jukebox-player-body" id="jukebox-player-body">
+        <div id="youtube-jukebox-iframe"></div>
+        <div id="jukebox-player-error-overlay" class="jukebox-player-error-overlay hidden">
+          <span class="player-error-badge">⚠️ Embed Restricted</span>
+          <p class="player-error-desc">Video owner restricted embed</p>
+          <a id="btn-player-open-external" href="#" target="_blank" rel="noopener noreferrer" class="btn-player-link">Watch on YouTube ↗</a>
+        </div>
+      </div>
+    </div>
+
     <!-- Left-Side Map Editor Assets Sidebar -->
     <aside id="map-editor-sidebar" class="map-editor-sidebar hidden" aria-label="Map Editor Assets">
       <div class="editor-sidebar-header">
@@ -322,7 +358,71 @@
               <span class="category-icon">🪴</span>
               <span class="category-title">Decoration</span>
             </div>
-            <span class="category-count">3 styles</span>
+            <span class="category-count">5 items</span>
+          </div>
+
+          <!-- Decoration Passage Option (Passable vs Solid) -->
+          <div class="editor-deco-options" id="editor-deco-options">
+            <div class="editor-deco-options-header">
+              <span class="editor-deco-options-title">Passage / Collision:</span>
+              <span class="editor-deco-options-hint" id="deco-passable-hint">Walkable</span>
+            </div>
+            <div class="editor-deco-toggle-group">
+              <button
+                type="button"
+                id="btn-deco-passable"
+                class="editor-deco-toggle-btn active"
+                data-passable="true"
+                title="Passable: Players can walk freely across this decoration"
+              >
+                <span class="deco-toggle-icon">🟢</span>
+                <span class="deco-toggle-label">Passable</span>
+                <span class="deco-toggle-sub">Walkable</span>
+              </button>
+              <button
+                type="button"
+                id="btn-deco-solid"
+                class="editor-deco-toggle-btn"
+                data-passable="false"
+                title="Solid: Impassable barrier that blocks player movement"
+              >
+                <span class="deco-toggle-icon">🚫</span>
+                <span class="deco-toggle-label">Solid</span>
+                <span class="deco-toggle-sub">Impassable</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Decoration Render Layer Option (Behind vs On Top of Character) -->
+          <div class="editor-deco-options" id="editor-deco-layer-options">
+            <div class="editor-deco-options-header">
+              <span class="editor-deco-options-title">Render Layer:</span>
+              <span class="editor-deco-options-hint" id="deco-layer-hint">Behind Character</span>
+            </div>
+            <div class="editor-deco-toggle-group">
+              <button
+                type="button"
+                id="btn-deco-layer-behind"
+                class="editor-deco-toggle-btn active"
+                data-layer="behind"
+                title="Behind Character: Character walks on top of the decoration (Floor level)"
+              >
+                <span class="deco-toggle-icon">🔽</span>
+                <span class="deco-toggle-label">Behind</span>
+                <span class="deco-toggle-sub">Under Player</span>
+              </button>
+              <button
+                type="button"
+                id="btn-deco-layer-ontop"
+                class="editor-deco-toggle-btn"
+                data-layer="ontop"
+                title="On Top of Character: Decoration renders above character (Overhead / Foreground)"
+              >
+                <span class="deco-toggle-icon">🔼</span>
+                <span class="deco-toggle-label">On Top</span>
+                <span class="deco-toggle-sub">Above Player</span>
+              </button>
+            </div>
           </div>
 
           <div class="editor-assets-grid">
@@ -386,26 +486,48 @@
               </div>
             </button>
 
-            <!-- Tool: Clear Decoration -->
+            <!-- Asset 4: YouTube Jukebox (Special Freeform Decoration) -->
+            <button
+              type="button"
+              class="editor-asset-card"
+              id="tool-jukebox"
+              data-tool-type="jukebox"
+              data-asset-id="jukebox_150"
+              data-asset-name="YouTube Jukebox"
+              data-tile-type="decoration"
+              title="YouTube Jukebox (jukebox_150) - Special decorative jukebox, freeform placement (not bounded by grid)"
+            >
+              <div class="asset-card-thumb jukebox-tool-thumb">
+                <img src="/assets/jukebox_150.png" alt="Jukebox" class="jukebox-card-img" />
+                <span class="asset-card-badge jukebox-badge">Jukebox</span>
+                <span class="asset-card-check">✓</span>
+              </div>
+              <div class="asset-card-info">
+                <span class="asset-card-name">Jukebox</span>
+                <span class="asset-card-code">jukebox_150</span>
+              </div>
+            </button>
+
+            <!-- Tool: Remove Decoration -->
             <button
               type="button"
               class="editor-asset-card"
               id="tool-clear-decoration"
               data-tool-type="clear_decoration"
               data-asset-id="clear_decoration"
-              data-asset-name="Clear Decoration"
-              title="Clear Decoration - Remove decoration layer without replacing floor"
+              data-asset-name="Remove Decoration"
+              title="Remove Decoration - Click on decoration item to remove"
             >
               <div class="asset-card-thumb clear-tool-thumb">
                 <svg class="private-card-svg" viewBox="0 0 24 24">
                   <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
                 </svg>
-                <span class="asset-card-badge clear-badge">Clear</span>
+                <span class="asset-card-badge clear-badge">Remove</span>
                 <span class="asset-card-check">✓</span>
               </div>
               <div class="asset-card-info">
-                <span class="asset-card-name">Clear Deco</span>
-                <span class="asset-card-code">Remove Top</span>
+                <span class="asset-card-name">Remove Deco</span>
+                <span class="asset-card-code">Click to Remove</span>
               </div>
             </button>
           </div>
@@ -1517,6 +1639,135 @@
           <button type="button" id="btn-space-error-ok" class="btn-primary w-full">
             Understood
           </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal: YouTube Jukebox -->
+    <div id="jukebox-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="jukebox-modal-title">
+      <div class="modal-card jukebox-modal-card">
+        <div class="modal-header jukebox-modal-header">
+          <div class="modal-header-row">
+            <div class="jukebox-header-title-box">
+              <span class="jukebox-header-icon">📻</span>
+              <div>
+                <h2 id="jukebox-modal-title" class="modal-title">YouTube Jukebox</h2>
+                <span class="modal-subtitle">Collaborative looping playlist</span>
+              </div>
+            </div>
+            <button type="button" id="btn-close-jukebox-modal" class="btn-modal-close" title="Close">✕</button>
+          </div>
+        </div>
+
+        <!-- Jukebox Now Playing Hero Card -->
+        <div class="jukebox-now-playing-box" id="jukebox-now-playing-box">
+          <div class="now-playing-status-row">
+            <span class="now-playing-badge" id="jukebox-status-badge">🎶 NOW PLAYING</span>
+            <span class="now-playing-loop-badge">🔁 AUTO-LOOPING</span>
+          </div>
+
+          <div class="now-playing-track-info">
+            <div class="now-playing-disc-spin" id="jukebox-disc-icon">💿</div>
+            <div class="now-playing-meta">
+              <h3 class="now-playing-title" id="jukebox-now-playing-title">Playlist Empty</h3>
+              <p class="now-playing-submitter" id="jukebox-now-playing-submitter">Add a YouTube link below to start playing</p>
+            </div>
+          </div>
+
+          <div class="now-playing-controls-row">
+            <button type="button" id="btn-jukebox-skip" class="btn-jukebox-control" title="Skip to next track">
+              <span>⏭️ Skip Track</span>
+            </button>
+          </div>
+
+          <!-- Jukebox Track Error Alert Banner -->
+          <div id="jukebox-error-banner" class="jukebox-error-banner hidden" role="alert">
+            <div class="jukebox-error-content">
+              <span class="jukebox-error-icon">⚠️</span>
+              <div class="jukebox-error-text">
+                <span class="jukebox-error-title" id="jukebox-error-title">Embedding Restricted (Error 150)</span>
+                <p class="jukebox-error-desc" id="jukebox-error-desc">The video owner restricted playback in third-party embedded players. Please try another YouTube link (e.g. lyric videos, covers, or audio uploads).</p>
+              </div>
+            </div>
+            <div class="jukebox-error-actions">
+              <a id="btn-jukebox-open-youtube" href="#" target="_blank" rel="noopener noreferrer" class="btn-jukebox-external">Open on YouTube ↗</a>
+              <button type="button" id="btn-jukebox-error-skip" class="btn-jukebox-error-skip">Skip Track ⏭</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Jukebox Add Form Mode Tabs -->
+        <div class="jukebox-tabs-row" role="tablist">
+          <button type="button" id="tab-jukebox-single" class="jukebox-tab-btn active" role="tab" aria-selected="true">
+            <span>🎵 Single Track</span>
+          </button>
+          <button type="button" id="tab-jukebox-playlist" class="jukebox-tab-btn" role="tab" aria-selected="false">
+            <span>📑 Upload Playlist Link</span>
+          </button>
+        </div>
+
+        <!-- Add Single Track Form -->
+        <form id="jukebox-add-track-form" class="jukebox-add-form">
+          <label class="form-label" for="jukebox-url-input">Add Single Video</label>
+          <div class="jukebox-input-group">
+            <input
+              type="text"
+              id="jukebox-url-input"
+              class="input-text jukebox-url-input"
+              placeholder="Paste YouTube link (https://youtu.be/... or ID)"
+              autocomplete="off"
+            />
+            <button type="submit" id="btn-jukebox-add" class="btn-primary btn-jukebox-add">
+              <span>➕ Add Song</span>
+            </button>
+          </div>
+          <span class="field-hint" id="jukebox-add-hint">Paste YouTube, YouTube Music, or Shorts link. You can also paste playlist links directly.</span>
+        </form>
+
+        <!-- Add / Upload Playlist Link Form -->
+        <form id="jukebox-add-playlist-form" class="jukebox-add-form hidden">
+          <label class="form-label" for="jukebox-playlist-input">Upload / Import YouTube Playlist</label>
+          <div class="jukebox-input-group">
+            <input
+              type="text"
+              id="jukebox-playlist-input"
+              class="input-text jukebox-url-input"
+              placeholder="Paste YouTube playlist link (https://youtube.com/playlist?list=...)"
+              autocomplete="off"
+            />
+            <button type="submit" id="btn-jukebox-add-playlist" class="btn-primary btn-jukebox-add">
+              <span id="btn-jukebox-playlist-label">📥 Extract Videos</span>
+            </button>
+          </div>
+          <div class="jukebox-playlist-actions-row">
+            <span class="field-hint" id="jukebox-playlist-hint">Extracts all videos in the playlist and queues them into the jukebox.</span>
+            <label for="jukebox-playlist-file-input" class="btn-jukebox-file-upload" title="Upload a file containing a playlist link (.txt / .m3u)">
+              <span>📁 Upload Link File</span>
+            </label>
+            <input type="file" id="jukebox-playlist-file-input" accept=".txt,.m3u,.json,.csv" class="hidden" />
+          </div>
+        </form>
+
+        <!-- Dynamic Action / Loading Feedback Banner -->
+        <div id="jukebox-action-status" class="jukebox-action-status hidden" role="status">
+          <span class="jukebox-status-icon" id="jukebox-status-icon">⏳</span>
+          <span class="jukebox-status-text" id="jukebox-status-text">Extracting playlist videos...</span>
+        </div>
+
+        <!-- Playlist Queue Section -->
+        <div class="jukebox-queue-section">
+          <div class="jukebox-queue-header">
+            <span class="queue-heading">Playlist Queue</span>
+            <span class="queue-count-badge" id="jukebox-queue-count">0 tracks</span>
+          </div>
+
+          <div class="jukebox-queue-list" id="jukebox-queue-list">
+            <div class="jukebox-empty-queue">
+              <span class="empty-queue-icon">🎵</span>
+              <p>The playlist is empty.</p>
+              <span class="empty-queue-sub">Paste a YouTube link above to start the jukebox!</span>
+            </div>
+          </div>
         </div>
       </div>
     </div>

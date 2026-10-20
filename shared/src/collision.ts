@@ -48,6 +48,13 @@ export function hasObstacleTile(tileValue: string | undefined | null): boolean {
 
 export type TileBlockedChecker = (col: number, row: number) => boolean;
 
+export interface SolidBox {
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
+}
+
 /**
  * Resolves player movement using feet-anchored axis-separated collision resolution.
  *
@@ -70,7 +77,8 @@ export function resolveMovement(
   vy: number,
   dtSeconds: number,
   isTileBlocked: TileBlockedChecker,
-  halfWidth: number = PLAYER_HITBOX_HALF_WIDTH
+  halfWidth: number = PLAYER_HITBOX_HALF_WIDTH,
+  solidBoxes?: SolidBox[]
 ): { x: number; y: number } {
   if (vx === 0 && vy === 0) {
     return { x: currentX, y: currentY };
@@ -146,6 +154,39 @@ export function resolveMovement(
         }
       }
     }
+
+    if (solidBoxes && solidBoxes.length > 0) {
+      const feetTop = currentY + PLAYER_FEET_TOP_OFFSET;
+      const feetBottom = currentY + PLAYER_FEET_BOTTOM_OFFSET;
+      for (const box of solidBoxes) {
+        if (feetBottom > box.minY && feetTop < box.maxY) {
+          const boxCenterX = (box.minX + box.maxX) / 2;
+          const currentBoxLeft = currentX - halfWidth;
+          const currentBoxRight = currentX + halfWidth;
+          const alreadyInside = currentBoxRight > box.minX && currentBoxLeft < box.maxX;
+
+          if (dx > 0) {
+            const stoppedX = box.minX - halfWidth;
+            if (alreadyInside) {
+              if (boxCenterX > currentX) {
+                desiredX = Math.min(desiredX, currentX);
+              }
+            } else {
+              desiredX = Math.min(desiredX, stoppedX);
+            }
+          } else if (dx < 0) {
+            const stoppedX = box.maxX + halfWidth;
+            if (alreadyInside) {
+              if (boxCenterX < currentX) {
+                desiredX = Math.max(desiredX, currentX);
+              }
+            } else {
+              desiredX = Math.max(desiredX, stoppedX);
+            }
+          }
+        }
+      }
+    }
   }
 
   const resolvedX = desiredX;
@@ -198,6 +239,38 @@ export function resolveMovement(
             const stoppedY = wallBottom - PLAYER_FEET_TOP_OFFSET;
             if (alreadyInside) {
               if (wallCenterY < feetCenterY) {
+                desiredY = Math.max(desiredY, currentY);
+              }
+            } else {
+              desiredY = Math.max(desiredY, stoppedY);
+            }
+          }
+        }
+      }
+    }
+
+    if (solidBoxes && solidBoxes.length > 0) {
+      const feetCenterY = currentY + (PLAYER_FEET_TOP_OFFSET + PLAYER_FEET_BOTTOM_OFFSET) / 2;
+      for (const box of solidBoxes) {
+        if (resolvedX + halfWidth > box.minX && resolvedX - halfWidth < box.maxX) {
+          const boxCenterY = (box.minY + box.maxY) / 2;
+          const currentBoxTop = currentY + PLAYER_FEET_TOP_OFFSET;
+          const currentBoxBottom = currentY + PLAYER_FEET_BOTTOM_OFFSET;
+          const alreadyInside = currentBoxBottom > box.minY && currentBoxTop < box.maxY;
+
+          if (dy > 0) {
+            const stoppedY = box.minY - PLAYER_FEET_BOTTOM_OFFSET;
+            if (alreadyInside) {
+              if (boxCenterY > feetCenterY) {
+                desiredY = Math.min(desiredY, currentY);
+              }
+            } else {
+              desiredY = Math.min(desiredY, stoppedY);
+            }
+          } else if (dy < 0) {
+            const stoppedY = box.maxY - PLAYER_FEET_TOP_OFFSET;
+            if (alreadyInside) {
+              if (boxCenterY < feetCenterY) {
                 desiredY = Math.max(desiredY, currentY);
               }
             } else {

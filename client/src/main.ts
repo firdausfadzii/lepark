@@ -15,8 +15,35 @@ import {
   PrivateZone,
   VoicePeer,
   CHARACTER_MAX_SIZE,
+  JukeboxState,
+  JukeboxTrack,
 } from "shared";
 import { VoiceManager, VoiceError } from "./network/VoiceManager";
+import { JukeboxManager } from "./audio/JukeboxManager";
+
+// Automatically inject skip_zrok_interstitial header on all outgoing fetch and XHR calls
+// to prevent zrok public proxies from returning an HTML interstitial page for API requests
+if (typeof window !== "undefined") {
+  const origFetch = window.fetch;
+  window.fetch = function (input: RequestInfo | URL, init?: RequestInit) {
+    const customInit: RequestInit = init ? { ...init } : {};
+    const headers = new Headers(customInit.headers || {});
+    if (!headers.has("skip_zrok_interstitial")) {
+      headers.set("skip_zrok_interstitial", "true");
+    }
+    customInit.headers = headers;
+    return origFetch.call(this, input, customInit);
+  };
+
+  const origXhrOpen = XMLHttpRequest.prototype.open;
+  XMLHttpRequest.prototype.open = function (...args: any[]) {
+    const res = origXhrOpen.apply(this, args as any);
+    try {
+      this.setRequestHeader("skip_zrok_interstitial", "true");
+    } catch {}
+    return res;
+  };
+}
 
 // Types
 type DirectionSlot = "idle" | "left" | "right" | "up" | "down";
@@ -454,6 +481,50 @@ const voiceNotifActions = document.getElementById("voice-notif-actions") as HTML
 const btnCloseVoiceNotif = document.getElementById("btn-close-voice-notif") as HTMLButtonElement | null;
 
 let voiceManager: VoiceManager | null = null;
+let jukeboxManager: JukeboxManager | null = null;
+let currentModalJukeboxId: string | null = null;
+
+// YouTube Jukebox DOM Elements
+const jukeboxModal = document.getElementById("jukebox-modal") as HTMLDivElement | null;
+const btnCloseJukeboxModal = document.getElementById("btn-close-jukebox-modal") as HTMLButtonElement | null;
+const tabJukeboxSingle = document.getElementById("tab-jukebox-single") as HTMLButtonElement | null;
+const tabJukeboxPlaylist = document.getElementById("tab-jukebox-playlist") as HTMLButtonElement | null;
+const jukeboxNowPlayingTitle = document.getElementById("jukebox-now-playing-title") as HTMLHeadingElement | null;
+const jukeboxNowPlayingSubmitter = document.getElementById("jukebox-now-playing-submitter") as HTMLParagraphElement | null;
+const jukeboxStatusBadge = document.getElementById("jukebox-status-badge") as HTMLSpanElement | null;
+const btnJukeboxSkip = document.getElementById("btn-jukebox-skip") as HTMLButtonElement | null;
+const jukeboxAddTrackForm = document.getElementById("jukebox-add-track-form") as HTMLFormElement | null;
+const jukeboxUrlInput = document.getElementById("jukebox-url-input") as HTMLInputElement | null;
+const btnJukeboxAdd = document.getElementById("btn-jukebox-add") as HTMLButtonElement | null;
+const jukeboxAddPlaylistForm = document.getElementById("jukebox-add-playlist-form") as HTMLFormElement | null;
+const jukeboxPlaylistInput = document.getElementById("jukebox-playlist-input") as HTMLInputElement | null;
+const btnJukeboxAddPlaylist = document.getElementById("btn-jukebox-add-playlist") as HTMLButtonElement | null;
+const btnJukeboxPlaylistLabel = document.getElementById("btn-jukebox-playlist-label") as HTMLSpanElement | null;
+const jukeboxPlaylistFileInput = document.getElementById("jukebox-playlist-file-input") as HTMLInputElement | null;
+const jukeboxActionStatus = document.getElementById("jukebox-action-status") as HTMLDivElement | null;
+const jukeboxStatusIcon = document.getElementById("jukebox-status-icon") as HTMLSpanElement | null;
+const jukeboxStatusText = document.getElementById("jukebox-status-text") as HTMLSpanElement | null;
+const jukeboxQueueCount = document.getElementById("jukebox-queue-count") as HTMLSpanElement | null;
+const jukeboxQueueList = document.getElementById("jukebox-queue-list") as HTMLDivElement | null;
+
+const jukeboxHudPill = document.getElementById("jukebox-hud-pill") as HTMLDivElement | null;
+const jukeboxHudTrackTitle = document.getElementById("jukebox-hud-track-title") as HTMLSpanElement | null;
+const jukeboxHudTrackSub = document.getElementById("jukebox-hud-track-sub") as HTMLSpanElement | null;
+const btnJukeboxHudMute = document.getElementById("btn-jukebox-hud-mute") as HTMLButtonElement | null;
+
+// Floating Player Card & Action Elements
+const jukeboxPlayerCard = document.getElementById("jukebox-player-card") as HTMLDivElement | null;
+const btnToggleJukeboxCollapse = document.getElementById("btn-toggle-jukebox-collapse") as HTMLButtonElement | null;
+const btnOpenJukeboxFromPlayer = document.getElementById("btn-open-jukebox-from-player") as HTMLButtonElement | null;
+const jukeboxPlayerErrorOverlay = document.getElementById("jukebox-player-error-overlay") as HTMLDivElement | null;
+const btnPlayerOpenExternal = document.getElementById("btn-player-open-external") as HTMLAnchorElement | null;
+
+// Jukebox Error Banner Elements in Modal
+const jukeboxErrorBanner = document.getElementById("jukebox-error-banner") as HTMLDivElement | null;
+const jukeboxErrorTitle = document.getElementById("jukebox-error-title") as HTMLSpanElement | null;
+const jukeboxErrorDesc = document.getElementById("jukebox-error-desc") as HTMLParagraphElement | null;
+const btnJukeboxOpenYoutube = document.getElementById("btn-jukebox-open-youtube") as HTMLAnchorElement | null;
+const btnJukeboxErrorSkip = document.getElementById("btn-jukebox-error-skip") as HTMLButtonElement | null;
 
 // Application State
 let currentUser: AuthUser | null = null;
@@ -488,21 +559,20 @@ let previewFrameIndex = 0;
 
 function getApiUrl(path: string): string {
   const envUrl = (import.meta as any).env?.VITE_SERVER_URL;
-  const host = window.location.hostname || "localhost";
-  const isRemoteAccess = host !== "localhost" && host !== "127.0.0.1";
-  const isStaleCrossDomain =
-    envUrl &&
-    typeof envUrl === "string" &&
-    isRemoteAccess &&
-    !envUrl.includes(host);
-
-  if (envUrl && typeof envUrl === "string" && envUrl.trim().length > 0 && !isStaleCrossDomain) {
-    const base = envUrl.trim().replace(/\/+$/, "");
+  if (envUrl && typeof envUrl === "string" && envUrl.trim().length > 0) {
+    let base = envUrl.trim().replace(/\/+$/, "");
+    if (typeof window !== "undefined" && window.location.protocol === "https:" && base.startsWith("http://")) {
+      base = base.replace(/^http:\/\//i, "https://");
+    }
     const cleanPath = path.startsWith("/") ? path : `/${path}`;
     return `${base}${cleanPath}`;
   }
+  const host = window.location.hostname || "localhost";
   if (window.location.protocol === "http:" && (host === "localhost" || host === "127.0.0.1")) {
-    return `http://${host}:2567${path}`;
+    return `http://${host}:2567${path.startsWith("/") ? path : `/${path}`}`;
+  }
+  if (window.location.protocol === "https:" && (host === "localhost" || host === "127.0.0.1")) {
+    return `https://${host}:2567${path.startsWith("/") ? path : `/${path}`}`;
   }
   // When accessed via HTTPS, LAN IP, or any host without explicit VITE_SERVER_URL,
   // use same-origin which routes to backend via Vite proxy
@@ -1393,6 +1463,38 @@ function setupMapEditorColorPicker() {
   }
 }
 
+function setupMapEditorDecorationControls() {
+  const btnPassable = document.getElementById("btn-deco-passable");
+  const btnSolid = document.getElementById("btn-deco-solid");
+
+  if (btnPassable) {
+    btnPassable.addEventListener("click", () => {
+      setDecorationPassable(true);
+    });
+  }
+
+  if (btnSolid) {
+    btnSolid.addEventListener("click", () => {
+      setDecorationPassable(false);
+    });
+  }
+
+  const btnBehind = document.getElementById("btn-deco-layer-behind");
+  const btnOntop = document.getElementById("btn-deco-layer-ontop");
+
+  if (btnBehind) {
+    btnBehind.addEventListener("click", () => {
+      setDecorationRenderLayer(false);
+    });
+  }
+
+  if (btnOntop) {
+    btnOntop.addEventListener("click", () => {
+      setDecorationRenderLayer(true);
+    });
+  }
+}
+
 function selectTileColor(colorHex: string | null) {
   currentSelectedTileColor = colorHex;
 
@@ -1517,10 +1619,81 @@ let activeEditorTool:
   | "private_zone"
   | "clear_private_zone"
   | "obstacle"
-  | "clear_obstacle" = "flooring";
+  | "clear_obstacle"
+  | "jukebox" = "flooring";
+
+let isDecorationPassable: boolean = true;
+let isDecorationOntop: boolean = false;
+
+function setDecorationPassable(passable: boolean) {
+  isDecorationPassable = passable;
+  const btnPassable = document.getElementById("btn-deco-passable");
+  const btnSolid = document.getElementById("btn-deco-solid");
+  const hintEl = document.getElementById("deco-passable-hint");
+
+  if (btnPassable && btnSolid) {
+    if (passable) {
+      btnPassable.classList.add("active");
+      btnSolid.classList.remove("active");
+      if (hintEl) {
+        hintEl.textContent = "Walkable";
+        hintEl.classList.remove("solid");
+      }
+    } else {
+      btnPassable.classList.remove("active");
+      btnSolid.classList.add("active");
+      if (hintEl) {
+        hintEl.textContent = "Solid (Blocked)";
+        hintEl.classList.add("solid");
+      }
+    }
+  }
+
+  if (gameInstance) {
+    const scene = gameInstance.scene.getScene("GameScene") as GameScene;
+    if (scene && typeof scene.setDecorationPassable === "function") {
+      scene.setDecorationPassable(passable);
+    }
+  }
+
+  updateEditBannerText();
+}
+
+function setDecorationRenderLayer(ontop: boolean) {
+  isDecorationOntop = ontop;
+  const btnBehind = document.getElementById("btn-deco-layer-behind");
+  const btnOntop = document.getElementById("btn-deco-layer-ontop");
+  const hintEl = document.getElementById("deco-layer-hint");
+
+  if (btnBehind && btnOntop) {
+    if (ontop) {
+      btnBehind.classList.remove("active");
+      btnOntop.classList.add("active");
+      if (hintEl) hintEl.textContent = "On Top of Character";
+    } else {
+      btnBehind.classList.add("active");
+      btnOntop.classList.remove("active");
+      if (hintEl) hintEl.textContent = "Behind Character";
+    }
+  }
+
+  if (gameInstance) {
+    const scene = gameInstance.scene.getScene("GameScene") as GameScene;
+    if (scene && typeof scene.setDecorationOntop === "function") {
+      scene.setDecorationOntop(ontop);
+    }
+  }
+
+  updateEditBannerText();
+}
 
 function updateEditBannerText() {
   if (!editBannerAssetText) return;
+
+  if (activeEditorTool === "jukebox") {
+    editBannerAssetText.innerHTML = `<span class="banner-private-tag" style="background: rgba(245, 158, 11, 0.2); color: #fbbf24; border-color: rgba(245, 158, 11, 0.4);">📻 YouTube Jukebox</span> Active: <strong>Freeform Placement</strong> • <em>Click anywhere to place without grid restriction</em>`;
+    return;
+  }
 
   if (activeEditorTool === "private_zone") {
     editBannerAssetText.innerHTML = `<span class="banner-private-tag">🔒 Flag Private Area</span> Active: <strong>Private Tile Flagging</strong> • <em>Drag area on map to mark</em>`;
@@ -1539,14 +1712,20 @@ function updateEditBannerText() {
     return;
   }
   if (activeEditorTool === "clear_decoration") {
-    editBannerAssetText.innerHTML = `<span class="banner-clear-tag">✕ Clear Deco</span> Active: <strong>Remove Decoration</strong> • <em>Drag area on map to remove decoration layer</em>`;
+    editBannerAssetText.innerHTML = `<span class="banner-clear-tag">✕ Remove Deco</span> Active: <strong>Remove Decoration</strong> • <em>Click on decoration item to remove</em>`;
     return;
   }
   if (activeEditorTool === "decoration") {
     const colorMarkup = currentSelectedTileColor
       ? `<span class="banner-color-indicator" style="background:${currentSelectedTileColor};"></span><strong>${currentSelectedTileColor.toUpperCase()}</strong>`
       : `<em>(No Tint)</em>`;
-    editBannerAssetText.innerHTML = `<span class="banner-deco-tag">🪴 Decoration</span> Active: <strong>${currentSelectedAssetName}</strong> • <em>Places on top of tile</em> • Color: ${colorMarkup}`;
+    const passageMarkup = isDecorationPassable
+      ? `<span class="banner-passable-tag">🟢 Passable</span>`
+      : `<span class="banner-solid-tag">🚫 Solid (Impassable)</span>`;
+    const layerMarkup = isDecorationOntop
+      ? `<span class="banner-layer-tag">🔼 On Top</span>`
+      : `<span class="banner-layer-tag">🔽 Behind</span>`;
+    editBannerAssetText.innerHTML = `<span class="banner-deco-tag">🪴 Decoration</span> Active: <strong>${currentSelectedAssetName}</strong> • ${passageMarkup} • ${layerMarkup} • Color: ${colorMarkup} • <em>Click to place • Click item to remove</em>`;
     return;
   }
 
@@ -1637,10 +1816,13 @@ function enterEditMode() {
     const scene = gameInstance.scene.getScene("GameScene") as GameScene;
     if (scene) {
       setupScenePrivateZoneEvents(scene);
+      setupSceneJukeboxEvents(scene);
       scene.setEditMode(true);
       scene.setActiveEditorTool(activeEditorTool);
       scene.setSelectedAsset(currentSelectedAssetId);
       scene.setSelectedColor(currentSelectedTileColor);
+      scene.setDecorationPassable(isDecorationPassable);
+      scene.setDecorationOntop(isDecorationOntop);
     }
   }
 
@@ -1730,10 +1912,14 @@ function selectDecorationAsset(assetId: string, assetName: string) {
     if (scene) {
       scene.setActiveEditorTool("decoration");
       scene.setSelectedAsset(assetId);
+      scene.setDecorationPassable(isDecorationPassable);
+      scene.setDecorationOntop(isDecorationOntop);
     }
   }
 
-  hideEditorUIForPlacing(`${assetName} (Decoration)`);
+  const passStr = isDecorationPassable ? "Passable" : "Solid";
+  const layerStr = isDecorationOntop ? "On Top" : "Behind";
+  hideEditorUIForPlacing(`${assetName} (${passStr} • ${layerStr})`);
 }
 
 function selectClearDecorationTool() {
@@ -1757,7 +1943,7 @@ function selectClearDecorationTool() {
     }
   }
 
-  hideEditorUIForPlacing("Clear Decoration");
+  hideEditorUIForPlacing("Remove Decoration (Click item to remove)");
 }
 
 function selectPrivateTool(toolType: "private_zone" | "clear_private_zone") {
@@ -1806,6 +1992,30 @@ function selectObstacleTool(toolType: "obstacle" | "clear_obstacle") {
   }
 
   hideEditorUIForPlacing(toolType === "obstacle" ? "Obstacle Tile (Impassable)" : "Clear Obstacle");
+}
+
+function selectJukeboxTool() {
+  activeEditorTool = "jukebox";
+
+  const cards = document.querySelectorAll(".editor-asset-card");
+  cards.forEach((card) => {
+    if ((card as HTMLElement).dataset.toolType === "jukebox") {
+      card.classList.add("selected");
+    } else {
+      card.classList.remove("selected");
+    }
+  });
+
+  updateEditBannerText();
+
+  if (gameInstance) {
+    const scene = gameInstance.scene.getScene("GameScene") as GameScene;
+    if (scene) {
+      scene.setActiveEditorTool("jukebox");
+    }
+  }
+
+  hideEditorUIForPlacing("YouTube Jukebox (Click anywhere to place freely)");
 }
 
 function openPrivateZoneNameModal(
@@ -3069,6 +3279,7 @@ async function toggleMic() {
   if (!voiceManager) {
     if (multiplayer) {
       initVoiceManager(multiplayer);
+    initJukeboxManager(multiplayer);
     } else {
       showVoiceNotification({
         code: "CONNECTING",
@@ -3172,10 +3383,8 @@ function setupScenePrivateZoneEvents(scene: GameScene) {
     const nameEl = document.getElementById("private-area-hud-name");
     if (zone) {
       if (nameEl) nameEl.textContent = zone.name || "Private Area";
-      if (hud) hud.classList.remove("hidden");
-    } else {
-      if (hud) hud.classList.add("hidden");
     }
+    if (hud) hud.classList.add("hidden");
     handleChatZoneChange(zone);
   });
 
@@ -3198,6 +3407,478 @@ function setupScenePrivateZoneEvents(scene: GameScene) {
       positionPlayerContextMenu(pos.screenX, pos.screenY);
     }
   };
+}
+
+function initJukeboxManager(mgr: MultiplayerManager) {
+  if (jukeboxManager) {
+    if (gameInstance) {
+      const scene = gameInstance.scene.getScene("GameScene") as GameScene;
+      if (scene) {
+        scene.jukeboxManager = jukeboxManager;
+      }
+    }
+    return;
+  }
+
+  jukeboxManager = new JukeboxManager(mgr);
+
+  if (gameInstance) {
+    const scene = gameInstance.scene.getScene("GameScene") as GameScene;
+    if (scene) {
+      scene.jukeboxManager = jukeboxManager;
+    }
+  }
+
+  jukeboxManager.onTrackChange((track, jb) => {
+    if (jukeboxErrorBanner) jukeboxErrorBanner.classList.add("hidden");
+    if (jukeboxPlayerErrorOverlay) jukeboxPlayerErrorOverlay.classList.add("hidden");
+    if (jukeboxStatusBadge) jukeboxStatusBadge.classList.remove("status-restricted");
+    if (currentModalJukeboxId && (!jb || currentModalJukeboxId === jb.id)) {
+      renderJukeboxModal(jb);
+    }
+    updateJukeboxHud(jb);
+  });
+
+  jukeboxManager.onTrackError((track, message, title) => {
+    if (jukeboxStatusBadge) {
+      jukeboxStatusBadge.textContent = "⚠️ RESTRICTED (ERROR 150)";
+      jukeboxStatusBadge.classList.add("status-restricted");
+    }
+    if (jukeboxNowPlayingSubmitter) {
+      jukeboxNowPlayingSubmitter.textContent = message;
+    }
+    if (jukeboxErrorBanner) {
+      jukeboxErrorBanner.classList.remove("hidden");
+      if (jukeboxErrorTitle) jukeboxErrorTitle.textContent = title || "Embedding Restricted";
+      if (jukeboxErrorDesc) jukeboxErrorDesc.textContent = message;
+      if (btnJukeboxOpenYoutube && track) {
+        btnJukeboxOpenYoutube.href = `https://www.youtube.com/watch?v=${track.youtubeId}`;
+      }
+    }
+    if (jukeboxPlayerErrorOverlay) {
+      jukeboxPlayerErrorOverlay.classList.remove("hidden");
+      if (btnPlayerOpenExternal && track) {
+        btnPlayerOpenExternal.href = `https://www.youtube.com/watch?v=${track.youtubeId}`;
+      }
+    }
+  });
+
+  mgr.onJukeboxUpdate((jb) => {
+    if (currentModalJukeboxId === jb.id) {
+      renderJukeboxModal(jb);
+    }
+    if (jukeboxManager) {
+      const active = jukeboxManager.getActiveJukebox();
+      if (!active || active.id === jb.id) {
+        jukeboxManager.updateJukeboxState(jb);
+      }
+    }
+  });
+
+  mgr.onJukeboxesSync((jbs) => {
+    if (jukeboxManager && jbs.length > 0) {
+      const active = jukeboxManager.getActiveJukebox();
+      if (!active) {
+        const playing = jbs.find((j) => j.isPlaying && j.playlist.length > 0) || jbs[0];
+        jukeboxManager.updateJukeboxState(playing);
+      }
+    }
+  });
+
+  mgr.onJukeboxDelete((jbId) => {
+    if (currentModalJukeboxId === jbId) {
+      closeJukeboxModal();
+    }
+  });
+
+  mgr.onJukeboxPlaylistAdded((data) => {
+    showJukeboxStatus(
+      `🎉 Successfully added ${data.count} track${data.count === 1 ? "" : "s"} from playlist "${data.title}"!`,
+      "success",
+      6000
+    );
+    if (btnJukeboxAddPlaylist) btnJukeboxAddPlaylist.disabled = false;
+    if (btnJukeboxPlaylistLabel) btnJukeboxPlaylistLabel.textContent = "📥 Extract Videos";
+  });
+
+  mgr.onJukeboxError((data) => {
+    showJukeboxStatus(data.message || "Failed to process jukebox request.", "error", 7000);
+    if (btnJukeboxAddPlaylist) btnJukeboxAddPlaylist.disabled = false;
+    if (btnJukeboxPlaylistLabel) btnJukeboxPlaylistLabel.textContent = "📥 Extract Videos";
+  });
+}
+
+let jukeboxStatusTimer: number | null = null;
+
+function showJukeboxStatus(
+  message: string,
+  type: "loading" | "success" | "error" = "loading",
+  duration: number = 0
+) {
+  if (!jukeboxActionStatus || !jukeboxStatusText) return;
+  if (jukeboxStatusTimer) {
+    clearTimeout(jukeboxStatusTimer);
+    jukeboxStatusTimer = null;
+  }
+
+  jukeboxActionStatus.className = `jukebox-action-status status-${type}`;
+  jukeboxActionStatus.classList.remove("hidden");
+  jukeboxStatusText.textContent = message;
+
+  if (jukeboxStatusIcon) {
+    if (type === "loading") {
+      jukeboxStatusIcon.textContent = "⏳";
+      jukeboxStatusIcon.className = "jukebox-status-icon jukebox-status-spinner";
+    } else if (type === "success") {
+      jukeboxStatusIcon.textContent = "✅";
+      jukeboxStatusIcon.className = "jukebox-status-icon";
+    } else {
+      jukeboxStatusIcon.textContent = "⚠️";
+      jukeboxStatusIcon.className = "jukebox-status-icon";
+    }
+  }
+
+  if (type !== "loading" && duration > 0) {
+    jukeboxStatusTimer = window.setTimeout(() => {
+      hideJukeboxStatus();
+    }, duration);
+  }
+}
+
+function hideJukeboxStatus() {
+  if (jukeboxStatusTimer) {
+    clearTimeout(jukeboxStatusTimer);
+    jukeboxStatusTimer = null;
+  }
+  if (jukeboxActionStatus) {
+    jukeboxActionStatus.classList.add("hidden");
+  }
+}
+
+function switchJukeboxTab(tab: "single" | "playlist") {
+  hideJukeboxStatus();
+  if (tab === "single") {
+    tabJukeboxSingle?.classList.add("active");
+    tabJukeboxSingle?.setAttribute("aria-selected", "true");
+    tabJukeboxPlaylist?.classList.remove("active");
+    tabJukeboxPlaylist?.setAttribute("aria-selected", "false");
+    jukeboxAddTrackForm?.classList.remove("hidden");
+    jukeboxAddPlaylistForm?.classList.add("hidden");
+    jukeboxUrlInput?.focus();
+  } else {
+    tabJukeboxPlaylist?.classList.add("active");
+    tabJukeboxPlaylist?.setAttribute("aria-selected", "true");
+    tabJukeboxSingle?.classList.remove("active");
+    tabJukeboxSingle?.setAttribute("aria-selected", "false");
+    jukeboxAddPlaylistForm?.classList.remove("hidden");
+    jukeboxAddTrackForm?.classList.add("hidden");
+    jukeboxPlaylistInput?.focus();
+  }
+}
+
+function setupSceneJukeboxEvents(scene: GameScene) {
+  if (!scene) return;
+  if (jukeboxManager) {
+    scene.jukeboxManager = jukeboxManager;
+  }
+  if ((scene as any)._jukeboxEventsBound) return;
+  (scene as any)._jukeboxEventsBound = true;
+
+  scene.onJukeboxClick = (jbId: string) => {
+    openJukeboxModal(jbId);
+  };
+
+  scene.onJukeboxNearby = (jb: JukeboxState | null) => {
+    updateJukeboxHud(jb);
+  };
+}
+
+function openJukeboxModal(jukeboxId?: string) {
+  if (!jukeboxModal) return;
+
+  hideJukeboxStatus();
+  if (btnJukeboxAddPlaylist) btnJukeboxAddPlaylist.disabled = false;
+  if (btnJukeboxPlaylistLabel) btnJukeboxPlaylistLabel.textContent = "📥 Extract Videos";
+
+  if (jukeboxId) {
+    currentModalJukeboxId = jukeboxId;
+  } else if (multiplayer && multiplayer.currentJukeboxes.size > 0) {
+    currentModalJukeboxId = Array.from(multiplayer.currentJukeboxes.keys())[0];
+  }
+
+  const jb =
+    currentModalJukeboxId && multiplayer
+      ? multiplayer.currentJukeboxes.get(currentModalJukeboxId)
+      : null;
+
+  renderJukeboxModal(jb || null);
+  jukeboxModal.classList.remove("hidden");
+  setGameControlsActive(false);
+
+  if (jukeboxManager) {
+    jukeboxManager.initPlayer();
+  }
+}
+
+function closeJukeboxModal() {
+  if (!jukeboxModal) return;
+  hideJukeboxStatus();
+  jukeboxModal.classList.add("hidden");
+  setGameControlsActive(true);
+}
+
+function renderJukeboxModal(jb: JukeboxState | null) {
+  if (!jukeboxModal) return;
+
+  if (!jb) {
+    if (jukeboxNowPlayingTitle) jukeboxNowPlayingTitle.textContent = "No Jukebox Found";
+    if (jukeboxNowPlayingSubmitter)
+      jukeboxNowPlayingSubmitter.textContent = "Place a jukebox in this space using the map editor";
+    if (jukeboxStatusBadge) jukeboxStatusBadge.textContent = "NOT FOUND";
+    if (btnJukeboxSkip) btnJukeboxSkip.disabled = true;
+    if (jukeboxQueueCount) jukeboxQueueCount.textContent = "0 tracks";
+    if (jukeboxQueueList) {
+      jukeboxQueueList.innerHTML = `
+        <div class="jukebox-empty-queue">
+          <span class="empty-queue-icon">📻</span>
+          <p>No jukebox active in this space.</p>
+          <span class="empty-queue-sub">Use Edit Map to place a jukebox!</span>
+        </div>`;
+    }
+    return;
+  }
+
+  const hasTracks = jb.playlist && jb.playlist.length > 0;
+  const currentTrack = hasTracks ? jb.playlist[jb.currentTrackIndex] : null;
+
+  if (hasTracks && currentTrack && jb.isPlaying) {
+    if (jukeboxNowPlayingTitle) jukeboxNowPlayingTitle.textContent = currentTrack.title;
+    if (jukeboxNowPlayingSubmitter)
+      jukeboxNowPlayingSubmitter.textContent = `Added by ${currentTrack.addedByName || "Player"}`;
+    if (jukeboxStatusBadge)
+      jukeboxStatusBadge.textContent = `🎶 NOW PLAYING (${jb.currentTrackIndex + 1}/${jb.playlist.length})`;
+    if (btnJukeboxSkip) btnJukeboxSkip.disabled = false;
+  } else {
+    if (jukeboxNowPlayingTitle) jukeboxNowPlayingTitle.textContent = "Playlist Empty";
+    if (jukeboxNowPlayingSubmitter)
+      jukeboxNowPlayingSubmitter.textContent = "Add a YouTube link below to start playing";
+    if (jukeboxStatusBadge) jukeboxStatusBadge.textContent = "IDLE";
+    if (btnJukeboxSkip) btnJukeboxSkip.disabled = true;
+  }
+
+  if (jukeboxQueueCount) {
+    const count = jb.playlist.length;
+    jukeboxQueueCount.textContent = `${count} ${count === 1 ? "track" : "tracks"}`;
+  }
+
+  if (jukeboxQueueList) {
+    if (!hasTracks) {
+      jukeboxQueueList.innerHTML = `
+        <div class="jukebox-empty-queue">
+          <span class="empty-queue-icon">🎵</span>
+          <p>The playlist is empty.</p>
+          <span class="empty-queue-sub">Paste a YouTube link above to start the jukebox!</span>
+        </div>`;
+    } else {
+      jukeboxQueueList.innerHTML = "";
+      jb.playlist.forEach((track, index) => {
+        const item = document.createElement("div");
+        item.className = `jukebox-queue-item ${index === jb.currentTrackIndex ? "active-track" : ""}`;
+
+        const itemLeft = document.createElement("div");
+        itemLeft.className = "queue-item-left";
+
+        const idxSpan = document.createElement("span");
+        idxSpan.className = "queue-item-idx";
+        idxSpan.textContent = index === jb.currentTrackIndex ? "▶" : `${index + 1}`;
+
+        const infoDiv = document.createElement("div");
+        infoDiv.className = "queue-item-info";
+
+        const titleSpan = document.createElement("span");
+        titleSpan.className = "queue-item-title";
+        titleSpan.textContent = track.title;
+
+        const subSpan = document.createElement("span");
+        subSpan.className = "queue-item-sub";
+        subSpan.textContent = `Added by ${track.addedByName || "Player"}`;
+
+        infoDiv.appendChild(titleSpan);
+        infoDiv.appendChild(subSpan);
+        itemLeft.appendChild(idxSpan);
+        itemLeft.appendChild(infoDiv);
+
+        const btnRemove = document.createElement("button");
+        btnRemove.type = "button";
+        btnRemove.className = "btn-queue-remove";
+        btnRemove.title = "Remove from playlist";
+        btnRemove.innerHTML = "🗑️";
+        btnRemove.addEventListener("click", (e) => {
+          e.stopPropagation();
+          if (multiplayer && currentModalJukeboxId) {
+            multiplayer.removeJukeboxTrack(currentModalJukeboxId, track.id);
+          }
+        });
+
+        item.appendChild(itemLeft);
+        item.appendChild(btnRemove);
+        jukeboxQueueList.appendChild(item);
+      });
+    }
+  }
+}
+
+function updateJukeboxHud(jb: JukeboxState | null) {
+  if (!jukeboxHudPill) return;
+  // User request: when in private area and near jukebox, no need to show the top bar indicator
+  jukeboxHudPill.classList.add("hidden");
+}
+
+function initJukeboxUI() {
+  if (btnCloseJukeboxModal) {
+    btnCloseJukeboxModal.addEventListener("click", closeJukeboxModal);
+  }
+
+  if (jukeboxModal) {
+    jukeboxModal.addEventListener("click", (e) => {
+      if (e.target === jukeboxModal) {
+        closeJukeboxModal();
+      }
+    });
+  }
+
+  if (btnToggleJukeboxCollapse && jukeboxPlayerCard) {
+    btnToggleJukeboxCollapse.addEventListener("click", () => {
+      jukeboxPlayerCard.classList.toggle("collapsed");
+      btnToggleJukeboxCollapse.textContent = jukeboxPlayerCard.classList.contains("collapsed") ? "🗖" : "🗕";
+    });
+  }
+
+  if (btnOpenJukeboxFromPlayer) {
+    btnOpenJukeboxFromPlayer.addEventListener("click", () => {
+      openJukeboxModal();
+    });
+  }
+
+  if (btnJukeboxErrorSkip) {
+    btnJukeboxErrorSkip.addEventListener("click", () => {
+      if (multiplayer && currentModalJukeboxId) {
+        multiplayer.skipJukeboxTrack(currentModalJukeboxId);
+      }
+    });
+  }
+
+  if (jukeboxHudPill) {
+    jukeboxHudPill.addEventListener("click", (e) => {
+      if (e.target !== btnJukeboxHudMute) {
+        openJukeboxModal();
+      }
+    });
+  }
+
+  if (btnJukeboxHudMute) {
+    btnJukeboxHudMute.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (jukeboxManager) {
+        const isMuted = jukeboxManager.toggleMute();
+        btnJukeboxHudMute.textContent = isMuted ? "🔇" : "🔊";
+      }
+    });
+  }
+
+  if (btnJukeboxSkip) {
+    btnJukeboxSkip.addEventListener("click", () => {
+      if (multiplayer && currentModalJukeboxId) {
+        multiplayer.skipJukeboxTrack(currentModalJukeboxId);
+      }
+    });
+  }
+
+  if (tabJukeboxSingle) {
+    tabJukeboxSingle.addEventListener("click", () => switchJukeboxTab("single"));
+  }
+
+  if (tabJukeboxPlaylist) {
+    tabJukeboxPlaylist.addEventListener("click", () => switchJukeboxTab("playlist"));
+  }
+
+  if (jukeboxAddTrackForm) {
+    jukeboxAddTrackForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const val = jukeboxUrlInput?.value.trim();
+      if (!val || !multiplayer || !currentModalJukeboxId) return;
+
+      const isPlaylist = /[?&]list=|\/playlist\?/i.test(val);
+      if (isPlaylist) {
+        showJukeboxStatus("Playlist link detected! Extracting playlist videos...", "loading");
+        multiplayer.addJukeboxPlaylist(currentModalJukeboxId, val);
+      } else {
+        showJukeboxStatus("Adding track to jukebox...", "loading", 2500);
+        multiplayer.addJukeboxTrack(currentModalJukeboxId, val);
+      }
+
+      if (jukeboxUrlInput) {
+        jukeboxUrlInput.value = "";
+      }
+    });
+  }
+
+  if (jukeboxAddPlaylistForm) {
+    jukeboxAddPlaylistForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const val = jukeboxPlaylistInput?.value.trim();
+      if (!val || !multiplayer || !currentModalJukeboxId) return;
+
+      showJukeboxStatus("Extracting videos from YouTube playlist... Please wait.", "loading");
+      if (btnJukeboxAddPlaylist) btnJukeboxAddPlaylist.disabled = true;
+      if (btnJukeboxPlaylistLabel) btnJukeboxPlaylistLabel.textContent = "⏳ Extracting...";
+
+      multiplayer.addJukeboxPlaylist(currentModalJukeboxId, val);
+      if (jukeboxPlaylistInput) {
+        jukeboxPlaylistInput.value = "";
+      }
+    });
+  }
+
+  if (jukeboxPlaylistFileInput) {
+    jukeboxPlaylistFileInput.addEventListener("change", async () => {
+      const file = jukeboxPlaylistFileInput.files?.[0];
+      if (!file || !multiplayer || !currentModalJukeboxId) return;
+
+      showJukeboxStatus(`Reading playlist file "${file.name}"...`, "loading");
+      try {
+        const text = await file.text();
+        const playlistMatch =
+          text.match(/(?:https?:\/\/)?(?:www\.|m\.|music\.)?youtube\.com\/playlist\?list=([a-zA-Z0-9_-]+)/i) ||
+          text.match(/[?&]list=([a-zA-Z0-9_-]+)/i);
+
+        if (playlistMatch && playlistMatch[0]) {
+          showJukeboxStatus("Found playlist in file! Extracting videos...", "loading");
+          if (btnJukeboxAddPlaylist) btnJukeboxAddPlaylist.disabled = true;
+          if (btnJukeboxPlaylistLabel) btnJukeboxPlaylistLabel.textContent = "⏳ Extracting...";
+          multiplayer.addJukeboxPlaylist(currentModalJukeboxId, playlistMatch[0]);
+        } else {
+          const videoMatches = text.match(
+            /(?:https?:\/\/)?(?:www\.|m\.|music\.)?(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|shorts\/|watch\?v=))([a-zA-Z0-9_-]{11})/gi
+          );
+          if (videoMatches && videoMatches.length > 0) {
+            const uniqueVideos = Array.from(new Set(videoMatches));
+            showJukeboxStatus(`Found ${uniqueVideos.length} YouTube videos in file! Queuing...`, "loading");
+            for (const vidUrl of uniqueVideos) {
+              multiplayer.addJukeboxTrack(currentModalJukeboxId, vidUrl);
+            }
+            showJukeboxStatus(`Successfully queued ${uniqueVideos.length} videos from file!`, "success", 4000);
+          } else {
+            showJukeboxStatus("No YouTube playlist or video links found in uploaded file.", "error", 4000);
+          }
+        }
+      } catch (err: any) {
+        showJukeboxStatus(`Failed to read file: ${err.message || err}`, "error", 4000);
+      } finally {
+        jukeboxPlaylistFileInput.value = "";
+      }
+    });
+  }
 }
 
 if (privateZoneNameForm) {
@@ -3284,6 +3965,8 @@ editorAssetCards.forEach((card) => {
       selectObstacleTool(toolType);
     } else if (toolType === "clear_decoration") {
       selectClearDecorationTool();
+    } else if (toolType === "jukebox") {
+      selectJukeboxTool();
     } else {
       const id = card.dataset.assetId || "birch_floor_150";
       const name = card.dataset.assetName || "Birch Floor";
@@ -3299,6 +3982,10 @@ editorAssetCards.forEach((card) => {
 
 window.addEventListener("keydown", (e: KeyboardEvent) => {
   if (e.key === "Escape") {
+    if (jukeboxModal && !jukeboxModal.classList.contains("hidden")) {
+      closeJukeboxModal();
+      return;
+    }
     if (
       privateZoneNameModal &&
       !privateZoneNameModal.classList.contains("hidden")
@@ -3686,6 +4373,7 @@ async function switchSpace(
       setupMultiplayerChatListeners(multiplayer);
     }
     initVoiceManager(multiplayer);
+    initJukeboxManager(multiplayer);
 
     await multiplayer.joinGame({
       name: effectiveName,
@@ -4160,6 +4848,7 @@ async function enterGameSession() {
   setupMultiplayerChatListeners(manager);
   updateChatTabNames();
   initVoiceManager(manager);
+  initJukeboxManager(manager);
 
   try {
     await manager.joinGame({
@@ -4198,9 +4887,10 @@ async function enterGameSession() {
     gameInstance.scene.add("GameScene", GameScene, true, {
       multiplayer,
       voiceManager: voiceManager || undefined,
+      jukeboxManager: jukeboxManager || undefined,
     });
 
-    // Hook up private zone events once scene is loaded
+    // Hook up private zone & jukebox events once scene is loaded
     const bindSceneEvents = () => {
       if (gameInstance) {
         const scene = gameInstance.scene.getScene("GameScene") as GameScene;
@@ -4208,7 +4898,11 @@ async function enterGameSession() {
           if (voiceManager) {
             scene.voiceManager = voiceManager;
           }
+          if (jukeboxManager) {
+            scene.jukeboxManager = jukeboxManager;
+          }
           setupScenePrivateZoneEvents(scene);
+          setupSceneJukeboxEvents(scene);
         }
       }
     };
@@ -4307,6 +5001,7 @@ function setupHudControlBadges() {
 async function init() {
   setupColorSwatches();
   setupMapEditorColorPicker();
+  setupMapEditorDecorationControls();
   setupUploadSlots();
   setupHudControlBadges();
 
@@ -4358,6 +5053,9 @@ async function init() {
   // Initialize Chat UI state
   updateChatTabNames();
   renderCurrentChatMessages();
+
+  // Initialize YouTube Jukebox UI listeners
+  initJukeboxUI();
 
   // Check stored auth session
   const storedToken = localStorage.getItem("lepark_auth_token");

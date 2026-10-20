@@ -11,10 +11,12 @@ import {
   WORLD_HEIGHT,
   PLAYER_SPEED,
   CHARACTER_MAX_SIZE,
+  PLAYER_HITBOX_HALF_WIDTH,
   SERVER_TICK_RATE,
   getTileCenter,
   isWallTile,
   resolveMovement,
+  SolidBox,
   findSafeSpawnCenter,
   PrivateZone,
   ChatMessage,
@@ -22,6 +24,15 @@ import {
   VoiceChannelType,
   VoicePeer,
   VoiceSignalPayload,
+  JukeboxTrack,
+  JukeboxState,
+  JukeboxAddTrackPayload,
+  JukeboxAddPlaylistPayload,
+  JukeboxRemoveTrackPayload,
+  JukeboxSkipPayload,
+  JukeboxPlacePayload,
+  JukeboxMovePayload,
+  JukeboxDeletePayload,
 } from "shared";
 import {
   upsertPlayer,
@@ -31,10 +42,13 @@ import {
   updateSpaceTiles,
   getSpacePrivateZones,
   updateSpacePrivateZones,
+  getSpaceJukeboxes,
+  updateSpaceJukeboxes,
   findUserById,
   ensureUserPersonalSpace,
 } from "../db";
 import { verifyToken } from "../auth";
+import { extractPlaylistId, fetchPlaylistVideos } from "../services/youtubePlaylist";
 
 export const activeSpaceCounts = new Map<string, number>();
 
@@ -50,6 +64,8 @@ export class GameRoom extends Room<GameState> {
   private playerAvatars: Map<string, PlayerAvatars> = new Map();
   private tiles: Record<string, string> = {};
   private privateZones: PrivateZone[] = [];
+  private jukeboxes: Map<string, JukeboxState> = new Map();
+  private jukeboxTimer: NodeJS.Timeout | null = null;
   private voiceParticipants: Set<string> = new Set();
   private spaceOwnerId: number | null = null;
   private clientAuthMap: Map<string, any> = new Map();
@@ -237,6 +253,39 @@ export class GameRoom extends Room<GameState> {
       })
       .catch((err) => console.warn("Failed loading space private zones:", err));
 
+    getSpaceJukeboxes(this.spaceId)
+      .then((loadedJukeboxes) => {
+        if (loadedJukeboxes && Array.isArray(loadedJukeboxes)) {
+          for (const jb of loadedJukeboxes) {
+            this.jukeboxes.set(jb.id, jb);
+          }
+        }
+      })
+      .catch((err) => console.warn("Failed loading space jukeboxes:", err));
+
+    // Continuous loop timer for playing jukeboxes
+    this.jukeboxTimer = setInterval(() => {
+      let changed = false;
+      const now = Date.now();
+      for (const [id, jb] of this.jukeboxes) {
+        if (jb.isPlaying && jb.playlist.length > 0) {
+          const track = jb.playlist[jb.currentTrackIndex];
+          if (track && track.duration > 0) {
+            const elapsed = (now - jb.trackStartedAt) / 1000;
+            if (elapsed >= track.duration + 1) {
+              jb.currentTrackIndex = (jb.currentTrackIndex + 1) % jb.playlist.length;
+              jb.trackStartedAt = now;
+              changed = true;
+              this.broadcast("JUKEBOX_UPDATED", jb);
+            }
+          }
+        }
+      }
+      if (changed) {
+        this.persistJukeboxes();
+      }
+    }, 1000);
+
     // Handle tile updates from clients with edit permissions
     this.onMessage(
       "UPDATE_TILES",
@@ -291,6 +340,362 @@ export class GameRoom extends Room<GameState> {
           this.privateZones = data.zones;
           this.broadcast("PRIVATE_ZONES_UPDATED", this.privateZones);
           await updateSpacePrivateZones(this.spaceId, this.privateZones);
+        }
+      },
+    );
+
+    // --- Jukebox Handlers ---
+
+    // 1. Place Jukebox (owner/superadmin)
+    this.onMessage(
+      "JUKEBOX_PLACE",
+      async (client: Client, data: { x: number; y: number; passable?: boolean; ontop?: boolean }) => {
+        const auth = this.clientAuthMap.get(client.sessionId);
+        const user = auth?.user;
+        const isSuperadmin = user?.role === "superadmin";
+        const isOwner =
+          user && this.spaceOwnerId !== null && user.id === this.spaceOwnerId;
+
+        if (!isSuperadmin && !isOwner) {
+          client.send("ERROR", {
+            message: "Permission denied: Only space owner or superadmin can place a jukebox.",
+          });
+          return;
+        }
+
+        const newJb: JukeboxState = {
+          id: "jukebox_" + Date.now() + "_" + Math.random().toString(36).substring(2, 7),
+          spaceId: this.spaceId,
+          x: Math.round(data.x),
+          y: Math.round(data.y),
+          isPlaying: false,
+          currentTrackIndex: 0,
+          trackStartedAt: 0,
+          playlist: [],
+          passable: data.passable ?? false,
+          ontop: data.ontop ?? false,
+        };
+
+        this.jukeboxes.set(newJb.id, newJb);
+        this.broadcast("JUKEBOX_UPDATED", newJb);
+        await this.persistJukeboxes();
+      },
+    );
+
+    // 2. Move Jukebox (owner/superadmin)
+    this.onMessage(
+      "JUKEBOX_MOVE",
+      async (client: Client, data: { jukeboxId: string; x: number; y: number }) => {
+        const auth = this.clientAuthMap.get(client.sessionId);
+        const user = auth?.user;
+        const isSuperadmin = user?.role === "superadmin";
+        const isOwner =
+          user && this.spaceOwnerId !== null && user.id === this.spaceOwnerId;
+
+        if (!isSuperadmin && !isOwner) {
+          client.send("ERROR", {
+            message: "Permission denied: Only space owner or superadmin can move a jukebox.",
+          });
+          return;
+        }
+
+        const jb = this.jukeboxes.get(data.jukeboxId);
+        if (!jb) return;
+        jb.x = Math.round(data.x);
+        jb.y = Math.round(data.y);
+        this.broadcast("JUKEBOX_UPDATED", jb);
+        await this.persistJukeboxes();
+      },
+    );
+
+    // 3. Delete Jukebox (owner/superadmin)
+    this.onMessage(
+      "JUKEBOX_DELETE",
+      async (client: Client, data: { jukeboxId: string }) => {
+        const auth = this.clientAuthMap.get(client.sessionId);
+        const user = auth?.user;
+        const isSuperadmin = user?.role === "superadmin";
+        const isOwner =
+          user && this.spaceOwnerId !== null && user.id === this.spaceOwnerId;
+
+        if (!isSuperadmin && !isOwner) {
+          client.send("ERROR", {
+            message: "Permission denied: Only space owner or superadmin can delete a jukebox.",
+          });
+          return;
+        }
+
+        if (this.jukeboxes.delete(data.jukeboxId)) {
+          this.broadcast("JUKEBOX_DELETED", { jukeboxId: data.jukeboxId });
+          await this.persistJukeboxes();
+        }
+      },
+    );
+
+    // 4. Add YouTube track to playlist (all users can add)
+    this.onMessage(
+      "JUKEBOX_ADD_TRACK",
+      async (client: Client, data: { jukeboxId: string; urlOrId: string }) => {
+        const jb = this.jukeboxes.get(data?.jukeboxId);
+        if (!jb) return;
+        if (!data || !data.urlOrId || typeof data.urlOrId !== "string") return;
+
+        const raw = data.urlOrId.trim();
+        let videoId = "";
+        if (/^[a-zA-Z0-9_-]{11}$/.test(raw)) {
+          videoId = raw;
+        } else {
+          const match = raw.match(
+            /(?:https?:\/\/)?(?:www\.|m\.|music\.)?(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|shorts\/|live\/|watch\?v=|watch\?.+&v=))([a-zA-Z0-9_-]{11})/i
+          );
+          if (match && match[1]) {
+            videoId = match[1];
+          }
+        }
+
+        // If not a single video ID, check if it's a playlist link
+        if (!videoId) {
+          const playlistId = extractPlaylistId(raw);
+          if (playlistId) {
+            try {
+              const result = await fetchPlaylistVideos(playlistId);
+              if (result.videos && result.videos.length > 0) {
+                const auth = this.clientAuthMap.get(client.sessionId);
+                const user = auth?.user;
+                const player = this.state.players.get(client.sessionId);
+                const submitterName =
+                  player?.name || user?.displayName || user?.username || "Player";
+
+                const wasEmpty = !jb.isPlaying || jb.playlist.length === 0;
+                const initialLength = jb.playlist.length;
+
+                const newTracks: JukeboxTrack[] = result.videos.map((vid, idx) => ({
+                  id: "track_" + Date.now() + "_" + idx + "_" + Math.random().toString(36).substring(2, 7),
+                  youtubeId: vid.videoId,
+                  title: vid.title,
+                  duration: vid.duration,
+                  addedBySessionId: client.sessionId,
+                  addedByName: submitterName,
+                  addedAt: Date.now() + idx,
+                }));
+
+                jb.playlist.push(...newTracks);
+
+                if (wasEmpty) {
+                  jb.isPlaying = true;
+                  jb.currentTrackIndex = initialLength;
+                  jb.trackStartedAt = Date.now();
+                }
+
+                this.broadcast("JUKEBOX_UPDATED", jb);
+                await this.persistJukeboxes();
+
+                client.send("JUKEBOX_PLAYLIST_ADDED", {
+                  count: newTracks.length,
+                  title: result.title,
+                  playlistId: result.playlistId,
+                });
+                return;
+              }
+            } catch (err: any) {
+              client.send("JUKEBOX_ERROR", {
+                message: err.message || "Failed to extract videos from playlist.",
+              });
+              return;
+            }
+          }
+
+          client.send("ERROR", { message: "Invalid YouTube URL or Video ID. Please paste a valid YouTube video or playlist link." });
+          client.send("JUKEBOX_ERROR", { message: "Invalid YouTube URL or Video ID. Please paste a valid YouTube video or playlist link." });
+          return;
+        }
+
+        // Fetch video title via YouTube public oEmbed endpoint
+        let title = `YouTube Track (${videoId})`;
+        try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 3500);
+          const res = await fetch(
+            `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`,
+            { signal: controller.signal }
+          );
+          clearTimeout(timeoutId);
+          if (res.ok) {
+            const json = (await res.json()) as any;
+            if (json && json.title) {
+              title = json.title;
+            }
+          }
+        } catch {
+          // Gracefully use fallback title
+        }
+
+        const auth = this.clientAuthMap.get(client.sessionId);
+        const user = auth?.user;
+        const player = this.state.players.get(client.sessionId);
+        const submitterName =
+          player?.name || user?.displayName || user?.username || "Player";
+
+        const newTrack: JukeboxTrack = {
+          id: "track_" + Date.now() + "_" + Math.random().toString(36).substring(2, 7),
+          youtubeId: videoId,
+          title,
+          duration: 0,
+          addedBySessionId: client.sessionId,
+          addedByName: submitterName,
+          addedAt: Date.now(),
+        };
+
+        jb.playlist.push(newTrack);
+
+        // If previously stopped or this was the first track, start looping playback
+        if (!jb.isPlaying || jb.playlist.length === 1) {
+          jb.isPlaying = true;
+          jb.currentTrackIndex = jb.playlist.length - 1;
+          jb.trackStartedAt = Date.now();
+        }
+
+        this.broadcast("JUKEBOX_UPDATED", jb);
+        await this.persistJukeboxes();
+      },
+    );
+
+    // 4b. Add YouTube Playlist (extracts all videos from playlist)
+    this.onMessage(
+      "JUKEBOX_ADD_PLAYLIST",
+      async (client: Client, data: { jukeboxId: string; playlistUrlOrId: string }) => {
+        const jb = this.jukeboxes.get(data?.jukeboxId);
+        if (!jb) {
+          client.send("JUKEBOX_ERROR", { message: "Jukebox not found in this space." });
+          return;
+        }
+
+        if (!data || !data.playlistUrlOrId || typeof data.playlistUrlOrId !== "string") {
+          client.send("JUKEBOX_ERROR", { message: "Please provide a valid YouTube playlist link." });
+          return;
+        }
+
+        const playlistId = extractPlaylistId(data.playlistUrlOrId);
+        if (!playlistId) {
+          client.send("JUKEBOX_ERROR", {
+            message: "Invalid YouTube playlist URL or ID. Please check the playlist link.",
+          });
+          return;
+        }
+
+        try {
+          const result = await fetchPlaylistVideos(playlistId);
+          if (!result.videos || result.videos.length === 0) {
+            client.send("JUKEBOX_ERROR", {
+              message: "No videos found in this playlist. Please ensure the playlist is Public or Unlisted on YouTube.",
+            });
+            return;
+          }
+
+          const auth = this.clientAuthMap.get(client.sessionId);
+          const user = auth?.user;
+          const player = this.state.players.get(client.sessionId);
+          const submitterName =
+            player?.name || user?.displayName || user?.username || "Player";
+
+          const wasEmpty = !jb.isPlaying || jb.playlist.length === 0;
+          const initialLength = jb.playlist.length;
+
+          const newTracks: JukeboxTrack[] = result.videos.map((vid, idx) => ({
+            id: "track_" + Date.now() + "_" + idx + "_" + Math.random().toString(36).substring(2, 7),
+            youtubeId: vid.videoId,
+            title: vid.title,
+            duration: vid.duration,
+            addedBySessionId: client.sessionId,
+            addedByName: submitterName,
+            addedAt: Date.now() + idx,
+          }));
+
+          jb.playlist.push(...newTracks);
+
+          if (wasEmpty) {
+            jb.isPlaying = true;
+            jb.currentTrackIndex = initialLength;
+            jb.trackStartedAt = Date.now();
+          }
+
+          this.broadcast("JUKEBOX_UPDATED", jb);
+          await this.persistJukeboxes();
+
+          client.send("JUKEBOX_PLAYLIST_ADDED", {
+            count: newTracks.length,
+            title: result.title,
+            playlistId: result.playlistId,
+          });
+        } catch (err: any) {
+          console.error("[GameRoom] Error extracting YouTube playlist:", err);
+          client.send("JUKEBOX_ERROR", {
+            message: err.message || "Failed to extract playlist videos. Please verify the playlist link.",
+          });
+        }
+      }
+    );
+
+    // 5. Remove track from playlist (all users can remove)
+    this.onMessage(
+      "JUKEBOX_REMOVE_TRACK",
+      async (client: Client, data: { jukeboxId: string; trackId: string }) => {
+        const jb = this.jukeboxes.get(data?.jukeboxId);
+        if (!jb) return;
+
+        const idx = jb.playlist.findIndex((t) => t.id === data.trackId);
+        if (idx === -1) return;
+
+        const isCurrent = idx === jb.currentTrackIndex;
+        jb.playlist.splice(idx, 1);
+
+        if (jb.playlist.length === 0) {
+          jb.isPlaying = false;
+          jb.currentTrackIndex = 0;
+          jb.trackStartedAt = 0;
+        } else if (isCurrent) {
+          // If current track removed, loop to next valid track
+          jb.currentTrackIndex = jb.currentTrackIndex % jb.playlist.length;
+          jb.trackStartedAt = Date.now();
+        } else if (idx < jb.currentTrackIndex) {
+          jb.currentTrackIndex--;
+        }
+
+        this.broadcast("JUKEBOX_UPDATED", jb);
+        await this.persistJukeboxes();
+      },
+    );
+
+    // 6. Skip track (advance loop)
+    this.onMessage(
+      "JUKEBOX_SKIP_TRACK",
+      async (client: Client, data: { jukeboxId: string }) => {
+        const jb = this.jukeboxes.get(data?.jukeboxId);
+        if (!jb || jb.playlist.length === 0) return;
+
+        jb.currentTrackIndex = (jb.currentTrackIndex + 1) % jb.playlist.length;
+        jb.trackStartedAt = Date.now();
+        jb.isPlaying = true;
+
+        this.broadcast("JUKEBOX_UPDATED", jb);
+        await this.persistJukeboxes();
+      },
+    );
+
+    // 7. Report track duration from client YouTube player
+    this.onMessage(
+      "JUKEBOX_REPORT_DURATION",
+      (client: Client, data: { jukeboxId: string; trackId: string; duration: number }) => {
+        const jb = this.jukeboxes.get(data?.jukeboxId);
+        if (!jb) return;
+        const track = jb.playlist.find((t) => t.id === data.trackId);
+        if (
+          track &&
+          data.duration > 0 &&
+          (track.duration === 0 || Math.abs(track.duration - data.duration) > 2)
+        ) {
+          track.duration = Math.round(data.duration);
+          this.broadcast("JUKEBOX_UPDATED", jb);
         }
       },
     );
@@ -615,6 +1020,9 @@ export class GameRoom extends Room<GameState> {
 
     // Send current space private zones to joining client
     client.send("CURRENT_PRIVATE_ZONES", this.privateZones);
+
+    // Send current space jukeboxes to joining client
+    client.send("CURRENT_JUKEBOXES", Array.from(this.jukeboxes.values()));
   }
 
   onLeave(client: Client, consented?: boolean) {
@@ -667,6 +1075,7 @@ export class GameRoom extends Room<GameState> {
           } else {
             player.direction = vy < 0 ? "up" : "down";
           }
+          const solidBoxes = this.getSolidBoxes();
           const resolved = resolveMovement(
             player.x,
             player.y,
@@ -674,6 +1083,8 @@ export class GameRoom extends Room<GameState> {
             vy,
             dtSeconds,
             (c, r) => isWallTile(this.tiles[`${c},${r}`]),
+            PLAYER_HITBOX_HALF_WIDTH,
+            solidBoxes
           );
           player.x = resolved.x;
           player.y = resolved.y;
@@ -691,6 +1102,36 @@ export class GameRoom extends Room<GameState> {
       this.state.players.forEach((player: PlayerState, sessionId: string) => {
         updatePlayerPosition(sessionId, player.x, player.y);
       });
+    }
+  }
+
+  private getSolidBoxes(): SolidBox[] {
+    const boxes: SolidBox[] = [];
+    for (const jb of this.jukeboxes.values()) {
+      if (jb.passable === false || (!jb.passable && (jb as any).isSolid)) {
+        boxes.push({
+          minX: jb.x - 22,
+          maxX: jb.x + 22,
+          minY: jb.y - 18,
+          maxY: jb.y + 20,
+        });
+      }
+    }
+    return boxes;
+  }
+
+  private async persistJukeboxes() {
+    try {
+      await updateSpaceJukeboxes(this.spaceId, Array.from(this.jukeboxes.values()));
+    } catch (err) {
+      console.error("[GameRoom] Error persisting space jukeboxes:", err);
+    }
+  }
+
+  onDispose() {
+    if (this.jukeboxTimer) {
+      clearInterval(this.jukeboxTimer);
+      this.jukeboxTimer = null;
     }
   }
 }

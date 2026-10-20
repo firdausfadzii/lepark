@@ -8,6 +8,7 @@ import {
   PrivateZone,
   ChatMessage,
   SendChatMessagePayload,
+  JukeboxState,
 } from "shared";
 
 export interface NetworkStats {
@@ -21,6 +22,9 @@ export type NetworkStatsCallback = (stats: NetworkStats) => void;
 export type TilesUpdateCallback = (updates: Record<string, string>) => void;
 export type PrivateZonesUpdateCallback = (zones: PrivateZone[]) => void;
 export type ChatMessageCallback = (message: ChatMessage) => void;
+export type JukeboxesSyncCallback = (jukeboxes: JukeboxState[]) => void;
+export type JukeboxUpdateCallback = (jukebox: JukeboxState) => void;
+export type JukeboxDeleteCallback = (jukeboxId: string) => void;
 
 export class MultiplayerManager {
   private client!: Client;
@@ -38,8 +42,14 @@ export class MultiplayerManager {
   private onPrivateZonesUpdateCallbacks: PrivateZonesUpdateCallback[] = [];
   private onChatMessageCallbacks: ChatMessageCallback[] = [];
   private onRoomJoinedCallbacks: (() => void)[] = [];
+  private onJukeboxesSyncCallbacks: JukeboxesSyncCallback[] = [];
+  private onJukeboxUpdateCallbacks: JukeboxUpdateCallback[] = [];
+  private onJukeboxDeleteCallbacks: JukeboxDeleteCallback[] = [];
+  private onJukeboxPlaylistAddedCallbacks: ((data: { count: number; title: string; playlistId: string }) => void)[] = [];
+  private onJukeboxErrorCallbacks: ((data: { message: string }) => void)[] = [];
   public currentTiles: Record<string, string> = {};
   public currentPrivateZones: PrivateZone[] = [];
+  public currentJukeboxes: Map<string, JukeboxState> = new Map();
   public playerAvatarsMap = new Map<string, PlayerAvatars>();
 
   private pingTimer: number | null = null;
@@ -60,17 +70,16 @@ export class MultiplayerManager {
         ? window.location.hostname
         : "localhost";
 
-    const isRemoteAccess = host !== "localhost" && host !== "127.0.0.1";
-    const isStaleCrossDomain =
-      envUrl &&
-      typeof envUrl === "string" &&
-      isRemoteAccess &&
-      !envUrl.includes(host);
-
-    if (envUrl && typeof envUrl === "string" && envUrl.trim().length > 0 && !isStaleCrossDomain) {
-      serverUrl = envUrl.trim().replace(/^http:/i, "ws:").replace(/^https:/i, "wss:");
+    if (envUrl && typeof envUrl === "string" && envUrl.trim().length > 0) {
+      let cleanUrl = envUrl.trim().replace(/\/+$/, "");
+      if (typeof window !== "undefined" && window.location.protocol === "https:" && cleanUrl.startsWith("http://")) {
+        cleanUrl = cleanUrl.replace(/^http:\/\//i, "https://");
+      }
+      serverUrl = cleanUrl.replace(/^http:/i, "ws:").replace(/^https:/i, "wss:");
     } else if (window.location.protocol === "http:" && (host === "localhost" || host === "127.0.0.1")) {
       serverUrl = `ws://${host}:2567`;
+    } else if (window.location.protocol === "https:" && (host === "localhost" || host === "127.0.0.1")) {
+      serverUrl = `wss://${host}:2567`;
     } else {
       // Connect to the same origin host via /colyseus proxy (handles HTTPS -> WSS cleanly)
       const portStr =
@@ -80,7 +89,11 @@ export class MultiplayerManager {
       serverUrl = `${wsProtocol}//${host}${portStr}/colyseus`;
     }
 
+    console.log(`[MultiplayerManager] Connecting Colyseus client to ${serverUrl}`);
     this.client = new Client(serverUrl);
+    if ((this.client as any).http?.headers) {
+      (this.client as any).http.headers["skip_zrok_interstitial"] = "true";
+    }
   }
 
   public currentSpaceId: string = "space_central_plaza";
@@ -204,6 +217,53 @@ export class MultiplayerManager {
       if (message && typeof message === "object") {
         this.notifyChatMessage(message);
       }
+    });
+
+    this.room.onMessage("CURRENT_JUKEBOXES", (jukeboxes: JukeboxState[]) => {
+      this.currentJukeboxes.clear();
+      if (Array.isArray(jukeboxes)) {
+        for (const jb of jukeboxes) {
+          this.currentJukeboxes.set(jb.id, jb);
+        }
+      }
+      this.notifyJukeboxesSync(Array.from(this.currentJukeboxes.values()));
+    });
+
+    this.room.onMessage("JUKEBOX_UPDATED", (jukebox: JukeboxState) => {
+      if (jukebox && jukebox.id) {
+        this.currentJukeboxes.set(jukebox.id, jukebox);
+        this.notifyJukeboxUpdate(jukebox);
+      }
+    });
+
+    this.room.onMessage("JUKEBOX_DELETED", (data: { jukeboxId: string }) => {
+      if (data && data.jukeboxId) {
+        this.currentJukeboxes.delete(data.jukeboxId);
+        this.notifyJukeboxDelete(data.jukeboxId);
+      }
+    });
+
+    this.room.onMessage(
+      "JUKEBOX_PLAYLIST_ADDED",
+      (data: { count: number; title: string; playlistId: string }) => {
+        this.onJukeboxPlaylistAddedCallbacks.forEach((cb) => {
+          try {
+            cb(data);
+          } catch (err) {
+            console.error("Error in onJukeboxPlaylistAdded callback:", err);
+          }
+        });
+      }
+    );
+
+    this.room.onMessage("JUKEBOX_ERROR", (data: { message: string }) => {
+      this.onJukeboxErrorCallbacks.forEach((cb) => {
+        try {
+          cb(data);
+        } catch (err) {
+          console.error("Error in onJukeboxError callback:", err);
+        }
+      });
     });
 
     this.startPingLoop();
@@ -491,6 +551,111 @@ export class MultiplayerManager {
   public sendUpdatePrivateZones(zones: PrivateZone[]) {
     if (this.room) {
       this.room.send("UPDATE_PRIVATE_ZONES", { zones });
+    }
+  }
+
+  // --- Jukebox Handlers & Actions ---
+
+  public onJukeboxesSync(callback: JukeboxesSyncCallback) {
+    this.onJukeboxesSyncCallbacks.push(callback);
+    if (this.currentJukeboxes.size > 0) {
+      callback(Array.from(this.currentJukeboxes.values()));
+    }
+  }
+
+  public onJukeboxUpdate(callback: JukeboxUpdateCallback) {
+    this.onJukeboxUpdateCallbacks.push(callback);
+  }
+
+  public onJukeboxDelete(callback: JukeboxDeleteCallback) {
+    this.onJukeboxDeleteCallbacks.push(callback);
+  }
+
+  private notifyJukeboxesSync(jukeboxes: JukeboxState[]) {
+    this.onJukeboxesSyncCallbacks.forEach((cb) => {
+      try {
+        cb(jukeboxes);
+      } catch (err) {
+        console.error("Error in onJukeboxesSync callback:", err);
+      }
+    });
+  }
+
+  private notifyJukeboxUpdate(jukebox: JukeboxState) {
+    this.onJukeboxUpdateCallbacks.forEach((cb) => {
+      try {
+        cb(jukebox);
+      } catch (err) {
+        console.error("Error in onJukeboxUpdate callback:", err);
+      }
+    });
+  }
+
+  private notifyJukeboxDelete(jukeboxId: string) {
+    this.onJukeboxDeleteCallbacks.forEach((cb) => {
+      try {
+        cb(jukeboxId);
+      } catch (err) {
+        console.error("Error in onJukeboxDelete callback:", err);
+      }
+    });
+  }
+
+  public placeJukebox(x: number, y: number, passable: boolean = false, ontop: boolean = false) {
+    if (this.room) {
+      this.room.send("JUKEBOX_PLACE", { x, y, passable, ontop });
+    }
+  }
+
+  public moveJukebox(jukeboxId: string, x: number, y: number) {
+    if (this.room) {
+      this.room.send("JUKEBOX_MOVE", { jukeboxId, x, y });
+    }
+  }
+
+  public deleteJukebox(jukeboxId: string) {
+    if (this.room) {
+      this.room.send("JUKEBOX_DELETE", { jukeboxId });
+    }
+  }
+
+  public addJukeboxTrack(jukeboxId: string, urlOrId: string) {
+    if (this.room) {
+      this.room.send("JUKEBOX_ADD_TRACK", { jukeboxId, urlOrId });
+    }
+  }
+
+  public addJukeboxPlaylist(jukeboxId: string, playlistUrlOrId: string) {
+    if (this.room) {
+      this.room.send("JUKEBOX_ADD_PLAYLIST", { jukeboxId, playlistUrlOrId });
+    }
+  }
+
+  public onJukeboxPlaylistAdded(
+    callback: (data: { count: number; title: string; playlistId: string }) => void
+  ) {
+    this.onJukeboxPlaylistAddedCallbacks.push(callback);
+  }
+
+  public onJukeboxError(callback: (data: { message: string }) => void) {
+    this.onJukeboxErrorCallbacks.push(callback);
+  }
+
+  public removeJukeboxTrack(jukeboxId: string, trackId: string) {
+    if (this.room) {
+      this.room.send("JUKEBOX_REMOVE_TRACK", { jukeboxId, trackId });
+    }
+  }
+
+  public skipJukeboxTrack(jukeboxId: string) {
+    if (this.room) {
+      this.room.send("JUKEBOX_SKIP_TRACK", { jukeboxId });
+    }
+  }
+
+  public reportJukeboxTrackDuration(jukeboxId: string, trackId: string, duration: number) {
+    if (this.room) {
+      this.room.send("JUKEBOX_REPORT_DURATION", { jukeboxId, trackId, duration });
     }
   }
 }
