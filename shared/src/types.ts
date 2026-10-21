@@ -91,6 +91,7 @@ export interface Space {
   tiles?: Record<string, string>;
   privateZones?: PrivateZone[];
   jukeboxes?: JukeboxState[];
+  typewriters?: TypewriterState[];
   playerCount?: number;
   createdAt?: string;
   updatedAt?: string;
@@ -208,4 +209,155 @@ export interface JukeboxMovePayload {
 
 export interface JukeboxDeletePayload {
   jukeboxId: string;
+}
+
+export interface TypewriterState {
+  id: string; // Typewriter entity ID
+  spaceId: string; // Space ID where typewriter is located
+  x: number; // Freeform world X coordinate (pixels, NOT snapped to grid)
+  y: number; // Freeform world Y coordinate (pixels, NOT snapped to grid)
+  passable?: boolean; // Whether players can walk through it (default false = solid obstacle)
+  ontop?: boolean; // Render on top of character (true) or behind character (false)
+}
+
+export interface TypewriterPlacePayload {
+  x: number; // Freeform world X (pixels)
+  y: number; // Freeform world Y (pixels)
+  passable?: boolean;
+  ontop?: boolean;
+}
+
+export interface TypewriterMovePayload {
+  typewriterId: string;
+  x: number; // Freeform world X (pixels)
+  y: number; // Freeform world Y (pixels)
+}
+
+export interface TypewriterDeletePayload {
+  typewriterId: string;
+}
+
+export type TypeRaceStatus = "waiting" | "starting" | "racing" | "ended";
+
+export interface TypeRacePlayer {
+  sessionId: string;
+  userId?: number;
+  name: string;
+  color: string;
+  isReady: boolean;
+  isViewer: boolean; // True if joined while match in progress
+  progress: number; // 0-100 percentage
+  charsTyped: number;
+  wpm: number;
+  accuracy: number;
+  finished: boolean;
+  finishRank?: number;
+  finishTime?: number; // Time in seconds
+}
+
+export interface TypeRaceResult {
+  sessionId: string;
+  name: string;
+  color: string;
+  wpm: number;
+  accuracy: number;
+  timeSeconds: number;
+  rank: number;
+}
+
+export interface TypeRaceRoomState {
+  typewriterId: string;
+  status: TypeRaceStatus;
+  quote: string;
+  startTime: number;
+  countdown: number;
+  players: Record<string, TypeRacePlayer>;
+  results?: TypeRaceResult[];
+}
+
+export interface TypeRaceJoinPayload {
+  typewriterId: string;
+}
+
+export interface TypeRaceLeavePayload {
+  typewriterId: string;
+}
+
+export interface TypeRaceReadyPayload {
+  typewriterId: string;
+  ready: boolean;
+}
+
+export interface TypeRaceProgressPayload {
+  typewriterId: string;
+  charsTyped: number;
+  errors: number;
+  finished: boolean;
+  wpm: number;
+  accuracy: number;
+}
+
+export interface TypeRacePlayAgainPayload {
+  typewriterId: string;
+}
+
+export const FREEFORM_ASSET_KEYS = [
+  "office_chair_150",
+  "office_chair_back_150",
+] as const;
+export type FreeformAssetKey = (typeof FREEFORM_ASSET_KEYS)[number];
+
+export function isFreeformAsset(assetKey: string | undefined | null): boolean {
+  if (!assetKey) return false;
+  const baseKey = assetKey.includes("|") ? assetKey.split("|")[0] : assetKey;
+  return baseKey === "office_chair_150" || baseKey === "office_chair_back_150";
+}
+
+export interface FreeformDecorationData {
+  id: string;
+  assetKey: string;
+  color?: string | null;
+  x: number;
+  y: number;
+  passable: boolean;
+  ontop: boolean;
+}
+
+export function parseFreeformTile(val: string): FreeformDecorationData | null {
+  if (!val || typeof val !== "string") return null;
+  const parts = val.split("::");
+  if (parts.length < 2) return null;
+  const [assetPart, colorPart] = parts[0].split("|");
+  const coords = parts[1].split(",");
+  if (coords.length < 2) return null;
+  const x = parseFloat(coords[0]);
+  const y = parseFloat(coords[1]);
+  if (isNaN(x) || isNaN(y)) return null;
+
+  const isPassable = !parts.includes("solid") && !parts.includes("obstacle");
+  const isOntop = parts.includes("ontop") || parts.includes("above");
+
+  return {
+    id: "",
+    assetKey: assetPart,
+    color: colorPart && colorPart !== "none" ? colorPart : null,
+    x,
+    y,
+    passable: isPassable,
+    ontop: isOntop,
+  };
+}
+
+export function serializeFreeformTile(
+  assetKey: string,
+  x: number,
+  y: number,
+  color?: string | null,
+  passable: boolean = true,
+  ontop: boolean = false
+): string {
+  const colPart = color ? color : "none";
+  const passPart = passable ? "passable" : "solid";
+  const layerPart = ontop ? "ontop" : "behind";
+  return `${assetKey}|${colPart}::${Math.round(x)},${Math.round(y)}::${passPart}::${layerPart}`;
 }

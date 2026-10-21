@@ -17,6 +17,10 @@ import {
   CHARACTER_MAX_SIZE,
   JukeboxState,
   JukeboxTrack,
+  TypewriterState,
+  TypeRaceRoomState,
+  isWallAsset,
+  isFreeformAsset,
 } from "shared";
 import { VoiceManager, VoiceError } from "./network/VoiceManager";
 import { JukeboxManager } from "./audio/JukeboxManager";
@@ -594,6 +598,12 @@ function getEffectivePlayerName(): string {
 }
 
 function setGameControlsActive(active: boolean) {
+  if (active) {
+    const twModal = document.getElementById("typerace-modal");
+    if (twModal && !twModal.classList.contains("hidden")) {
+      return;
+    }
+  }
   if (gameInstance) {
     const activeScene = gameInstance.scene.getScene("GameScene") as GameScene;
     if (activeScene && typeof activeScene.setControlsActive === "function") {
@@ -1588,6 +1598,22 @@ function updateBrushPreview() {
       brushPatternLayer.style.backgroundImage =
         'url("/assets/table_right_150.png")';
       brushPatternLayer.style.backgroundColor = "transparent";
+    } else if (currentSelectedAssetId === "round_table_150") {
+      brushPatternLayer.style.backgroundImage =
+        'url("/assets/round_table_150.png")';
+      brushPatternLayer.style.backgroundColor = "transparent";
+    } else if (currentSelectedAssetId === "typewriter_150") {
+      brushPatternLayer.style.backgroundImage =
+        'url("/assets/typewriter_150.png")';
+      brushPatternLayer.style.backgroundColor = "transparent";
+    } else if (currentSelectedAssetId === "office_chair_150") {
+      brushPatternLayer.style.backgroundImage =
+        'url("/assets/office_chair_150.png")';
+      brushPatternLayer.style.backgroundColor = "transparent";
+    } else if (currentSelectedAssetId === "office_chair_back_150") {
+      brushPatternLayer.style.backgroundImage =
+        'url("/assets/office_chair_back_150.png")';
+      brushPatternLayer.style.backgroundColor = "transparent";
     } else if (currentSelectedAssetId === "wall_half_150") {
       brushPatternLayer.style.backgroundImage =
         'url("/assets/wall_half_150.png")';
@@ -1595,6 +1621,14 @@ function updateBrushPreview() {
     } else if (currentSelectedAssetId === "wall_top_150") {
       brushPatternLayer.style.backgroundImage =
         'url("/assets/wall_top_150.png")';
+      brushPatternLayer.style.backgroundColor = "transparent";
+    } else if (currentSelectedAssetId === "horizontal_glass_wall_150") {
+      brushPatternLayer.style.backgroundImage =
+        'url("/assets/horizontal_glass_wall_150.png")';
+      brushPatternLayer.style.backgroundColor = "transparent";
+    } else if (currentSelectedAssetId === "vertical_glass_wall_150") {
+      brushPatternLayer.style.backgroundImage =
+        'url("/assets/vertical_glass_wall_150.png")';
       brushPatternLayer.style.backgroundColor = "transparent";
     } else {
       // Plain tile
@@ -1620,7 +1654,32 @@ let activeEditorTool:
   | "clear_private_zone"
   | "obstacle"
   | "clear_obstacle"
-  | "jukebox" = "flooring";
+  | "jukebox"
+  | "typewriter"
+  | "freeform_decoration"
+  | "spawn_point"
+  | "color_dropper" = "flooring";
+
+let previousToolBeforeDropper: {
+  tool:
+    | "flooring"
+    | "decoration"
+    | "clear_decoration"
+    | "private_zone"
+    | "clear_private_zone"
+    | "obstacle"
+    | "clear_obstacle"
+    | "jukebox"
+    | "typewriter"
+    | "freeform_decoration"
+    | "spawn_point";
+  assetId: string;
+  assetName: string;
+} = {
+  tool: "flooring",
+  assetId: "birch_floor_150",
+  assetName: "Birch Floor",
+};
 
 let isDecorationPassable: boolean = true;
 let isDecorationOntop: boolean = false;
@@ -1695,6 +1754,21 @@ function updateEditBannerText() {
     return;
   }
 
+  if (activeEditorTool === "typewriter") {
+    editBannerAssetText.innerHTML = `<span class="banner-private-tag" style="background: rgba(139, 92, 246, 0.2); color: #c084fc; border-color: rgba(139, 92, 246, 0.4);">⌨️ Typewriter</span> Active: <strong>Type Racing Game (Freeform)</strong> • <em>Click anywhere to place without grid restriction</em>`;
+    return;
+  }
+
+  if (activeEditorTool === "spawn_point") {
+    editBannerAssetText.innerHTML = `<span class="banner-spawn-tag">📍 Spawn Point</span> Active: <strong>Player Spawn Point</strong> • <em>Click anywhere to place spawn point (1 per map)</em>`;
+    return;
+  }
+
+  if (activeEditorTool === "color_dropper") {
+    editBannerAssetText.innerHTML = `<span class="banner-dropper-tag">💧 Color Dropper</span> Active: <strong>Eyedropper</strong> • <em>Click any tile on the map to sample its color</em>`;
+    return;
+  }
+
   if (activeEditorTool === "private_zone") {
     editBannerAssetText.innerHTML = `<span class="banner-private-tag">🔒 Flag Private Area</span> Active: <strong>Private Tile Flagging</strong> • <em>Drag area on map to mark</em>`;
     return;
@@ -1715,6 +1789,19 @@ function updateEditBannerText() {
     editBannerAssetText.innerHTML = `<span class="banner-clear-tag">✕ Remove Deco</span> Active: <strong>Remove Decoration</strong> • <em>Click on decoration item to remove</em>`;
     return;
   }
+  if (activeEditorTool === "freeform_decoration") {
+    const colorMarkup = currentSelectedTileColor
+      ? `<span class="banner-color-indicator" style="background:${currentSelectedTileColor};"></span><strong>${currentSelectedTileColor.toUpperCase()}</strong>`
+      : `<em>(No Tint)</em>`;
+    const passageMarkup = isDecorationPassable
+      ? `<span class="banner-passable-tag">🟢 Passable</span>`
+      : `<span class="banner-solid-tag">🚫 Solid (Impassable)</span>`;
+    const layerMarkup = isDecorationOntop
+      ? `<span class="banner-layer-tag">🔼 On Top</span>`
+      : `<span class="banner-layer-tag">🔽 Behind</span>`;
+    editBannerAssetText.innerHTML = `<span class="banner-deco-tag" style="background:linear-gradient(135deg,#8b5cf6,#ec4899);">🪑 Freeform</span> Active: <strong>${currentSelectedAssetName}</strong> • ${passageMarkup} • ${layerMarkup} • Color: ${colorMarkup} • <em>Click anywhere to place • Click item to remove</em>`;
+    return;
+  }
   if (activeEditorTool === "decoration") {
     const colorMarkup = currentSelectedTileColor
       ? `<span class="banner-color-indicator" style="background:${currentSelectedTileColor};"></span><strong>${currentSelectedTileColor.toUpperCase()}</strong>`
@@ -1729,9 +1816,7 @@ function updateEditBannerText() {
     return;
   }
 
-  const isWall =
-    currentSelectedAssetId === "wall_half_150" ||
-    currentSelectedAssetId === "wall_top_150";
+  const isWall = isWallAsset(currentSelectedAssetId);
   const wallTag = isWall
     ? `<span class="banner-wall-tag">🧱 Wall + Obstacle</span> `
     : "";
@@ -1817,6 +1902,8 @@ function enterEditMode() {
     if (scene) {
       setupScenePrivateZoneEvents(scene);
       setupSceneJukeboxEvents(scene);
+      setupSceneTypewriterEvents(scene);
+      setupSceneEditorToolEvents(scene);
       scene.setEditMode(true);
       scene.setActiveEditorTool(activeEditorTool);
       scene.setSelectedAsset(currentSelectedAssetId);
@@ -1891,7 +1978,8 @@ function selectEditorAsset(assetId: string, assetName: string) {
 }
 
 function selectDecorationAsset(assetId: string, assetName: string) {
-  activeEditorTool = "decoration";
+  const isFreeform = isFreeformAsset(assetId);
+  activeEditorTool = isFreeform ? "freeform_decoration" : "decoration";
   currentSelectedAssetId = assetId;
   currentSelectedAssetName = assetName;
 
@@ -1910,7 +1998,7 @@ function selectDecorationAsset(assetId: string, assetName: string) {
   if (gameInstance) {
     const scene = gameInstance.scene.getScene("GameScene") as GameScene;
     if (scene) {
-      scene.setActiveEditorTool("decoration");
+      scene.setActiveEditorTool(isFreeform ? "freeform_decoration" : "decoration");
       scene.setSelectedAsset(assetId);
       scene.setDecorationPassable(isDecorationPassable);
       scene.setDecorationOntop(isDecorationOntop);
@@ -1919,7 +2007,8 @@ function selectDecorationAsset(assetId: string, assetName: string) {
 
   const passStr = isDecorationPassable ? "Passable" : "Solid";
   const layerStr = isDecorationOntop ? "On Top" : "Behind";
-  hideEditorUIForPlacing(`${assetName} (${passStr} • ${layerStr})`);
+  const modeStr = isFreeform ? "Freeform • " : "";
+  hideEditorUIForPlacing(`${assetName} (${modeStr}${passStr} • ${layerStr})`);
 }
 
 function selectClearDecorationTool() {
@@ -2016,6 +2105,112 @@ function selectJukeboxTool() {
   }
 
   hideEditorUIForPlacing("YouTube Jukebox (Click anywhere to place freely)");
+}
+
+function selectTypewriterTool() {
+  activeEditorTool = "typewriter";
+
+  const cards = document.querySelectorAll(".editor-asset-card");
+  cards.forEach((card) => {
+    if ((card as HTMLElement).dataset.toolType === "typewriter") {
+      card.classList.add("selected");
+    } else {
+      card.classList.remove("selected");
+    }
+  });
+
+  updateEditBannerText();
+
+  if (gameInstance) {
+    const scene = gameInstance.scene.getScene("GameScene") as GameScene;
+    if (scene) {
+      scene.setActiveEditorTool("typewriter");
+    }
+  }
+
+  hideEditorUIForPlacing("Typewriter (Click anywhere to place freely)");
+}
+
+function selectSpawnPointTool() {
+  activeEditorTool = "spawn_point";
+
+  const cards = document.querySelectorAll(".editor-asset-card");
+  cards.forEach((card) => {
+    if ((card as HTMLElement).dataset.toolType === "spawn_point") {
+      card.classList.add("selected");
+    } else {
+      card.classList.remove("selected");
+    }
+  });
+
+  updateEditBannerText();
+
+  if (gameInstance) {
+    const scene = gameInstance.scene.getScene("GameScene") as GameScene;
+    if (scene) {
+      scene.setActiveEditorTool("spawn_point");
+    }
+  }
+
+  hideEditorUIForPlacing("Spawn Point (Click map to place spawn point)");
+}
+
+function selectColorDropperTool() {
+  if (
+    activeEditorTool !== "color_dropper" &&
+    activeEditorTool !== "spawn_point"
+  ) {
+    previousToolBeforeDropper = {
+      tool: activeEditorTool as any,
+      assetId: currentSelectedAssetId,
+      assetName: currentSelectedAssetName,
+    };
+  }
+
+  activeEditorTool = "color_dropper";
+
+  const cards = document.querySelectorAll(".editor-asset-card");
+  cards.forEach((card) => {
+    if ((card as HTMLElement).dataset.toolType === "color_dropper") {
+      card.classList.add("selected");
+    } else {
+      card.classList.remove("selected");
+    }
+  });
+
+  updateEditBannerText();
+
+  if (gameInstance) {
+    const scene = gameInstance.scene.getScene("GameScene") as GameScene;
+    if (scene) {
+      scene.setActiveEditorTool("color_dropper");
+    }
+  }
+
+  hideEditorUIForPlacing("Color Dropper (Click any tile on map to pick color)");
+}
+
+function setupSceneEditorToolEvents(scene: GameScene) {
+  scene.onColorPicked = (pickedColor: string | null) => {
+    selectTileColor(pickedColor);
+    const hexDisplay = pickedColor ? pickedColor.toUpperCase() : "Original Texture (No Tint)";
+
+    // Resume previous tool (or flooring/decoration) so user can immediately paint with the new color
+    const returnTool = previousToolBeforeDropper.tool;
+    if (returnTool === "decoration" || returnTool === "freeform_decoration") {
+      selectDecorationAsset(
+        previousToolBeforeDropper.assetId,
+        previousToolBeforeDropper.assetName,
+      );
+      showPlacingToast(`Color picked: ${hexDisplay}! Resumed ${previousToolBeforeDropper.assetName}`);
+    } else {
+      selectEditorAsset(
+        previousToolBeforeDropper.assetId || "birch_floor_150",
+        previousToolBeforeDropper.assetName || "Birch Floor",
+      );
+      showPlacingToast(`Color picked: ${hexDisplay}! Resumed ${previousToolBeforeDropper.assetName || "Flooring"}`);
+    }
+  };
 }
 
 function openPrivateZoneNameModal(
@@ -2702,6 +2897,10 @@ function setupMultiplayerChatListeners(mgr: MultiplayerManager) {
 }
 
 function isAnyModalOpen(): boolean {
+  const twModal = document.getElementById("typerace-modal");
+  if (twModal && !twModal.classList.contains("hidden")) return true;
+  const jbModal = document.getElementById("jukebox-modal");
+  if (jbModal && !jbModal.classList.contains("hidden")) return true;
   if (authModal && !authModal.classList.contains("hidden")) return true;
   if (mapModal && !mapModal.classList.contains("hidden")) return true;
   if (modal && !modal.classList.contains("hidden")) return true;
@@ -2827,6 +3026,8 @@ if (spaceErrorModal) {
     }
   });
 }
+
+
 
 if (btnClosePlayerMenu) {
   btnClosePlayerMenu.addEventListener("click", () => {
@@ -3126,8 +3327,6 @@ if (audioOutputVolume) {
     }
   });
 }
-
-// User-gesture audio unlocker on window interaction
 window.addEventListener(
   "pointerdown",
   () => {
@@ -3207,6 +3406,8 @@ if (
   });
 }
 
+
+
 function hideVoiceNotification() {
   if (voiceNotificationBanner) {
     voiceNotificationBanner.classList.add("hidden");
@@ -3280,6 +3481,7 @@ async function toggleMic() {
     if (multiplayer) {
       initVoiceManager(multiplayer);
     initJukeboxManager(multiplayer);
+    setupMultiplayerTypeRaceListeners(multiplayer);
     } else {
       showVoiceNotification({
         code: "CONNECTING",
@@ -3881,6 +4083,567 @@ function initJukeboxUI() {
   }
 }
 
+// --- Type Racing Duel Modal & Controller ---
+
+let activeTypewriterId: string | null = null;
+let currentTypeRaceState: TypeRaceRoomState | null = null;
+let raceQuoteText: string = "";
+let raceStartTime: number = 0;
+let raceTotalKeypresses: number = 0;
+let raceErrorsCount: number = 0;
+let raceFinished: boolean = false;
+let raceLastProgressSentAt: number = 0;
+let quoteCharSpans: HTMLSpanElement[] = [];
+let lastRenderedQuote: string = "";
+let currentTargetScrollTop: number = 0;
+
+const typeraceModal = document.getElementById("typerace-modal") as HTMLDivElement | null;
+const btnCloseTypeRaceModal = document.getElementById("btn-close-typerace-modal") as HTMLButtonElement | null;
+const typeraceViewerBanner = document.getElementById("typerace-viewer-banner") as HTMLDivElement | null;
+const typeraceLobbyView = document.getElementById("typerace-lobby-view") as HTMLDivElement | null;
+const typeraceRaceView = document.getElementById("typerace-race-view") as HTMLDivElement | null;
+const typeraceResultsView = document.getElementById("typerace-results-view") as HTMLDivElement | null;
+const typeraceLobbyStatusText = document.getElementById("typerace-lobby-status-text") as HTMLSpanElement | null;
+const btnTypeRaceReady = document.getElementById("btn-typerace-ready") as HTMLButtonElement | null;
+const btnTypeRaceReadyText = document.getElementById("btn-typerace-ready-text") as HTMLSpanElement | null;
+const typeraceLobbyCount = document.getElementById("typerace-lobby-count") as HTMLSpanElement | null;
+const typeraceLobbyPlayersList = document.getElementById("typerace-lobby-players-list") as HTMLDivElement | null;
+const typeraceCountdownOverlay = document.getElementById("typerace-countdown-overlay") as HTMLDivElement | null;
+const typeraceCountdownNum = document.getElementById("typerace-countdown-num") as HTMLDivElement | null;
+const typeraceTrackLanes = document.getElementById("typerace-track-lanes") as HTMLDivElement | null;
+const typeraceQuoteProgressText = document.getElementById("typerace-quote-progress-text") as HTMLSpanElement | null;
+const typeraceQuoteBox = document.getElementById("typerace-quote-box") as HTMLDivElement | null;
+const typeraceTextInput = document.getElementById("typerace-text-input") as HTMLInputElement | null;
+const typeraceLiveWpm = document.getElementById("typerace-live-wpm") as HTMLSpanElement | null;
+const typeraceLiveAccuracy = document.getElementById("typerace-live-accuracy") as HTMLSpanElement | null;
+const typeraceLiveProgress = document.getElementById("typerace-live-progress") as HTMLSpanElement | null;
+const typeraceFinishedBanner = document.getElementById("typerace-finished-banner") as HTMLDivElement | null;
+const typeraceFinishedTitle = document.getElementById("typerace-finished-title") as HTMLHeadingElement | null;
+const typeraceFinishedSub = document.getElementById("typerace-finished-sub") as HTMLParagraphElement | null;
+const typeraceScoreboardBody = document.getElementById("typerace-scoreboard-body") as HTMLTableSectionElement | null;
+const btnTypeRacePlayAgain = document.getElementById("btn-typerace-play-again") as HTMLButtonElement | null;
+const btnTypeRaceLeave = document.getElementById("btn-typerace-leave") as HTMLButtonElement | null;
+
+function setupSceneTypewriterEvents(scene: GameScene) {
+  if (!scene) return;
+  if ((scene as any)._typewriterEventsBound) return;
+  (scene as any)._typewriterEventsBound = true;
+
+  scene.onTypewriterClick = (twId: string) => {
+    openTypeRaceModal(twId);
+  };
+}
+
+function openTypeRaceModal(typewriterId: string) {
+  if (!typeraceModal) return;
+  activeTypewriterId = typewriterId;
+  currentTargetScrollTop = 0;
+  typeraceModal.classList.remove("hidden");
+  setGameControlsActive(false);
+
+  if (multiplayer) {
+    multiplayer.joinTypeRace(typewriterId);
+  }
+}
+
+function closeTypeRaceModal() {
+  if (!typeraceModal) return;
+  if (activeTypewriterId && multiplayer) {
+    multiplayer.leaveTypeRace(activeTypewriterId);
+  }
+  activeTypewriterId = null;
+  currentTypeRaceState = null;
+  currentTargetScrollTop = 0;
+  typeraceModal.classList.add("hidden");
+  setGameControlsActive(true);
+}
+
+function initQuoteDisplay(quote: string) {
+  if (!typeraceQuoteBox) return;
+  typeraceQuoteBox.innerHTML = "";
+  quoteCharSpans = [];
+  lastRenderedQuote = quote;
+  currentTargetScrollTop = 0;
+
+  for (let i = 0; i < quote.length; i++) {
+    const span = document.createElement("span");
+    span.className = "typerace-char char-pending";
+    span.textContent = quote[i];
+    typeraceQuoteBox.appendChild(span);
+    quoteCharSpans.push(span);
+  }
+
+  // Bottom spacer to ensure the last lines also have >= 2 lines visible below them
+  const spacer = document.createElement("div");
+  spacer.className = "typerace-quote-spacer";
+  spacer.style.height = "72px";
+  spacer.style.pointerEvents = "none";
+  typeraceQuoteBox.appendChild(spacer);
+
+  typeraceQuoteBox.scrollTop = 0;
+}
+
+function scrollQuoteBoxToKeepAhead(container: HTMLElement, activeSpan: HTMLElement) {
+  if (!container || !activeSpan) return;
+  const containerRect = container.getBoundingClientRect();
+  const spanRect = activeSpan.getBoundingClientRect();
+
+  if (containerRect.height <= 0) return;
+
+  const computed = window.getComputedStyle(container);
+  const fontSize = parseFloat(computed.fontSize) || 17;
+  const rawLineHeight = parseFloat(computed.lineHeight);
+  const lineHeight = (!isNaN(rawLineHeight) && rawLineHeight > 0) ? rawLineHeight : fontSize * 1.8;
+  const paddingBottom = parseFloat(computed.paddingBottom) || 14;
+
+  // The active character's vertical bounds in container content coordinates
+  const spanContentTop = spanRect.top - containerRect.top + container.scrollTop;
+  const spanHeight = spanRect.height > 0 ? spanRect.height : lineHeight;
+  const spanContentBottom = spanContentTop + spanHeight;
+
+  // Effective visible height before bottom padding
+  const effectiveHeight = Math.max(lineHeight * 2, container.clientHeight - paddingBottom);
+
+  // Auto-scroll when there are 2 lines left at the bottom of the current view.
+  // The bottom of the current view should be at least (spanContentBottom + 2.0 * lineHeight).
+  // targetScrollTop = (spanContentBottom + 2.0 * lineHeight) - effectiveHeight.
+  const targetScrollTop = Math.max(0, Math.round(spanContentBottom + 2.0 * lineHeight - effectiveHeight));
+
+  if (targetScrollTop > currentTargetScrollTop + 2) {
+    currentTargetScrollTop = targetScrollTop;
+    container.scrollTo({
+      top: currentTargetScrollTop,
+      behavior: "smooth",
+    });
+  } else if (targetScrollTop < currentTargetScrollTop - lineHeight) {
+    // Backspacing upward past previous lines
+    currentTargetScrollTop = targetScrollTop;
+    container.scrollTo({
+      top: currentTargetScrollTop,
+      behavior: "smooth",
+    });
+  }
+}
+
+function renderQuoteChars(quote: string, typedVal: string) {
+  if (!typeraceQuoteBox) return { correctCount: 0, hasError: false };
+
+  if (quote !== lastRenderedQuote || quoteCharSpans.length !== quote.length) {
+    initQuoteDisplay(quote);
+  }
+
+  let correctCount = 0;
+  let hasError = false;
+  const currentIdx = Math.min(typedVal.length, quote.length);
+
+  for (let i = 0; i < quote.length; i++) {
+    const span = quoteCharSpans[i];
+    if (!span) continue;
+
+    if (i < typedVal.length) {
+      if (typedVal[i] === quote[i] && !hasError) {
+        if (span.className !== "typerace-char char-correct") {
+          span.className = "typerace-char char-correct";
+        }
+        correctCount++;
+      } else {
+        hasError = true;
+        if (span.className !== "typerace-char char-incorrect") {
+          span.className = "typerace-char char-incorrect";
+        }
+      }
+    } else if (i === currentIdx) {
+      if (span.className !== "typerace-char char-current") {
+        span.className = "typerace-char char-current";
+      }
+    } else {
+      if (span.className !== "typerace-char char-pending") {
+        span.className = "typerace-char char-pending";
+      }
+    }
+  }
+
+  const activeSpan =
+    (currentIdx < quoteCharSpans.length
+      ? quoteCharSpans[currentIdx]
+      : quoteCharSpans[quoteCharSpans.length - 1]) || null;
+
+  if (activeSpan && typeraceQuoteBox) {
+    scrollQuoteBoxToKeepAhead(typeraceQuoteBox, activeSpan);
+  }
+
+  return { correctCount, hasError };
+}
+
+function updateTypeRaceUI(state: TypeRaceRoomState) {
+  if (!state || !activeTypewriterId || state.typewriterId !== activeTypewriterId) return;
+  currentTypeRaceState = state;
+
+  const mySessionId = multiplayer?.room?.sessionId || "";
+  const players = Object.values(state.players || {});
+  const me = state.players[mySessionId];
+  const isViewer = me ? me.isViewer : false;
+
+  if (typeraceViewerBanner) {
+    typeraceViewerBanner.classList.toggle("hidden", !isViewer);
+  }
+
+  if (state.status === "waiting" || state.status === "starting") {
+    typeraceLobbyView?.classList.remove("hidden");
+    typeraceRaceView?.classList.add("hidden");
+    typeraceResultsView?.classList.add("hidden");
+
+    if (state.status === "starting") {
+      typeraceCountdownOverlay?.classList.remove("hidden");
+      if (typeraceCountdownNum) {
+        typeraceCountdownNum.textContent = String(state.countdown || 3);
+      }
+    } else {
+      typeraceCountdownOverlay?.classList.add("hidden");
+    }
+
+    if (btnTypeRaceReady && btnTypeRaceReadyText) {
+      if (isViewer) {
+        btnTypeRaceReady.disabled = true;
+        btnTypeRaceReady.classList.remove("is-ready");
+        btnTypeRaceReadyText.textContent = "👀 Spectating Current Match";
+      } else {
+        btnTypeRaceReady.disabled = false;
+        if (me?.isReady) {
+          btnTypeRaceReady.classList.add("is-ready");
+          btnTypeRaceReadyText.textContent = "✓ Ready (Click to Cancel)";
+        } else {
+          btnTypeRaceReady.classList.remove("is-ready");
+          btnTypeRaceReadyText.textContent = "✓ Ready Up";
+        }
+      }
+    }
+
+    const activePlayers = players.filter((p) => !p.isViewer);
+    const readyPlayers = activePlayers.filter((p) => p.isReady);
+    if (typeraceLobbyStatusText) {
+      typeraceLobbyStatusText.textContent =
+        state.status === "starting"
+          ? `MATCH STARTING IN ${state.countdown || 3}...`
+          : `LOBBY • ${readyPlayers.length}/${activePlayers.length} PLAYERS READY`;
+    }
+
+    if (typeraceLobbyCount) {
+      typeraceLobbyCount.textContent = `${players.length} ${players.length === 1 ? "Player" : "Players"}`;
+    }
+
+    if (typeraceLobbyPlayersList) {
+      typeraceLobbyPlayersList.innerHTML = "";
+      for (const p of players) {
+        const card = document.createElement("div");
+        card.className = `typerace-player-card ${p.isViewer ? "is-viewer" : ""}`;
+
+        let readyBadge = "";
+        if (p.isViewer) {
+          readyBadge = `<span class="player-ready-tag viewer">👀 Viewer</span>`;
+        } else if (p.isReady) {
+          readyBadge = `<span class="player-ready-tag ready">✓ Ready</span>`;
+        } else {
+          readyBadge = `<span class="player-ready-tag waiting">⏳ Waiting</span>`;
+        }
+
+        const isMeTag = p.sessionId === mySessionId ? ` <span style="font-size:10px;color:#94a3b8;">(You)</span>` : "";
+
+        card.innerHTML = `
+          <div class="player-card-left">
+            <span class="player-color-dot" style="background:${p.color || '#3b82f6'};"></span>
+            <span class="player-card-name">${escapeHtml(p.name)}${isMeTag}</span>
+          </div>
+          ${readyBadge}
+        `;
+        typeraceLobbyPlayersList.appendChild(card);
+      }
+    }
+
+  } else if (state.status === "racing") {
+    typeraceLobbyView?.classList.add("hidden");
+    typeraceRaceView?.classList.remove("hidden");
+    typeraceResultsView?.classList.add("hidden");
+    typeraceCountdownOverlay?.classList.add("hidden");
+
+    if (state.quote && state.quote !== raceQuoteText) {
+      raceQuoteText = state.quote;
+      raceStartTime = state.startTime || Date.now();
+      raceTotalKeypresses = 0;
+      raceErrorsCount = 0;
+      raceFinished = false;
+
+      if (typeraceTextInput) {
+        typeraceTextInput.value = "";
+        if (isViewer) {
+          typeraceTextInput.disabled = true;
+          typeraceTextInput.placeholder = "👀 Spectating live race...";
+        } else {
+          typeraceTextInput.disabled = false;
+          typeraceTextInput.placeholder = "Start typing the quote here...";
+          typeraceTextInput.focus();
+        }
+      }
+
+      renderQuoteChars(raceQuoteText, "");
+    }
+
+    if (typeraceTrackLanes) {
+      typeraceTrackLanes.innerHTML = "";
+      const racers = players.filter((p) => !p.isViewer);
+
+      for (const p of racers) {
+        const lane = document.createElement("div");
+        lane.className = "track-lane";
+
+        let statsText = `${p.wpm} WPM`;
+        if (p.finished) {
+          statsText = `🏁 #${p.finishRank} Finished (${p.finishTime}s) • ${p.wpm} WPM`;
+        }
+
+        const isMeText = p.sessionId === mySessionId ? ` <span style="font-size:10px;color:#94a3b8;">(You)</span>` : "";
+
+        lane.innerHTML = `
+          <div class="lane-info-row">
+            <div class="lane-player-name">
+              <span class="player-color-dot" style="background:${p.color || '#3b82f6'};"></span>
+              <span>${escapeHtml(p.name)}${isMeText}</span>
+            </div>
+            <div class="lane-stats">${statsText}</div>
+          </div>
+          <div class="track-lane-bar-wrap">
+            <div class="track-lane-progress" style="width:${p.progress}%; background:${p.color || '#3b82f6'};"></div>
+            <div class="track-lane-racer-icon" style="left:${p.progress}%;">🏎️</div>
+          </div>
+        `;
+        typeraceTrackLanes.appendChild(lane);
+      }
+    }
+
+    if (typeraceFinishedBanner && typeraceFinishedTitle && typeraceFinishedSub) {
+      if (me?.finished) {
+        typeraceFinishedBanner.classList.remove("hidden");
+        typeraceFinishedTitle.textContent = `You finished #${me.finishRank}! (${me.finishTime}s)`;
+        typeraceFinishedSub.textContent = `Speed: ${me.wpm} WPM • Accuracy: ${me.accuracy}%. Waiting for remaining racers to finish...`;
+        if (typeraceTextInput) typeraceTextInput.disabled = true;
+      } else {
+        typeraceFinishedBanner.classList.add("hidden");
+      }
+    }
+
+  } else if (state.status === "ended") {
+    typeraceLobbyView?.classList.add("hidden");
+    typeraceRaceView?.classList.add("hidden");
+    typeraceResultsView?.classList.remove("hidden");
+    typeraceCountdownOverlay?.classList.add("hidden");
+
+    if (typeraceScoreboardBody) {
+      typeraceScoreboardBody.innerHTML = "";
+      const results = state.results || [];
+
+      results.forEach((res) => {
+        const row = document.createElement("tr");
+        row.className = `rank-${res.rank <= 3 ? res.rank : "other"}`;
+
+        let rankBadge = `#${res.rank}`;
+        if (res.rank === 1) rankBadge = "🥇 1st";
+        else if (res.rank === 2) rankBadge = "🥈 2nd";
+        else if (res.rank === 3) rankBadge = "🥉 3rd";
+
+        const isMe = res.sessionId === mySessionId;
+        const youTag = isMe ? ` <span style="font-size:10px;color:#a855f7;">(You)</span>` : "";
+
+        row.innerHTML = `
+          <td class="scoreboard-rank-badge">${rankBadge}</td>
+          <td>
+            <div class="scoreboard-player-cell">
+              <span class="player-color-dot" style="background:${res.color || '#3b82f6'};"></span>
+              <span>${escapeHtml(res.name)}${youTag}</span>
+            </div>
+          </td>
+          <td><strong style="color:#10b981;font-size:14px;">${res.wpm} WPM</strong></td>
+          <td>${res.accuracy}%</td>
+          <td>${res.timeSeconds}s</td>
+        `;
+        typeraceScoreboardBody.appendChild(row);
+      });
+    }
+  }
+}
+
+if (typeraceTextInput) {
+  typeraceTextInput.addEventListener("input", () => {
+    if (!raceQuoteText || raceFinished || !activeTypewriterId || !multiplayer) return;
+
+    const typedVal = typeraceTextInput.value;
+    raceTotalKeypresses++;
+
+    const res = renderQuoteChars(raceQuoteText, typedVal);
+    const correctCount = res?.correctCount || 0;
+    const hasError = res?.hasError || false;
+
+    const progress = Math.min(100, Math.round((correctCount / Math.max(1, raceQuoteText.length)) * 100));
+    const elapsedMinutes = Math.max(0.001, (Date.now() - raceStartTime) / 60000);
+    const wpm = Math.max(0, Math.round((correctCount / 5) / elapsedMinutes));
+    const accuracy = Math.min(
+      100,
+      Math.max(0, Math.round((correctCount / Math.max(1, raceTotalKeypresses)) * 100))
+    );
+
+    if (typeraceLiveWpm) typeraceLiveWpm.textContent = String(wpm);
+    if (typeraceLiveAccuracy) typeraceLiveAccuracy.textContent = `${accuracy}%`;
+    if (typeraceLiveProgress) typeraceLiveProgress.textContent = `${progress}%`;
+    if (typeraceQuoteProgressText) {
+      typeraceQuoteProgressText.textContent = `${correctCount} / ${raceQuoteText.length} chars`;
+    }
+
+    if (correctCount >= raceQuoteText.length && !hasError) {
+      raceFinished = true;
+      typeraceTextInput.disabled = true;
+      multiplayer.sendTypeRaceProgress(
+        activeTypewriterId,
+        correctCount,
+        raceErrorsCount,
+        true,
+        wpm,
+        accuracy
+      );
+    } else {
+      const now = Date.now();
+      if (now - raceLastProgressSentAt > 120) {
+        raceLastProgressSentAt = now;
+        multiplayer.sendTypeRaceProgress(
+          activeTypewriterId,
+          correctCount,
+          raceErrorsCount,
+          false,
+          wpm,
+          accuracy
+        );
+      }
+    }
+  });
+
+  typeraceTextInput.addEventListener("keydown", (e: KeyboardEvent) => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      return;
+    }
+    // Prevent typing letters (WASD, arrows, space) from reaching Phaser canvas or movement
+    e.stopPropagation();
+  });
+
+  typeraceTextInput.addEventListener("keyup", (e: KeyboardEvent) => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      return;
+    }
+    e.stopPropagation();
+  });
+
+  typeraceTextInput.addEventListener("keypress", (e: KeyboardEvent) => {
+    e.stopPropagation();
+  });
+}
+
+if (typeraceModal) {
+  // Capture phase listener to strictly disable Escape key inside modal
+  typeraceModal.addEventListener(
+    "keydown",
+    (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+      }
+    },
+    true
+  );
+}
+
+if (btnTypeRaceReady) {
+  btnTypeRaceReady.addEventListener("click", () => {
+    if (!activeTypewriterId || !multiplayer || !currentTypeRaceState) return;
+    const mySessionId = multiplayer.room?.sessionId || "";
+    const me = currentTypeRaceState.players[mySessionId];
+    if (!me || me.isViewer) return;
+    const newReady = !me.isReady;
+    multiplayer.setTypeRaceReady(activeTypewriterId, newReady);
+  });
+}
+
+if (btnTypeRacePlayAgain) {
+  btnTypeRacePlayAgain.addEventListener("click", () => {
+    if (!activeTypewriterId || !multiplayer) return;
+    multiplayer.requestTypeRacePlayAgain(activeTypewriterId);
+  });
+}
+
+if (btnTypeRaceLeave) {
+  btnTypeRaceLeave.addEventListener("click", () => {
+    closeTypeRaceModal();
+  });
+}
+
+if (btnCloseTypeRaceModal) {
+  btnCloseTypeRaceModal.addEventListener("click", () => {
+    closeTypeRaceModal();
+  });
+}
+
+if (typeraceModal) {
+  typeraceModal.addEventListener("click", (e) => {
+    if (e.target === typeraceModal) {
+      closeTypeRaceModal();
+    }
+  });
+}
+
+function setupMultiplayerTypeRaceListeners(mgr: MultiplayerManager) {
+  mgr.onTypeRaceState((state) => {
+    updateTypeRaceUI(state);
+  });
+
+  mgr.onTypeRaceStart((data) => {
+    if (data.typewriterId === activeTypewriterId) {
+      raceQuoteText = data.quote;
+      raceStartTime = data.startTime;
+      raceTotalKeypresses = 0;
+      raceErrorsCount = 0;
+      raceFinished = false;
+
+      if (typeraceTextInput) {
+        typeraceTextInput.value = "";
+        typeraceTextInput.disabled = false;
+        typeraceTextInput.placeholder = "Start typing the quote here...";
+        typeraceTextInput.focus();
+      }
+
+      renderQuoteChars(raceQuoteText, "");
+    }
+  });
+
+  mgr.onTypeRaceEnded((data) => {
+    if (data.typewriterId === activeTypewriterId && currentTypeRaceState) {
+      currentTypeRaceState.status = "ended";
+      currentTypeRaceState.results = data.results;
+      updateTypeRaceUI(currentTypeRaceState);
+    }
+  });
+
+  mgr.onTypewriterDelete((twId) => {
+    if (activeTypewriterId === twId) {
+      closeTypeRaceModal();
+    }
+  });
+}
+
+
+
 if (privateZoneNameForm) {
   privateZoneNameForm.addEventListener("submit", (e) => {
     e.preventDefault();
@@ -3921,6 +4684,8 @@ if (privateZoneNameModal) {
     }
   });
 }
+
+
 
 if (btnToastDonePlacing) {
   btnToastDonePlacing.addEventListener("click", () => {
@@ -3967,6 +4732,12 @@ editorAssetCards.forEach((card) => {
       selectClearDecorationTool();
     } else if (toolType === "jukebox") {
       selectJukeboxTool();
+    } else if (toolType === "typewriter") {
+      selectTypewriterTool();
+    } else if (toolType === "spawn_point") {
+      selectSpawnPointTool();
+    } else if (toolType === "color_dropper") {
+      selectColorDropperTool();
     } else {
       const id = card.dataset.assetId || "birch_floor_150";
       const name = card.dataset.assetName || "Birch Floor";
@@ -3980,8 +4751,36 @@ editorAssetCards.forEach((card) => {
   });
 });
 
+const btnDropperShortcut = document.getElementById("btn-dropper-shortcut");
+if (btnDropperShortcut) {
+  btnDropperShortcut.addEventListener("click", () => {
+    selectColorDropperTool();
+  });
+}
+
+// Global capture listener to strictly disable Escape key when Typerace modal is open
+window.addEventListener(
+  "keydown",
+  (e: KeyboardEvent) => {
+    if (e.key === "Escape") {
+      const twModal = document.getElementById("typerace-modal");
+      if (twModal && !twModal.classList.contains("hidden")) {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+      }
+    }
+  },
+  true
+);
+
 window.addEventListener("keydown", (e: KeyboardEvent) => {
   if (e.key === "Escape") {
+    if (typeraceModal && !typeraceModal.classList.contains("hidden")) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
     if (jukeboxModal && !jukeboxModal.classList.contains("hidden")) {
       closeJukeboxModal();
       return;
@@ -4374,6 +5173,7 @@ async function switchSpace(
     }
     initVoiceManager(multiplayer);
     initJukeboxManager(multiplayer);
+    setupMultiplayerTypeRaceListeners(multiplayer);
 
     await multiplayer.joinGame({
       name: effectiveName,
@@ -4849,6 +5649,7 @@ async function enterGameSession() {
   updateChatTabNames();
   initVoiceManager(manager);
   initJukeboxManager(manager);
+  setupMultiplayerTypeRaceListeners(manager);
 
   try {
     await manager.joinGame({
@@ -4903,6 +5704,8 @@ async function enterGameSession() {
           }
           setupScenePrivateZoneEvents(scene);
           setupSceneJukeboxEvents(scene);
+          setupSceneTypewriterEvents(scene);
+          setupSceneEditorToolEvents(scene);
         }
       }
     };

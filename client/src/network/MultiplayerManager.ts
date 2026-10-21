@@ -9,6 +9,9 @@ import {
   ChatMessage,
   SendChatMessagePayload,
   JukeboxState,
+  TypewriterState,
+  TypeRaceRoomState,
+  TypeRaceResult,
 } from "shared";
 
 export interface NetworkStats {
@@ -25,6 +28,12 @@ export type ChatMessageCallback = (message: ChatMessage) => void;
 export type JukeboxesSyncCallback = (jukeboxes: JukeboxState[]) => void;
 export type JukeboxUpdateCallback = (jukebox: JukeboxState) => void;
 export type JukeboxDeleteCallback = (jukeboxId: string) => void;
+export type TypewritersSyncCallback = (typewriters: TypewriterState[]) => void;
+export type TypewriterUpdateCallback = (typewriter: TypewriterState) => void;
+export type TypewriterDeleteCallback = (typewriterId: string) => void;
+export type TypeRaceStateCallback = (state: TypeRaceRoomState) => void;
+export type TypeRaceStartCallback = (data: { typewriterId: string; quote: string; startTime: number }) => void;
+export type TypeRaceEndedCallback = (data: { typewriterId: string; results: TypeRaceResult[] }) => void;
 
 export class MultiplayerManager {
   private client!: Client;
@@ -47,9 +56,16 @@ export class MultiplayerManager {
   private onJukeboxDeleteCallbacks: JukeboxDeleteCallback[] = [];
   private onJukeboxPlaylistAddedCallbacks: ((data: { count: number; title: string; playlistId: string }) => void)[] = [];
   private onJukeboxErrorCallbacks: ((data: { message: string }) => void)[] = [];
+  private onTypewritersSyncCallbacks: TypewritersSyncCallback[] = [];
+  private onTypewriterUpdateCallbacks: TypewriterUpdateCallback[] = [];
+  private onTypewriterDeleteCallbacks: TypewriterDeleteCallback[] = [];
+  private onTypeRaceStateCallbacks: TypeRaceStateCallback[] = [];
+  private onTypeRaceStartCallbacks: TypeRaceStartCallback[] = [];
+  private onTypeRaceEndedCallbacks: TypeRaceEndedCallback[] = [];
   public currentTiles: Record<string, string> = {};
   public currentPrivateZones: PrivateZone[] = [];
   public currentJukeboxes: Map<string, JukeboxState> = new Map();
+  public currentTypewriters: Map<string, TypewriterState> = new Map();
   public playerAvatarsMap = new Map<string, PlayerAvatars>();
 
   private pingTimer: number | null = null;
@@ -265,6 +281,54 @@ export class MultiplayerManager {
         }
       });
     });
+
+    this.room.onMessage("CURRENT_TYPEWRITERS", (typewriters: TypewriterState[]) => {
+      this.currentTypewriters.clear();
+      if (Array.isArray(typewriters)) {
+        for (const tw of typewriters) {
+          this.currentTypewriters.set(tw.id, tw);
+        }
+      }
+      this.notifyTypewritersSync(Array.from(this.currentTypewriters.values()));
+    });
+
+    this.room.onMessage("TYPEWRITER_UPDATED", (typewriter: TypewriterState) => {
+      if (typewriter && typewriter.id) {
+        this.currentTypewriters.set(typewriter.id, typewriter);
+        this.notifyTypewriterUpdate(typewriter);
+      }
+    });
+
+    this.room.onMessage("TYPEWRITER_DELETED", (data: { typewriterId: string }) => {
+      if (data && data.typewriterId) {
+        this.currentTypewriters.delete(data.typewriterId);
+        this.notifyTypewriterDelete(data.typewriterId);
+      }
+    });
+
+    this.room.onMessage("TYPERACE_STATE", (state: TypeRaceRoomState) => {
+      if (state && state.typewriterId) {
+        this.notifyTypeRaceState(state);
+      }
+    });
+
+    this.room.onMessage(
+      "TYPERACE_START",
+      (data: { typewriterId: string; quote: string; startTime: number }) => {
+        if (data) {
+          this.notifyTypeRaceStart(data);
+        }
+      }
+    );
+
+    this.room.onMessage(
+      "TYPERACE_ENDED",
+      (data: { typewriterId: string; results: TypeRaceResult[] }) => {
+        if (data) {
+          this.notifyTypeRaceEnded(data);
+        }
+      }
+    );
 
     this.startPingLoop();
 
@@ -656,6 +720,152 @@ export class MultiplayerManager {
   public reportJukeboxTrackDuration(jukeboxId: string, trackId: string, duration: number) {
     if (this.room) {
       this.room.send("JUKEBOX_REPORT_DURATION", { jukeboxId, trackId, duration });
+    }
+  }
+
+  private notifyTypewritersSync(typewriters: TypewriterState[]) {
+    this.onTypewritersSyncCallbacks.forEach((cb) => {
+      try {
+        cb(typewriters);
+      } catch (err) {
+        console.error("Error in onTypewritersSync callback:", err);
+      }
+    });
+  }
+
+  private notifyTypewriterUpdate(typewriter: TypewriterState) {
+    this.onTypewriterUpdateCallbacks.forEach((cb) => {
+      try {
+        cb(typewriter);
+      } catch (err) {
+        console.error("Error in onTypewriterUpdate callback:", err);
+      }
+    });
+  }
+
+  private notifyTypewriterDelete(typewriterId: string) {
+    this.onTypewriterDeleteCallbacks.forEach((cb) => {
+      try {
+        cb(typewriterId);
+      } catch (err) {
+        console.error("Error in onTypewriterDelete callback:", err);
+      }
+    });
+  }
+
+  private notifyTypeRaceState(state: TypeRaceRoomState) {
+    this.onTypeRaceStateCallbacks.forEach((cb) => {
+      try {
+        cb(state);
+      } catch (err) {
+        console.error("Error in onTypeRaceState callback:", err);
+      }
+    });
+  }
+
+  private notifyTypeRaceStart(data: { typewriterId: string; quote: string; startTime: number }) {
+    this.onTypeRaceStartCallbacks.forEach((cb) => {
+      try {
+        cb(data);
+      } catch (err) {
+        console.error("Error in onTypeRaceStart callback:", err);
+      }
+    });
+  }
+
+  private notifyTypeRaceEnded(data: { typewriterId: string; results: TypeRaceResult[] }) {
+    this.onTypeRaceEndedCallbacks.forEach((cb) => {
+      try {
+        cb(data);
+      } catch (err) {
+        console.error("Error in onTypeRaceEnded callback:", err);
+      }
+    });
+  }
+
+  public onTypewritersSync(cb: TypewritersSyncCallback) {
+    this.onTypewritersSyncCallbacks.push(cb);
+  }
+
+  public onTypewriterUpdate(cb: TypewriterUpdateCallback) {
+    this.onTypewriterUpdateCallbacks.push(cb);
+  }
+
+  public onTypewriterDelete(cb: TypewriterDeleteCallback) {
+    this.onTypewriterDeleteCallbacks.push(cb);
+  }
+
+  public onTypeRaceState(cb: TypeRaceStateCallback) {
+    this.onTypeRaceStateCallbacks.push(cb);
+  }
+
+  public onTypeRaceStart(cb: TypeRaceStartCallback) {
+    this.onTypeRaceStartCallbacks.push(cb);
+  }
+
+  public onTypeRaceEnded(cb: TypeRaceEndedCallback) {
+    this.onTypeRaceEndedCallbacks.push(cb);
+  }
+
+  public placeTypewriter(x: number, y: number, passable: boolean = false, ontop: boolean = false) {
+    if (this.room) {
+      this.room.send("TYPEWRITER_PLACE", { x, y, passable, ontop });
+    }
+  }
+
+  public moveTypewriter(typewriterId: string, x: number, y: number) {
+    if (this.room) {
+      this.room.send("TYPEWRITER_MOVE", { typewriterId, x, y });
+    }
+  }
+
+  public deleteTypewriter(typewriterId: string) {
+    if (this.room) {
+      this.room.send("TYPEWRITER_DELETE", { typewriterId });
+    }
+  }
+
+  public joinTypeRace(typewriterId: string) {
+    if (this.room) {
+      this.room.send("TYPERACE_JOIN", { typewriterId });
+    }
+  }
+
+  public leaveTypeRace(typewriterId: string) {
+    if (this.room) {
+      this.room.send("TYPERACE_LEAVE", { typewriterId });
+    }
+  }
+
+  public setTypeRaceReady(typewriterId: string, ready: boolean) {
+    if (this.room) {
+      this.room.send("TYPERACE_READY", { typewriterId, ready });
+    }
+  }
+
+  public sendTypeRaceProgress(
+    typewriterId: string,
+    charsTyped: number,
+    errors: number,
+    finished: boolean,
+    wpm: number,
+    accuracy: number
+  ) {
+    if (this.room) {
+      this.room.send("TYPERACE_PROGRESS", {
+        typewriterId,
+        charsTyped,
+        errors,
+        finished,
+        wpm,
+        accuracy,
+      });
+    }
+  }
+
+  public requestTypeRacePlayAgain(typewriterId: string) {
+    if (this.room) {
+      this.room.send("TYPERACE_PLAY_AGAIN", { typewriterId });
     }
   }
 }

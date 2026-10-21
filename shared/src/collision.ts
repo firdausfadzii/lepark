@@ -11,8 +11,25 @@ import {
   PLAYER_FEET_BOTTOM_OFFSET,
 } from "./constants";
 
-export const WALL_ASSET_KEYS = ["wall_half_150", "wall_top_150", "obstacle"] as const;
+export const WALL_ASSET_KEYS = [
+  "wall_half_150",
+  "wall_top_150",
+  "horizontal_glass_wall_150",
+  "vertical_glass_wall_150",
+  "obstacle",
+] as const;
 export type WallAssetKey = (typeof WALL_ASSET_KEYS)[number];
+
+export function isWallAsset(key: string | undefined | null): boolean {
+  if (!key) return false;
+  const baseKey = key.includes("|") ? key.split("|")[0] : key;
+  return (
+    baseKey === "wall_half_150" ||
+    baseKey === "wall_top_150" ||
+    baseKey === "horizontal_glass_wall_150" ||
+    baseKey === "vertical_glass_wall_150"
+  );
+}
 
 /**
  * Checks whether a tile data string represents an impassable wall or obstacle tile.

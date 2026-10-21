@@ -33,6 +33,11 @@ import {
   JukeboxPlacePayload,
   JukeboxMovePayload,
   JukeboxDeletePayload,
+  TypewriterState,
+  TypeRacePlayer,
+  TypeRaceResult,
+  TypeRaceRoomState,
+  TypeRaceStatus,
 } from "shared";
 import {
   upsertPlayer,
@@ -44,11 +49,14 @@ import {
   updateSpacePrivateZones,
   getSpaceJukeboxes,
   updateSpaceJukeboxes,
+  getSpaceTypewriters,
+  updateSpaceTypewriters,
   findUserById,
   ensureUserPersonalSpace,
 } from "../db";
 import { verifyToken } from "../auth";
 import { extractPlaylistId, fetchPlaylistVideos } from "../services/youtubePlaylist";
+import { QuoteService } from "../services/QuoteService";
 
 export const activeSpaceCounts = new Map<string, number>();
 
@@ -66,6 +74,22 @@ export class GameRoom extends Room<GameState> {
   private privateZones: PrivateZone[] = [];
   private jukeboxes: Map<string, JukeboxState> = new Map();
   private jukeboxTimer: NodeJS.Timeout | null = null;
+  private typewriters: Map<string, TypewriterState> = new Map();
+  private typeRaceSessions: Map<
+    string,
+    {
+      typewriterId: string;
+      status: TypeRaceStatus;
+      quote: string;
+      startTime: number;
+      countdown: number;
+      countdownTimer?: NodeJS.Timeout;
+      matchTimer?: NodeJS.Timeout;
+      players: Map<string, TypeRacePlayer>;
+      results: TypeRaceResult[];
+    }
+  > = new Map();
+  private clientTypewriterRaceMap: Map<string, string> = new Map();
   private voiceParticipants: Set<string> = new Set();
   private spaceOwnerId: number | null = null;
   private clientAuthMap: Map<string, any> = new Map();
@@ -263,6 +287,20 @@ export class GameRoom extends Room<GameState> {
       })
       .catch((err) => console.warn("Failed loading space jukeboxes:", err));
 
+    getSpaceTypewriters(this.spaceId)
+      .then((loadedTypewriters) => {
+        if (loadedTypewriters && Array.isArray(loadedTypewriters)) {
+          for (const tw of loadedTypewriters) {
+            this.typewriters.set(tw.id, tw);
+          }
+        }
+      })
+      .catch((err) => console.warn("Failed loading space typewriters:", err));
+
+    QuoteService.loadQuotes().catch((err) =>
+      console.warn("Failed preloading quotes:", err)
+    );
+
     // Continuous loop timer for playing jukeboxes
     this.jukeboxTimer = setInterval(() => {
       let changed = false;
@@ -308,7 +346,13 @@ export class GameRoom extends Room<GameState> {
         }
 
         if (data && data.updates && typeof data.updates === "object") {
-          Object.assign(this.tiles, data.updates);
+          for (const [k, v] of Object.entries(data.updates)) {
+            if (v === "" || v === null || v === undefined) {
+              delete this.tiles[k];
+            } else {
+              this.tiles[k] = v;
+            }
+          }
           this.broadcast("TILES_UPDATED", data.updates);
           await updateSpaceTiles(this.spaceId, this.tiles);
         }
@@ -700,6 +744,310 @@ export class GameRoom extends Room<GameState> {
       },
     );
 
+    // --- Typewriter & Typeracing Handlers ---
+
+    // 1. Place Typewriter (owner/superadmin)
+    this.onMessage(
+      "TYPEWRITER_PLACE",
+      async (
+        client: Client,
+        data: { x: number; y: number; passable?: boolean; ontop?: boolean }
+      ) => {
+        const auth = this.clientAuthMap.get(client.sessionId);
+        const user = auth?.user;
+        const isSuperadmin = user?.role === "superadmin";
+        const isOwner =
+          user && this.spaceOwnerId !== null && user.id === this.spaceOwnerId;
+
+        if (!isSuperadmin && !isOwner) {
+          client.send("ERROR", {
+            message:
+              "Permission denied: Only space owner or superadmin can place a typewriter.",
+          });
+          return;
+        }
+
+        const newTw: TypewriterState = {
+          id:
+            "typewriter_" +
+            Date.now() +
+            "_" +
+            Math.random().toString(36).substring(2, 7),
+          spaceId: this.spaceId,
+          x: Math.round(data.x),
+          y: Math.round(data.y),
+          passable: data.passable ?? false,
+          ontop: data.ontop ?? false,
+        };
+
+        this.typewriters.set(newTw.id, newTw);
+        this.broadcast("TYPEWRITER_UPDATED", newTw);
+        await this.persistTypewriters();
+      }
+    );
+
+    // 2. Move Typewriter (owner/superadmin)
+    this.onMessage(
+      "TYPEWRITER_MOVE",
+      async (
+        client: Client,
+        data: { typewriterId: string; x: number; y: number }
+      ) => {
+        const auth = this.clientAuthMap.get(client.sessionId);
+        const user = auth?.user;
+        const isSuperadmin = user?.role === "superadmin";
+        const isOwner =
+          user && this.spaceOwnerId !== null && user.id === this.spaceOwnerId;
+
+        if (!isSuperadmin && !isOwner) {
+          client.send("ERROR", {
+            message:
+              "Permission denied: Only space owner or superadmin can move a typewriter.",
+          });
+          return;
+        }
+
+        const tw = this.typewriters.get(data.typewriterId);
+        if (!tw) return;
+        tw.x = Math.round(data.x);
+        tw.y = Math.round(data.y);
+        this.broadcast("TYPEWRITER_UPDATED", tw);
+        await this.persistTypewriters();
+      }
+    );
+
+    // 3. Delete Typewriter (owner/superadmin)
+    this.onMessage(
+      "TYPEWRITER_DELETE",
+      async (client: Client, data: { typewriterId: string }) => {
+        const auth = this.clientAuthMap.get(client.sessionId);
+        const user = auth?.user;
+        const isSuperadmin = user?.role === "superadmin";
+        const isOwner =
+          user && this.spaceOwnerId !== null && user.id === this.spaceOwnerId;
+
+        if (!isSuperadmin && !isOwner) {
+          client.send("ERROR", {
+            message:
+              "Permission denied: Only space owner or superadmin can delete a typewriter.",
+          });
+          return;
+        }
+
+        if (this.typewriters.delete(data.typewriterId)) {
+          this.broadcast("TYPEWRITER_DELETED", {
+            typewriterId: data.typewriterId,
+          });
+          const session = this.typeRaceSessions.get(data.typewriterId);
+          if (session) {
+            if (session.countdownTimer) clearInterval(session.countdownTimer);
+            if (session.matchTimer) clearTimeout(session.matchTimer);
+            this.typeRaceSessions.delete(data.typewriterId);
+          }
+          await this.persistTypewriters();
+        }
+      }
+    );
+
+    // 4. Join Typeracing Room/Modal
+    this.onMessage(
+      "TYPERACE_JOIN",
+      (client: Client, data: { typewriterId: string }) => {
+        if (!data?.typewriterId) return;
+        const twId = data.typewriterId;
+        let session = this.typeRaceSessions.get(twId);
+        if (!session) {
+          session = {
+            typewriterId: twId,
+            status: "waiting",
+            quote: "",
+            startTime: 0,
+            countdown: 0,
+            players: new Map(),
+            results: [],
+          };
+          this.typeRaceSessions.set(twId, session);
+        }
+
+        const auth = this.clientAuthMap.get(client.sessionId);
+        const name =
+          auth?.user?.displayName || auth?.user?.username || "Player";
+        const color =
+          this.state.players.get(client.sessionId)?.color || "#3b82f6";
+        const userId = auth?.user?.id;
+
+        // "when other players join during match on going, they will be just viewer first until match ended."
+        const isViewer =
+          session.status === "racing" || session.status === "starting";
+
+        session.players.set(client.sessionId, {
+          sessionId: client.sessionId,
+          userId,
+          name,
+          color,
+          isReady: false,
+          isViewer,
+          progress: 0,
+          charsTyped: 0,
+          wpm: 0,
+          accuracy: 100,
+          finished: false,
+        });
+
+        this.clientTypewriterRaceMap.set(client.sessionId, twId);
+        client.send("TYPERACE_STATE", this.getRaceRoomState(session));
+        this.broadcastTypeRaceState(session);
+      }
+    );
+
+    // 5. Leave Typeracing Room/Modal
+    this.onMessage(
+      "TYPERACE_LEAVE",
+      (client: Client, data: { typewriterId: string }) => {
+        const twId =
+          data?.typewriterId ||
+          this.clientTypewriterRaceMap.get(client.sessionId);
+        if (twId) {
+          this.handleTypeRaceLeave(client.sessionId, twId);
+        }
+      }
+    );
+
+    // 6. Ready status toggle
+    this.onMessage(
+      "TYPERACE_READY",
+      (client: Client, data: { typewriterId: string; ready: boolean }) => {
+        if (!data?.typewriterId) return;
+        const session = this.typeRaceSessions.get(data.typewriterId);
+        if (!session || session.status !== "waiting") return;
+
+        const player = session.players.get(client.sessionId);
+        if (!player || player.isViewer) return;
+
+        player.isReady = Boolean(data.ready);
+
+        // "match won't start until all players are ready."
+        const activePlayers = Array.from(session.players.values()).filter(
+          (p) => !p.isViewer
+        );
+        if (
+          activePlayers.length > 0 &&
+          activePlayers.every((p) => p.isReady)
+        ) {
+          this.startTypeRaceCountdown(session);
+        } else {
+          this.broadcastTypeRaceState(session);
+        }
+      }
+    );
+
+    // 7. Progress update during race
+    this.onMessage(
+      "TYPERACE_PROGRESS",
+      (
+        client: Client,
+        data: {
+          typewriterId: string;
+          charsTyped: number;
+          errors: number;
+          finished: boolean;
+          wpm: number;
+          accuracy: number;
+        }
+      ) => {
+        if (!data?.typewriterId) return;
+        const session = this.typeRaceSessions.get(data.typewriterId);
+        if (!session || session.status !== "racing") return;
+
+        const player = session.players.get(client.sessionId);
+        if (!player || player.isViewer) return;
+
+        player.charsTyped = Math.max(0, data.charsTyped || 0);
+        player.progress = Math.min(
+          100,
+          Math.max(
+            0,
+            Math.round(
+              (player.charsTyped / Math.max(1, session.quote.length)) * 100
+            )
+          )
+        );
+        player.wpm = Math.max(0, Math.round(data.wpm || 0));
+        player.accuracy = Math.min(
+          100,
+          Math.max(0, Math.round(data.accuracy || 100))
+        );
+
+        if (data.finished && !player.finished) {
+          player.finished = true;
+          const elapsedSec = (Date.now() - session.startTime) / 1000;
+          player.finishTime = parseFloat(elapsedSec.toFixed(1));
+          player.finishRank = session.results.length + 1;
+
+          session.results.push({
+            sessionId: client.sessionId,
+            name: player.name,
+            color: player.color,
+            wpm: player.wpm,
+            accuracy: player.accuracy,
+            timeSeconds: player.finishTime,
+            rank: player.finishRank,
+          });
+
+          // Check if all active players finished
+          const activeRacers = Array.from(session.players.values()).filter(
+            (p) => !p.isViewer
+          );
+          const allFinished = activeRacers.every((p) => p.finished);
+          if (allFinished) {
+            this.endTypeRace(session);
+            return;
+          } else if (player.finishRank === 1 && !session.matchTimer) {
+            // First player finished, start 20s grace timer for remaining racers
+            session.matchTimer = setTimeout(
+              () => this.endTypeRace(session),
+              20000
+            );
+          }
+        }
+
+        this.broadcastTypeRaceState(session);
+      }
+    );
+
+    // 8. Play again / restart lobby
+    this.onMessage(
+      "TYPERACE_PLAY_AGAIN",
+      (client: Client, data: { typewriterId: string }) => {
+        if (!data?.typewriterId) return;
+        const session = this.typeRaceSessions.get(data.typewriterId);
+        if (!session || session.status !== "ended") return;
+
+        if (session.countdownTimer) clearInterval(session.countdownTimer);
+        if (session.matchTimer) clearTimeout(session.matchTimer);
+
+        session.status = "waiting";
+        session.quote = "";
+        session.results = [];
+        session.countdown = 0;
+
+        // Reset players and make viewers active players for next match
+        for (const p of session.players.values()) {
+          p.isViewer = false;
+          p.isReady = false;
+          p.progress = 0;
+          p.charsTyped = 0;
+          p.wpm = 0;
+          p.accuracy = 100;
+          p.finished = false;
+          p.finishRank = undefined;
+          p.finishTime = undefined;
+        }
+
+        this.broadcastTypeRaceState(session);
+      }
+    );
+
     // Handle chat messages from clients
     this.onMessage(
       "SEND_CHAT_MESSAGE",
@@ -962,11 +1310,27 @@ export class GameRoom extends Room<GameState> {
         console.warn("Could not ensure personal space on join:", err);
       });
     }
-    const defaultTileX = Math.floor(GRID_COLS / 2);
-    const defaultTileY = Math.floor(GRID_ROWS / 2);
+    let preferredTileX = Math.floor(GRID_COLS / 2);
+    let preferredTileY = Math.floor(GRID_ROWS / 2);
+    if (this.tiles["spawn_point"]) {
+      const [sc, sr] = this.tiles["spawn_point"].split(",");
+      const parsedCol = parseInt(sc, 10);
+      const parsedRow = parseInt(sr, 10);
+      if (
+        !isNaN(parsedCol) &&
+        !isNaN(parsedRow) &&
+        parsedCol >= 0 &&
+        parsedCol < GRID_COLS &&
+        parsedRow >= 0 &&
+        parsedRow < GRID_ROWS
+      ) {
+        preferredTileX = parsedCol;
+        preferredTileY = parsedRow;
+      }
+    }
     const spawnCenter = findSafeSpawnCenter(
-      defaultTileX,
-      defaultTileY,
+      preferredTileX,
+      preferredTileY,
       (c, r) => isWallTile(this.tiles[`${c},${r}`]),
     );
 
@@ -982,7 +1346,7 @@ export class GameRoom extends Room<GameState> {
     });
 
     console.log(
-      ` Player joined space [${this.spaceId}]: ${name} (${color}) [${client.sessionId}] at tile (${defaultTileX}, ${defaultTileY})`,
+      ` Player joined space [${this.spaceId}]: ${name} (${color}) [${client.sessionId}] at spawn tile (${preferredTileX}, ${preferredTileY})`,
     );
 
     upsertPlayer({
@@ -1023,6 +1387,9 @@ export class GameRoom extends Room<GameState> {
 
     // Send current space jukeboxes to joining client
     client.send("CURRENT_JUKEBOXES", Array.from(this.jukeboxes.values()));
+
+    // Send current space typewriters to joining client
+    client.send("CURRENT_TYPEWRITERS", Array.from(this.typewriters.values()));
   }
 
   onLeave(client: Client, consented?: boolean) {
@@ -1031,6 +1398,12 @@ export class GameRoom extends Room<GameState> {
 
     // Cleanup voice channel membership if user was in voice
     this.removeClientFromVoice(client.sessionId);
+
+    // Cleanup typeracing session if user was in race
+    if (this.clientTypewriterRaceMap.has(client.sessionId)) {
+      const twId = this.clientTypewriterRaceMap.get(client.sessionId)!;
+      this.handleTypeRaceLeave(client.sessionId, twId);
+    }
 
     const player = this.state.players.get(client.sessionId);
     if (player) {
@@ -1105,6 +1478,180 @@ export class GameRoom extends Room<GameState> {
     }
   }
 
+  private getRaceRoomState(session: {
+    typewriterId: string;
+    status: TypeRaceStatus;
+    quote: string;
+    startTime: number;
+    countdown: number;
+    players: Map<string, TypeRacePlayer>;
+    results: TypeRaceResult[];
+  }): TypeRaceRoomState {
+    const playersObj: Record<string, TypeRacePlayer> = {};
+    for (const [sId, p] of session.players.entries()) {
+      playersObj[sId] = { ...p };
+    }
+    return {
+      typewriterId: session.typewriterId,
+      status: session.status,
+      quote: session.quote,
+      startTime: session.startTime,
+      countdown: session.countdown,
+      players: playersObj,
+      results: [...session.results],
+    };
+  }
+
+  private broadcastTypeRaceState(session: {
+    typewriterId: string;
+    status: TypeRaceStatus;
+    quote: string;
+    startTime: number;
+    countdown: number;
+    players: Map<string, TypeRacePlayer>;
+    results: TypeRaceResult[];
+  }) {
+    const state = this.getRaceRoomState(session);
+    this.broadcast("TYPERACE_STATE", state);
+  }
+
+  private endTypeRace(session: {
+    typewriterId: string;
+    status: TypeRaceStatus;
+    quote: string;
+    startTime: number;
+    countdown: number;
+    countdownTimer?: NodeJS.Timeout;
+    matchTimer?: NodeJS.Timeout;
+    players: Map<string, TypeRacePlayer>;
+    results: TypeRaceResult[];
+  }) {
+    if (session.matchTimer) {
+      clearTimeout(session.matchTimer);
+      session.matchTimer = undefined;
+    }
+    session.status = "ended";
+    const elapsedTotal = Math.max(1, (Date.now() - session.startTime) / 1000);
+
+    const finishedIds = new Set(session.results.map((r) => r.sessionId));
+    const unfinishedRacers = Array.from(session.players.values())
+      .filter((p) => !p.isViewer && !finishedIds.has(p.sessionId))
+      .sort((a, b) => b.progress - a.progress || b.wpm - a.wpm);
+
+    for (const p of unfinishedRacers) {
+      const rank = session.results.length + 1;
+      p.finishRank = rank;
+      p.finishTime = parseFloat(elapsedTotal.toFixed(1));
+      session.results.push({
+        sessionId: p.sessionId,
+        name: p.name,
+        color: p.color,
+        wpm: p.wpm,
+        accuracy: p.accuracy,
+        timeSeconds: p.finishTime,
+        rank,
+      });
+    }
+
+    const finalState = this.getRaceRoomState(session);
+    this.broadcast("TYPERACE_STATE", finalState);
+    this.broadcast("TYPERACE_ENDED", {
+      typewriterId: session.typewriterId,
+      results: session.results,
+    });
+  }
+
+  private handleTypeRaceLeave(sessionId: string, typewriterId: string) {
+    this.clientTypewriterRaceMap.delete(sessionId);
+    const session = this.typeRaceSessions.get(typewriterId);
+    if (!session) return;
+
+    session.players.delete(sessionId);
+
+    if (session.players.size === 0) {
+      if (session.countdownTimer) clearInterval(session.countdownTimer);
+      if (session.matchTimer) clearTimeout(session.matchTimer);
+      this.typeRaceSessions.delete(typewriterId);
+      return;
+    }
+
+    if (session.status === "waiting") {
+      const active = Array.from(session.players.values()).filter(
+        (p) => !p.isViewer
+      );
+      if (active.length > 0 && active.every((p) => p.isReady)) {
+        this.startTypeRaceCountdown(session);
+        return;
+      }
+    } else if (session.status === "racing") {
+      const active = Array.from(session.players.values()).filter(
+        (p) => !p.isViewer
+      );
+      if (active.length > 0 && active.every((p) => p.finished)) {
+        this.endTypeRace(session);
+        return;
+      }
+    }
+
+    this.broadcastTypeRaceState(session);
+  }
+
+  private startTypeRaceCountdown(session: {
+    typewriterId: string;
+    status: TypeRaceStatus;
+    quote: string;
+    startTime: number;
+    countdown: number;
+    countdownTimer?: NodeJS.Timeout;
+    matchTimer?: NodeJS.Timeout;
+    players: Map<string, TypeRacePlayer>;
+    results: TypeRaceResult[];
+  }) {
+    if (session.countdownTimer) clearInterval(session.countdownTimer);
+    session.status = "starting";
+    session.countdown = 3;
+    this.broadcastTypeRaceState(session);
+
+    session.countdownTimer = setInterval(async () => {
+      session.countdown -= 1;
+      if (session.countdown > 0) {
+        this.broadcastTypeRaceState(session);
+      } else {
+        if (session.countdownTimer) {
+          clearInterval(session.countdownTimer);
+          session.countdownTimer = undefined;
+        }
+
+        // Fetch 1 random quote from Monkeytype quotes dataset
+        const quote = await QuoteService.getCombinedQuote(1);
+        session.quote = quote;
+        session.status = "racing";
+        session.startTime = Date.now();
+        session.results = [];
+
+        // Reset all active racers for race start
+        for (const p of session.players.values()) {
+          if (!p.isViewer) {
+            p.charsTyped = 0;
+            p.progress = 0;
+            p.wpm = 0;
+            p.accuracy = 100;
+            p.finished = false;
+            p.finishRank = undefined;
+            p.finishTime = undefined;
+          }
+        }
+
+        this.broadcastTypeRaceState(session);
+        this.broadcast("TYPERACE_START", {
+          typewriterId: session.typewriterId,
+          quote: session.quote,
+          startTime: session.startTime,
+        });
+      }
+    }, 1000);
+  }
+
   private getSolidBoxes(): SolidBox[] {
     const boxes: SolidBox[] = [];
     for (const jb of this.jukeboxes.values()) {
@@ -1115,6 +1662,35 @@ export class GameRoom extends Room<GameState> {
           minY: jb.y - 18,
           maxY: jb.y + 20,
         });
+      }
+    }
+    for (const tw of this.typewriters.values()) {
+      if (tw.passable === false) {
+        boxes.push({
+          minX: tw.x - 20,
+          maxX: tw.x + 20,
+          minY: tw.y - 18,
+          maxY: tw.y + 18,
+        });
+      }
+    }
+    for (const [k, val] of Object.entries(this.tiles)) {
+      if (k.startsWith("freeform:") && val) {
+        const parts = val.split("::");
+        const coords = parts[1]?.split(",");
+        const isSolid = parts.includes("solid") || parts.includes("obstacle");
+        if (coords && coords.length === 2 && isSolid) {
+          const fx = parseFloat(coords[0]);
+          const fy = parseFloat(coords[1]);
+          if (!isNaN(fx) && !isNaN(fy)) {
+            boxes.push({
+              minX: fx - 16,
+              maxX: fx + 16,
+              minY: fy - 16,
+              maxY: fy + 16,
+            });
+          }
+        }
       }
     }
     return boxes;
@@ -1128,10 +1704,26 @@ export class GameRoom extends Room<GameState> {
     }
   }
 
+  private async persistTypewriters() {
+    try {
+      await updateSpaceTypewriters(
+        this.spaceId,
+        Array.from(this.typewriters.values())
+      );
+    } catch (err) {
+      console.error("[GameRoom] Error persisting space typewriters:", err);
+    }
+  }
+
   onDispose() {
     if (this.jukeboxTimer) {
       clearInterval(this.jukeboxTimer);
       this.jukeboxTimer = null;
     }
+    for (const session of this.typeRaceSessions.values()) {
+      if (session.countdownTimer) clearInterval(session.countdownTimer);
+      if (session.matchTimer) clearTimeout(session.matchTimer);
+    }
+    this.typeRaceSessions.clear();
   }
 }
