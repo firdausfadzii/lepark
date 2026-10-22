@@ -710,6 +710,12 @@ export class MultiplayerManager {
     }
   }
 
+  public setJukeboxPassable(jukeboxId: string, passable: boolean) {
+    if (this.room) {
+      this.room.send("JUKEBOX_SET_PASSABLE", { jukeboxId, passable });
+    }
+  }
+
   public addJukeboxTrack(jukeboxId: string, urlOrId: string) {
     if (this.room) {
       this.room.send("JUKEBOX_ADD_TRACK", { jukeboxId, urlOrId });
@@ -855,6 +861,12 @@ export class MultiplayerManager {
   public deleteTypewriter(typewriterId: string) {
     if (this.room) {
       this.room.send("TYPEWRITER_DELETE", { typewriterId });
+    }
+  }
+
+  public setTypewriterPassable(typewriterId: string, passable: boolean) {
+    if (this.room) {
+      this.room.send("TYPEWRITER_SET_PASSABLE", { typewriterId, passable });
     }
   }
 

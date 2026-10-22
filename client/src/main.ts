@@ -1626,18 +1626,33 @@ function setupMapEditorAccordions() {
 }
 
 function setupMapEditorDecorationControls() {
+  const btnWallObstacle = document.getElementById("btn-wall-obstacle");
+  const btnWallPassable = document.getElementById("btn-wall-passable");
+
+  if (btnWallObstacle) {
+    btnWallObstacle.addEventListener("click", () => {
+      setObstacleEnabled(true);
+    });
+  }
+
+  if (btnWallPassable) {
+    btnWallPassable.addEventListener("click", () => {
+      setObstacleEnabled(false);
+    });
+  }
+
   const btnPassable = document.getElementById("btn-deco-passable");
   const btnSolid = document.getElementById("btn-deco-solid");
 
   if (btnPassable) {
     btnPassable.addEventListener("click", () => {
-      setDecorationPassable(true);
+      setObstacleEnabled(false);
     });
   }
 
   if (btnSolid) {
     btnSolid.addEventListener("click", () => {
-      setDecorationPassable(false);
+      setObstacleEnabled(true);
     });
   }
 
@@ -1892,8 +1907,6 @@ let activeEditorTool:
   | "clear_decoration"
   | "private_zone"
   | "clear_private_zone"
-  | "obstacle"
-  | "clear_obstacle"
   | "jukebox"
   | "typewriter"
   | "freeform_decoration"
@@ -1909,8 +1922,6 @@ let previousToolBeforeDropper: {
     | "clear_decoration"
     | "private_zone"
     | "clear_private_zone"
-    | "obstacle"
-    | "clear_obstacle"
     | "jukebox"
     | "typewriter"
     | "freeform_decoration"
@@ -1923,7 +1934,8 @@ let previousToolBeforeDropper: {
   assetName: "No Asset Selected",
 };
 
-let isDecorationPassable: boolean = true;
+let isObstacleEnabled: boolean = true;
+let isDecorationPassable: boolean = false;
 let isDecorationOntop: boolean = false;
 let currentPlacementLayer: number = 0;
 
@@ -2000,14 +2012,38 @@ function adjustPlacementLayer(delta: number) {
 }
 (window as any).adjustPlacementLayer = adjustPlacementLayer;
 
-function setDecorationPassable(passable: boolean) {
-  isDecorationPassable = passable;
+function setObstacleEnabled(enabled: boolean) {
+  isObstacleEnabled = enabled;
+  isDecorationPassable = !enabled;
+
+  const btnWallObstacle = document.getElementById("btn-wall-obstacle");
+  const btnWallPassable = document.getElementById("btn-wall-passable");
+  const wallHintEl = document.getElementById("wall-obstacle-hint");
+
+  if (btnWallObstacle && btnWallPassable) {
+    if (enabled) {
+      btnWallObstacle.classList.add("active");
+      btnWallPassable.classList.remove("active");
+      if (wallHintEl) {
+        wallHintEl.textContent = "Solid (Obstacle)";
+        wallHintEl.classList.add("solid");
+      }
+    } else {
+      btnWallObstacle.classList.remove("active");
+      btnWallPassable.classList.add("active");
+      if (wallHintEl) {
+        wallHintEl.textContent = "Walkable";
+        wallHintEl.classList.remove("solid");
+      }
+    }
+  }
+
   const btnPassable = document.getElementById("btn-deco-passable");
   const btnSolid = document.getElementById("btn-deco-solid");
   const hintEl = document.getElementById("deco-passable-hint");
 
   if (btnPassable && btnSolid) {
-    if (passable) {
+    if (!enabled) {
       btnPassable.classList.add("active");
       btnSolid.classList.remove("active");
       if (hintEl) {
@@ -2018,7 +2054,7 @@ function setDecorationPassable(passable: boolean) {
       btnPassable.classList.remove("active");
       btnSolid.classList.add("active");
       if (hintEl) {
-        hintEl.textContent = "Solid (Blocked)";
+        hintEl.textContent = "Solid (Obstacle)";
         hintEl.classList.add("solid");
       }
     }
@@ -2026,12 +2062,21 @@ function setDecorationPassable(passable: boolean) {
 
   if (gameInstance) {
     const scene = gameInstance.scene.getScene("GameScene") as GameScene;
-    if (scene && typeof scene.setDecorationPassable === "function") {
-      scene.setDecorationPassable(passable);
+    if (scene) {
+      if (typeof scene.setObstacleEnabled === "function") {
+        scene.setObstacleEnabled(enabled);
+      }
+      if (typeof scene.setDecorationPassable === "function") {
+        scene.setDecorationPassable(!enabled);
+      }
     }
   }
 
   updateEditBannerText();
+}
+
+function setDecorationPassable(passable: boolean) {
+  setObstacleEnabled(!passable);
 }
 
 function setDecorationRenderLayer(ontop: boolean) {
@@ -2103,14 +2148,6 @@ function updateEditBannerText() {
     editBannerAssetText.innerHTML = `<span class="banner-clear-tag">✕ Clear Private</span> Active: <strong>Remove Private Area</strong> • <em>Drag area on map to clear</em>`;
     return;
   }
-  if (activeEditorTool === "obstacle") {
-    editBannerAssetText.innerHTML = `<span class="banner-obstacle-tag">🚫 Obstacle</span> Active: <strong>Obstacle Tile (Impassable)</strong> • <em>Drag area to place barrier (highlighted only in edit mode)</em>`;
-    return;
-  }
-  if (activeEditorTool === "clear_obstacle") {
-    editBannerAssetText.innerHTML = `<span class="banner-clear-tag">✕ Clear Obstacle</span> Active: <strong>Remove Obstacle</strong> • <em>Drag area on map to clear barrier</em>`;
-    return;
-  }
   if (activeEditorTool === "clear_decoration") {
     editBannerAssetText.innerHTML = `<span class="banner-clear-tag">✕ Remove Deco</span> Active: <strong>Remove Decoration</strong> • <em>Click on decoration item to remove</em>`;
     return;
@@ -2147,12 +2184,17 @@ function updateEditBannerText() {
   const isWall = isWallAsset(currentSelectedAssetId);
   const isOverlayWall = isOverlayWallAsset(currentSelectedAssetId);
   const isOverlayFloor = isOverlayFloorAsset(currentSelectedAssetId);
+  const obstacleTag = (isWall || isOverlayWall)
+    ? (isObstacleEnabled
+        ? `<span class="banner-solid-tag">🚫 Obstacle</span> `
+        : `<span class="banner-passable-tag">🟢 Walkable</span> `)
+    : "";
   const wallTag = isOverlayWall
-    ? `<span class="banner-wall-tag" style="background:rgba(59,130,246,0.3);border-color:rgba(59,130,246,0.6);">🧱 Overlay Wall + Obstacle</span> `
+    ? `<span class="banner-wall-tag" style="background:rgba(59,130,246,0.3);border-color:rgba(59,130,246,0.6);">🧱 Overlay Wall</span> ${obstacleTag}`
     : isOverlayFloor
     ? `<span class="banner-wall-tag" style="background:rgba(59,130,246,0.3);border-color:rgba(59,130,246,0.6);">🟦 Overlay Floor</span> `
     : isWall
-    ? `<span class="banner-wall-tag">🧱 Wall + Obstacle</span> `
+    ? `<span class="banner-wall-tag">🧱 Wall</span> ${obstacleTag}`
     : "";
   const overlayLevelTag =
     isOverlayWall || isOverlayFloor
@@ -2354,6 +2396,9 @@ function selectEditorAsset(assetId: string, assetName: string) {
     if (scene) {
       scene.setActiveEditorTool("flooring");
       scene.setSelectedAsset(assetId);
+      if (typeof scene.setObstacleEnabled === "function") {
+        scene.setObstacleEnabled(isObstacleEnabled);
+      }
     }
   }
 
@@ -2442,30 +2487,6 @@ function selectPrivateTool(toolType: "private_zone" | "clear_private_zone") {
   }
 
   hideEditorUIForPlacing(toolType === "private_zone" ? "Flag Private Area" : "Clear Private Area");
-}
-
-function selectObstacleTool(toolType: "obstacle" | "clear_obstacle") {
-  activeEditorTool = toolType;
-
-  const cards = document.querySelectorAll(".editor-asset-card");
-  cards.forEach((card) => {
-    if ((card as HTMLElement).dataset.toolType === toolType) {
-      card.classList.add("selected");
-    } else {
-      card.classList.remove("selected");
-    }
-  });
-
-  updateEditBannerText();
-
-  if (gameInstance) {
-    const scene = gameInstance.scene.getScene("GameScene") as GameScene;
-    if (scene) {
-      scene.setActiveEditorTool(toolType);
-    }
-  }
-
-  hideEditorUIForPlacing(toolType === "obstacle" ? "Obstacle Tile (Impassable)" : "Clear Obstacle");
 }
 
 function selectJukeboxTool() {
@@ -2604,6 +2625,25 @@ function selectCursorTool() {
 
 let activeEditorContextMenuItem: InspectableMapItem | null = null;
 
+function updateEditorItemObstacleButton(isObstacle: boolean) {
+  const btnObstacle = document.getElementById("btn-editor-item-obstacle");
+  const obstacleIcon = document.getElementById("editor-item-obstacle-icon");
+  const obstacleLabel = document.getElementById("editor-item-obstacle-label");
+  if (!btnObstacle) return;
+
+  if (isObstacle) {
+    btnObstacle.classList.remove("is-passable");
+    if (obstacleIcon) obstacleIcon.textContent = "🚫";
+    if (obstacleLabel) obstacleLabel.textContent = "Obstacle: ON";
+    btnObstacle.title = "Click to make walkable (passable)";
+  } else {
+    btnObstacle.classList.add("is-passable");
+    if (obstacleIcon) obstacleIcon.textContent = "🟢";
+    if (obstacleLabel) obstacleLabel.textContent = "Obstacle: OFF";
+    btnObstacle.title = "Click to make obstacle (solid)";
+  }
+}
+
 function showEditorItemContextMenu(
   item: InspectableMapItem,
   screenX: number,
@@ -2613,6 +2653,7 @@ function showEditorItemContextMenu(
   const menuEl = document.getElementById("editor-item-context-menu");
   const badgeEl = document.getElementById("editor-item-menu-badge");
   const nameEl = document.getElementById("editor-item-menu-name");
+  const btnObstacle = document.getElementById("btn-editor-item-obstacle");
   if (!menuEl) return;
 
   if (badgeEl) {
@@ -2620,6 +2661,22 @@ function showEditorItemContextMenu(
   }
   if (nameEl) {
     nameEl.textContent = item.label || "Map Item";
+  }
+
+  if (btnObstacle) {
+    if (item.kind === "spawn_point" || item.kind === "private_zone") {
+      btnObstacle.style.display = "none";
+    } else {
+      btnObstacle.style.display = "flex";
+      let isObstacle = true;
+      if (gameInstance) {
+        const scene = gameInstance.scene.getScene("GameScene") as GameScene;
+        if (scene && typeof scene.isItemObstacle === "function") {
+          isObstacle = scene.isItemObstacle(item);
+        }
+      }
+      updateEditorItemObstacleButton(isObstacle);
+    }
   }
 
   positionEditorItemContextMenu(screenX, screenY);
@@ -2631,7 +2688,7 @@ function positionEditorItemContextMenu(screenX: number, screenY: number) {
   if (!menuEl) return;
 
   const menuWidth = 190;
-  const menuHeight = 96;
+  const menuHeight = 140;
   const padding = 12;
 
   const clampedX = Math.max(
@@ -5249,8 +5306,6 @@ editorAssetCards.forEach((card) => {
       selectCursorTool();
     } else if (toolType === "private_zone" || toolType === "clear_private_zone") {
       selectPrivateTool(toolType);
-    } else if (toolType === "obstacle" || toolType === "clear_obstacle") {
-      selectObstacleTool(toolType);
     } else if (toolType === "clear_decoration") {
       selectClearDecorationTool();
     } else if (toolType === "jukebox") {
@@ -5279,6 +5334,26 @@ if (btnCloseEditorItemMenu) {
   btnCloseEditorItemMenu.addEventListener("click", (e) => {
     e.stopPropagation();
     closeEditorItemContextMenu();
+  });
+}
+
+const btnEditorItemObstacle = document.getElementById("btn-editor-item-obstacle");
+if (btnEditorItemObstacle) {
+  btnEditorItemObstacle.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (!activeEditorContextMenuItem) return;
+    if (gameInstance) {
+      const scene = gameInstance.scene.getScene("GameScene") as GameScene;
+      if (scene && typeof scene.toggleItemObstacle === "function") {
+        const newIsObstacle = scene.toggleItemObstacle(activeEditorContextMenuItem);
+        updateEditorItemObstacleButton(newIsObstacle);
+        showPlacingToast(
+          newIsObstacle
+            ? `Obstacle enabled for ${activeEditorContextMenuItem.label || "item"}`
+            : `Obstacle disabled for ${activeEditorContextMenuItem.label || "item"} (Walkable)`
+        );
+      }
+    }
   });
 }
 

@@ -5,13 +5,13 @@ export const GRID_ROWS = 36;
 export const WORLD_WIDTH = GRID_COLS * TILE_SIZE; // 2400
 export const WORLD_HEIGHT = GRID_ROWS * TILE_SIZE; // 1800
 
-export const CHARACTER_MAX_SIZE = 60; // 60x60px character size (reduced by 10px)
-export const PLAYER_RADIUS = 17; // Default dot radius (diameter 34px, reduced by 10px)
+export const CHARACTER_MAX_SIZE = 50; // 50x50px character size (reduced by 10px)
+export const PLAYER_RADIUS = 12; // Default dot radius (diameter 24px, reduced by 10px)
 export const PLAYER_SPEED = 260; // Smooth continuous walking speed (px/sec)
 export const PLAYER_COLLISION_HALF_SIZE = 14; // Default half-width
 export const PLAYER_HITBOX_HALF_WIDTH = 14; // 28px width for passing 50px doorways
-export const PLAYER_FEET_TOP_OFFSET = 20;   // Top of feet: reaches bottom edge of wall when moving up
-export const PLAYER_FEET_BOTTOM_OFFSET = 32; // Bottom of feet: prevents feet from touching top of wall when moving down
+export const PLAYER_FEET_TOP_OFFSET = 15;   // Top of feet: reaches bottom edge of wall when moving up
+export const PLAYER_FEET_BOTTOM_OFFSET = 27; // Bottom of feet: prevents feet from touching top of wall when moving down
 export const TILE_MOVE_DURATION = 0.25; // Retained for compatibility
 
 export const DEFAULT_PRESET_COLORS = [

@@ -16,6 +16,8 @@ import {
   getTileCenter,
   isWallTile,
   resolveMovement,
+  createPixelCollisionChecker,
+  PixelCollisionOptions,
   SolidBox,
   findSafeSpawnCenter,
   PrivateZone,
@@ -98,6 +100,22 @@ export class GameRoom extends Room<GameState> {
   private clientAuthMap: Map<string, any> = new Map();
   private recentChatMessages: ChatMessage[] = [];
   private dbSyncCounter: number = 0;
+  private cachedPixelCollisionChecker: PixelCollisionOptions | null = null;
+
+  private getPixelCollisionChecker(): PixelCollisionOptions {
+    if (!this.cachedPixelCollisionChecker) {
+      this.cachedPixelCollisionChecker = createPixelCollisionChecker({
+        tiles: this.tiles,
+        jukeboxes: this.jukeboxes.values(),
+        typewriters: this.typewriters.values(),
+      });
+    }
+    return this.cachedPixelCollisionChecker;
+  }
+
+  private invalidatePixelCollisionChecker(): void {
+    this.cachedPixelCollisionChecker = null;
+  }
 
   async onAuth(client: Client, options: PlayerJoinOptions, request?: any) {
     const spaceId = options?.spaceId || "space_central_plaza";
@@ -358,6 +376,7 @@ export class GameRoom extends Room<GameState> {
               migratedUpdates[k] = migratedVal;
             }
           }
+          this.invalidatePixelCollisionChecker();
           this.broadcast("TILES_UPDATED", migratedUpdates);
           await updateSpaceTiles(this.spaceId, this.tiles);
         }
@@ -427,6 +446,7 @@ export class GameRoom extends Room<GameState> {
         };
 
         this.jukeboxes.set(newJb.id, newJb);
+        this.invalidatePixelCollisionChecker();
         this.broadcast("JUKEBOX_UPDATED", newJb);
         await this.persistJukeboxes();
       },
@@ -453,6 +473,7 @@ export class GameRoom extends Room<GameState> {
         if (!jb) return;
         jb.x = Math.round(data.x);
         jb.y = Math.round(data.y);
+        this.invalidatePixelCollisionChecker();
         this.broadcast("JUKEBOX_UPDATED", jb);
         await this.persistJukeboxes();
       },
@@ -476,9 +497,36 @@ export class GameRoom extends Room<GameState> {
         }
 
         if (this.jukeboxes.delete(data.jukeboxId)) {
+          this.invalidatePixelCollisionChecker();
           this.broadcast("JUKEBOX_DELETED", { jukeboxId: data.jukeboxId });
           await this.persistJukeboxes();
         }
+      },
+    );
+
+    // 3b. Set Jukebox Passable (owner/superadmin)
+    this.onMessage(
+      "JUKEBOX_SET_PASSABLE",
+      async (client: Client, data: { jukeboxId: string; passable: boolean }) => {
+        const auth = this.clientAuthMap.get(client.sessionId);
+        const user = auth?.user;
+        const isSuperadmin = user?.role === "superadmin";
+        const isOwner =
+          user && this.spaceOwnerId !== null && user.id === this.spaceOwnerId;
+
+        if (!isSuperadmin && !isOwner) {
+          client.send("ERROR", {
+            message: "Permission denied: Only space owner or superadmin can update a jukebox.",
+          });
+          return;
+        }
+
+        const jb = this.jukeboxes.get(data?.jukeboxId);
+        if (!jb) return;
+        jb.passable = !!data.passable;
+        this.invalidatePixelCollisionChecker();
+        this.broadcast("JUKEBOX_UPDATED", jb);
+        await this.persistJukeboxes();
       },
     );
 
@@ -788,6 +836,7 @@ export class GameRoom extends Room<GameState> {
         };
 
         this.typewriters.set(newTw.id, newTw);
+        this.invalidatePixelCollisionChecker();
         this.broadcast("TYPEWRITER_UPDATED", newTw);
         await this.persistTypewriters();
       }
@@ -818,6 +867,7 @@ export class GameRoom extends Room<GameState> {
         if (!tw) return;
         tw.x = Math.round(data.x);
         tw.y = Math.round(data.y);
+        this.invalidatePixelCollisionChecker();
         this.broadcast("TYPEWRITER_UPDATED", tw);
         await this.persistTypewriters();
       }
@@ -842,6 +892,7 @@ export class GameRoom extends Room<GameState> {
         }
 
         if (this.typewriters.delete(data.typewriterId)) {
+          this.invalidatePixelCollisionChecker();
           this.broadcast("TYPEWRITER_DELETED", {
             typewriterId: data.typewriterId,
           });
@@ -853,6 +904,33 @@ export class GameRoom extends Room<GameState> {
           }
           await this.persistTypewriters();
         }
+      }
+    );
+
+    // 3b. Set Typewriter Passable (owner/superadmin)
+    this.onMessage(
+      "TYPEWRITER_SET_PASSABLE",
+      async (client: Client, data: { typewriterId: string; passable: boolean }) => {
+        const auth = this.clientAuthMap.get(client.sessionId);
+        const user = auth?.user;
+        const isSuperadmin = user?.role === "superadmin";
+        const isOwner =
+          user && this.spaceOwnerId !== null && user.id === this.spaceOwnerId;
+
+        if (!isSuperadmin && !isOwner) {
+          client.send("ERROR", {
+            message:
+              "Permission denied: Only space owner or superadmin can update a typewriter.",
+          });
+          return;
+        }
+
+        const tw = this.typewriters.get(data.typewriterId);
+        if (!tw) return;
+        tw.passable = !!data.passable;
+        this.invalidatePixelCollisionChecker();
+        this.broadcast("TYPEWRITER_UPDATED", tw);
+        await this.persistTypewriters();
       }
     );
 
@@ -1463,6 +1541,7 @@ export class GameRoom extends Room<GameState> {
 
   update(deltaTime: number) {
     const dtSeconds = deltaTime / 1000;
+    const pixelChecker = this.getPixelCollisionChecker();
 
     this.state.players.forEach((player: PlayerState, sessionId: string) => {
       const input = this.playerInputs.get(sessionId);
@@ -1480,16 +1559,16 @@ export class GameRoom extends Room<GameState> {
           } else {
             player.direction = vy < 0 ? "up" : "down";
           }
-          const solidBoxes = this.getSolidBoxes();
           const resolved = resolveMovement(
             player.x,
             player.y,
             vx,
             vy,
             dtSeconds,
-            (c, r) => isWallTile(this.tiles[`${c},${r}`]),
+            undefined,
             PLAYER_HITBOX_HALF_WIDTH,
-            solidBoxes
+            undefined,
+            pixelChecker
           );
           player.x = resolved.x;
           player.y = resolved.y;

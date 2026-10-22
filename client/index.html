@@ -1421,7 +1421,7 @@
               <span class="category-title">Walls</span>
             </div>
             <div class="editor-category-header-right">
-              <span class="category-count">11 styles</span>
+              <span class="category-count">23 styles</span>
               <span class="category-chevron-icon" aria-hidden="true">
                 <svg class="category-chevron-svg" viewBox="0 0 24 24" width="16" height="16">
                   <path fill="currentColor" d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"/>
@@ -1431,6 +1431,38 @@
           </div>
 
           <div class="editor-category-content">
+            <!-- Wall Obstacle Option (Obstacle vs Passable) -->
+            <div class="editor-deco-options" id="editor-wall-options">
+              <div class="editor-deco-options-header">
+                <span class="editor-deco-options-title">Obstacle / Passage:</span>
+                <span class="editor-deco-options-hint" id="wall-obstacle-hint">Solid (Obstacle)</span>
+              </div>
+              <div class="editor-deco-toggle-group">
+                <button
+                  type="button"
+                  id="btn-wall-obstacle"
+                  class="editor-deco-toggle-btn active"
+                  data-obstacle="true"
+                  title="Obstacle: Collision active by rendered pixels (blocks movement)"
+                >
+                  <span class="deco-toggle-icon">🚫</span>
+                  <span class="deco-toggle-label">Obstacle</span>
+                  <span class="deco-toggle-sub">Solid (Pixels)</span>
+                </button>
+                <button
+                  type="button"
+                  id="btn-wall-passable"
+                  class="editor-deco-toggle-btn"
+                  data-obstacle="false"
+                  title="Passable: Players can walk freely through this wall"
+                >
+                  <span class="deco-toggle-icon">🟢</span>
+                  <span class="deco-toggle-label">Passable</span>
+                  <span class="deco-toggle-sub">Walkable</span>
+                </button>
+              </div>
+            </div>
+
             <div class="editor-assets-grid">
               <!-- Glass Wall 1 (glass_1) -->
               <button
@@ -1593,6 +1625,246 @@
                 </div>
               </button>
 
+              <!-- Wood Wall 8 (wood_wall_8) -->
+              <button
+                type="button"
+                class="editor-asset-card"
+                data-asset-id="wood_wall_8"
+                data-asset-name="Wood Wall 8"
+                data-is-wall="true"
+                title="Wood Wall 8 (wood_wall_8) - Solid wall with Obstacle tile. Can be cleared using Clear Obstacle to allow passage."
+              >
+                <div class="asset-card-thumb">
+                  <img src="/assets/wall/wood_8.png" alt="Wood Wall 8" class="asset-thumb-img" />
+                  <span class="asset-card-badge wall-badge">Wall</span>
+                  <span class="asset-card-check">✓</span>
+                </div>
+                <div class="asset-card-info">
+                  <span class="asset-card-name">Wood Wall 8</span>
+                  <span class="asset-card-code">wood_wall_8</span>
+                </div>
+              </button>
+
+              <!-- Wood Wall 9 (wood_wall_9) -->
+              <button
+                type="button"
+                class="editor-asset-card"
+                data-asset-id="wood_wall_9"
+                data-asset-name="Wood Wall 9"
+                data-is-wall="true"
+                title="Wood Wall 9 (wood_wall_9) - Solid wall with Obstacle tile. Can be cleared using Clear Obstacle to allow passage."
+              >
+                <div class="asset-card-thumb">
+                  <img src="/assets/wall/wood_9.png" alt="Wood Wall 9" class="asset-thumb-img" />
+                  <span class="asset-card-badge wall-badge">Wall</span>
+                  <span class="asset-card-check">✓</span>
+                </div>
+                <div class="asset-card-info">
+                  <span class="asset-card-name">Wood Wall 9</span>
+                  <span class="asset-card-code">wood_wall_9</span>
+                </div>
+              </button>
+
+              <!-- Wood Wall 10 (wood_wall_10) -->
+              <button
+                type="button"
+                class="editor-asset-card"
+                data-asset-id="wood_wall_10"
+                data-asset-name="Wood Wall 10"
+                data-is-wall="true"
+                title="Wood Wall 10 (wood_wall_10) - Solid wall with Obstacle tile. Can be cleared using Clear Obstacle to allow passage."
+              >
+                <div class="asset-card-thumb">
+                  <img src="/assets/wall/wood_10.png" alt="Wood Wall 10" class="asset-thumb-img" />
+                  <span class="asset-card-badge wall-badge">Wall</span>
+                  <span class="asset-card-check">✓</span>
+                </div>
+                <div class="asset-card-info">
+                  <span class="asset-card-name">Wood Wall 10</span>
+                  <span class="asset-card-code">wood_wall_10</span>
+                </div>
+              </button>
+
+              <!-- Wood Wall 11 (wood_wall_11) -->
+              <button
+                type="button"
+                class="editor-asset-card"
+                data-asset-id="wood_wall_11"
+                data-asset-name="Wood Wall 11"
+                data-is-wall="true"
+                title="Wood Wall 11 (wood_wall_11) - Solid wall with Obstacle tile. Can be cleared using Clear Obstacle to allow passage."
+              >
+                <div class="asset-card-thumb">
+                  <img src="/assets/wall/wood_11.png" alt="Wood Wall 11" class="asset-thumb-img" />
+                  <span class="asset-card-badge wall-badge">Wall</span>
+                  <span class="asset-card-check">✓</span>
+                </div>
+                <div class="asset-card-info">
+                  <span class="asset-card-name">Wood Wall 11</span>
+                  <span class="asset-card-code">wood_wall_11</span>
+                </div>
+              </button>
+
+              <!-- Wood Wall 12 (wood_wall_12) -->
+              <button
+                type="button"
+                class="editor-asset-card"
+                data-asset-id="wood_wall_12"
+                data-asset-name="Wood Wall 12"
+                data-is-wall="true"
+                title="Wood Wall 12 (wood_wall_12) - Solid wall with Obstacle tile. Can be cleared using Clear Obstacle to allow passage."
+              >
+                <div class="asset-card-thumb">
+                  <img src="/assets/wall/wood_12.png" alt="Wood Wall 12" class="asset-thumb-img" />
+                  <span class="asset-card-badge wall-badge">Wall</span>
+                  <span class="asset-card-check">✓</span>
+                </div>
+                <div class="asset-card-info">
+                  <span class="asset-card-name">Wood Wall 12</span>
+                  <span class="asset-card-code">wood_wall_12</span>
+                </div>
+              </button>
+
+              <!-- Wood Wall 13 (wood_wall_13) -->
+              <button
+                type="button"
+                class="editor-asset-card"
+                data-asset-id="wood_wall_13"
+                data-asset-name="Wood Wall 13"
+                data-is-wall="true"
+                title="Wood Wall 13 (wood_wall_13) - Solid wall with Obstacle tile. Can be cleared using Clear Obstacle to allow passage."
+              >
+                <div class="asset-card-thumb">
+                  <img src="/assets/wall/wood_13.png" alt="Wood Wall 13" class="asset-thumb-img" />
+                  <span class="asset-card-badge wall-badge">Wall</span>
+                  <span class="asset-card-check">✓</span>
+                </div>
+                <div class="asset-card-info">
+                  <span class="asset-card-name">Wood Wall 13</span>
+                  <span class="asset-card-code">wood_wall_13</span>
+                </div>
+              </button>
+
+              <!-- Wood Wall 14 (wood_wall_14) -->
+              <button
+                type="button"
+                class="editor-asset-card"
+                data-asset-id="wood_wall_14"
+                data-asset-name="Wood Wall 14"
+                data-is-wall="true"
+                title="Wood Wall 14 (wood_wall_14) - Solid wall with Obstacle tile. Can be cleared using Clear Obstacle to allow passage."
+              >
+                <div class="asset-card-thumb">
+                  <img src="/assets/wall/wood_14.png" alt="Wood Wall 14" class="asset-thumb-img" />
+                  <span class="asset-card-badge wall-badge">Wall</span>
+                  <span class="asset-card-check">✓</span>
+                </div>
+                <div class="asset-card-info">
+                  <span class="asset-card-name">Wood Wall 14</span>
+                  <span class="asset-card-code">wood_wall_14</span>
+                </div>
+              </button>
+
+              <!-- Wood Wall 15 (wood_wall_15) -->
+              <button
+                type="button"
+                class="editor-asset-card"
+                data-asset-id="wood_wall_15"
+                data-asset-name="Wood Wall 15"
+                data-is-wall="true"
+                title="Wood Wall 15 (wood_wall_15) - Solid wall with Obstacle tile. Can be cleared using Clear Obstacle to allow passage."
+              >
+                <div class="asset-card-thumb">
+                  <img src="/assets/wall/wood_15.png" alt="Wood Wall 15" class="asset-thumb-img" />
+                  <span class="asset-card-badge wall-badge">Wall</span>
+                  <span class="asset-card-check">✓</span>
+                </div>
+                <div class="asset-card-info">
+                  <span class="asset-card-name">Wood Wall 15</span>
+                  <span class="asset-card-code">wood_wall_15</span>
+                </div>
+              </button>
+
+              <!-- Wood Wall 16 (wood_wall_16) -->
+              <button
+                type="button"
+                class="editor-asset-card"
+                data-asset-id="wood_wall_16"
+                data-asset-name="Wood Wall 16"
+                data-is-wall="true"
+                title="Wood Wall 16 (wood_wall_16) - Solid wall with Obstacle tile. Can be cleared using Clear Obstacle to allow passage."
+              >
+                <div class="asset-card-thumb">
+                  <img src="/assets/wall/wood_16.png" alt="Wood Wall 16" class="asset-thumb-img" />
+                  <span class="asset-card-badge wall-badge">Wall</span>
+                  <span class="asset-card-check">✓</span>
+                </div>
+                <div class="asset-card-info">
+                  <span class="asset-card-name">Wood Wall 16</span>
+                  <span class="asset-card-code">wood_wall_16</span>
+                </div>
+              </button>
+
+              <!-- Wood Wall 17 (wood_wall_17) -->
+              <button
+                type="button"
+                class="editor-asset-card"
+                data-asset-id="wood_wall_17"
+                data-asset-name="Wood Wall 17"
+                data-is-wall="true"
+                title="Wood Wall 17 (wood_wall_17) - Solid wall with Obstacle tile. Can be cleared using Clear Obstacle to allow passage."
+              >
+                <div class="asset-card-thumb">
+                  <img src="/assets/wall/wood_17.png" alt="Wood Wall 17" class="asset-thumb-img" />
+                  <span class="asset-card-badge wall-badge">Wall</span>
+                  <span class="asset-card-check">✓</span>
+                </div>
+                <div class="asset-card-info">
+                  <span class="asset-card-name">Wood Wall 17</span>
+                  <span class="asset-card-code">wood_wall_17</span>
+                </div>
+              </button>
+
+              <!-- Wood Wall 18 (wood_wall_18) -->
+              <button
+                type="button"
+                class="editor-asset-card"
+                data-asset-id="wood_wall_18"
+                data-asset-name="Wood Wall 18"
+                data-is-wall="true"
+                title="Wood Wall 18 (wood_wall_18) - Solid wall with Obstacle tile. Can be cleared using Clear Obstacle to allow passage."
+              >
+                <div class="asset-card-thumb">
+                  <img src="/assets/wall/wood_18.png" alt="Wood Wall 18" class="asset-thumb-img" />
+                  <span class="asset-card-badge wall-badge">Wall</span>
+                  <span class="asset-card-check">✓</span>
+                </div>
+                <div class="asset-card-info">
+                  <span class="asset-card-name">Wood Wall 18</span>
+                  <span class="asset-card-code">wood_wall_18</span>
+                </div>
+              </button>
+
+              <!-- Wood Wall 19 (wood_wall_19) -->
+              <button
+                type="button"
+                class="editor-asset-card"
+                data-asset-id="wood_wall_19"
+                data-asset-name="Wood Wall 19"
+                data-is-wall="true"
+                title="Wood Wall 19 (wood_wall_19) - Solid wall with Obstacle tile. Can be cleared using Clear Obstacle to allow passage."
+              >
+                <div class="asset-card-thumb">
+                  <img src="/assets/wall/wood_19.png" alt="Wood Wall 19" class="asset-thumb-img" />
+                  <span class="asset-card-badge wall-badge">Wall</span>
+                  <span class="asset-card-check">✓</span>
+                </div>
+                <div class="asset-card-info">
+                  <span class="asset-card-name">Wood Wall 19</span>
+                  <span class="asset-card-code">wood_wall_19</span>
+                </div>
+              </button>
+
               <!-- Glass Wall 2 (glass_2) -->
               <button
                 type="button"
@@ -1685,7 +1957,7 @@
               id="tool-cursor"
               data-tool-type="cursor"
               data-tool-name="Cursor"
-              title="Cursor - Click any item on the map (wall, decoration, typewriter, jukebox, floor, etc.) to open its menu and delete it"
+              title="Cursor - Click any item on the map (wall, decoration, typewriter, jukebox, floor, etc.) to toggle obstacle or delete it"
             >
               <div class="asset-card-thumb cursor-tool-thumb">
                 <svg class="private-card-svg cursor-card-svg" viewBox="0 0 24 24">
@@ -1722,31 +1994,7 @@
               </div>
             </button>
 
-            <!-- Tool 2: Obstacle Tile -->
-            <button
-              type="button"
-              class="editor-asset-card editor-tool-card"
-              id="tool-obstacle"
-              data-tool-type="obstacle"
-              data-asset-id="obstacle"
-              data-asset-name="Obstacle Tile"
-              data-is-wall="true"
-              title="Obstacle Tile - Impassable barrier tile. Blocks movement; highlight visible only in edit mode."
-            >
-              <div class="asset-card-thumb obstacle-tool-thumb">
-                <svg class="obstacle-card-svg" viewBox="0 0 24 24">
-                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.42 0-8-3.58-8-8 0-1.85.63-3.55 1.69-4.9L16.9 18.31C15.55 19.37 13.85 20 12 20zm6.31-3.1L7.1 5.69C8.45 4.63 10.15 4 12 4c4.42 0 8 3.58 8 8 0 1.85-.63 3.55-1.69 4.9z"/>
-                </svg>
-                <span class="asset-card-badge obstacle-badge">Obstacle</span>
-                <span class="asset-card-check">✓</span>
-              </div>
-              <div class="asset-card-info">
-                <span class="asset-card-name">Obstacle</span>
-                <span class="asset-card-code">No Passage</span>
-              </div>
-            </button>
-
-            <!-- Tool 3: Clear Private Area -->
+            <!-- Tool 2: Clear Private Area -->
             <button
               type="button"
               class="editor-asset-card editor-tool-card"
@@ -1768,29 +2016,7 @@
               </div>
             </button>
 
-            <!-- Tool 4: Clear Obstacle -->
-            <button
-              type="button"
-              class="editor-asset-card editor-tool-card"
-              id="tool-clear-obstacle"
-              data-tool-type="clear_obstacle"
-              data-tool-name="Clear Obstacle"
-              title="Clear Obstacle - Drag area on map to remove obstacle barrier"
-            >
-              <div class="asset-card-thumb clear-tool-thumb">
-                <svg class="private-card-svg" viewBox="0 0 24 24">
-                  <path d="M12 2C6.47 2 2 6.47 2 12s4.47 10 10 10 10-4.47 10-10S17.53 2 12 2zm5 13.59L15.59 17 12 13.41 8.41 17 7 15.59 10.59 12 7 8.41 8.41 7 12 10.59 15.59 7 17 8.41 13.41 12 17 15.59z"/>
-                </svg>
-                <span class="asset-card-badge clear-badge">Clear</span>
-                <span class="asset-card-check">✓</span>
-              </div>
-              <div class="asset-card-info">
-                <span class="asset-card-name">Clear Obstacle</span>
-                <span class="asset-card-code">Remove Barrier</span>
-              </div>
-            </button>
-
-            <!-- Tool 5: Spawn Point -->
+            <!-- Tool 3: Spawn Point -->
             <button
               type="button"
               class="editor-asset-card editor-tool-card"
@@ -2053,6 +2279,10 @@
           <button type="button" class="player-context-close-btn" id="btn-close-editor-item-menu" title="Close menu" aria-label="Close">✕</button>
         </div>
         <div class="player-context-body">
+          <button type="button" class="player-context-btn editor-item-obstacle-btn" id="btn-editor-item-obstacle" title="Toggle obstacle collision for this item">
+            <span class="player-context-btn-icon" id="editor-item-obstacle-icon">🚫</span>
+            <span class="player-context-btn-label" id="editor-item-obstacle-label">Obstacle: ON</span>
+          </button>
           <button type="button" class="player-context-btn editor-item-delete-btn" id="btn-editor-item-delete" title="Delete this item from the map">
             <span class="player-context-btn-icon">🗑️</span>
             <span class="player-context-btn-label">Delete</span>
