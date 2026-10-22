@@ -18,6 +18,8 @@ import {
   getTileCoords,
   isWallTile,
   isWallAsset,
+  isOverlayWallAsset,
+  isOverlayFloorAsset,
   resolveMovement,
   SolidBox,
   PLAYER_FEET_TOP_OFFSET,
@@ -54,6 +56,7 @@ interface PlayerVisual {
   sprite: Phaser.GameObjects.Image;
   nameTag: Phaser.GameObjects.Text;
   currentDirection: "idle" | "left" | "right" | "up" | "down";
+  facingDirection: "left" | "right" | "up" | "down";
   avatars?: PlayerAvatars;
   player?: any;
   animTimer: number;
@@ -64,9 +67,59 @@ interface PlayerVisual {
   speakingIndicator?: Phaser.GameObjects.Container;
 }
 
+export function normalizeFloorAssetKey(key: string): string {
+  if (key === "birch_floor_150" || key === "birch_floor_100") return "wood_5";
+  if (key === "carpet_grey_150") return "carpet_4";
+  if (key === "grass_150" || key === "grass_100" || key === "grass_tile") return "grass_4";
+  return key;
+}
+
+export function normalizeDecorationAssetKey(key: string): string {
+  if (key === "table_left_150") return "table_2_left";
+  if (key === "table_middle_150") return "table_2_middle";
+  if (key === "table_right_150") return "table_2_right";
+  if (key === "round_table_150") return "round_table_1";
+  if (key === "office_chair_150") return "office_chair_1_front";
+  if (key === "office_chair_back_150") return "office_chair_1_back";
+  if (key === "jukebox_150") return "jukebox_1";
+  if (key === "typewriter_150") return "typewriter_1";
+  return key;
+}
+
+export interface InspectableMapItem {
+  kind:
+    | "typewriter"
+    | "jukebox"
+    | "freeform_decoration"
+    | "grid_decoration"
+    | "overlay_wall"
+    | "wall"
+    | "overlay_floor"
+    | "spawn_point"
+    | "obstacle"
+    | "private_zone"
+    | "floor";
+  id: string;
+  label: string;
+  categoryLabel: string;
+  worldX: number;
+  worldY: number;
+  col?: number;
+  row?: number;
+  layer?: number;
+  bounds?: { x: number; y: number; width: number; height: number };
+}
+
+export interface GridDecoItem {
+  rawPart: string;
+  assetKey: string;
+  color: string | null;
+  layer: number;
+  isOntop: boolean;
+}
+
 export class GameScene extends Phaser.Scene {
   private multiplayer!: MultiplayerManager;
-  private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private wasdKeys!: {
     W: Phaser.Input.Keyboard.Key;
     A: Phaser.Input.Keyboard.Key;
@@ -104,6 +157,8 @@ export class GameScene extends Phaser.Scene {
   // Map Editor State
   public isEditMode: boolean = false;
   public activeEditorTool:
+    | "none"
+    | "cursor"
     | "flooring"
     | "decoration"
     | "clear_decoration"
@@ -115,11 +170,24 @@ export class GameScene extends Phaser.Scene {
     | "typewriter"
     | "freeform_decoration"
     | "spawn_point"
-    | "color_dropper" = "flooring";
-  public selectedAssetKey: string = "birch_floor_150";
+    | "color_dropper" = "none";
+  public activeEditorMenuItem: InspectableMapItem | null = null;
+  public onEditorItemContextMenu?: (data: {
+    item: InspectableMapItem;
+    screenX: number;
+    screenY: number;
+  }) => void;
+  public onEditorItemMenuPositionUpdate?: (data: {
+    screenX: number;
+    screenY: number;
+    visible: boolean;
+  }) => void;
+  public selectedAssetKey: string = "";
   public selectedTileColor: string | null = null;
   public decorationPassable: boolean = true;
   public decorationOntop: boolean = false;
+  public placementLayer: number = 0;
+  public onPlacementLayerChange?: (layer: number) => void;
   private isSelectingArea: boolean = false;
   private selectionStartTile: { x: number; y: number } | null = null;
   private selectionCurrentTile: { x: number; y: number } | null = null;
@@ -168,9 +236,11 @@ export class GameScene extends Phaser.Scene {
   private darknessAlpha: number = 0;
   private targetDarknessAlpha: number = 0;
 
-  // Tile images grid [row][col], top decoration images grid, and state
+  // Tile images grid [row][col], overlay floor images grid, top decoration images grid, and state
   private tileImages: (Phaser.GameObjects.Image | null)[][] = [];
+  private overlayTileImages: (Phaser.GameObjects.Image | null)[][] = [];
   private decorationImages: (Phaser.GameObjects.Image | null)[][] = [];
+  private extraTileDecoImages: Map<string, Phaser.GameObjects.Image[]> = new Map();
   private currentTilesMap: Map<string, string> = new Map();
   private obstacleTiles: Set<string> = new Set();
 
@@ -205,35 +275,76 @@ export class GameScene extends Phaser.Scene {
   }
 
   preload() {
-    this.load.image("grass_tile", "/assets/grass_150.png");
-    this.load.image("grass_150", "/assets/grass_150.png");
-    this.load.image("birch_floor_150", "/assets/birch_floor_150.png");
-    this.load.image("carpet_grey_150", "/assets/carpet_grey_150.png");
-    this.load.image("grass_100", "/assets/grass_150.png");
-    this.load.image("birch_floor_100", "/assets/birch_floor_150.png");
-    this.load.image("wall_half_150", "/assets/wall_half_150.png");
-    this.load.image("wall_top_150", "/assets/wall_top_150.png");
-    this.load.image("horizontal_glass_wall_150", "/assets/horizontal_glass_wall_150.png");
-    this.load.image("vertical_glass_wall_150", "/assets/vertical_glass_wall_150.png");
-    this.load.image("table_left_150", "/assets/table_left_150.png");
-    this.load.image("table_middle_150", "/assets/table_middle_150.png");
-    this.load.image("table_right_150", "/assets/table_right_150.png");
-    this.load.image("round_table_150", "/assets/round_table_150.png");
-    this.load.image("office_chair_150", "/assets/office_chair_150.png");
-    this.load.image("office_chair_back_150", "/assets/office_chair_back_150.png");
-    this.load.image("jukebox_150", "/assets/jukebox_150.png");
-    this.load.image("typewriter_150", "/assets/typewriter_150.png");
+    // Floor assets (all from /assets/floor/)
+    const floorAssets = [
+      "carpet_1", "carpet_2", "carpet_3", "carpet_4", "carpet_5", "carpet_6", "carpet_7", "carpet_8",
+      "grass_1", "grass_2", "grass_3", "grass_4",
+      "marble_1", "marble_2", "marble_3", "marble_4",
+      "stone_1", "stone_2", "stone_3", "stone_4", "stone_5", "stone_6", "stone_7", "stone_8",
+      "wood_1", "wood_2", "wood_3", "wood_4", "wood_5", "wood_6",
+    ];
+    for (const fa of floorAssets) {
+      this.load.image(fa, `/assets/floor/${fa}.png`);
+    }
+    this.load.image("grass_tile", "/assets/floor/grass_4.png");
+    // Wall assets (all from /assets/wall/)
+    const wallAssets = [
+      "glass_1", "glass_2", "glass_3", "glass_4",
+    ];
+    for (const wa of wallAssets) {
+      this.load.image(wa, `/assets/wall/${wa}.png`);
+    }
+    for (let i = 1; i <= 7; i++) {
+      this.load.image(`wood_wall_${i}`, `/assets/wall/wood_${i}.png`);
+      this.load.image(`wall_wood_${i}`, `/assets/wall/wood_${i}.png`);
+    }
+    // Decoration assets (all from /assets/decoration/)
+    const decoAssets = [
+      "table_1_left",
+      "table_1_middle",
+      "table_1_right",
+      "table_2_left",
+      "table_2_middle",
+      "table_2_right",
+      "round_table_1",
+      "office_chair_1_front",
+      "office_chair_1_back",
+      "jukebox_1",
+      "typewriter_1",
+    ];
+    for (const da of decoAssets) {
+      this.load.image(da, `/assets/decoration/${da}.png`);
+    }
+    // Backward-compatible aliases for legacy decoration keys
+    this.load.image("table_left_150", "/assets/decoration/table_2_left.png");
+    this.load.image("table_middle_150", "/assets/decoration/table_2_middle.png");
+    this.load.image("table_right_150", "/assets/decoration/table_2_right.png");
+    this.load.image("round_table_150", "/assets/decoration/round_table_1.png");
+    this.load.image("office_chair_150", "/assets/decoration/office_chair_1_front.png");
+    this.load.image("office_chair_back_150", "/assets/decoration/office_chair_1_back.png");
+    this.load.image("jukebox_150", "/assets/decoration/jukebox_1.png");
+    this.load.image("typewriter_150", "/assets/decoration/typewriter_1.png");
 
-    // Default character avatar frames
-    this.load.image("default_avatar_idle", "/assets/man_still.png");
-    this.load.image("default_avatar_left_0", "/assets/male_move_left_1.png");
-    this.load.image("default_avatar_left_1", "/assets/male_move_left_2.png");
-    this.load.image("default_avatar_right_0", "/assets/male_move_right_1.png");
-    this.load.image("default_avatar_right_1", "/assets/male_move_right_2.png");
-    this.load.image("default_avatar_up_0", "/assets/male_move_up_1.png");
-    this.load.image("default_avatar_up_1", "/assets/male_move_up_2.png");
-    this.load.image("default_avatar_down_0", "/assets/male_move_down_1.png");
-    this.load.image("default_avatar_down_1", "/assets/male_move_down_2.png");
+    // Default character avatar atlas & frames
+    this.load.atlas(
+      "player_idle_sheet",
+      "/assets/16x32_idle_sheet.png",
+      "/assets/idle_sprites_mapping.json"
+    );
+    this.load.atlas(
+      "player_walk_sheet",
+      "/assets/16x32_walk_sheet.png",
+      "/assets/walk_sprites_mapping.json"
+    );
+    this.load.image("default_avatar_idle", "/assets/sprite1.png");
+    this.load.image("default_avatar_left_0", "/assets/walk_sprite9_flip.png");
+    this.load.image("default_avatar_left_1", "/assets/walk_sprite10_flip.png");
+    this.load.image("default_avatar_right_0", "/assets/walk_sprite9.png");
+    this.load.image("default_avatar_right_1", "/assets/walk_sprite10.png");
+    this.load.image("default_avatar_up_0", "/assets/walk_sprite17.png");
+    this.load.image("default_avatar_up_1", "/assets/walk_sprite18.png");
+    this.load.image("default_avatar_down_0", "/assets/walk_sprite1.png");
+    this.load.image("default_avatar_down_1", "/assets/walk_sprite2.png");
   }
 
   create() {
@@ -263,21 +374,39 @@ export class GameScene extends Phaser.Scene {
       }
     });
 
-    // Dynamic plain color tile texture (white with subtle bevel) for solid color tiles
+    if (this.textures.exists("player_idle_sheet")) {
+      const tex = this.textures.get("player_idle_sheet");
+      if (tex) {
+        tex.setFilter(Phaser.Textures.FilterMode.NEAREST);
+      }
+    }
+    if (this.textures.exists("player_walk_sheet")) {
+      const tex = this.textures.get("player_walk_sheet");
+      if (tex) {
+        tex.setFilter(Phaser.Textures.FilterMode.NEAREST);
+      }
+    }
+
+    // Dynamic plain color tile texture for solid & overlay color tiles
     if (!this.textures.exists("color_tile")) {
       const g = this.make.graphics({ x: 0, y: 0 });
       g.fillStyle(0xffffff, 1);
       g.fillRect(0, 0, 150, 150);
-      g.lineStyle(2, 0x000000, 0.08);
-      g.strokeRect(1, 1, 148, 148);
       g.generateTexture("color_tile", 150, 150);
       g.destroy();
     }
+    if (!this.textures.exists("color_tile_overlay")) {
+      const g = this.make.graphics({ x: 0, y: 0 });
+      g.fillStyle(0xffffff, 1);
+      g.fillRect(0, 0, 150, 150);
+      g.generateTexture("color_tile_overlay", 150, 150);
+      g.destroy();
+    }
 
-    // Background fully rendered with grass_150.png on each 50x50 tile as base
+    // Background fully rendered with grass_4.png on each 50x50 tile as base
     const bgTileSprite = this.add.tileSprite(0, 0, WORLD_WIDTH, WORLD_HEIGHT, "grass_tile");
     bgTileSprite.setOrigin(0, 0);
-    bgTileSprite.setTileScale(TILE_SIZE / 150, TILE_SIZE / 150);
+    bgTileSprite.setTileScale(TILE_SIZE / 96, TILE_SIZE / 96);
     bgTileSprite.setDepth(0);
 
     // Interactive per-tile images grid for custom flooring
@@ -285,11 +414,25 @@ export class GameScene extends Phaser.Scene {
     for (let row = 0; row < GRID_ROWS; row++) {
       this.tileImages[row] = [];
       for (let col = 0; col < GRID_COLS; col++) {
-        const img = this.add.image(col * TILE_SIZE, row * TILE_SIZE, "grass_150");
+        const img = this.add.image(col * TILE_SIZE, row * TILE_SIZE, "grass_4");
         img.setOrigin(0, 0);
         img.setDisplaySize(TILE_SIZE, TILE_SIZE);
         img.setDepth(0.1);
         this.tileImages[row][col] = img;
+      }
+    }
+
+    // Overlay plain tile per-tile images grid (placed on top of bottom floor tile)
+    this.overlayTileImages = [];
+    for (let row = 0; row < GRID_ROWS; row++) {
+      this.overlayTileImages[row] = [];
+      for (let col = 0; col < GRID_COLS; col++) {
+        const overlayImg = this.add.image(col * TILE_SIZE, row * TILE_SIZE, "color_tile_overlay");
+        overlayImg.setOrigin(0, 0);
+        overlayImg.setDisplaySize(TILE_SIZE, TILE_SIZE);
+        overlayImg.setDepth(0.15);
+        overlayImg.setVisible(false);
+        this.overlayTileImages[row][col] = overlayImg;
       }
     }
 
@@ -298,7 +441,7 @@ export class GameScene extends Phaser.Scene {
     for (let row = 0; row < GRID_ROWS; row++) {
       this.decorationImages[row] = [];
       for (let col = 0; col < GRID_COLS; col++) {
-        const decoImg = this.add.image(col * TILE_SIZE, row * TILE_SIZE, "table_left_150");
+        const decoImg = this.add.image(col * TILE_SIZE, row * TILE_SIZE, "table_1_left");
         decoImg.setOrigin(0, 0);
         decoImg.setDisplaySize(TILE_SIZE, TILE_SIZE);
         decoImg.setDepth(0.2);
@@ -311,13 +454,13 @@ export class GameScene extends Phaser.Scene {
     this.gridGraphics = this.add.graphics();
     this.drawGrid(false);
 
-    // Private zones ambient outline on ground (depth 4)
+    // Private zones ambient outline on ground (depth 0.12)
     this.privateZonesGraphics = this.add.graphics();
-    this.privateZonesGraphics.setDepth(4);
+    this.privateZonesGraphics.setDepth(0.12);
 
-    // Obstacle highlight overlay on ground (depth 5, visible only in edit mode)
+    // Obstacle highlight overlay on ground (depth 119, visible only in edit mode)
     this.obstaclesGraphics = this.add.graphics();
-    this.obstaclesGraphics.setDepth(5);
+    this.obstaclesGraphics.setDepth(119);
 
     // Dimming overlay outside active private zone (depth 120, above player containers at depth 100)
     this.outsideDarkGraphics = this.add.graphics();
@@ -364,17 +507,27 @@ export class GameScene extends Phaser.Scene {
     const boundsGraphics = this.add.graphics();
     boundsGraphics.lineStyle(3, 0x1e3131, 0.9);
     boundsGraphics.strokeRect(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
-    boundsGraphics.setDepth(2);
+    boundsGraphics.setDepth(0.14);
 
-    // Keyboard inputs
+    // Keyboard inputs (WASD only; arrow keys are NOT captured so Up/Down arrow keys work for layer level)
     if (this.input.keyboard) {
-      this.cursors = this.input.keyboard.createCursorKeys();
       this.wasdKeys = {
         W: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.W),
         A: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.A),
         S: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.S),
         D: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.D),
       };
+
+      this.input.keyboard.on("keydown-UP", () => {
+        if (this.isEditMode) {
+          this.adjustPlacementLayer(1);
+        }
+      });
+      this.input.keyboard.on("keydown-DOWN", () => {
+        if (this.isEditMode) {
+          this.adjustPlacementLayer(-1);
+        }
+      });
 
       if (this.controlsActive) {
         this.registerKeyCaptures();
@@ -426,21 +579,21 @@ export class GameScene extends Phaser.Scene {
     }
 
     // Ghost preview for freeform jukebox placement
-    this.editorJukeboxGhost = this.add.image(0, 0, "jukebox_150");
+    this.editorJukeboxGhost = this.add.image(0, 0, "jukebox_1");
     this.editorJukeboxGhost.setDisplaySize(48, 48);
     this.editorJukeboxGhost.setAlpha(0.65);
     this.editorJukeboxGhost.setDepth(136);
     this.editorJukeboxGhost.setVisible(false);
 
     // Ghost preview for freeform typewriter placement
-    this.editorTypewriterGhost = this.add.image(0, 0, "typewriter_150");
+    this.editorTypewriterGhost = this.add.image(0, 0, "typewriter_1");
     this.editorTypewriterGhost.setDisplaySize(48, 48);
     this.editorTypewriterGhost.setAlpha(0.65);
     this.editorTypewriterGhost.setDepth(136);
     this.editorTypewriterGhost.setVisible(false);
 
     // Ghost preview for freeform decoration placement (e.g. chairs, not bounded by grid)
-    this.editorFreeformGhost = this.add.image(0, 0, "office_chair_150");
+    this.editorFreeformGhost = this.add.image(0, 0, "office_chair_1_front");
     this.editorFreeformGhost.setDisplaySize(50, 50);
     this.editorFreeformGhost.setAlpha(0.7);
     this.editorFreeformGhost.setDepth(136);
@@ -538,11 +691,268 @@ export class GameScene extends Phaser.Scene {
 
   private parseColor(colorStr: string): number {
     try {
-      const hex = colorStr.replace("#", "");
-      return parseInt(hex, 16) || 0x3b8282;
+      const hex = colorStr.replace("#", "").slice(0, 6);
+      const val = parseInt(hex, 16);
+      return Number.isNaN(val) ? 0x3b8282 : val;
     } catch {
       return 0x3b8282;
     }
+  }
+
+  private parseAlpha(colorStr: string | null | undefined): number {
+    if (!colorStr) return 1;
+    try {
+      const hex = colorStr.replace("#", "");
+      if (hex.length === 8) {
+        const alphaByte = parseInt(hex.slice(6, 8), 16);
+        if (!Number.isNaN(alphaByte)) {
+          return Phaser.Math.Clamp(alphaByte / 255, 0, 1);
+        }
+      }
+      return 1;
+    } catch {
+      return 1;
+    }
+  }
+
+  public computeLayerDepth(layer: number = 0, isOntop: boolean = false): number {
+    const safeLayer = Number.isFinite(layer) ? layer : 0;
+    if (isOntop) {
+      return Phaser.Math.Clamp(110 + safeLayer * 0.05, 101, 118.5);
+    }
+    // Base floor is at depth 0.1, so minimum overlay/decoration depth is >= 0.25 (always above floor)
+    return Phaser.Math.Clamp(10 + safeLayer * 0.05, 0.25, 98.5);
+  }
+
+  public isLayerableEditorSelection(): boolean {
+    if (
+      this.activeEditorTool === "decoration" ||
+      this.activeEditorTool === "freeform_decoration" ||
+      this.activeEditorTool === "jukebox" ||
+      this.activeEditorTool === "typewriter"
+    ) {
+      return true;
+    }
+    if (
+      this.activeEditorTool === "flooring" &&
+      (isOverlayFloorAsset(this.selectedAssetKey) || isOverlayWallAsset(this.selectedAssetKey))
+    ) {
+      return true;
+    }
+    return false;
+  }
+
+  public setPlacementLayer(layer: number) {
+    this.placementLayer = Math.max(-150, Math.min(150, Math.round(layer)));
+    this.syncGhostDepths();
+    if (this.isSelectingArea) {
+      this.updateSelectionVisuals();
+    } else if (this.isEditMode && this.editorOverlayText && this.editorOverlayText.visible) {
+      const currentText = this.editorOverlayText.text || "";
+      if (currentText.includes("Layer ")) {
+        this.editorOverlayText.setText(
+          currentText.replace(/Layer -?\d+/, `Layer ${this.placementLayer}`)
+        );
+      }
+    }
+    if (this.onPlacementLayerChange) {
+      this.onPlacementLayerChange(this.placementLayer);
+    }
+  }
+
+  public adjustPlacementLayer(delta: number) {
+    if (typeof (window as any).adjustPlacementLayer === "function") {
+      (window as any).adjustPlacementLayer(delta);
+    } else {
+      this.setPlacementLayer(this.placementLayer + delta);
+    }
+  }
+
+  private syncGhostDepths() {
+    const ghostDepth = this.computeLayerDepth(this.placementLayer, this.decorationOntop);
+    if (this.editorFreeformGhost) {
+      this.editorFreeformGhost.setDepth(ghostDepth);
+    }
+    if (this.editorJukeboxGhost) {
+      this.editorJukeboxGhost.setDepth(ghostDepth);
+    }
+    if (this.editorTypewriterGhost) {
+      this.editorTypewriterGhost.setDepth(ghostDepth);
+    }
+  }
+
+  private parseLayerPart(partStr: string, defaultOntop: boolean = false): GridDecoItem {
+    let working = partStr;
+    let isOntop = defaultOntop;
+    if (working.endsWith("^ontop")) {
+      isOntop = true;
+      working = working.slice(0, -6);
+    } else if (working.endsWith("^behind")) {
+      isOntop = false;
+      working = working.slice(0, -7);
+    }
+
+    let layer = 0;
+    const atIdx = working.lastIndexOf("@");
+    if (atIdx !== -1) {
+      const layerNum = parseInt(working.slice(atIdx + 1), 10);
+      if (!Number.isNaN(layerNum)) {
+        layer = layerNum;
+      }
+      working = working.slice(0, atIdx);
+    }
+
+    let assetKey = working;
+    let color: string | null = null;
+    if (working.includes("|")) {
+      const [k, c] = working.split("|");
+      assetKey = k;
+      color = c && c !== "none" ? c : null;
+    }
+
+    return {
+      rawPart: partStr,
+      assetKey,
+      color,
+      layer,
+      isOntop,
+    };
+  }
+
+  private formatLayerPart(
+    assetKey: string,
+    color: string | null | undefined,
+    layer: number = 0,
+    isOntop: boolean = false
+  ): string {
+    const base = color ? `${assetKey}|${color}` : assetKey;
+    const layerSuffix = `@${Math.round(layer)}`;
+    const ontopSuffix = isOntop ? "^ontop" : "";
+    return `${base}${layerSuffix}${ontopSuffix}`;
+  }
+
+  private parseTileComponents(rawValue: string | undefined): {
+    basePart: string;
+    overlayFloorPart: string | null;
+    overlayFloorLayer: number;
+    decoPart: string | null;
+    decoLayer: number;
+    decoParts: GridDecoItem[];
+    hasObstacle: boolean;
+    isOntop: boolean;
+  } {
+    let basePart = "grass_4";
+    let overlayFloorPart: string | null = null;
+    let overlayFloorLayer = 0;
+    let decoPart: string | null = null;
+    let decoLayer = 0;
+    const decoParts: GridDecoItem[] = [];
+    let hasObstacle = false;
+    let isOntop = false;
+
+    if (!rawValue) {
+      return {
+        basePart,
+        overlayFloorPart,
+        overlayFloorLayer,
+        decoPart,
+        decoLayer,
+        decoParts,
+        hasObstacle,
+        isOntop,
+      };
+    }
+
+    const parts = rawValue.includes("::") ? rawValue.split("::") : [rawValue];
+    const nonFlagParts: string[] = [];
+    for (const p of parts) {
+      const baseKey = p.includes("|") ? p.split("|")[0] : p.split("@")[0].split("^")[0];
+      if (baseKey === "obstacle") {
+        hasObstacle = true;
+      } else if (baseKey === "ontop" || baseKey === "above") {
+        isOntop = true;
+      } else if (baseKey === "behind" || baseKey === "below") {
+        isOntop = false;
+      } else {
+        nonFlagParts.push(p);
+      }
+    }
+
+    if (nonFlagParts.length > 0) {
+      basePart = nonFlagParts[0] || "grass_4";
+      for (let i = 1; i < nonFlagParts.length; i++) {
+        const part = nonFlagParts[i];
+        const parsed = this.parseLayerPart(part, isOntop);
+        if (isOverlayFloorAsset(parsed.assetKey)) {
+          overlayFloorPart = parsed.color ? `${parsed.assetKey}|${parsed.color}` : parsed.assetKey;
+          overlayFloorLayer = parsed.layer;
+        } else {
+          decoParts.push(parsed);
+        }
+      }
+    }
+
+    if (decoParts.length > 0) {
+      // Sort by render depth so the last item is the topmost decoration on this tile
+      decoParts.sort(
+        (a, b) =>
+          this.computeLayerDepth(a.layer, a.isOntop) - this.computeLayerDepth(b.layer, b.isOntop)
+      );
+      const topDeco = decoParts[decoParts.length - 1];
+      decoPart = topDeco.color ? `${topDeco.assetKey}|${topDeco.color}` : topDeco.assetKey;
+      decoLayer = topDeco.layer;
+      isOntop = topDeco.isOntop;
+    }
+
+    return {
+      basePart,
+      overlayFloorPart,
+      overlayFloorLayer,
+      decoPart,
+      decoLayer,
+      decoParts,
+      hasObstacle,
+      isOntop,
+    };
+  }
+
+  private buildTileString(comp: {
+    basePart: string;
+    overlayFloorPart?: string | null;
+    overlayFloorLayer?: number;
+    decoPart?: string | null;
+    decoLayer?: number;
+    decoParts?: GridDecoItem[];
+    hasObstacle?: boolean;
+    isOntop?: boolean;
+  }): string {
+    const out: string[] = [comp.basePart || "grass_4"];
+    if (comp.overlayFloorPart) {
+      const parsedOv = this.parseLayerPart(comp.overlayFloorPart, false);
+      const ovLayer =
+        comp.overlayFloorLayer !== undefined ? comp.overlayFloorLayer : parsedOv.layer;
+      out.push(this.formatLayerPart(parsedOv.assetKey, parsedOv.color, ovLayer, false));
+    }
+    if (comp.decoParts && comp.decoParts.length > 0) {
+      for (const d of comp.decoParts) {
+        out.push(this.formatLayerPart(d.assetKey, d.color, d.layer, d.isOntop));
+      }
+      if (comp.decoParts.some((d) => d.isOntop)) {
+        out.push("ontop");
+      }
+    } else if (comp.decoPart) {
+      const parsedDeco = this.parseLayerPart(comp.decoPart, !!comp.isOntop);
+      const dLayer = comp.decoLayer !== undefined ? comp.decoLayer : parsedDeco.layer;
+      const dOntop = comp.isOntop !== undefined ? comp.isOntop : parsedDeco.isOntop;
+      out.push(this.formatLayerPart(parsedDeco.assetKey, parsedDeco.color, dLayer, dOntop));
+      if (dOntop) {
+        out.push("ontop");
+      }
+    }
+    if (comp.hasObstacle) {
+      out.push("obstacle");
+    }
+    return out.join("::");
   }
 
   private createPlayerVisual(sessionId: string, player: any) {
@@ -550,10 +960,18 @@ export class GameScene extends Phaser.Scene {
 
     const colorNum = this.parseColor(player.color);
 
-    // Sprite for avatar (defaults to male character sprite)
-    const sprite = this.add.image(0, 0, "default_avatar_idle");
+    // Initial facing direction (defaults to front/down)
+    const initialDir = (player.direction && player.direction !== "idle" ? player.direction : "down") as ("left" | "right" | "up" | "down");
+
+    // Sprite for avatar (defaults to idle sheet atlas)
+    const sprite = this.textures.exists("player_idle_sheet")
+      ? this.add.image(0, CHARACTER_MAX_SIZE / 2, "player_idle_sheet", "sprite1")
+      : this.add.image(0, 0, "default_avatar_idle");
+    sprite.setOrigin(0.5, 1.0);
     sprite.setVisible(true);
-    sprite.setDisplaySize(CHARACTER_MAX_SIZE, CHARACTER_MAX_SIZE);
+
+    const scale = CHARACTER_MAX_SIZE / 25;
+    sprite.setDisplaySize(16 * scale, 25 * scale);
 
     // Name text floating above sprite with native background pill
     const crownPrefix = player.isSuperadmin ? "👑 " : "";
@@ -619,6 +1037,7 @@ export class GameScene extends Phaser.Scene {
       nameTag,
       player,
       currentDirection: (player.direction as any) || "idle",
+      facingDirection: initialDir,
       animTimer: 0,
       currentFrameIdx: 0,
       lastMoveTime: 0,
@@ -641,7 +1060,7 @@ export class GameScene extends Phaser.Scene {
 
   private getVisualFrames(sessionId: string, dir: "idle" | "left" | "right" | "up" | "down"): string[] {
     const visual = this.playerVisuals.get(sessionId);
-    if (!visual) return ["default_avatar_idle"];
+    if (!visual) return ["sprite1"];
 
     if (visual.avatars) {
       const customForDir: string[] = [];
@@ -659,27 +1078,41 @@ export class GameScene extends Phaser.Scene {
       if (customIdle.length > 0) return customIdle;
     }
 
-    if (dir === "left") {
-      return ["default_avatar_left_0", "default_avatar_left_1"];
-    }
-    if (dir === "right") {
-      return ["default_avatar_right_0", "default_avatar_right_1"];
+    if (dir === "left" || dir === "right") {
+      return ["sprite9", "sprite10", "sprite11", "sprite12"];
     }
     if (dir === "up") {
-      return ["default_avatar_up_0", "default_avatar_up_1"];
+      return ["sprite17", "sprite18", "sprite19", "sprite20"];
     }
-    if (dir === "down") {
-      return ["default_avatar_down_0", "default_avatar_down_1"];
+    return ["sprite1", "sprite2", "sprite3", "sprite4"];
+  }
+
+  private getVisualFramesCount(
+    sessionId: string,
+    dir: "idle" | "left" | "right" | "up" | "down",
+    facingDir: "left" | "right" | "up" | "down",
+  ): number {
+    const visual = this.playerVisuals.get(sessionId);
+    if (!visual) return 1;
+
+    if (visual.avatars) {
+      const activeDir = dir !== "idle" ? dir : (facingDir || "down");
+      const customFrames = dir !== "idle"
+        ? this.getVisualFrames(sessionId, activeDir)
+        : (this.getVisualFrames(sessionId, "idle").length > 0
+            ? this.getVisualFrames(sessionId, "idle")
+            : this.getVisualFrames(sessionId, activeDir));
+      if (customFrames.length > 0) return customFrames.length;
     }
-    return ["default_avatar_idle"];
+
+    // Default atlas always has 4 frames per direction
+    return 4;
   }
 
   private cleanupCustomAvatars(sessionId: string) {
     const visual = this.playerVisuals.get(sessionId);
-    if (visual && visual.sprite) {
-      try {
-        visual.sprite.setTexture("default_avatar_idle");
-      } catch (_) {}
+    if (visual) {
+      visual.avatars = undefined;
     }
 
     const dirs: ("idle" | "left" | "right" | "up" | "down")[] = [
@@ -697,6 +1130,10 @@ export class GameScene extends Phaser.Scene {
         }
       }
     });
+
+    if (visual) {
+      this.updateVisualSprite(sessionId);
+    }
   }
 
   public setPlayerAvatars(sessionId: string, avatars: PlayerAvatars | null) {
@@ -763,30 +1200,95 @@ export class GameScene extends Phaser.Scene {
     const visual = this.playerVisuals.get(sessionId);
     if (!visual) return;
 
-    const dir = visual.currentDirection || "idle";
-    const frames = this.getVisualFrames(sessionId, dir);
-    const frameKey = frames[visual.currentFrameIdx % frames.length] || "default_avatar_idle";
+    const isMoving = visual.currentDirection !== "idle";
+    const activeDir: "left" | "right" | "up" | "down" = isMoving
+      ? (visual.currentDirection as "left" | "right" | "up" | "down")
+      : (visual.facingDirection || "down");
+
+    // 1. If player has custom uploaded avatar pictures
+    if (visual.avatars) {
+      const customFrames = isMoving
+        ? this.getVisualFrames(sessionId, activeDir)
+        : (this.getVisualFrames(sessionId, "idle").length > 0
+            ? this.getVisualFrames(sessionId, "idle")
+            : this.getVisualFrames(sessionId, activeDir));
+
+      if (customFrames.length > 0) {
+        const frameKey = customFrames[visual.currentFrameIdx % customFrames.length];
+        if (this.textures.exists(frameKey)) {
+          visual.sprite.setTexture(frameKey);
+          visual.sprite.setOrigin(0.5, 0.5);
+          visual.sprite.setPosition(0, 0);
+          visual.sprite.setFlipX(false);
+
+          const MAX_DIM = CHARACTER_MAX_SIZE;
+          const fw = visual.sprite.width;
+          const fh = visual.sprite.height;
+          if (fw > 0 && fh > 0) {
+            const ratio = Math.min(MAX_DIM / fw, MAX_DIM / fh);
+            visual.sprite.setDisplaySize(fw * ratio, fh * ratio);
+          } else {
+            visual.sprite.setDisplaySize(MAX_DIM, MAX_DIM);
+          }
+          const halfH = Math.max(PLAYER_RADIUS, visual.sprite.displayHeight / 2);
+          visual.nameTag.setPosition(0, -halfH - 12);
+          return;
+        }
+      }
+    }
+
+    // 2. Default character using:
+    // - Idle: 16x32_idle_sheet atlas & idle_sprites_mapping.json
+    // - Walking / Moving: 16x32_walk_sheet atlas & walk_sprites_mapping.json
+    // Array number used is the same as idle:
+    // - facing front and down (south) - sprites1 until sprites4
+    // - facing right and left - sprites9 until sprites12. default is facing right. flip image when facing left.
+    // - facing north - sprites17 until sprites20.
+    let frameList: string[];
+    let shouldFlip = false;
+
+    if (activeDir === "down") {
+      frameList = ["sprite1", "sprite2", "sprite3", "sprite4"];
+      shouldFlip = false;
+    } else if (activeDir === "right") {
+      frameList = ["sprite9", "sprite10", "sprite11", "sprite12"];
+      shouldFlip = false;
+    } else if (activeDir === "left") {
+      frameList = ["sprite9", "sprite10", "sprite11", "sprite12"];
+      shouldFlip = true;
+    } else { // activeDir === "up" (north)
+      frameList = ["sprite17", "sprite18", "sprite19", "sprite20"];
+      shouldFlip = false;
+    }
+
+    const frameName = frameList[visual.currentFrameIdx % frameList.length];
+    const targetAtlas = isMoving && this.textures.exists("player_walk_sheet")
+      ? "player_walk_sheet"
+      : "player_idle_sheet";
 
     try {
-      if (this.textures.exists(frameKey)) {
-        visual.sprite.setTexture(frameKey);
+      if (this.textures.exists(targetAtlas)) {
+        visual.sprite.setTexture(targetAtlas, frameName);
+      } else if (this.textures.exists("player_idle_sheet")) {
+        visual.sprite.setTexture("player_idle_sheet", frameName);
       } else if (this.textures.exists("default_avatar_idle")) {
         visual.sprite.setTexture("default_avatar_idle");
       }
 
-      const MAX_DIM = CHARACTER_MAX_SIZE;
+      visual.sprite.setFlipX(shouldFlip);
+      visual.sprite.setOrigin(0.5, 1.0);
+      visual.sprite.setPosition(0, CHARACTER_MAX_SIZE / 2);
+
+      const scale = CHARACTER_MAX_SIZE / 25;
       const fw = visual.sprite.width;
       const fh = visual.sprite.height;
-
       if (fw > 0 && fh > 0) {
-        const ratio = Math.min(MAX_DIM / fw, MAX_DIM / fh);
-        visual.sprite.setDisplaySize(fw * ratio, fh * ratio);
+        visual.sprite.setDisplaySize(fw * scale, fh * scale);
       } else {
-        visual.sprite.setDisplaySize(MAX_DIM, MAX_DIM);
+        visual.sprite.setDisplaySize(16 * scale, 25 * scale);
       }
 
-      const halfH = Math.max(PLAYER_RADIUS, visual.sprite.displayHeight / 2);
-      visual.nameTag.setPosition(0, -halfH - 12);
+      visual.nameTag.setPosition(0, -CHARACTER_MAX_SIZE / 2 - 12);
     } catch (e) {
       console.warn("Visual update error:", e);
     }
@@ -812,6 +1314,8 @@ export class GameScene extends Phaser.Scene {
         visual.currentFrameIdx = 0;
         visual.animTimer = 0;
         this.updateVisualSprite(sessionId);
+      } else if (player.direction && player.direction !== "idle" && player.direction !== visual.currentDirection) {
+        visual.facingDirection = player.direction as ("left" | "right" | "up" | "down");
       }
     }
 
@@ -1069,10 +1573,6 @@ export class GameScene extends Phaser.Scene {
       Phaser.Input.Keyboard.KeyCodes.A,
       Phaser.Input.Keyboard.KeyCodes.S,
       Phaser.Input.Keyboard.KeyCodes.D,
-      Phaser.Input.Keyboard.KeyCodes.UP,
-      Phaser.Input.Keyboard.KeyCodes.DOWN,
-      Phaser.Input.Keyboard.KeyCodes.LEFT,
-      Phaser.Input.Keyboard.KeyCodes.RIGHT,
       Phaser.Input.Keyboard.KeyCodes.SPACE,
     ]);
   }
@@ -1080,27 +1580,29 @@ export class GameScene extends Phaser.Scene {
   update(time: number, delta: number) {
     const dtSeconds = delta / 1000;
 
-    // In Edit Mode, WASD / Arrow Keys pan the camera smoothly instead of moving player
+    // In Edit Mode, WASD pans the camera smoothly instead of moving player (no arrow keys)
     if (this.isEditMode) {
       const panSpeed = 700 * dtSeconds;
       let camDx = 0;
       let camDy = 0;
-      if (this.cursors) {
-        if (this.cursors.left.isDown || this.wasdKeys.A.isDown) camDx -= panSpeed;
-        if (this.cursors.right.isDown || this.wasdKeys.D.isDown) camDx += panSpeed;
-        if (this.cursors.up.isDown || this.wasdKeys.W.isDown) camDy -= panSpeed;
-        if (this.cursors.down.isDown || this.wasdKeys.S.isDown) camDy += panSpeed;
+      if (this.wasdKeys) {
+        if (this.wasdKeys.A.isDown) camDx -= panSpeed;
+        if (this.wasdKeys.D.isDown) camDx += panSpeed;
+        if (this.wasdKeys.W.isDown) camDy -= panSpeed;
+        if (this.wasdKeys.S.isDown) camDy += panSpeed;
       }
       if (camDx !== 0 || camDy !== 0) {
+        const overflowX = Math.max(800, this.cameras.main.width);
+        const overflowY = Math.max(800, this.cameras.main.height);
         this.cameras.main.scrollX = Phaser.Math.Clamp(
           this.cameras.main.scrollX + camDx,
-          0,
-          Math.max(0, WORLD_WIDTH - this.cameras.main.width)
+          -overflowX,
+          WORLD_WIDTH + overflowX - this.cameras.main.width
         );
         this.cameras.main.scrollY = Phaser.Math.Clamp(
           this.cameras.main.scrollY + camDy,
-          0,
-          Math.max(0, WORLD_HEIGHT - this.cameras.main.height)
+          -overflowY,
+          WORLD_HEIGHT + overflowY - this.cameras.main.height
         );
       }
 
@@ -1117,7 +1619,7 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    // 1. Read input state (only when controls are active and typerace modal is closed)
+    // 1. Read input state (WASD only, no arrow keys)
     let left = false;
     let right = false;
     let up = false;
@@ -1132,11 +1634,11 @@ export class GameScene extends Phaser.Scene {
       right = false;
       up = false;
       down = false;
-    } else if (this.controlsActive && this.cursors) {
-      left = this.cursors.left.isDown || this.wasdKeys.A.isDown || this.virtualInput.left;
-      right = this.cursors.right.isDown || this.wasdKeys.D.isDown || this.virtualInput.right;
-      up = this.cursors.up.isDown || this.wasdKeys.W.isDown || this.virtualInput.up;
-      down = this.cursors.down.isDown || this.wasdKeys.S.isDown || this.virtualInput.down;
+    } else if (this.controlsActive && this.wasdKeys) {
+      left = this.wasdKeys.A.isDown || this.virtualInput.left;
+      right = this.wasdKeys.D.isDown || this.virtualInput.right;
+      up = this.wasdKeys.W.isDown || this.virtualInput.up;
+      down = this.wasdKeys.S.isDown || this.virtualInput.down;
     }
 
     // Send input whenever state changed
@@ -1191,7 +1693,12 @@ export class GameScene extends Phaser.Scene {
         }
 
         if (localVisual.currentDirection !== targetDir) {
+          if (targetDir !== "idle") {
+            localVisual.facingDirection = targetDir;
+          }
           localVisual.currentDirection = targetDir;
+          localVisual.currentFrameIdx = 0;
+          localVisual.animTimer = 0;
           try {
             this.updateVisualSprite(this.localPlayerId);
           } catch (e) {
@@ -1234,12 +1741,14 @@ export class GameScene extends Phaser.Scene {
               remoteDir = "idle";
             }
 
+            if (remoteDir !== "idle") {
+              remoteVisual.facingDirection = remoteDir;
+            }
+
             if (remoteVisual.currentDirection !== remoteDir) {
               remoteVisual.currentDirection = remoteDir;
-              if (remoteDir === "idle") {
-                remoteVisual.currentFrameIdx = 0;
-                remoteVisual.animTimer = 0;
-              }
+              remoteVisual.currentFrameIdx = 0;
+              remoteVisual.animTimer = 0;
               this.updateVisualSprite(item.id);
             }
 
@@ -1272,23 +1781,15 @@ export class GameScene extends Phaser.Scene {
       }
     });
 
-    // 4. Animate walking sprites (~6 FPS)
+    // 4. Animate sprites (idle breathing & walking cycles, ~6 FPS)
     const FRAME_DURATION = 0.166;
     this.playerVisuals.forEach((visual, sId) => {
-      if (visual.currentDirection !== "idle") {
-        visual.animTimer += dtSeconds;
-        if (visual.animTimer >= FRAME_DURATION) {
-          visual.animTimer -= FRAME_DURATION;
-          const frames = this.getVisualFrames(sId, visual.currentDirection);
-          if (frames.length > 1) {
-            visual.currentFrameIdx = (visual.currentFrameIdx + 1) % frames.length;
-            this.updateVisualSprite(sId);
-          }
-        }
-      } else {
-        if (visual.currentFrameIdx !== 0 || visual.animTimer !== 0) {
-          visual.currentFrameIdx = 0;
-          visual.animTimer = 0;
+      visual.animTimer += dtSeconds;
+      if (visual.animTimer >= FRAME_DURATION) {
+        visual.animTimer -= FRAME_DURATION;
+        const count = this.getVisualFramesCount(sId, visual.currentDirection, visual.facingDirection);
+        if (count > 1) {
+          visual.currentFrameIdx = (visual.currentFrameIdx + 1) % count;
           this.updateVisualSprite(sId);
         }
       }
@@ -1548,6 +2049,28 @@ export class GameScene extends Phaser.Scene {
         }
       }
     }
+
+    // 8. Update active editor cursor item menu screen position
+    if (this.activeEditorMenuItem) {
+      if (!this.isEditMode || this.activeEditorTool !== "cursor") {
+        this.closeEditorItemMenu();
+      } else {
+        const cam = this.cameras.main;
+        const screenX =
+          (this.activeEditorMenuItem.worldX - cam.scrollX - cam.width * 0.5) * cam.zoom +
+          cam.width * 0.5;
+        const screenY =
+          (this.activeEditorMenuItem.worldY - cam.scrollY - cam.height * 0.5) * cam.zoom +
+          cam.height * 0.5;
+        if (this.onEditorItemMenuPositionUpdate) {
+          this.onEditorItemMenuPositionUpdate({
+            screenX,
+            screenY,
+            visible: true,
+          });
+        }
+      }
+    }
   }
 
   // ==========================================
@@ -1556,18 +2079,17 @@ export class GameScene extends Phaser.Scene {
 
   private drawGrid(isEditMode: boolean) {
     this.gridGraphics.clear();
-    if (isEditMode) {
-      this.gridGraphics.lineStyle(1, 0x3b8282, 0.28);
-    } else {
-      this.gridGraphics.lineStyle(1, 0x000000, 0.06);
+    if (!isEditMode) {
+      return;
     }
+    this.gridGraphics.lineStyle(1, 0x3b8282, 0.28);
     for (let x = 0; x <= WORLD_WIDTH; x += TILE_SIZE) {
       this.gridGraphics.lineBetween(x, 0, x, WORLD_HEIGHT);
     }
     for (let y = 0; y <= WORLD_HEIGHT; y += TILE_SIZE) {
       this.gridGraphics.lineBetween(0, y, WORLD_WIDTH, y);
     }
-    this.gridGraphics.setDepth(1);
+    this.gridGraphics.setDepth(0.11);
   }
 
   private setupEditorPointerEvents() {
@@ -1592,11 +2114,34 @@ export class GameScene extends Phaser.Scene {
       if (target && target.tagName !== "CANVAS") return;
 
       if (pointer.leftButtonDown()) {
+        if (this.activeEditorTool === "none") {
+          this.closeEditorItemMenu();
+          return;
+        }
+
+        if (this.activeEditorTool === "cursor") {
+          const inspected = this.getInspectableItemAt(pointer.worldX, pointer.worldY);
+          if (inspected) {
+            this.openEditorItemMenu(inspected);
+          } else {
+            this.closeEditorItemMenu();
+          }
+          return;
+        }
+
+        this.closeEditorItemMenu();
+
         if (this.activeEditorTool === "jukebox") {
           // Unbounded free-placement (not snapped to grid):
           const jx = Math.round(pointer.worldX);
           const jy = Math.round(pointer.worldY);
-          this.multiplayer.placeJukebox(jx, jy, this.decorationPassable, this.decorationOntop);
+          this.multiplayer.placeJukebox(
+            jx,
+            jy,
+            this.decorationPassable,
+            this.decorationOntop,
+            this.placementLayer
+          );
           return;
         }
 
@@ -1604,7 +2149,13 @@ export class GameScene extends Phaser.Scene {
           // Unbounded free-placement (not snapped to grid):
           const tx = Math.round(pointer.worldX);
           const ty = Math.round(pointer.worldY);
-          this.multiplayer.placeTypewriter(tx, ty, this.decorationPassable, this.decorationOntop);
+          this.multiplayer.placeTypewriter(
+            tx,
+            ty,
+            this.decorationPassable,
+            this.decorationOntop,
+            this.placementLayer
+          );
           return;
         }
 
@@ -1618,7 +2169,8 @@ export class GameScene extends Phaser.Scene {
             fy,
             this.selectedTileColor,
             this.decorationPassable,
-            this.decorationOntop
+            this.decorationOntop,
+            this.placementLayer
           );
           return;
         }
@@ -1686,9 +2238,17 @@ export class GameScene extends Phaser.Scene {
         if (this.editorFreeformGhost) this.editorFreeformGhost.setVisible(false);
         if (this.editorTypewriterGhost) this.editorTypewriterGhost.setVisible(false);
         if (this.editorJukeboxGhost) {
+          this.editorJukeboxGhost.setDepth(
+            this.computeLayerDepth(this.placementLayer, this.decorationOntop)
+          );
           this.editorJukeboxGhost.setPosition(pointer.worldX, pointer.worldY);
           this.editorJukeboxGhost.setVisible(true);
         }
+        this.editorOverlayText.setText(
+          `🎵 Jukebox • Layer ${this.placementLayer} (↑/↓) • Click to place`
+        );
+        this.editorOverlayText.setPosition(pointer.worldX + 28, Math.max(8, pointer.worldY - 28));
+        this.editorOverlayText.setVisible(true);
         return;
       } else {
         if (this.editorJukeboxGhost) {
@@ -1701,9 +2261,17 @@ export class GameScene extends Phaser.Scene {
         if (this.editorFreeformGhost) this.editorFreeformGhost.setVisible(false);
         if (this.editorJukeboxGhost) this.editorJukeboxGhost.setVisible(false);
         if (this.editorTypewriterGhost) {
+          this.editorTypewriterGhost.setDepth(
+            this.computeLayerDepth(this.placementLayer, this.decorationOntop)
+          );
           this.editorTypewriterGhost.setPosition(pointer.worldX, pointer.worldY);
           this.editorTypewriterGhost.setVisible(true);
         }
+        this.editorOverlayText.setText(
+          `⌨️ Typewriter • Layer ${this.placementLayer} (↑/↓) • Click to place`
+        );
+        this.editorOverlayText.setPosition(pointer.worldX + 28, Math.max(8, pointer.worldY - 28));
+        this.editorOverlayText.setVisible(true);
         return;
       } else {
         if (this.editorTypewriterGhost) {
@@ -1715,19 +2283,31 @@ export class GameScene extends Phaser.Scene {
         this.editorHoverGraphics.clear();
         if (this.editorJukeboxGhost) this.editorJukeboxGhost.setVisible(false);
         if (this.editorFreeformGhost) {
-          const texture = this.textures.exists(this.selectedAssetKey)
-            ? this.selectedAssetKey
-            : "office_chair_150";
+          const normKey = normalizeDecorationAssetKey(this.selectedAssetKey);
+          const texture = this.textures.exists(normKey)
+            ? normKey
+            : "office_chair_1_front";
           this.editorFreeformGhost.setTexture(texture);
           this.editorFreeformGhost.setDisplaySize(50, 50);
           if (this.selectedTileColor) {
             this.editorFreeformGhost.setTint(this.parseColor(this.selectedTileColor));
+            this.editorFreeformGhost.setAlpha(this.parseAlpha(this.selectedTileColor) * 0.75);
           } else {
             this.editorFreeformGhost.clearTint();
+            this.editorFreeformGhost.setAlpha(0.75);
           }
+          this.editorFreeformGhost.setDepth(
+            this.computeLayerDepth(this.placementLayer, this.decorationOntop)
+          );
           this.editorFreeformGhost.setPosition(pointer.worldX, pointer.worldY);
           this.editorFreeformGhost.setVisible(true);
         }
+        const label = this.formatAssetDisplayName(this.selectedAssetKey);
+        this.editorOverlayText.setText(
+          `🪑 ${label} • Layer ${this.placementLayer} (↑/↓) • Click to place`
+        );
+        this.editorOverlayText.setPosition(pointer.worldX + 28, Math.max(8, pointer.worldY - 28));
+        this.editorOverlayText.setVisible(true);
         return;
       } else {
         if (this.editorFreeformGhost) {
@@ -1737,6 +2317,64 @@ export class GameScene extends Phaser.Scene {
 
       const col = Math.max(0, Math.min(GRID_COLS - 1, Math.floor(pointer.worldX / TILE_SIZE)));
       const row = Math.max(0, Math.min(GRID_ROWS - 1, Math.floor(pointer.worldY / TILE_SIZE)));
+
+      if (this.activeEditorTool === "none") {
+        this.editorHoverGraphics.clear();
+        this.editorOverlayText.setVisible(false);
+        if (this.game.canvas) this.game.canvas.style.cursor = "default";
+        return;
+      }
+
+      if (this.activeEditorTool === "cursor") {
+        this.editorHoverGraphics.clear();
+        const inspected = this.getInspectableItemAt(pointer.worldX, pointer.worldY);
+        const activeBounds = this.activeEditorMenuItem?.bounds;
+        if (activeBounds) {
+          this.editorHoverGraphics.lineStyle(2.5, 0xf59e0b, 1);
+          this.editorHoverGraphics.strokeRect(
+            activeBounds.x,
+            activeBounds.y,
+            activeBounds.width,
+            activeBounds.height
+          );
+          this.editorHoverGraphics.fillStyle(0xf59e0b, 0.22);
+          this.editorHoverGraphics.fillRect(
+            activeBounds.x,
+            activeBounds.y,
+            activeBounds.width,
+            activeBounds.height
+          );
+        }
+        if (inspected && inspected.bounds) {
+          this.editorHoverGraphics.lineStyle(2, 0x38bdf8, 0.95);
+          this.editorHoverGraphics.strokeRect(
+            inspected.bounds.x,
+            inspected.bounds.y,
+            inspected.bounds.width,
+            inspected.bounds.height
+          );
+          this.editorHoverGraphics.fillStyle(0x38bdf8, 0.2);
+          this.editorHoverGraphics.fillRect(
+            inspected.bounds.x,
+            inspected.bounds.y,
+            inspected.bounds.width,
+            inspected.bounds.height
+          );
+          this.editorOverlayText.setText(
+            `🖱️ ${inspected.categoryLabel}: ${inspected.label} • Click for menu`
+          );
+          this.editorOverlayText.setPosition(
+            inspected.bounds.x + 4,
+            Math.max(8, inspected.bounds.y - 30)
+          );
+          this.editorOverlayText.setVisible(true);
+          if (this.game.canvas) this.game.canvas.style.cursor = "pointer";
+        } else {
+          this.editorOverlayText.setVisible(false);
+          if (this.game.canvas) this.game.canvas.style.cursor = "default";
+        }
+        return;
+      }
 
       if (this.activeEditorTool === "spawn_point") {
         this.editorHoverGraphics.clear();
@@ -1814,12 +2452,14 @@ export class GameScene extends Phaser.Scene {
             if (this.game.canvas) this.game.canvas.style.cursor = "crosshair";
           }
         } else if (this.activeEditorTool === "decoration") {
-          const existingDeco = this.getDecorationKey(col, row);
-          const decoBaseKey = existingDeco ? existingDeco.split("|")[0] : null;
-          const isSameDeco = decoBaseKey === this.selectedAssetKey;
+          const raw = this.currentTilesMap.get(`${col},${row}`);
+          const comp = this.parseTileComponents(raw);
+          const isSameDecoAtLayer = comp.decoParts.some(
+            (d) => d.assetKey === this.selectedAssetKey && d.layer === this.placementLayer
+          );
 
-          if (isSameDeco) {
-            // Hovering over placed decoration item signals click on it to remove
+          if (isSameDecoAtLayer) {
+            // Hovering over placed decoration item on the same layer signals click on it to remove
             const hoverColor = 0xef4444;
             this.editorHoverGraphics.lineStyle(2, hoverColor, 0.95);
             this.editorHoverGraphics.strokeRect(col * TILE_SIZE, row * TILE_SIZE, TILE_SIZE, TILE_SIZE);
@@ -1841,14 +2481,62 @@ export class GameScene extends Phaser.Scene {
             this.editorHoverGraphics.fillRect(col * TILE_SIZE, row * TILE_SIZE, TILE_SIZE, TILE_SIZE);
             if (this.game.canvas) this.game.canvas.style.cursor = "crosshair";
           }
+          const label = this.formatAssetDisplayName(this.selectedAssetKey);
+          this.editorOverlayText.setText(
+            `🪴 ${label} • Layer ${this.placementLayer} (↑/↓) • ${isSameDecoAtLayer ? "Click to remove" : "Click to place"}`
+          );
+          this.editorOverlayText.setPosition(col * TILE_SIZE + 8, Math.max(8, row * TILE_SIZE - 32));
+          this.editorOverlayText.setVisible(true);
         } else {
-          const isWall = isWallTile(this.selectedAssetKey);
-          const defaultHover = isWall ? 0xdb5b47 : 0xeca239;
-          const hoverColor = this.selectedTileColor ? this.parseColor(this.selectedTileColor) : defaultHover;
-          this.editorHoverGraphics.lineStyle(2, hoverColor, 0.95);
-          this.editorHoverGraphics.strokeRect(col * TILE_SIZE, row * TILE_SIZE, TILE_SIZE, TILE_SIZE);
-          this.editorHoverGraphics.fillStyle(hoverColor, 0.22);
-          this.editorHoverGraphics.fillRect(col * TILE_SIZE, row * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+          const isWall = isWallTile(this.selectedAssetKey) || isWallAsset(this.selectedAssetKey);
+          const isOverlayWall = isOverlayWallAsset(this.selectedAssetKey);
+          const isOverlayFloor = isOverlayFloorAsset(this.selectedAssetKey);
+          const raw = this.currentTilesMap.get(`${col},${row}`);
+          const comp = this.parseTileComponents(raw);
+          const existingOverlayFloor = comp.overlayFloorPart
+            ? comp.overlayFloorPart.split("|")[0]
+            : null;
+          const isSameOverlay =
+            (isOverlayWall &&
+              comp.decoParts.some(
+                (d) => d.assetKey === this.selectedAssetKey && d.layer === this.placementLayer
+              )) ||
+            (isOverlayFloor &&
+              existingOverlayFloor === this.selectedAssetKey &&
+              comp.overlayFloorLayer === this.placementLayer);
+
+          if (isSameOverlay) {
+            // Hovering over placed overlay tile/wall signals click on it to remove
+            const hoverColor = 0xef4444;
+            this.editorHoverGraphics.lineStyle(2, hoverColor, 0.95);
+            this.editorHoverGraphics.strokeRect(col * TILE_SIZE, row * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+            this.editorHoverGraphics.fillStyle(hoverColor, 0.36);
+            this.editorHoverGraphics.fillRect(col * TILE_SIZE, row * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+            const x = col * TILE_SIZE;
+            const y = row * TILE_SIZE;
+            this.editorHoverGraphics.lineStyle(2.5, 0xffffff, 0.92);
+            this.editorHoverGraphics.lineBetween(x + 12, y + 12, x + TILE_SIZE - 12, y + TILE_SIZE - 12);
+            this.editorHoverGraphics.lineBetween(x + TILE_SIZE - 12, y + 12, x + 12, y + TILE_SIZE - 12);
+            if (this.game.canvas) this.game.canvas.style.cursor = "pointer";
+          } else {
+            const defaultHover = isWall ? 0xdb5b47 : isOverlayFloor ? 0x3b82f6 : 0xeca239;
+            const hoverColor = this.selectedTileColor ? this.parseColor(this.selectedTileColor) : defaultHover;
+            this.editorHoverGraphics.lineStyle(2, hoverColor, 0.95);
+            this.editorHoverGraphics.strokeRect(col * TILE_SIZE, row * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+            this.editorHoverGraphics.fillStyle(hoverColor, 0.22);
+            this.editorHoverGraphics.fillRect(col * TILE_SIZE, row * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+            if (this.game.canvas) this.game.canvas.style.cursor = "crosshair";
+          }
+          if (isOverlayWall || isOverlayFloor) {
+            const label = this.formatAssetDisplayName(this.selectedAssetKey);
+            this.editorOverlayText.setText(
+              `📐 ${label} • Layer ${this.placementLayer} (↑/↓) • ${isSameOverlay ? "Click to remove" : "Click to place"}`
+            );
+            this.editorOverlayText.setPosition(col * TILE_SIZE + 8, Math.max(8, row * TILE_SIZE - 32));
+            this.editorOverlayText.setVisible(true);
+          } else {
+            this.editorOverlayText.setVisible(false);
+          }
         }
       }
     });
@@ -1916,7 +2604,7 @@ export class GameScene extends Phaser.Scene {
                   updates[`${c},${r}`] = `${existing}::obstacle`;
                 }
               } else {
-                updates[`${c},${r}`] = "grass_150::obstacle";
+                updates[`${c},${r}`] = "grass_4::obstacle";
               }
             }
           }
@@ -1937,7 +2625,7 @@ export class GameScene extends Phaser.Scene {
                 const parts = existing
                   .split("::")
                   .filter((p) => p !== "obstacle" && !p.startsWith("obstacle|"));
-                const newVal = parts.join("::") || "grass_150";
+                const newVal = parts.join("::") || "grass_4";
                 if (newVal !== existing) {
                   updates[`${c},${r}`] = newVal;
                 }
@@ -1952,18 +2640,24 @@ export class GameScene extends Phaser.Scene {
             }
           }
         } else if (this.activeEditorTool === "clear_decoration") {
-          // Remove decoration layer from clicked tile or dragged area
+          // Remove decoration or overlay floor layer from clicked tile or dragged area
           const updates: Record<string, string> = {};
           for (let r = minRow; r <= maxRow; r++) {
             for (let c = minCol; c <= maxCol; c++) {
               const existing = this.currentTilesMap.get(`${c},${r}`);
               if (existing && existing.includes("::")) {
-                const parts = existing.split("::");
-                const basePart = parts[0] || "grass_150";
-                const baseAsset = basePart.split("|")[0];
-                const isWall = isWallAsset(baseAsset);
-                // If base is a wall, it stays impassable; if base is regular floor, clear obstacle with decoration!
-                const newVal = isWall ? `${basePart}::obstacle` : basePart;
+                const comp = this.parseTileComponents(existing);
+                const isBaseWall = isWallAsset(comp.basePart.split("|")[0]);
+                if (comp.decoParts.length > 0) {
+                  comp.decoParts = [];
+                  comp.decoPart = null;
+                  comp.isOntop = false;
+                  comp.hasObstacle = isBaseWall;
+                } else if (comp.overlayFloorPart) {
+                  comp.overlayFloorPart = null;
+                  comp.overlayFloorLayer = 0;
+                }
+                const newVal = this.buildTileString(comp);
                 if (newVal !== existing) {
                   updates[`${c},${r}`] = newVal;
                 }
@@ -1978,7 +2672,7 @@ export class GameScene extends Phaser.Scene {
             }
           }
         } else if (this.activeEditorTool === "decoration") {
-          // Decoration placed on top of existing bottom tile, respecting passable option
+          // Decoration placed on top of existing bottom tile, respecting passable and layer options
           const decoVal = this.selectedTileColor
             ? `${this.selectedAssetKey}|${this.selectedTileColor}`
             : this.selectedAssetKey;
@@ -1986,62 +2680,67 @@ export class GameScene extends Phaser.Scene {
           const isSingleClick = minCol === maxCol && minRow === maxRow;
           const updates: Record<string, string> = {};
 
+          const applyDecoToComp = (
+            comp: ReturnType<GameScene["parseTileComponents"]>,
+            allowToggleRemove: boolean
+          ) => {
+            const isBaseWall = isWallAsset(comp.basePart.split("|")[0]);
+            const existingIdx = comp.decoParts.findIndex(
+              (d) => d.assetKey === this.selectedAssetKey && d.layer === this.placementLayer
+            );
+
+            if (allowToggleRemove && existingIdx !== -1) {
+              comp.decoParts.splice(existingIdx, 1);
+              if (comp.decoParts.length === 0) {
+                comp.decoPart = null;
+                comp.isOntop = false;
+                comp.hasObstacle = isBaseWall;
+              } else {
+                const top = comp.decoParts[comp.decoParts.length - 1];
+                comp.decoPart = top.rawPart;
+                comp.isOntop = top.isOntop;
+              }
+            } else {
+              // Replace any item on the exact same layer, or add as a new layer
+              const sameLayerIdx = comp.decoParts.findIndex((d) => d.layer === this.placementLayer);
+              const newItem: GridDecoItem = {
+                rawPart: decoVal,
+                assetKey: this.selectedAssetKey,
+                color: this.selectedTileColor,
+                layer: this.placementLayer,
+                isOntop: this.decorationOntop,
+              };
+              if (sameLayerIdx !== -1) {
+                comp.decoParts[sameLayerIdx] = newItem;
+              } else {
+                comp.decoParts.push(newItem);
+              }
+              comp.decoParts.sort(
+                (a, b) =>
+                  this.computeLayerDepth(a.layer, a.isOntop) -
+                  this.computeLayerDepth(b.layer, b.isOntop)
+              );
+              const top = comp.decoParts[comp.decoParts.length - 1];
+              comp.decoPart = top.rawPart;
+              comp.isOntop = top.isOntop;
+              comp.hasObstacle = isBaseWall || comp.hasObstacle || !this.decorationPassable;
+            }
+          };
+
           if (isSingleClick) {
             const key = `${minCol},${minRow}`;
             const existing = this.currentTilesMap.get(key);
-            if (existing && existing.includes("::")) {
-              const parts = existing.split("::");
-              const nonObsParts = parts.filter((p) => p.split("|")[0] !== "obstacle");
-              const existingDeco = nonObsParts.length > 1 ? nonObsParts[1] : null;
-              const existingDecoKey = existingDeco ? existingDeco.split("|")[0] : null;
-
-              // If single clicked on an existing decoration of the same asset key:
-              // Remove it! ("to remove, need to click on it to remove")
-              if (existingDecoKey === this.selectedAssetKey) {
-                const basePart = parts[0] || "grass_150";
-                const baseAsset = basePart.split("|")[0];
-                const isWall = isWallAsset(baseAsset);
-                const newVal = isWall ? `${basePart}::obstacle` : basePart;
-                updates[key] = newVal;
-              } else {
-                // Different decoration or replace with current passable setting
-                const basePart = parts[0] || "grass_150";
-                const baseAsset = basePart.split("|")[0];
-                const isWall = isWallAsset(baseAsset);
-                const shouldHaveObs = isWall || !this.decorationPassable;
-                const layerPart = this.decorationOntop ? "::ontop" : "";
-                updates[key] = shouldHaveObs
-                  ? `${basePart}::${decoVal}${layerPart}::obstacle`
-                  : `${basePart}::${decoVal}${layerPart}`;
-              }
-            } else {
-              // Plain bottom tile -> place decoration
-              const basePart = existing || "grass_150";
-              const baseAsset = basePart.split("|")[0];
-              const isWall = isWallAsset(baseAsset);
-              const shouldHaveObs = isWall || !this.decorationPassable;
-              const layerPart = this.decorationOntop ? "::ontop" : "";
-              updates[key] = shouldHaveObs
-                ? `${basePart}::${decoVal}${layerPart}::obstacle`
-                : `${basePart}::${decoVal}${layerPart}`;
-            }
+            const comp = this.parseTileComponents(existing);
+            applyDecoToComp(comp, true);
+            updates[key] = this.buildTileString(comp);
           } else {
             // Dragged area -> place decoration across selection
-            const layerPart = this.decorationOntop ? "::ontop" : "";
             for (let r = minRow; r <= maxRow; r++) {
               for (let c = minCol; c <= maxCol; c++) {
                 const existing = this.currentTilesMap.get(`${c},${r}`);
-                let basePart = "grass_150";
-                if (existing) {
-                  const parts = existing.split("::");
-                  basePart = parts[0] || "grass_150";
-                }
-                const baseAsset = basePart.split("|")[0];
-                const isWall = isWallAsset(baseAsset);
-                const shouldHaveObs = isWall || !this.decorationPassable;
-                updates[`${c},${r}`] = shouldHaveObs
-                  ? `${basePart}::${decoVal}${layerPart}::obstacle`
-                  : `${basePart}::${decoVal}${layerPart}`;
+                const comp = this.parseTileComponents(existing);
+                applyDecoToComp(comp, false);
+                updates[`${c},${r}`] = this.buildTileString(comp);
               }
             }
           }
@@ -2053,41 +2752,92 @@ export class GameScene extends Phaser.Scene {
             }
           }
         } else {
-          // Normal tile flooring / wall update:
+          // Normal tile flooring / overlay floor / wall update:
           // Wall tiles come together with the obstacle tile
           const isWall = isWallAsset(this.selectedAssetKey);
+          const isOverlayWall = isOverlayWallAsset(this.selectedAssetKey);
+          const isOverlayFloor = isOverlayFloorAsset(this.selectedAssetKey);
           const tileVal = this.selectedTileColor
             ? `${this.selectedAssetKey}|${this.selectedTileColor}`
             : this.selectedAssetKey;
 
+          const isSingleClick = minCol === maxCol && minRow === maxRow;
           const updates: Record<string, string> = {};
+
           for (let r = minRow; r <= maxRow; r++) {
             for (let c = minCol; c <= maxCol; c++) {
               const existing = this.currentTilesMap.get(`${c},${r}`);
-              if (existing && existing.includes("::")) {
-                const parts = existing.split("::");
-                const hasObs = parts.includes("obstacle");
-                const nonObs = parts.filter((p) => p !== "obstacle");
-                const decoPart = nonObs.length > 1 ? nonObs[1] : null;
+              const comp = this.parseTileComponents(existing);
 
-                const newParts = [tileVal];
-                if (decoPart) newParts.push(decoPart);
-
-                // The wall will come together with the obstacle tile.
-                // If replacing a wall with non-wall floor, remove the wall's obstacle.
-                const existingIsWall = parts.some(
-                  (p) => isWallAsset(p.split("|")[0])
-                );
-                const shouldHaveObstacle = isWall || (hasObs && !existingIsWall);
-                if (shouldHaveObstacle) newParts.push("obstacle");
-
-                updates[`${c},${r}`] = newParts.join("::");
-              } else {
-                if (isWall) {
-                  updates[`${c},${r}`] = `${tileVal}::obstacle`;
+              if (isOverlayFloor) {
+                // Overlay plain floor tile (color_tile_overlay) renders on top of existing floor tile without replacing it:
+                const existingOverlayKey = comp.overlayFloorPart
+                  ? comp.overlayFloorPart.split("|")[0]
+                  : null;
+                if (
+                  isSingleClick &&
+                  existingOverlayKey === this.selectedAssetKey &&
+                  comp.overlayFloorLayer === this.placementLayer
+                ) {
+                  comp.overlayFloorPart = null;
+                  comp.overlayFloorLayer = 0;
                 } else {
-                  updates[`${c},${r}`] = tileVal;
+                  comp.overlayFloorPart = tileVal;
+                  comp.overlayFloorLayer = this.placementLayer;
                 }
+                updates[`${c},${r}`] = this.buildTileString(comp);
+              } else if (isOverlayWall) {
+                // Overlay wall (glass_2, glass_3, glass_4, wood_wall_2) is rendered on top of existing floor tiles:
+                if (isWallAsset(comp.basePart.split("|")[0])) {
+                  comp.basePart = "grass_4";
+                }
+                const existingIdx = comp.decoParts.findIndex(
+                  (d) => d.assetKey === this.selectedAssetKey && d.layer === this.placementLayer
+                );
+                if (isSingleClick && existingIdx !== -1) {
+                  comp.decoParts.splice(existingIdx, 1);
+                  if (comp.decoParts.length === 0) {
+                    comp.decoPart = null;
+                    comp.isOntop = false;
+                    comp.hasObstacle = isWallAsset(comp.basePart.split("|")[0]);
+                  } else {
+                    const top = comp.decoParts[comp.decoParts.length - 1];
+                    comp.decoPart = top.rawPart;
+                    comp.isOntop = top.isOntop;
+                  }
+                } else {
+                  const sameLayerIdx = comp.decoParts.findIndex(
+                    (d) => d.layer === this.placementLayer
+                  );
+                  const newItem: GridDecoItem = {
+                    rawPart: tileVal,
+                    assetKey: this.selectedAssetKey,
+                    color: this.selectedTileColor,
+                    layer: this.placementLayer,
+                    isOntop: false,
+                  };
+                  if (sameLayerIdx !== -1) {
+                    comp.decoParts[sameLayerIdx] = newItem;
+                  } else {
+                    comp.decoParts.push(newItem);
+                  }
+                  comp.decoParts.sort(
+                    (a, b) =>
+                      this.computeLayerDepth(a.layer, a.isOntop) -
+                      this.computeLayerDepth(b.layer, b.isOntop)
+                  );
+                  const top = comp.decoParts[comp.decoParts.length - 1];
+                  comp.decoPart = top.rawPart;
+                  comp.isOntop = top.isOntop;
+                  comp.hasObstacle = true;
+                }
+                updates[`${c},${r}`] = this.buildTileString(comp);
+              } else {
+                const oldBaseWasWall = isWallAsset(comp.basePart.split("|")[0]);
+                const decoIsWall = comp.decoParts.some((d) => isWallAsset(d.assetKey));
+                comp.basePart = tileVal;
+                comp.hasObstacle = isWall || decoIsWall || (comp.hasObstacle && !oldBaseWasWall);
+                updates[`${c},${r}`] = this.buildTileString(comp);
               }
             }
           }
@@ -2107,11 +2857,16 @@ export class GameScene extends Phaser.Scene {
       }
     });
 
-    this.input.on("wheel", (_pointer: any, _objs: any, _dx: number, dy: number) => {
+    this.input.on("wheel", (pointer: Phaser.Input.Pointer, _objs: any, _dx: number, dy: number) => {
       if (!this.isEditMode) return;
-      const currentZoom = this.cameras.main.zoom;
-      const newZoom = Phaser.Math.Clamp(currentZoom - dy * 0.001, 0.5, 1.6);
-      this.cameras.main.setZoom(newZoom);
+      const cam = this.cameras.main;
+      const currentZoom = cam.zoom;
+      const newZoom = Phaser.Math.Clamp(currentZoom - dy * 0.001, 0.35, 2.2);
+      if (newZoom !== currentZoom) {
+        cam.scrollX += (pointer.x - cam.width * 0.5) * (1 / currentZoom - 1 / newZoom);
+        cam.scrollY += (pointer.y - cam.height * 0.5) * (1 / currentZoom - 1 / newZoom);
+        cam.setZoom(newZoom);
+      }
     });
   }
 
@@ -2268,21 +3023,28 @@ export class GameScene extends Phaser.Scene {
         this.editorSelectionGraphics.lineBetween(rx, gy, rx + rw, gy);
       }
 
-      let labelName = "Table Left";
-      if (this.selectedAssetKey === "table_left_150") labelName = "Table Left";
-      else if (this.selectedAssetKey === "table_middle_150") labelName = "Table Middle";
-      else if (this.selectedAssetKey === "table_right_150") labelName = "Table Right";
-      else if (this.selectedAssetKey === "round_table_150") labelName = "Round Table";
-      else if (this.selectedAssetKey === "typewriter_150") labelName = "Typewriter";
-      else if (this.selectedAssetKey === "office_chair_150") labelName = "Office Chair";
-      else if (this.selectedAssetKey === "office_chair_back_150") labelName = "Office Chair (Back)";
+      let labelName = "Table 1 Left";
+      const normDecoKey = normalizeDecorationAssetKey(this.selectedAssetKey);
+      if (normDecoKey === "table_1_left") labelName = "Table 1 Left";
+      else if (normDecoKey === "table_1_middle") labelName = "Table 1 Middle";
+      else if (normDecoKey === "table_1_right") labelName = "Table 1 Right";
+      else if (normDecoKey === "table_2_left") labelName = "Table 2 Left";
+      else if (normDecoKey === "table_2_middle") labelName = "Table 2 Middle";
+      else if (normDecoKey === "table_2_right") labelName = "Table 2 Right";
+      else if (normDecoKey === "round_table_1") labelName = "Round Table 1";
+      else if (normDecoKey === "typewriter_1") labelName = "Typewriter 1";
+      else if (normDecoKey === "office_chair_1_front") labelName = "Office Chair 1 Front";
+      else if (normDecoKey === "office_chair_1_back") labelName = "Office Chair 1 Back";
+      else if (normDecoKey === "jukebox_1") labelName = "Jukebox 1";
       const colorBadge = this.selectedTileColor ? ` • ${this.selectedTileColor.toUpperCase()}` : "";
       const layerText = this.decorationOntop ? "On Top" : "Behind";
       this.editorOverlayText.setText(
-        `🪴 ${cols} × ${rows} (${totalTiles} ${totalTiles === 1 ? "tile" : "tiles"}) • ${labelName} (${passableText} • ${layerText})${colorBadge} • Esc when done`
+        `🪴 ${cols} × ${rows} (${totalTiles} ${totalTiles === 1 ? "tile" : "tiles"}) • ${labelName} (${passableText} • ${layerText} • Layer ${this.placementLayer} ↑/↓)${colorBadge} • Esc when done`
       );
     } else {
       const isWall = isWallAsset(this.selectedAssetKey) || isWallTile(this.selectedAssetKey);
+      const isOverlay =
+        isOverlayFloorAsset(this.selectedAssetKey) || isOverlayWallAsset(this.selectedAssetKey);
       const defaultFill = isWall ? 0xdb5b47 : 0x3b8282;
       const defaultStroke = isWall ? 0xff6b55 : 0xeca239;
       const fillColor = this.selectedTileColor ? this.parseColor(this.selectedTileColor) : defaultFill;
@@ -2306,18 +3068,38 @@ export class GameScene extends Phaser.Scene {
         this.editorSelectionGraphics.lineBetween(rx, gy, rx + rw, gy);
       }
 
-      let labelName = "Birch Floor";
-      if (this.selectedAssetKey === "grass_150") labelName = "Grass Tile";
-      else if (this.selectedAssetKey === "carpet_grey_150") labelName = "Grey Carpet";
-      else if (this.selectedAssetKey === "color_tile") labelName = "Plain Tile";
-      else if (this.selectedAssetKey === "wall_half_150") labelName = "Half Wall (with Obstacle)";
-      else if (this.selectedAssetKey === "wall_top_150") labelName = "Top Wall (with Obstacle)";
-      else if (this.selectedAssetKey === "horizontal_glass_wall_150") labelName = "Horizontal Glass Wall (with Obstacle)";
-      else if (this.selectedAssetKey === "vertical_glass_wall_150") labelName = "Vertical Glass Wall (with Obstacle)";
+      let labelName = this.selectedAssetKey;
+      if (this.selectedAssetKey === "wood_wall_2" || this.selectedAssetKey === "wall_wood_2") {
+        labelName = "Wood Wall 2 (on top of floor + Obstacle)";
+      } else if (this.selectedAssetKey.startsWith("wood_wall_")) {
+        labelName = `Wood Wall ${this.selectedAssetKey.replace("wood_wall_", "")} (with Obstacle)`;
+      } else if (this.selectedAssetKey.startsWith("wall_wood_")) {
+        labelName = `Wood Wall ${this.selectedAssetKey.replace("wall_wood_", "")} (with Obstacle)`;
+      } else if (this.selectedAssetKey === "wood_5") labelName = "Wood 5";
+      else if (this.selectedAssetKey === "carpet_4") labelName = "Carpet 4";
+      else if (this.selectedAssetKey === "grass_4") labelName = "Grass 4";
+      else if (this.selectedAssetKey.startsWith("wood_")) {
+        labelName = `Wood ${this.selectedAssetKey.replace("wood_", "")}`;
+      } else if (this.selectedAssetKey.startsWith("carpet_")) {
+        labelName = `Carpet ${this.selectedAssetKey.replace("carpet_", "")}`;
+      } else if (this.selectedAssetKey.startsWith("grass_")) {
+        labelName = `Grass ${this.selectedAssetKey.replace("grass_", "")}`;
+      } else if (this.selectedAssetKey.startsWith("stone_")) {
+        labelName = `Stone ${this.selectedAssetKey.replace("stone_", "")}`;
+      } else if (this.selectedAssetKey.startsWith("marble_")) {
+        labelName = `Marble ${this.selectedAssetKey.replace("marble_", "")}`;
+      } else if (this.selectedAssetKey === "color_tile") labelName = "Plain Tile";
+      else if (this.selectedAssetKey === "color_tile_overlay" || this.selectedAssetKey === "overlay_color_tile")
+        labelName = "Overlay Plain Tile (on top of floor)";
+      else if (this.selectedAssetKey === "glass_1") labelName = "Glass Wall 1 (with Obstacle)";
+      else if (this.selectedAssetKey === "glass_2") labelName = "Glass Wall 2 (on top of floor + Obstacle)";
+      else if (this.selectedAssetKey === "glass_3") labelName = "Glass Wall 3 (on top of floor + Obstacle)";
+      else if (this.selectedAssetKey === "glass_4") labelName = "Glass Wall 4 (on top of floor + Obstacle)";
 
       const colorBadge = this.selectedTileColor ? ` • ${this.selectedTileColor.toUpperCase()}` : "";
+      const layerBadge = isOverlay ? ` • Layer ${this.placementLayer} (↑/↓)` : "";
       this.editorOverlayText.setText(
-        `📐 ${cols} × ${rows} (${totalTiles} ${totalTiles === 1 ? "tile" : "tiles"}) • ${labelName}${colorBadge} • Esc when done`
+        `📐 ${cols} × ${rows} (${totalTiles} ${totalTiles === 1 ? "tile" : "tiles"}) • ${labelName}${layerBadge}${colorBadge} • Esc when done`
       );
     }
 
@@ -2353,7 +3135,9 @@ export class GameScene extends Phaser.Scene {
     if (enabled) {
       this.closePlayerMenu();
       this.cameras.main.stopFollow();
+      this.cameras.main.removeBounds();
     } else {
+      this.closeEditorItemMenu();
       this.isSelectingArea = false;
       this.selectionStartTile = null;
       this.selectionCurrentTile = null;
@@ -2372,13 +3156,14 @@ export class GameScene extends Phaser.Scene {
         this.game.canvas.style.cursor = "default";
       }
 
+      this.cameras.main.setBounds(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
+      this.cameras.main.setZoom(1.0);
       if (this.localPlayerId) {
         const localVisual = this.playerVisuals.get(this.localPlayerId);
         if (localVisual) {
           this.cameras.main.startFollow(localVisual.container, true, 0.12, 0.12);
         }
       }
-      this.cameras.main.setZoom(1.0);
     }
   }
 
@@ -2396,28 +3181,28 @@ export class GameScene extends Phaser.Scene {
 
   public setDecorationOntop(ontop: boolean) {
     this.decorationOntop = ontop;
+    this.syncGhostDepths();
   }
 
   public hasDecoration(col: number, row: number): boolean {
     const raw = this.currentTilesMap.get(`${col},${row}`);
     if (!raw || !raw.includes("::")) return false;
-    const parts = raw.split("::");
-    const nonFlags = parts.filter((p) => {
-      const k = p.split("|")[0];
-      return k !== "obstacle" && k !== "ontop" && k !== "above" && k !== "behind" && k !== "below";
-    });
-    return nonFlags.length > 1;
+    const comp = this.parseTileComponents(raw);
+    return Boolean(comp.decoPart || comp.overlayFloorPart);
   }
 
   public getDecorationKey(col: number, row: number): string | null {
     const raw = this.currentTilesMap.get(`${col},${row}`);
     if (!raw || !raw.includes("::")) return null;
-    const parts = raw.split("::");
-    const nonFlags = parts.filter((p) => {
-      const k = p.split("|")[0];
-      return k !== "obstacle" && k !== "ontop" && k !== "above" && k !== "behind" && k !== "below";
-    });
-    return nonFlags.length > 1 ? nonFlags[1] : null;
+    const comp = this.parseTileComponents(raw);
+    return comp.decoPart;
+  }
+
+  public getOverlayFloorKey(col: number, row: number): string | null {
+    const raw = this.currentTilesMap.get(`${col},${row}`);
+    if (!raw || !raw.includes("::")) return null;
+    const comp = this.parseTileComponents(raw);
+    return comp.overlayFloorPart;
   }
 
   public getSolidBoxes(): SolidBox[] {
@@ -2463,14 +3248,15 @@ export class GameScene extends Phaser.Scene {
     y: number,
     color?: string | null,
     passable: boolean = true,
-    ontop: boolean = false
+    ontop: boolean = false,
+    layer: number = this.placementLayer
   ) {
     const id =
       "freeform:deco_" +
       Date.now() +
       "_" +
       Math.random().toString(36).substring(2, 7);
-    const serialized = serializeFreeformTile(assetKey, x, y, color, passable, ontop);
+    const serialized = serializeFreeformTile(assetKey, x, y, color, passable, ontop, layer);
     this.currentTilesMap.set(id, serialized);
     this.updateFreeformDecoration(id, serialized);
     if (this.multiplayer) {
@@ -2487,15 +3273,18 @@ export class GameScene extends Phaser.Scene {
     if (existing) {
       existing.data = data;
       existing.container.setPosition(data.x, data.y);
-      existing.container.setDepth(data.ontop ? 110 : 0.2);
-      const textureKey = this.textures.exists(data.assetKey)
-        ? data.assetKey
-        : "office_chair_150";
+      existing.container.setDepth(this.computeLayerDepth(data.layer ?? 0, data.ontop));
+      const normAssetKey = normalizeDecorationAssetKey(data.assetKey);
+      const textureKey = this.textures.exists(normAssetKey)
+        ? normAssetKey
+        : "office_chair_1_front";
       existing.sprite.setTexture(textureKey);
       if (data.color) {
         existing.sprite.setTint(this.parseColor(data.color));
+        existing.sprite.setAlpha(this.parseAlpha(data.color));
       } else {
         existing.sprite.clearTint();
+        existing.sprite.setAlpha(1);
       }
     } else {
       this.createFreeformVisual(data);
@@ -2504,15 +3293,18 @@ export class GameScene extends Phaser.Scene {
   }
 
   private createFreeformVisual(data: FreeformDecorationData) {
-    const textureKey = this.textures.exists(data.assetKey)
-      ? data.assetKey
-      : "office_chair_150";
+    const normAssetKey = normalizeDecorationAssetKey(data.assetKey);
+    const textureKey = this.textures.exists(normAssetKey)
+      ? normAssetKey
+      : "office_chair_1_front";
     const sprite = this.add.image(0, 0, textureKey);
     sprite.setDisplaySize(50, 50);
     if (data.color) {
       sprite.setTint(this.parseColor(data.color));
+      sprite.setAlpha(this.parseAlpha(data.color));
     } else {
       sprite.clearTint();
+      sprite.setAlpha(1);
     }
 
     const hitZone = this.add.rectangle(0, 0, 50, 50, 0x000000, 0);
@@ -2529,21 +3321,91 @@ export class GameScene extends Phaser.Scene {
         if (!this.isEditMode) return;
         event.stopPropagation();
 
-        if (
-          this.activeEditorTool === "freeform_decoration" ||
-          this.activeEditorTool === "clear_decoration" ||
-          this.activeEditorTool === "decoration"
-        ) {
+        if (this.activeEditorTool === "cursor") {
+          this.openEditorItemMenu({
+            kind: "freeform_decoration",
+            id: data.id,
+            label: this.formatAssetDisplayName(data.assetKey),
+            categoryLabel: "Decoration",
+            worldX: data.x,
+            worldY: data.y - 25,
+            bounds: { x: data.x - 25, y: data.y - 25, width: 50, height: 50 },
+          });
+          return;
+        }
+
+        if (this.activeEditorTool === "clear_decoration") {
           this.removeFreeformDecoration(data.id);
           if (this.multiplayer) {
             this.multiplayer.sendUpdateTiles({ [data.id]: "" });
           }
+          return;
         }
+
+        if (this.activeEditorTool === "jukebox") {
+          const jx = Math.round(pointer.worldX);
+          const jy = Math.round(pointer.worldY);
+          this.multiplayer.placeJukebox(
+            jx,
+            jy,
+            this.decorationPassable,
+            this.decorationOntop,
+            this.placementLayer
+          );
+          return;
+        }
+
+        if (this.activeEditorTool === "typewriter") {
+          const tx = Math.round(pointer.worldX);
+          const ty = Math.round(pointer.worldY);
+          this.multiplayer.placeTypewriter(
+            tx,
+            ty,
+            this.decorationPassable,
+            this.decorationOntop,
+            this.placementLayer
+          );
+          return;
+        }
+
+        if (this.activeEditorTool === "freeform_decoration") {
+          const isSameAtSameLayer =
+            normalizeDecorationAssetKey(data.assetKey) ===
+              normalizeDecorationAssetKey(this.selectedAssetKey) &&
+            (data.layer ?? 0) === this.placementLayer;
+          if (isSameAtSameLayer) {
+            this.removeFreeformDecoration(data.id);
+            if (this.multiplayer) {
+              this.multiplayer.sendUpdateTiles({ [data.id]: "" });
+            }
+          } else {
+            const fx = Math.round(pointer.worldX);
+            const fy = Math.round(pointer.worldY);
+            this.placeFreeformDecoration(
+              this.selectedAssetKey,
+              fx,
+              fy,
+              this.selectedTileColor,
+              this.decorationPassable,
+              this.decorationOntop,
+              this.placementLayer
+            );
+          }
+          return;
+        }
+
+        // For grid tools (decoration, flooring, etc.), initiate area selection at this tile
+        const col = Math.max(0, Math.min(GRID_COLS - 1, Math.floor(pointer.worldX / TILE_SIZE)));
+        const row = Math.max(0, Math.min(GRID_ROWS - 1, Math.floor(pointer.worldY / TILE_SIZE)));
+        this.isSelectingArea = true;
+        this.selectionStartTile = { x: col, y: row };
+        this.selectionCurrentTile = { x: col, y: row };
+        this.updateSelectionVisuals();
       }
     );
 
     const container = this.add.container(data.x, data.y, [sprite, hitZone]);
-    container.setDepth(data.ontop ? 110 : 0.2);
+    container.setDepth(this.computeLayerDepth(data.layer ?? 0, data.ontop));
 
     this.freeformVisuals.set(data.id, {
       container,
@@ -2590,35 +3452,13 @@ export class GameScene extends Phaser.Scene {
       const row = parseInt(rowStr, 10);
       if (row >= 0 && row < GRID_ROWS && col >= 0 && col < GRID_COLS) {
         const img = this.tileImages[row]?.[col];
+        const overlayImg = this.overlayTileImages[row]?.[col];
         const decoImg = this.decorationImages[row]?.[col];
 
-        let baseStr = "grass_150";
-        let decoStr: string | null = null;
-        let isObs = false;
-        let isOntop = false;
-
-        const parts = rawValue.includes("::") ? rawValue.split("::") : [rawValue];
-        const nonFlagParts: string[] = [];
-        for (const p of parts) {
-          const baseKey = p.includes("|") ? p.split("|")[0] : p;
-          if (baseKey === "obstacle") {
-            isObs = true;
-          } else if (baseKey === "ontop" || baseKey === "above") {
-            isOntop = true;
-          } else if (baseKey === "behind" || baseKey === "below") {
-            isOntop = false;
-          } else {
-            nonFlagParts.push(p);
-          }
-        }
-
-        if (nonFlagParts.length > 0) {
-          baseStr = nonFlagParts[0] || "grass_150";
-          decoStr = nonFlagParts[1] || null;
-        } else {
-          baseStr = "grass_150";
-          decoStr = null;
-        }
+        const comp = this.parseTileComponents(rawValue);
+        const baseStr = comp.basePart;
+        const overlayFloorStr = comp.overlayFloorPart;
+        const isObs = comp.hasObstacle;
 
         if (isObs) {
           this.obstacleTiles.add(key);
@@ -2627,59 +3467,126 @@ export class GameScene extends Phaser.Scene {
         }
 
         if (img) {
-          let assetKey = "birch_floor_150";
+          let assetKey = "wood_5";
           let tintColor: number | null = null;
+          let tintAlpha: number = 1;
 
           if (baseStr.includes("|")) {
             const [parsedAsset, colorPart] = baseStr.split("|");
-            assetKey = parsedAsset || "birch_floor_150";
+            assetKey = parsedAsset || "wood_5";
             if (colorPart && colorPart !== "none") {
               tintColor = this.parseColor(colorPart);
+              tintAlpha = this.parseAlpha(colorPart);
             }
           } else if (baseStr.startsWith("#")) {
             assetKey = "color_tile";
             tintColor = this.parseColor(baseStr);
+            tintAlpha = this.parseAlpha(baseStr);
           } else {
             assetKey = baseStr;
           }
 
-          if (assetKey === "grass_100") assetKey = "grass_150";
-          if (assetKey === "birch_floor_100") assetKey = "birch_floor_150";
+          assetKey = normalizeFloorAssetKey(assetKey);
 
-          const textureKey = this.textures.exists(assetKey) ? assetKey : "grass_150";
+          const textureKey = this.textures.exists(assetKey) ? assetKey : "grass_4";
           img.setTexture(textureKey);
           img.setDisplaySize(TILE_SIZE, TILE_SIZE);
+          // Floor assets are always strictly at the bottom of everything
+          img.setDepth(0.1);
 
           if (tintColor !== null) {
             img.setTint(tintColor);
           } else {
             img.clearTint();
           }
+          img.setAlpha(tintAlpha);
         }
 
-        if (decoImg) {
-          if (decoStr) {
-            let decoAssetKey = decoStr;
-            let decoTintColor: number | null = null;
-            if (decoStr.includes("|")) {
-              const [parsedDecoAsset, decoColorPart] = decoStr.split("|");
-              decoAssetKey = parsedDecoAsset;
-              if (decoColorPart && decoColorPart !== "none") {
-                decoTintColor = this.parseColor(decoColorPart);
+        if (overlayImg) {
+          if (overlayFloorStr) {
+            let overlayAssetKey = "color_tile_overlay";
+            let overlayTintColor: number | null = null;
+            let overlayTintAlpha: number = 1;
+            if (overlayFloorStr.includes("|")) {
+              const [parsedOverlayAsset, overlayColorPart] = overlayFloorStr.split("|");
+              overlayAssetKey = parsedOverlayAsset || "color_tile_overlay";
+              if (overlayColorPart && overlayColorPart !== "none") {
+                overlayTintColor = this.parseColor(overlayColorPart);
+                overlayTintAlpha = this.parseAlpha(overlayColorPart);
               }
-            }
-            const decoTexture = this.textures.exists(decoAssetKey) ? decoAssetKey : "table_left_150";
-            decoImg.setTexture(decoTexture);
-            decoImg.setDisplaySize(TILE_SIZE, TILE_SIZE);
-            if (decoTintColor !== null) {
-              decoImg.setTint(decoTintColor);
             } else {
-              decoImg.clearTint();
+              overlayAssetKey = overlayFloorStr;
             }
-            decoImg.setDepth(isOntop ? 110 : 0.2);
-            decoImg.setVisible(true);
+            const overlayTexture = this.textures.exists(overlayAssetKey)
+              ? overlayAssetKey
+              : "color_tile";
+            overlayImg.setTexture(overlayTexture);
+            overlayImg.setDisplaySize(TILE_SIZE, TILE_SIZE);
+            if (overlayTintColor !== null) {
+              overlayImg.setTint(overlayTintColor);
+            } else {
+              overlayImg.clearTint();
+            }
+            overlayImg.setAlpha(overlayTintAlpha);
+            overlayImg.setDepth(this.computeLayerDepth(comp.overlayFloorLayer, false));
+            overlayImg.setVisible(true);
+          } else {
+            overlayImg.setVisible(false);
+            overlayImg.clearTint();
+            overlayImg.setAlpha(1);
+          }
+        }
+
+        // Clean up any previous extra decoration images on this tile
+        const prevExtra = this.extraTileDecoImages.get(key);
+        if (prevExtra) {
+          prevExtra.forEach((extraImg) => extraImg.destroy());
+          this.extraTileDecoImages.delete(key);
+        }
+
+        const configureDecoImage = (
+          targetImg: Phaser.GameObjects.Image,
+          decoItem: GridDecoItem
+        ) => {
+          let decoAssetKey = decoItem.assetKey;
+          let decoTintColor: number | null = null;
+          let decoTintAlpha: number = 1;
+          if (decoItem.color && decoItem.color !== "none") {
+            decoTintColor = this.parseColor(decoItem.color);
+            decoTintAlpha = this.parseAlpha(decoItem.color);
+          }
+          decoAssetKey = normalizeDecorationAssetKey(decoAssetKey);
+          const decoTexture = this.textures.exists(decoAssetKey) ? decoAssetKey : "table_1_left";
+          targetImg.setTexture(decoTexture);
+          targetImg.setDisplaySize(TILE_SIZE, TILE_SIZE);
+          if (decoTintColor !== null) {
+            targetImg.setTint(decoTintColor);
+          } else {
+            targetImg.clearTint();
+          }
+          targetImg.setAlpha(decoTintAlpha);
+          targetImg.setDepth(this.computeLayerDepth(decoItem.layer, decoItem.isOntop));
+          targetImg.setVisible(true);
+        };
+
+        if (decoImg) {
+          if (comp.decoParts.length > 0) {
+            configureDecoImage(decoImg, comp.decoParts[0]);
+            if (comp.decoParts.length > 1) {
+              const extras: Phaser.GameObjects.Image[] = [];
+              for (let i = 1; i < comp.decoParts.length; i++) {
+                const extraImg = this.add
+                  .image(col * TILE_SIZE, row * TILE_SIZE, "table_1_left")
+                  .setOrigin(0, 0);
+                configureDecoImage(extraImg, comp.decoParts[i]);
+                extras.push(extraImg);
+              }
+              this.extraTileDecoImages.set(key, extras);
+            }
           } else {
             decoImg.setVisible(false);
+            decoImg.clearTint();
+            decoImg.setAlpha(1);
           }
         }
       }
@@ -2845,44 +3752,46 @@ export class GameScene extends Phaser.Scene {
     const raw = this.currentTilesMap.get(`${col},${row}`);
 
     if (raw) {
-      const parts = raw.split("::");
+      const comp = this.parseTileComponents(raw);
       // Check decoration part first if present
-      const decoPart = parts.find((p) => {
-        const k = p.split("|")[0];
-        return (
-          k !== "obstacle" &&
-          k !== "ontop" &&
-          k !== "above" &&
-          k !== "behind" &&
-          k !== "below" &&
-          p !== parts[0]
-        );
-      });
-      if (decoPart && decoPart.includes("|")) {
-        const c = decoPart.split("|")[1];
+      if (comp.decoPart && comp.decoPart.includes("|")) {
+        const c = comp.decoPart.split("|")[1];
         if (c && c !== "none") return c;
       }
 
+      // Check overlay floor part if present
+      if (comp.overlayFloorPart) {
+        if (comp.overlayFloorPart.includes("|")) {
+          const c = comp.overlayFloorPart.split("|")[1];
+          if (c && c !== "none") return c;
+        } else {
+          return "#FFFFFF";
+        }
+      }
+
       // Check base part
-      const basePart = parts[0];
+      const basePart = comp.basePart;
       if (basePart) {
         if (basePart.includes("|")) {
           const c = basePart.split("|")[1];
           if (c && c !== "none") return c;
         } else if (basePart.startsWith("#")) {
           return basePart;
+        } else if (basePart === "color_tile") {
+          return "#FFFFFF";
         }
       }
     }
 
     // 2. If no explicit tint, sample texture pixel color from the base tile image
     try {
-      const baseRaw = raw ? raw.split("::")[0].split("|")[0] : "grass_150";
-      const textureKey = this.textures.exists(baseRaw) ? baseRaw : "grass_150";
+      const baseRaw = raw ? raw.split("::")[0].split("|")[0] : "grass_4";
+      const normalizedBase = normalizeFloorAssetKey(baseRaw);
+      const textureKey = this.textures.exists(normalizedBase) ? normalizedBase : "grass_4";
       const texture = this.textures.get(textureKey);
       if (texture && texture.source && texture.source[0]) {
-        const imgWidth = texture.source[0].width || 150;
-        const imgHeight = texture.source[0].height || 150;
+        const imgWidth = texture.source[0].width || 96;
+        const imgHeight = texture.source[0].height || 96;
         const relX = (((worldX % TILE_SIZE) + TILE_SIZE) % TILE_SIZE) / TILE_SIZE;
         const relY = (((worldY % TILE_SIZE) + TILE_SIZE) % TILE_SIZE) / TILE_SIZE;
         const px = Math.floor(relX * imgWidth);
@@ -2902,18 +3811,29 @@ export class GameScene extends Phaser.Scene {
     this.obstacleTiles.clear();
     this.freeformVisuals.forEach((v) => v.container.destroy());
     this.freeformVisuals.clear();
+    this.extraTileDecoImages.forEach((imgs) => imgs.forEach((img) => img.destroy()));
+    this.extraTileDecoImages.clear();
     for (let r = 0; r < GRID_ROWS; r++) {
       for (let c = 0; c < GRID_COLS; c++) {
         const img = this.tileImages[r]?.[c];
         if (img) {
-          img.setTexture("grass_150");
+          img.setTexture("grass_4");
           img.setDisplaySize(TILE_SIZE, TILE_SIZE);
+          img.setDepth(0.1);
           img.clearTint();
+          img.setAlpha(1);
+        }
+        const overlayImg = this.overlayTileImages[r]?.[c];
+        if (overlayImg) {
+          overlayImg.setVisible(false);
+          overlayImg.clearTint();
+          overlayImg.setAlpha(1);
         }
         const decoImg = this.decorationImages[r]?.[c];
         if (decoImg) {
           decoImg.setVisible(false);
           decoImg.clearTint();
+          decoImg.setAlpha(1);
         }
       }
     }
@@ -2929,6 +3849,8 @@ export class GameScene extends Phaser.Scene {
 
   public setActiveEditorTool(
     tool:
+      | "none"
+      | "cursor"
       | "flooring"
       | "decoration"
       | "clear_decoration"
@@ -2943,8 +3865,16 @@ export class GameScene extends Phaser.Scene {
       | "color_dropper"
   ) {
     this.activeEditorTool = tool;
+    if (tool !== "cursor") {
+      this.closeEditorItemMenu();
+    }
+    if (tool === "none") {
+      this.editorHoverGraphics.clear();
+      this.editorSelectionGraphics.clear();
+      this.editorOverlayText.setVisible(false);
+    }
     if (this.game.canvas) {
-      if (tool === "clear_decoration") {
+      if (tool === "clear_decoration" || tool === "cursor") {
         this.game.canvas.style.cursor = "pointer";
       } else if (tool === "color_dropper") {
         this.game.canvas.style.cursor = "crosshair";
@@ -2961,6 +3891,362 @@ export class GameScene extends Phaser.Scene {
     if (tool !== "freeform_decoration" && this.editorFreeformGhost) {
       this.editorFreeformGhost.setVisible(false);
     }
+  }
+
+  public formatAssetDisplayName(rawKey: string): string {
+    const clean = rawKey.includes("|") ? rawKey.split("|")[0] : rawKey;
+    const norm = normalizeDecorationAssetKey(normalizeFloorAssetKey(clean));
+    if (norm === "typewriter_1") return "Typewriter";
+    if (norm === "jukebox_1") return "YouTube Jukebox";
+    if (norm === "office_chair_1_front") return "Office Chair 1 Front";
+    if (norm === "office_chair_1_back") return "Office Chair 1 Back";
+    if (norm === "table_1_left") return "Table 1 Left";
+    if (norm === "table_1_middle") return "Table 1 Middle";
+    if (norm === "table_1_right") return "Table 1 Right";
+    if (norm === "table_2_left") return "Table 2 Left";
+    if (norm === "table_2_middle") return "Table 2 Middle";
+    if (norm === "table_2_right") return "Table 2 Right";
+    if (norm === "round_table_1") return "Round Table 1";
+    if (norm === "color_tile") return "Plain Tile";
+    if (norm === "color_tile_overlay" || norm === "overlay_color_tile") return "Overlay Plain Tile";
+    if (norm.startsWith("glass_")) return `Glass Wall ${norm.replace("glass_", "")}`;
+    if (norm.startsWith("wood_wall_")) return `Wood Wall ${norm.replace("wood_wall_", "")}`;
+    if (norm.startsWith("wall_wood_")) return `Wood Wall ${norm.replace("wall_wood_", "")}`;
+    if (norm.startsWith("wood_")) return `Wood ${norm.replace("wood_", "")}`;
+    if (norm.startsWith("carpet_")) return `Carpet ${norm.replace("carpet_", "")}`;
+    if (norm.startsWith("grass_")) return `Grass ${norm.replace("grass_", "")}`;
+    if (norm.startsWith("stone_")) return `Stone ${norm.replace("stone_", "")}`;
+    if (norm.startsWith("marble_")) return `Marble ${norm.replace("marble_", "")}`;
+    return norm;
+  }
+
+  public getInspectableItemAt(worldX: number, worldY: number): InspectableMapItem | null {
+    // 1. Check Typewriters (freeform)
+    for (const vis of this.typewriterVisuals.values()) {
+      const tw = vis.state;
+      if (Math.abs(worldX - tw.x) <= 26 && Math.abs(worldY - tw.y) <= 26) {
+        return {
+          kind: "typewriter",
+          id: tw.id,
+          label: "Typewriter",
+          categoryLabel: "Game",
+          worldX: tw.x,
+          worldY: tw.y - 24,
+          bounds: { x: tw.x - 24, y: tw.y - 24, width: 48, height: 48 },
+        };
+      }
+    }
+
+    // 2. Check Jukeboxes (freeform)
+    for (const vis of this.jukeboxVisuals.values()) {
+      const jb = vis.state;
+      if (Math.abs(worldX - jb.x) <= 26 && Math.abs(worldY - jb.y) <= 26) {
+        return {
+          kind: "jukebox",
+          id: jb.id,
+          label: "Jukebox",
+          categoryLabel: "Music",
+          worldX: jb.x,
+          worldY: jb.y - 24,
+          bounds: { x: jb.x - 24, y: jb.y - 24, width: 48, height: 48 },
+        };
+      }
+    }
+
+    // 3. Check Freeform Decorations (Chairs, etc.)
+    for (const vis of this.freeformVisuals.values()) {
+      const d = vis.data;
+      if (Math.abs(worldX - d.x) <= 25 && Math.abs(worldY - d.y) <= 25) {
+        return {
+          kind: "freeform_decoration",
+          id: d.id,
+          label: this.formatAssetDisplayName(d.assetKey),
+          categoryLabel: "Decoration",
+          worldX: d.x,
+          worldY: d.y - 25,
+          bounds: { x: d.x - 25, y: d.y - 25, width: 50, height: 50 },
+        };
+      }
+    }
+
+    // 4. Check Grid Tile at (col, row)
+    const col = Math.floor(worldX / TILE_SIZE);
+    const row = Math.floor(worldY / TILE_SIZE);
+    if (col < 0 || col >= GRID_COLS || row < 0 || row >= GRID_ROWS) {
+      return null;
+    }
+
+    const tileKey = `${col},${row}`;
+    const raw = this.currentTilesMap.get(tileKey);
+    const comp = this.parseTileComponents(raw);
+    const tileCenterX = col * TILE_SIZE + TILE_SIZE / 2;
+    const tileTopY = row * TILE_SIZE;
+    const tileBounds = {
+      x: col * TILE_SIZE,
+      y: row * TILE_SIZE,
+      width: TILE_SIZE,
+      height: TILE_SIZE,
+    };
+
+    // 4a. Top Decoration or Overlay Wall on this tile
+    if (comp.decoPart) {
+      const decoKey = comp.decoPart.includes("|") ? comp.decoPart.split("|")[0] : comp.decoPart;
+      if (isOverlayWallAsset(decoKey) || isWallAsset(decoKey)) {
+        return {
+          kind: "overlay_wall",
+          id: tileKey,
+          label: this.formatAssetDisplayName(decoKey),
+          categoryLabel: "Wall",
+          worldX: tileCenterX,
+          worldY: tileTopY,
+          col,
+          row,
+          bounds: tileBounds,
+        };
+      }
+      return {
+        kind: "grid_decoration",
+        id: tileKey,
+        label: this.formatAssetDisplayName(decoKey),
+        categoryLabel: "Decoration",
+        worldX: tileCenterX,
+        worldY: tileTopY,
+        col,
+        row,
+        bounds: tileBounds,
+      };
+    }
+
+    // 4b. Base Wall on this tile
+    const baseKey = comp.basePart.includes("|") ? comp.basePart.split("|")[0] : comp.basePart;
+    if (isWallAsset(baseKey) || isWallTile(comp.basePart)) {
+      return {
+        kind: "wall",
+        id: tileKey,
+        label: this.formatAssetDisplayName(baseKey),
+        categoryLabel: "Wall",
+        worldX: tileCenterX,
+        worldY: tileTopY,
+        col,
+        row,
+        bounds: tileBounds,
+      };
+    }
+
+    // 4c. Overlay Floor on this tile
+    if (comp.overlayFloorPart) {
+      const ovKey = comp.overlayFloorPart.includes("|")
+        ? comp.overlayFloorPart.split("|")[0]
+        : comp.overlayFloorPart;
+      return {
+        kind: "overlay_floor",
+        id: tileKey,
+        label: this.formatAssetDisplayName(ovKey),
+        categoryLabel: "Floor",
+        worldX: tileCenterX,
+        worldY: tileTopY,
+        col,
+        row,
+        bounds: tileBounds,
+      };
+    }
+
+    // 4d. Custom Spawn Point on this tile
+    if (this.currentTilesMap.get("spawn_point") === tileKey) {
+      return {
+        kind: "spawn_point",
+        id: "spawn_point",
+        label: "Spawn Point",
+        categoryLabel: "Utility",
+        worldX: tileCenterX,
+        worldY: tileTopY,
+        col,
+        row,
+        bounds: tileBounds,
+      };
+    }
+
+    // 4e. Standalone Obstacle on this tile
+    if (comp.hasObstacle) {
+      return {
+        kind: "obstacle",
+        id: tileKey,
+        label: "Obstacle Tile",
+        categoryLabel: "Utility",
+        worldX: tileCenterX,
+        worldY: tileTopY,
+        col,
+        row,
+        bounds: tileBounds,
+      };
+    }
+
+    // 4f. Placed Floor Tile (non-default or tinted)
+    if (comp.basePart && comp.basePart !== "grass_4") {
+      return {
+        kind: "floor",
+        id: tileKey,
+        label: this.formatAssetDisplayName(baseKey),
+        categoryLabel: "Floor",
+        worldX: tileCenterX,
+        worldY: tileTopY,
+        col,
+        row,
+        bounds: tileBounds,
+      };
+    }
+
+    // 4g. Private Zone at this tile
+    const zone = this.privateZones.find(
+      (z) =>
+        col >= z.bounds.minCol &&
+        col <= z.bounds.maxCol &&
+        row >= z.bounds.minRow &&
+        row <= z.bounds.maxRow
+    );
+    if (zone) {
+      return {
+        kind: "private_zone",
+        id: zone.id,
+        label: zone.name || "Private Area",
+        categoryLabel: "Private Zone",
+        worldX: tileCenterX,
+        worldY: tileTopY,
+        col,
+        row,
+        bounds: {
+          x: zone.bounds.minCol * TILE_SIZE,
+          y: zone.bounds.minRow * TILE_SIZE,
+          width: (zone.bounds.maxCol - zone.bounds.minCol + 1) * TILE_SIZE,
+          height: (zone.bounds.maxRow - zone.bounds.minRow + 1) * TILE_SIZE,
+        },
+      };
+    }
+
+    // 4h. Default floor tile
+    return {
+      kind: "floor",
+      id: tileKey,
+      label: this.formatAssetDisplayName(baseKey),
+      categoryLabel: "Floor",
+      worldX: tileCenterX,
+      worldY: tileTopY,
+      col,
+      row,
+      bounds: tileBounds,
+    };
+  }
+
+  public openEditorItemMenu(item: InspectableMapItem) {
+    this.activeEditorMenuItem = item;
+    const cam = this.cameras.main;
+    const screenX =
+      (item.worldX - cam.scrollX - cam.width * 0.5) * cam.zoom + cam.width * 0.5;
+    const screenY =
+      (item.worldY - cam.scrollY - cam.height * 0.5) * cam.zoom + cam.height * 0.5;
+    if (this.onEditorItemContextMenu) {
+      this.onEditorItemContextMenu({ item, screenX, screenY });
+    }
+  }
+
+  public closeEditorItemMenu() {
+    if (!this.activeEditorMenuItem) return;
+    this.activeEditorMenuItem = null;
+    if (this.onEditorItemMenuPositionUpdate) {
+      this.onEditorItemMenuPositionUpdate({ screenX: 0, screenY: 0, visible: false });
+    }
+  }
+
+  public deleteInspectableItem(item: InspectableMapItem) {
+    if (!item) return;
+
+    if (item.kind === "typewriter") {
+      this.removeTypewriter(item.id);
+      if (this.multiplayer) {
+        this.multiplayer.deleteTypewriter(item.id);
+      }
+    } else if (item.kind === "jukebox") {
+      this.removeJukebox(item.id);
+      if (this.multiplayer) {
+        this.multiplayer.deleteJukebox(item.id);
+      }
+    } else if (item.kind === "freeform_decoration") {
+      this.removeFreeformDecoration(item.id);
+      if (this.multiplayer) {
+        this.multiplayer.sendUpdateTiles({ [item.id]: "" });
+      }
+    } else if (item.kind === "grid_decoration" || item.kind === "overlay_wall") {
+      const key = item.id;
+      const comp = this.parseTileComponents(this.currentTilesMap.get(key));
+      if (comp.decoParts.length > 1) {
+        comp.decoParts.pop();
+        const top = comp.decoParts[comp.decoParts.length - 1];
+        comp.decoPart = top.rawPart;
+        comp.isOntop = top.isOntop;
+      } else {
+        comp.decoParts = [];
+        comp.decoPart = null;
+        comp.isOntop = false;
+        const baseAssetOnly = comp.basePart.includes("|")
+          ? comp.basePart.split("|")[0]
+          : comp.basePart;
+        comp.hasObstacle = isWallAsset(baseAssetOnly);
+      }
+      const nextVal = this.buildTileString(comp);
+      this.applyTileUpdates({ [key]: nextVal });
+      if (this.multiplayer) {
+        this.multiplayer.sendUpdateTiles({ [key]: nextVal });
+      }
+    } else if (item.kind === "wall") {
+      const key = item.id;
+      const comp = this.parseTileComponents(this.currentTilesMap.get(key));
+      comp.basePart = "grass_4";
+      comp.hasObstacle = comp.decoParts.some((d) => isWallAsset(d.assetKey));
+      const nextVal = this.buildTileString(comp);
+      this.applyTileUpdates({ [key]: nextVal });
+      if (this.multiplayer) {
+        this.multiplayer.sendUpdateTiles({ [key]: nextVal });
+      }
+    } else if (item.kind === "overlay_floor") {
+      const key = item.id;
+      const comp = this.parseTileComponents(this.currentTilesMap.get(key));
+      comp.overlayFloorPart = null;
+      comp.overlayFloorLayer = 0;
+      const nextVal = this.buildTileString(comp);
+      this.applyTileUpdates({ [key]: nextVal });
+      if (this.multiplayer) {
+        this.multiplayer.sendUpdateTiles({ [key]: nextVal });
+      }
+    } else if (item.kind === "spawn_point") {
+      this.currentTilesMap.delete("spawn_point");
+      this.drawSpawnPoint();
+      if (this.multiplayer) {
+        this.multiplayer.sendUpdateTiles({ spawn_point: "" });
+      }
+    } else if (item.kind === "obstacle") {
+      const key = item.id;
+      const comp = this.parseTileComponents(this.currentTilesMap.get(key));
+      comp.hasObstacle = false;
+      const nextVal = this.buildTileString(comp);
+      this.applyTileUpdates({ [key]: nextVal });
+      if (this.multiplayer) {
+        this.multiplayer.sendUpdateTiles({ [key]: nextVal });
+      }
+    } else if (item.kind === "private_zone") {
+      this.removePrivateZone(item.id);
+    } else if (item.kind === "floor") {
+      const key = item.id;
+      const comp = this.parseTileComponents(this.currentTilesMap.get(key));
+      comp.basePart = "grass_4";
+      const nextVal = this.buildTileString(comp);
+      this.applyTileUpdates({ [key]: nextVal });
+      if (this.multiplayer) {
+        this.multiplayer.sendUpdateTiles({ [key]: nextVal });
+      }
+    }
+
+    this.closeEditorItemMenu();
+    this.editorHoverGraphics.clear();
   }
 
   public applyPrivateZones(zones: PrivateZone[]) {
@@ -3193,7 +4479,7 @@ export class GameScene extends Phaser.Scene {
     if (existing) {
       existing.state = jb;
       existing.container.setPosition(jb.x, jb.y);
-      existing.container.setDepth(jb.ontop ? 110 : 0.2);
+      existing.container.setDepth(this.computeLayerDepth(jb.layer ?? 0, !!jb.ontop));
     } else {
       this.createJukeboxVisual(jb);
     }
@@ -3214,7 +4500,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private createJukeboxVisual(jb: JukeboxState) {
-    const sprite = this.add.image(0, 0, "jukebox_150");
+    const sprite = this.add.image(0, 0, "jukebox_1");
     sprite.setDisplaySize(48, 48);
 
     const hitZone = this.add.rectangle(0, 0, 52, 52, 0x000000, 0);
@@ -3231,9 +4517,70 @@ export class GameScene extends Phaser.Scene {
         event.stopPropagation();
 
         if (this.isEditMode) {
-          if (this.activeEditorTool === "jukebox" || this.activeEditorTool === "clear_decoration") {
-            this.multiplayer.deleteJukebox(jb.id);
+          if (this.activeEditorTool === "cursor") {
+            this.openEditorItemMenu({
+              kind: "jukebox",
+              id: jb.id,
+              label: "Jukebox",
+              categoryLabel: "Music",
+              worldX: jb.x,
+              worldY: jb.y - 24,
+              bounds: { x: jb.x - 24, y: jb.y - 24, width: 48, height: 48 },
+            });
+            return;
           }
+          if (this.activeEditorTool === "clear_decoration") {
+            this.multiplayer.deleteJukebox(jb.id);
+            return;
+          }
+          if (this.activeEditorTool === "jukebox") {
+            if ((jb.layer ?? 0) === this.placementLayer) {
+              this.multiplayer.deleteJukebox(jb.id);
+            } else {
+              const jx = Math.round(pointer.worldX);
+              const jy = Math.round(pointer.worldY);
+              this.multiplayer.placeJukebox(
+                jx,
+                jy,
+                this.decorationPassable,
+                this.decorationOntop,
+                this.placementLayer
+              );
+            }
+            return;
+          }
+          if (this.activeEditorTool === "typewriter") {
+            const tx = Math.round(pointer.worldX);
+            const ty = Math.round(pointer.worldY);
+            this.multiplayer.placeTypewriter(
+              tx,
+              ty,
+              this.decorationPassable,
+              this.decorationOntop,
+              this.placementLayer
+            );
+            return;
+          }
+          if (this.activeEditorTool === "freeform_decoration") {
+            const fx = Math.round(pointer.worldX);
+            const fy = Math.round(pointer.worldY);
+            this.placeFreeformDecoration(
+              this.selectedAssetKey,
+              fx,
+              fy,
+              this.selectedTileColor,
+              this.decorationPassable,
+              this.decorationOntop,
+              this.placementLayer
+            );
+            return;
+          }
+          const col = Math.max(0, Math.min(GRID_COLS - 1, Math.floor(pointer.worldX / TILE_SIZE)));
+          const row = Math.max(0, Math.min(GRID_ROWS - 1, Math.floor(pointer.worldY / TILE_SIZE)));
+          this.isSelectingArea = true;
+          this.selectionStartTile = { x: col, y: row };
+          this.selectionCurrentTile = { x: col, y: row };
+          this.updateSelectionVisuals();
         } else {
           if (this.onJukeboxClick) {
             this.onJukeboxClick(jb.id);
@@ -3254,7 +4601,7 @@ export class GameScene extends Phaser.Scene {
     promptText.setVisible(false);
 
     const container = this.add.container(jb.x, jb.y, [sprite, hitZone, promptText]);
-    container.setDepth(jb.ontop ? 110 : 0.2);
+    container.setDepth(this.computeLayerDepth(jb.layer ?? 0, !!jb.ontop));
 
     const visual: JukeboxVisual = {
       container,
@@ -3321,7 +4668,7 @@ export class GameScene extends Phaser.Scene {
     if (existing) {
       existing.state = tw;
       existing.container.setPosition(tw.x, tw.y);
-      existing.container.setDepth(tw.ontop ? 110 : 0.2);
+      existing.container.setDepth(this.computeLayerDepth(tw.layer ?? 0, !!tw.ontop));
     } else {
       this.createTypewriterVisual(tw);
     }
@@ -3341,7 +4688,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private createTypewriterVisual(tw: TypewriterState) {
-    const sprite = this.add.image(0, 0, "typewriter_150");
+    const sprite = this.add.image(0, 0, "typewriter_1");
     sprite.setDisplaySize(48, 48);
 
     const hitZone = this.add.rectangle(0, 0, 52, 52, 0x000000, 0);
@@ -3358,12 +4705,70 @@ export class GameScene extends Phaser.Scene {
         event.stopPropagation();
 
         if (this.isEditMode) {
-          if (
-            this.activeEditorTool === "typewriter" ||
-            this.activeEditorTool === "clear_decoration"
-          ) {
-            this.multiplayer.deleteTypewriter(tw.id);
+          if (this.activeEditorTool === "cursor") {
+            this.openEditorItemMenu({
+              kind: "typewriter",
+              id: tw.id,
+              label: "Typewriter",
+              categoryLabel: "Game",
+              worldX: tw.x,
+              worldY: tw.y - 24,
+              bounds: { x: tw.x - 24, y: tw.y - 24, width: 48, height: 48 },
+            });
+            return;
           }
+          if (this.activeEditorTool === "clear_decoration") {
+            this.multiplayer.deleteTypewriter(tw.id);
+            return;
+          }
+          if (this.activeEditorTool === "typewriter") {
+            if ((tw.layer ?? 0) === this.placementLayer) {
+              this.multiplayer.deleteTypewriter(tw.id);
+            } else {
+              const tx = Math.round(pointer.worldX);
+              const ty = Math.round(pointer.worldY);
+              this.multiplayer.placeTypewriter(
+                tx,
+                ty,
+                this.decorationPassable,
+                this.decorationOntop,
+                this.placementLayer
+              );
+            }
+            return;
+          }
+          if (this.activeEditorTool === "jukebox") {
+            const jx = Math.round(pointer.worldX);
+            const jy = Math.round(pointer.worldY);
+            this.multiplayer.placeJukebox(
+              jx,
+              jy,
+              this.decorationPassable,
+              this.decorationOntop,
+              this.placementLayer
+            );
+            return;
+          }
+          if (this.activeEditorTool === "freeform_decoration") {
+            const fx = Math.round(pointer.worldX);
+            const fy = Math.round(pointer.worldY);
+            this.placeFreeformDecoration(
+              this.selectedAssetKey,
+              fx,
+              fy,
+              this.selectedTileColor,
+              this.decorationPassable,
+              this.decorationOntop,
+              this.placementLayer
+            );
+            return;
+          }
+          const col = Math.max(0, Math.min(GRID_COLS - 1, Math.floor(pointer.worldX / TILE_SIZE)));
+          const row = Math.max(0, Math.min(GRID_ROWS - 1, Math.floor(pointer.worldY / TILE_SIZE)));
+          this.isSelectingArea = true;
+          this.selectionStartTile = { x: col, y: row };
+          this.selectionCurrentTile = { x: col, y: row };
+          this.updateSelectionVisuals();
         } else {
           if (this.onTypewriterClick) {
             this.onTypewriterClick(tw.id);
@@ -3384,7 +4789,7 @@ export class GameScene extends Phaser.Scene {
     promptText.setVisible(false);
 
     const container = this.add.container(tw.x, tw.y, [sprite, hitZone, promptText]);
-    container.setDepth(tw.ontop ? 110 : 0.2);
+    container.setDepth(this.computeLayerDepth(tw.layer ?? 0, !!tw.ontop));
 
     const visual: TypewriterVisual = {
       container,

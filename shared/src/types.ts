@@ -11,11 +11,36 @@ export interface PlayerAvatars {
 }
 
 export const DEFAULT_AVATARS: Record<"idle" | "left" | "right" | "up" | "down", string[]> = {
-  idle: ["/assets/man_still.png"],
-  left: ["/assets/male_move_left_1.png", "/assets/male_move_left_2.png"],
-  right: ["/assets/male_move_right_1.png", "/assets/male_move_right_2.png"],
-  up: ["/assets/male_move_up_1.png", "/assets/male_move_up_2.png"],
-  down: ["/assets/male_move_down_1.png", "/assets/male_move_down_2.png"],
+  idle: [
+    "/assets/sprite1.png",
+    "/assets/sprite2.png",
+    "/assets/sprite3.png",
+    "/assets/sprite4.png",
+  ],
+  left: [
+    "/assets/walk_sprite9_flip.png",
+    "/assets/walk_sprite10_flip.png",
+    "/assets/walk_sprite11_flip.png",
+    "/assets/walk_sprite12_flip.png",
+  ],
+  right: [
+    "/assets/walk_sprite9.png",
+    "/assets/walk_sprite10.png",
+    "/assets/walk_sprite11.png",
+    "/assets/walk_sprite12.png",
+  ],
+  up: [
+    "/assets/walk_sprite17.png",
+    "/assets/walk_sprite18.png",
+    "/assets/walk_sprite19.png",
+    "/assets/walk_sprite20.png",
+  ],
+  down: [
+    "/assets/walk_sprite1.png",
+    "/assets/walk_sprite2.png",
+    "/assets/walk_sprite3.png",
+    "/assets/walk_sprite4.png",
+  ],
 };
 
 export function normalizeFrames(frames?: AvatarFrames): string[] {
@@ -173,6 +198,7 @@ export interface JukeboxState {
   playlist: JukeboxTrack[]; // Collaborative queue
   passable?: boolean; // Whether players can walk through it (default false = solid obstacle)
   ontop?: boolean; // Render on top of character (true) or behind character (false)
+  layer?: number; // Layer placement level (integer, default 0)
 }
 
 export interface JukeboxAddTrackPayload {
@@ -199,6 +225,7 @@ export interface JukeboxPlacePayload {
   y: number; // Freeform world Y (pixels)
   passable?: boolean;
   ontop?: boolean;
+  layer?: number;
 }
 
 export interface JukeboxMovePayload {
@@ -218,6 +245,7 @@ export interface TypewriterState {
   y: number; // Freeform world Y coordinate (pixels, NOT snapped to grid)
   passable?: boolean; // Whether players can walk through it (default false = solid obstacle)
   ontop?: boolean; // Render on top of character (true) or behind character (false)
+  layer?: number; // Layer placement level (integer, default 0)
 }
 
 export interface TypewriterPlacePayload {
@@ -225,6 +253,7 @@ export interface TypewriterPlacePayload {
   y: number; // Freeform world Y (pixels)
   passable?: boolean;
   ontop?: boolean;
+  layer?: number;
 }
 
 export interface TypewriterMovePayload {
@@ -302,6 +331,8 @@ export interface TypeRacePlayAgainPayload {
 }
 
 export const FREEFORM_ASSET_KEYS = [
+  "office_chair_1_front",
+  "office_chair_1_back",
   "office_chair_150",
   "office_chair_back_150",
 ] as const;
@@ -310,7 +341,12 @@ export type FreeformAssetKey = (typeof FREEFORM_ASSET_KEYS)[number];
 export function isFreeformAsset(assetKey: string | undefined | null): boolean {
   if (!assetKey) return false;
   const baseKey = assetKey.includes("|") ? assetKey.split("|")[0] : assetKey;
-  return baseKey === "office_chair_150" || baseKey === "office_chair_back_150";
+  return (
+    baseKey === "office_chair_1_front" ||
+    baseKey === "office_chair_1_back" ||
+    baseKey === "office_chair_150" ||
+    baseKey === "office_chair_back_150"
+  );
 }
 
 export interface FreeformDecorationData {
@@ -321,6 +357,7 @@ export interface FreeformDecorationData {
   y: number;
   passable: boolean;
   ontop: boolean;
+  layer: number;
 }
 
 export function parseFreeformTile(val: string): FreeformDecorationData | null {
@@ -336,6 +373,15 @@ export function parseFreeformTile(val: string): FreeformDecorationData | null {
 
   const isPassable = !parts.includes("solid") && !parts.includes("obstacle");
   const isOntop = parts.includes("ontop") || parts.includes("above");
+  let layer = 0;
+  for (const p of parts) {
+    if (p.startsWith("layer:")) {
+      const parsed = parseInt(p.slice(6), 10);
+      if (!isNaN(parsed)) {
+        layer = parsed;
+      }
+    }
+  }
 
   return {
     id: "",
@@ -345,6 +391,7 @@ export function parseFreeformTile(val: string): FreeformDecorationData | null {
     y,
     passable: isPassable,
     ontop: isOntop,
+    layer,
   };
 }
 
@@ -354,10 +401,12 @@ export function serializeFreeformTile(
   y: number,
   color?: string | null,
   passable: boolean = true,
-  ontop: boolean = false
+  ontop: boolean = false,
+  layer: number = 0
 ): string {
   const colPart = color ? color : "none";
   const passPart = passable ? "passable" : "solid";
   const layerPart = ontop ? "ontop" : "behind";
-  return `${assetKey}|${colPart}::${Math.round(x)},${Math.round(y)}::${passPart}::${layerPart}`;
+  const levelPart = `layer:${Math.round(layer)}`;
+  return `${assetKey}|${colPart}::${Math.round(x)},${Math.round(y)}::${passPart}::${layerPart}::${levelPart}`;
 }

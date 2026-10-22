@@ -12,10 +12,24 @@ import {
 } from "./constants";
 
 export const WALL_ASSET_KEYS = [
-  "wall_half_150",
-  "wall_top_150",
-  "horizontal_glass_wall_150",
-  "vertical_glass_wall_150",
+  "glass_1",
+  "glass_2",
+  "glass_3",
+  "glass_4",
+  "wood_wall_1",
+  "wall_wood_1",
+  "wood_wall_2",
+  "wall_wood_2",
+  "wood_wall_3",
+  "wall_wood_3",
+  "wood_wall_4",
+  "wall_wood_4",
+  "wood_wall_5",
+  "wall_wood_5",
+  "wood_wall_6",
+  "wall_wood_6",
+  "wood_wall_7",
+  "wall_wood_7",
   "obstacle",
 ] as const;
 export type WallAssetKey = (typeof WALL_ASSET_KEYS)[number];
@@ -24,11 +38,43 @@ export function isWallAsset(key: string | undefined | null): boolean {
   if (!key) return false;
   const baseKey = key.includes("|") ? key.split("|")[0] : key;
   return (
-    baseKey === "wall_half_150" ||
-    baseKey === "wall_top_150" ||
-    baseKey === "horizontal_glass_wall_150" ||
-    baseKey === "vertical_glass_wall_150"
+    baseKey === "glass_1" ||
+    baseKey === "glass_2" ||
+    baseKey === "glass_3" ||
+    baseKey === "glass_4" ||
+    baseKey === "wood_wall_1" ||
+    baseKey === "wall_wood_1" ||
+    baseKey === "wood_wall_2" ||
+    baseKey === "wall_wood_2" ||
+    baseKey === "wood_wall_3" ||
+    baseKey === "wall_wood_3" ||
+    baseKey === "wood_wall_4" ||
+    baseKey === "wall_wood_4" ||
+    baseKey === "wood_wall_5" ||
+    baseKey === "wall_wood_5" ||
+    baseKey === "wood_wall_6" ||
+    baseKey === "wall_wood_6" ||
+    baseKey === "wood_wall_7" ||
+    baseKey === "wall_wood_7"
   );
+}
+
+export function isOverlayWallAsset(key: string | undefined | null): boolean {
+  if (!key) return false;
+  const baseKey = key.includes("|") ? key.split("|")[0] : key;
+  return (
+    baseKey === "glass_2" ||
+    baseKey === "glass_3" ||
+    baseKey === "glass_4" ||
+    baseKey === "wood_wall_2" ||
+    baseKey === "wall_wood_2"
+  );
+}
+
+export function isOverlayFloorAsset(key: string | undefined | null): boolean {
+  if (!key) return false;
+  const baseKey = key.includes("|") ? key.split("|")[0] : key;
+  return baseKey === "color_tile_overlay" || baseKey === "overlay_color_tile";
 }
 
 /**

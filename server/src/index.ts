@@ -284,7 +284,7 @@ app.get("/api/auth/me", async (req, res) => {
 
     const userRecord = await findUserById(user.id);
     if (!userRecord) {
-      return res.status(404).json({ success: false, error: "User no longer exists." });
+      return res.status(401).json({ success: false, error: "User no longer exists." });
     }
 
     // Ensure user has personal space
@@ -384,14 +384,19 @@ app.get("/api/spaces", async (req, res) => {
 
     let mySpace: Space | undefined = undefined;
     if (authUser) {
-      const personalSpace = await ensureUserPersonalSpace(authUser.id, authUser.username);
+      const userRecord = await findUserById(authUser.id);
+      if (!userRecord) {
+        return res.status(401).json({ success: false, error: "User no longer exists." });
+      }
+
+      const personalSpace = await ensureUserPersonalSpace(userRecord.id, userRecord.username);
       if (personalSpace) {
         mySpace = {
           id: personalSpace.id,
           name: personalSpace.name,
           category: "Personal",
           ownerId: personalSpace.owner_id,
-          ownerUsername: authUser.username,
+          ownerUsername: userRecord.username,
           isPublic: personalSpace.is_public,
           isSuperadminSpace: false,
           whitelist: personalSpace.whitelist,
@@ -427,13 +432,22 @@ app.get("/api/spaces/my-space", async (req, res) => {
       return res.status(401).json({ success: false, error: "Authentication required." });
     }
 
-    const personalSpace = await ensureUserPersonalSpace(authUser.id, authUser.username);
+    const userRecord = await findUserById(authUser.id);
+    if (!userRecord) {
+      return res.status(401).json({ success: false, error: "User no longer exists." });
+    }
+
+    const personalSpace = await ensureUserPersonalSpace(userRecord.id, userRecord.username);
+    if (!personalSpace) {
+      return res.status(404).json({ success: false, error: "Failed to fetch personal space." });
+    }
+
     const space: Space = {
       id: personalSpace.id,
       name: personalSpace.name,
       category: "Personal",
       ownerId: personalSpace.owner_id,
-      ownerUsername: authUser.username,
+      ownerUsername: userRecord.username,
       isPublic: personalSpace.is_public,
       isSuperadminSpace: false,
       whitelist: personalSpace.whitelist,
@@ -460,7 +474,16 @@ app.put("/api/spaces/my-space", async (req, res) => {
       return res.status(401).json({ success: false, error: "Authentication required." });
     }
 
-    const personalSpace = await ensureUserPersonalSpace(authUser.id, authUser.username);
+    const userRecord = await findUserById(authUser.id);
+    if (!userRecord) {
+      return res.status(401).json({ success: false, error: "User no longer exists." });
+    }
+
+    const personalSpace = await ensureUserPersonalSpace(userRecord.id, userRecord.username);
+    if (!personalSpace) {
+      return res.status(404).json({ success: false, error: "Personal space not found." });
+    }
+
     const { name, isPublic, whitelist } = req.body || {};
 
     // Clean whitelist: array of trimmed non-empty usernames
@@ -522,6 +545,9 @@ app.get("/api/spaces/user-space/:identifier", async (req, res) => {
     }
 
     const personalSpace = await ensureUserPersonalSpace(user.id, user.username);
+    if (!personalSpace) {
+      return res.status(404).json({ success: false, error: "Personal space not found." });
+    }
     const space: Space = {
       id: personalSpace.id,
       name: personalSpace.name,

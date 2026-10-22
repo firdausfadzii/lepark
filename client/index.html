@@ -159,7 +159,7 @@
         <span class="edit-banner-pulse"></span>
         <span class="edit-banner-tag">EDIT MODE</span>
         <span class="edit-banner-sep">•</span>
-        <span id="edit-banner-asset-text" class="edit-banner-asset-text">Active: <strong>Birch Floor</strong></span>
+        <span id="edit-banner-asset-text" class="edit-banner-asset-text">Active: <strong>Wood 5</strong></span>
         <button type="button" id="btn-banner-done" class="edit-banner-done-btn">Done Editing</button>
       </div>
     </div>
@@ -172,9 +172,10 @@
         <div class="placing-toast-text">
           <span class="placing-toast-tag">PLACING</span>
           <span class="placing-toast-sep">•</span>
-          <span id="placing-toast-name" class="placing-toast-name">Birch Floor</span>
+          <span id="placing-toast-name" class="placing-toast-name">Wood 5</span>
+          <span id="placing-toast-layer" class="placing-toast-layer-badge hidden">Layer 0 (↑/↓)</span>
         </div>
-        <span class="placing-toast-hint">Drag map to put tiles • Press <kbd class="placing-kbd">Esc</kbd> when done</span>
+        <span id="placing-toast-hint" class="placing-toast-hint">Drag map to put tiles • Press <kbd class="placing-kbd">Esc</kbd> when done</span>
         <button type="button" id="btn-toast-done-placing" class="placing-toast-done-btn" title="Show UI back (Esc)">
           Done (Esc)
         </button>
@@ -248,9 +249,138 @@
       </div>
     </div>
 
-    <!-- Left-Side Map Editor Assets Sidebar -->
-    <aside id="map-editor-sidebar" class="map-editor-sidebar hidden" aria-label="Map Editor Assets">
-      <div class="editor-sidebar-header">
+    <!-- Left-Side Tile Color / Tint Sidebar (Can Hide & Expand) -->
+    <aside id="map-editor-color-sidebar" class="map-editor-color-sidebar editor-category-group editor-color-group hidden" data-category="color" aria-label="Tile Color & Tint Picker">
+      <div class="editor-category-header color-sidebar-header" id="color-sidebar-header-toggle" role="button" tabindex="0" aria-expanded="true" title="Click to hide or expand Color Picker">
+        <div class="editor-category-name-wrap">
+          <span class="category-icon">🎨</span>
+          <span class="category-title">Color Picker</span>
+        </div>
+        <div class="editor-category-header-right">
+          <div class="editor-color-header-actions" style="display: flex; gap: 6px; align-items: center;">
+            <button
+              type="button"
+              id="btn-dropper-shortcut"
+              class="editor-color-reset-btn dropper-shortcut-btn"
+              title="Pick color from map tile (Color Dropper)"
+            >
+              💧 Dropper
+            </button>
+            <button
+              type="button"
+              id="btn-reset-tile-color"
+              class="editor-color-reset-btn"
+              title="Reset to original asset texture (No tint)"
+            >
+              ↺ Original
+            </button>
+          </div>
+          <button
+            type="button"
+            id="btn-toggle-color-sidebar"
+            class="color-sidebar-collapse-btn"
+            aria-label="Hide or expand Color Picker"
+            title="Hide / Expand Color Picker"
+          >
+            <span class="color-collapse-label" id="color-collapse-label">Hide</span>
+            <svg class="category-chevron-svg" viewBox="0 0 24 24" width="16" height="16">
+              <path fill="currentColor" d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Collapsed pill shown when left color sidebar is hidden -->
+      <button
+        type="button"
+        id="btn-expand-color-sidebar"
+        class="color-sidebar-expand-pill"
+        title="Expand Color Picker"
+        aria-label="Expand Color Picker"
+      >
+        <span class="expand-pill-icon">🎨</span>
+        <span class="expand-pill-swatch" id="color-Collapsed-swatch"></span>
+        <span class="expand-pill-text">Color</span>
+        <span class="expand-pill-arrow">▸</span>
+      </button>
+
+      <div class="editor-category-content color-sidebar-content">
+        <!-- Active Brush Combined Preview -->
+        <div class="editor-brush-card" id="editor-brush-card">
+          <div class="brush-swatch-box" id="brush-swatch-box">
+            <div class="brush-pattern-layer" id="brush-pattern-layer"></div>
+            <div class="brush-tint-layer" id="brush-tint-layer"></div>
+          </div>
+          <div class="brush-info">
+            <div class="brush-headline" id="brush-headline">No Asset Selected</div>
+            <div class="brush-color-status">
+              <span class="brush-dot" id="brush-dot"></span>
+              <span class="brush-color-text" id="brush-color-text">Original (No Tint)</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Custom Color Picker Row -->
+        <div class="editor-custom-color-row">
+          <label class="editor-color-input-wrap" title="Click to pick custom color">
+            <input type="color" id="editor-tile-color-input" value="#3B8282" />
+            <span class="editor-color-circle" id="editor-color-circle" style="background-color: #3B8282;"></span>
+            <span class="editor-color-picker-title">Pick Custom Color</span>
+          </label>
+          <div class="editor-hex-wrap">
+            <span class="editor-hex-hash">#</span>
+            <input
+              type="text"
+              id="editor-tile-hex-input"
+              class="editor-hex-field"
+              value="3B8282"
+              maxlength="8"
+              placeholder="RRGGBBAA"
+              spellcheck="false"
+            />
+          </div>
+        </div>
+
+        <!-- Alpha / Opacity Channel Row -->
+        <div class="editor-alpha-row">
+          <span class="editor-alpha-label">Opacity</span>
+          <div class="editor-alpha-slider-wrap">
+            <div class="editor-alpha-track-bg" id="editor-alpha-track-bg"></div>
+            <input
+              type="range"
+              id="editor-tile-alpha-slider"
+              class="editor-alpha-slider"
+              min="0"
+              max="100"
+              step="1"
+              value="100"
+              title="Adjust alpha channel / opacity (0% - 100%)"
+            />
+          </div>
+          <div class="editor-alpha-input-wrap">
+            <input
+              type="number"
+              id="editor-tile-alpha-input"
+              class="editor-alpha-field"
+              min="0"
+              max="100"
+              step="1"
+              value="100"
+              aria-label="Opacity percentage"
+            />
+            <span class="editor-alpha-unit">%</span>
+          </div>
+        </div>
+
+        <!-- Preset Colors Palette Grid -->
+        <div class="editor-swatches-title">Preset Colors</div>
+        <div class="editor-color-palette" id="editor-color-palette"></div>
+      </div>
+    </aside>
+
+    <!-- Bottom Map Editor Bar with Tabs -->
+    <aside id="map-editor-sidebar" class="map-editor-sidebar map-editor-bottom-bar hidden" aria-label="Map Editor Assets">
+      <div class="editor-sidebar-header editor-bottom-bar-header">
         <div class="editor-header-title-box">
           <div class="editor-header-badge">
             <svg class="editor-palette-icon" viewBox="0 0 24 24">
@@ -259,79 +389,625 @@
           </div>
           <div>
             <h3 class="editor-title">Map Editor</h3>
-            <span class="editor-subtitle">Pick asset & drag map</span>
+            <span class="editor-subtitle">Select tab &amp; tool</span>
           </div>
+        </div>
+
+        <!-- Bottom Bar Category Tabs -->
+        <div class="editor-tabs-nav" id="editor-tabs-nav" role="tablist" aria-label="Map Editor Tabs">
+          <button
+            type="button"
+            class="editor-tab-btn active"
+            data-editor-tab="utilities"
+            role="tab"
+            aria-selected="true"
+          >
+            <span class="editor-tab-icon">🛠️</span>
+            <span class="editor-tab-label">Utilities</span>
+          </button>
+          <button
+            type="button"
+            class="editor-tab-btn"
+            data-editor-tab="flooring"
+            role="tab"
+            aria-selected="false"
+          >
+            <span class="editor-tab-icon">🪵</span>
+            <span class="editor-tab-label">Flooring</span>
+          </button>
+          <button
+            type="button"
+            class="editor-tab-btn"
+            data-editor-tab="wall"
+            role="tab"
+            aria-selected="false"
+          >
+            <span class="editor-tab-icon">🧱</span>
+            <span class="editor-tab-label">Wall</span>
+          </button>
+          <button
+            type="button"
+            class="editor-tab-btn"
+            data-editor-tab="decoration"
+            role="tab"
+            aria-selected="false"
+          >
+            <span class="editor-tab-icon">🪴</span>
+            <span class="editor-tab-label">Decoration</span>
+          </button>
+        </div>
+
+        <!-- Bottom Bar Right Actions -->
+        <div class="editor-bottom-bar-actions">
+          <span class="editor-inline-tip">Press <kbd class="editor-tip-kbd">Esc</kbd> to show/exit</span>
+          <button type="button" id="btn-close-map-editor" class="editor-finish-btn">
+            <span>✓</span> Done Editing
+          </button>
         </div>
       </div>
 
-      <!-- Categories & Assets Container -->
+      <!-- Categories & Assets Container (Tab Panels) -->
       <div class="editor-sidebar-body">
         <!-- Flooring Category -->
-        <div class="editor-category-group">
-          <div class="editor-category-header">
+        <div class="editor-category-group" data-category="flooring" data-tab-panel="flooring">
+          <div class="editor-category-header" role="button" tabindex="0" aria-expanded="true">
             <div class="editor-category-name-wrap">
               <span class="category-icon">🪵</span>
               <span class="category-title">Flooring Patterns</span>
             </div>
-            <span class="category-count">4 styles</span>
+            <div class="editor-category-header-right">
+              <span class="category-count">32 styles</span>
+              <span class="category-chevron-icon" aria-hidden="true">
+                <svg class="category-chevron-svg" viewBox="0 0 24 24" width="16" height="16">
+                  <path fill="currentColor" d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"/>
+                </svg>
+              </span>
+            </div>
           </div>
 
-          <div class="editor-assets-grid">
-            <!-- Asset 1: Birch Floor (birch_floor_150) -->
-            <button
-              type="button"
-              class="editor-asset-card selected"
-              data-asset-id="birch_floor_150"
-              data-asset-name="Birch Floor"
-              title="Birch Floor (birch_floor_150)"
-            >
-              <div class="asset-card-thumb">
-                <img src="/assets/birch_floor_150.png" alt="Birch Floor" class="asset-thumb-img" />
-                <span class="asset-card-check">✓</span>
-              </div>
-              <div class="asset-card-info">
-                <span class="asset-card-name">Birch Floor</span>
-                <span class="asset-card-code">birch_floor_150</span>
-              </div>
-            </button>
-
-            <!-- Asset 2: Grass (grass_150) -->
+          <div class="editor-category-content">
+            <div class="editor-assets-grid">
+            <!-- Wood 5 (wood_5) - Default / 90° Wood Floor -->
             <button
               type="button"
               class="editor-asset-card"
-              data-asset-id="grass_150"
-              data-asset-name="Grass Tile"
-              title="Grass Tile (grass_150)"
+              data-asset-id="wood_5"
+              data-asset-name="Wood 5"
+              title="Wood Floor 5 (wood_5)"
             >
               <div class="asset-card-thumb">
-                <img src="/assets/grass_150.png" alt="Grass Tile" class="asset-thumb-img" />
+                <img src="/assets/floor/wood_5.png" alt="Wood 5" class="asset-thumb-img" />
                 <span class="asset-card-check">✓</span>
               </div>
               <div class="asset-card-info">
-                <span class="asset-card-name">Grass Tile</span>
-                <span class="asset-card-code">grass_150</span>
+                <span class="asset-card-name">Wood 5</span>
+                <span class="asset-card-code">wood_5</span>
               </div>
             </button>
 
-            <!-- Asset 3: Grey Carpet (carpet_grey_150) -->
+            <!-- Wood 1 (wood_1) -->
             <button
               type="button"
               class="editor-asset-card"
-              data-asset-id="carpet_grey_150"
-              data-asset-name="Grey Carpet"
-              title="Grey Carpet (carpet_grey_150)"
+              data-asset-id="wood_1"
+              data-asset-name="Wood 1"
+              title="Wood Floor 1 (wood_1)"
             >
               <div class="asset-card-thumb">
-                <img src="/assets/carpet_grey_150.png" alt="Grey Carpet" class="asset-thumb-img" />
+                <img src="/assets/floor/wood_1.png" alt="Wood 1" class="asset-thumb-img" />
                 <span class="asset-card-check">✓</span>
               </div>
               <div class="asset-card-info">
-                <span class="asset-card-name">Grey Carpet</span>
-                <span class="asset-card-code">carpet_grey_150</span>
+                <span class="asset-card-name">Wood 1</span>
+                <span class="asset-card-code">wood_1</span>
               </div>
             </button>
 
-            <!-- Asset 4: Plain / Solid Color Tile (color_tile) -->
+            <!-- Wood 2 (wood_2) -->
+            <button
+              type="button"
+              class="editor-asset-card"
+              data-asset-id="wood_2"
+              data-asset-name="Wood 2"
+              title="Wood Floor 2 (wood_2)"
+            >
+              <div class="asset-card-thumb">
+                <img src="/assets/floor/wood_2.png" alt="Wood 2" class="asset-thumb-img" />
+                <span class="asset-card-check">✓</span>
+              </div>
+              <div class="asset-card-info">
+                <span class="asset-card-name">Wood 2</span>
+                <span class="asset-card-code">wood_2</span>
+              </div>
+            </button>
+
+            <!-- Wood 3 (wood_3) -->
+            <button
+              type="button"
+              class="editor-asset-card"
+              data-asset-id="wood_3"
+              data-asset-name="Wood 3"
+              title="Wood Floor 3 (wood_3)"
+            >
+              <div class="asset-card-thumb">
+                <img src="/assets/floor/wood_3.png" alt="Wood 3" class="asset-thumb-img" />
+                <span class="asset-card-check">✓</span>
+              </div>
+              <div class="asset-card-info">
+                <span class="asset-card-name">Wood 3</span>
+                <span class="asset-card-code">wood_3</span>
+              </div>
+            </button>
+
+            <!-- Wood 4 (wood_4) -->
+            <button
+              type="button"
+              class="editor-asset-card"
+              data-asset-id="wood_4"
+              data-asset-name="Wood 4"
+              title="Wood Floor 4 (wood_4)"
+            >
+              <div class="asset-card-thumb">
+                <img src="/assets/floor/wood_4.png" alt="Wood 4" class="asset-thumb-img" />
+                <span class="asset-card-check">✓</span>
+              </div>
+              <div class="asset-card-info">
+                <span class="asset-card-name">Wood 4</span>
+                <span class="asset-card-code">wood_4</span>
+              </div>
+            </button>
+
+            <!-- Wood 6 (wood_6) -->
+            <button
+              type="button"
+              class="editor-asset-card"
+              data-asset-id="wood_6"
+              data-asset-name="Wood 6"
+              title="Wood Floor 6 (wood_6)"
+            >
+              <div class="asset-card-thumb">
+                <img src="/assets/floor/wood_6.png" alt="Wood 6" class="asset-thumb-img" />
+                <span class="asset-card-check">✓</span>
+              </div>
+              <div class="asset-card-info">
+                <span class="asset-card-name">Wood 6</span>
+                <span class="asset-card-code">wood_6</span>
+              </div>
+            </button>
+
+            <!-- Grass 4 (grass_4) - Default Ground -->
+            <button
+              type="button"
+              class="editor-asset-card"
+              data-asset-id="grass_4"
+              data-asset-name="Grass 4"
+              title="Grass 4 (grass_4)"
+            >
+              <div class="asset-card-thumb">
+                <img src="/assets/floor/grass_4.png" alt="Grass 4" class="asset-thumb-img" />
+                <span class="asset-card-check">✓</span>
+              </div>
+              <div class="asset-card-info">
+                <span class="asset-card-name">Grass 4</span>
+                <span class="asset-card-code">grass_4</span>
+              </div>
+            </button>
+
+            <!-- Grass 1 (grass_1) -->
+            <button
+              type="button"
+              class="editor-asset-card"
+              data-asset-id="grass_1"
+              data-asset-name="Grass 1"
+              title="Grass 1 (grass_1)"
+            >
+              <div class="asset-card-thumb">
+                <img src="/assets/floor/grass_1.png" alt="Grass 1" class="asset-thumb-img" />
+                <span class="asset-card-check">✓</span>
+              </div>
+              <div class="asset-card-info">
+                <span class="asset-card-name">Grass 1</span>
+                <span class="asset-card-code">grass_1</span>
+              </div>
+            </button>
+
+            <!-- Grass 2 (grass_2) -->
+            <button
+              type="button"
+              class="editor-asset-card"
+              data-asset-id="grass_2"
+              data-asset-name="Grass 2"
+              title="Grass 2 (grass_2)"
+            >
+              <div class="asset-card-thumb">
+                <img src="/assets/floor/grass_2.png" alt="Grass 2" class="asset-thumb-img" />
+                <span class="asset-card-check">✓</span>
+              </div>
+              <div class="asset-card-info">
+                <span class="asset-card-name">Grass 2</span>
+                <span class="asset-card-code">grass_2</span>
+              </div>
+            </button>
+
+            <!-- Grass 3 (grass_3) -->
+            <button
+              type="button"
+              class="editor-asset-card"
+              data-asset-id="grass_3"
+              data-asset-name="Grass 3"
+              title="Grass 3 (grass_3)"
+            >
+              <div class="asset-card-thumb">
+                <img src="/assets/floor/grass_3.png" alt="Grass 3" class="asset-thumb-img" />
+                <span class="asset-card-check">✓</span>
+              </div>
+              <div class="asset-card-info">
+                <span class="asset-card-name">Grass 3</span>
+                <span class="asset-card-code">grass_3</span>
+              </div>
+            </button>
+
+            <!-- Carpet 4 (carpet_4) -->
+            <button
+              type="button"
+              class="editor-asset-card"
+              data-asset-id="carpet_4"
+              data-asset-name="Carpet 4"
+              title="Carpet 4 (carpet_4)"
+            >
+              <div class="asset-card-thumb">
+                <img src="/assets/floor/carpet_4.png" alt="Carpet 4" class="asset-thumb-img" />
+                <span class="asset-card-check">✓</span>
+              </div>
+              <div class="asset-card-info">
+                <span class="asset-card-name">Carpet 4</span>
+                <span class="asset-card-code">carpet_4</span>
+              </div>
+            </button>
+
+            <!-- Carpet 1 (carpet_1) -->
+            <button
+              type="button"
+              class="editor-asset-card"
+              data-asset-id="carpet_1"
+              data-asset-name="Carpet 1"
+              title="Carpet 1 (carpet_1)"
+            >
+              <div class="asset-card-thumb">
+                <img src="/assets/floor/carpet_1.png" alt="Carpet 1" class="asset-thumb-img" />
+                <span class="asset-card-check">✓</span>
+              </div>
+              <div class="asset-card-info">
+                <span class="asset-card-name">Carpet 1</span>
+                <span class="asset-card-code">carpet_1</span>
+              </div>
+            </button>
+
+            <!-- Carpet 2 (carpet_2) -->
+            <button
+              type="button"
+              class="editor-asset-card"
+              data-asset-id="carpet_2"
+              data-asset-name="Carpet 2"
+              title="Carpet 2 (carpet_2)"
+            >
+              <div class="asset-card-thumb">
+                <img src="/assets/floor/carpet_2.png" alt="Carpet 2" class="asset-thumb-img" />
+                <span class="asset-card-check">✓</span>
+              </div>
+              <div class="asset-card-info">
+                <span class="asset-card-name">Carpet 2</span>
+                <span class="asset-card-code">carpet_2</span>
+              </div>
+            </button>
+
+            <!-- Carpet 3 (carpet_3) -->
+            <button
+              type="button"
+              class="editor-asset-card"
+              data-asset-id="carpet_3"
+              data-asset-name="Carpet 3"
+              title="Carpet 3 (carpet_3)"
+            >
+              <div class="asset-card-thumb">
+                <img src="/assets/floor/carpet_3.png" alt="Carpet 3" class="asset-thumb-img" />
+                <span class="asset-card-check">✓</span>
+              </div>
+              <div class="asset-card-info">
+                <span class="asset-card-name">Carpet 3</span>
+                <span class="asset-card-code">carpet_3</span>
+              </div>
+            </button>
+
+            <!-- Carpet 5 (carpet_5) -->
+            <button
+              type="button"
+              class="editor-asset-card"
+              data-asset-id="carpet_5"
+              data-asset-name="Carpet 5"
+              title="Carpet 5 (carpet_5)"
+            >
+              <div class="asset-card-thumb">
+                <img src="/assets/floor/carpet_5.png" alt="Carpet 5" class="asset-thumb-img" />
+                <span class="asset-card-check">✓</span>
+              </div>
+              <div class="asset-card-info">
+                <span class="asset-card-name">Carpet 5</span>
+                <span class="asset-card-code">carpet_5</span>
+              </div>
+            </button>
+
+            <!-- Carpet 6 (carpet_6) -->
+            <button
+              type="button"
+              class="editor-asset-card"
+              data-asset-id="carpet_6"
+              data-asset-name="Carpet 6"
+              title="Carpet 6 (carpet_6)"
+            >
+              <div class="asset-card-thumb">
+                <img src="/assets/floor/carpet_6.png" alt="Carpet 6" class="asset-thumb-img" />
+                <span class="asset-card-check">✓</span>
+              </div>
+              <div class="asset-card-info">
+                <span class="asset-card-name">Carpet 6</span>
+                <span class="asset-card-code">carpet_6</span>
+              </div>
+            </button>
+
+            <!-- Carpet 7 (carpet_7) -->
+            <button
+              type="button"
+              class="editor-asset-card"
+              data-asset-id="carpet_7"
+              data-asset-name="Carpet 7"
+              title="Carpet 7 (carpet_7)"
+            >
+              <div class="asset-card-thumb">
+                <img src="/assets/floor/carpet_7.png" alt="Carpet 7" class="asset-thumb-img" />
+                <span class="asset-card-check">✓</span>
+              </div>
+              <div class="asset-card-info">
+                <span class="asset-card-name">Carpet 7</span>
+                <span class="asset-card-code">carpet_7</span>
+              </div>
+            </button>
+
+            <!-- Carpet 8 (carpet_8) -->
+            <button
+              type="button"
+              class="editor-asset-card"
+              data-asset-id="carpet_8"
+              data-asset-name="Carpet 8"
+              title="Carpet 8 (carpet_8)"
+            >
+              <div class="asset-card-thumb">
+                <img src="/assets/floor/carpet_8.png" alt="Carpet 8" class="asset-thumb-img" />
+                <span class="asset-card-check">✓</span>
+              </div>
+              <div class="asset-card-info">
+                <span class="asset-card-name">Carpet 8</span>
+                <span class="asset-card-code">carpet_8</span>
+              </div>
+            </button>
+
+            <!-- Stone 1 (stone_1) -->
+            <button
+              type="button"
+              class="editor-asset-card"
+              data-asset-id="stone_1"
+              data-asset-name="Stone 1"
+              title="Stone Floor 1 (stone_1)"
+            >
+              <div class="asset-card-thumb">
+                <img src="/assets/floor/stone_1.png" alt="Stone 1" class="asset-thumb-img" />
+                <span class="asset-card-check">✓</span>
+              </div>
+              <div class="asset-card-info">
+                <span class="asset-card-name">Stone 1</span>
+                <span class="asset-card-code">stone_1</span>
+              </div>
+            </button>
+
+            <!-- Stone 2 (stone_2) -->
+            <button
+              type="button"
+              class="editor-asset-card"
+              data-asset-id="stone_2"
+              data-asset-name="Stone 2"
+              title="Stone Floor 2 (stone_2)"
+            >
+              <div class="asset-card-thumb">
+                <img src="/assets/floor/stone_2.png" alt="Stone 2" class="asset-thumb-img" />
+                <span class="asset-card-check">✓</span>
+              </div>
+              <div class="asset-card-info">
+                <span class="asset-card-name">Stone 2</span>
+                <span class="asset-card-code">stone_2</span>
+              </div>
+            </button>
+
+            <!-- Stone 3 (stone_3) -->
+            <button
+              type="button"
+              class="editor-asset-card"
+              data-asset-id="stone_3"
+              data-asset-name="Stone 3"
+              title="Stone Floor 3 (stone_3)"
+            >
+              <div class="asset-card-thumb">
+                <img src="/assets/floor/stone_3.png" alt="Stone 3" class="asset-thumb-img" />
+                <span class="asset-card-check">✓</span>
+              </div>
+              <div class="asset-card-info">
+                <span class="asset-card-name">Stone 3</span>
+                <span class="asset-card-code">stone_3</span>
+              </div>
+            </button>
+
+            <!-- Stone 4 (stone_4) -->
+            <button
+              type="button"
+              class="editor-asset-card"
+              data-asset-id="stone_4"
+              data-asset-name="Stone 4"
+              title="Stone Floor 4 (stone_4)"
+            >
+              <div class="asset-card-thumb">
+                <img src="/assets/floor/stone_4.png" alt="Stone 4" class="asset-thumb-img" />
+                <span class="asset-card-check">✓</span>
+              </div>
+              <div class="asset-card-info">
+                <span class="asset-card-name">Stone 4</span>
+                <span class="asset-card-code">stone_4</span>
+              </div>
+            </button>
+
+            <!-- Stone 5 (stone_5) -->
+            <button
+              type="button"
+              class="editor-asset-card"
+              data-asset-id="stone_5"
+              data-asset-name="Stone 5"
+              title="Stone Floor 5 (stone_5)"
+            >
+              <div class="asset-card-thumb">
+                <img src="/assets/floor/stone_5.png" alt="Stone 5" class="asset-thumb-img" />
+                <span class="asset-card-check">✓</span>
+              </div>
+              <div class="asset-card-info">
+                <span class="asset-card-name">Stone 5</span>
+                <span class="asset-card-code">stone_5</span>
+              </div>
+            </button>
+
+            <!-- Stone 6 (stone_6) -->
+            <button
+              type="button"
+              class="editor-asset-card"
+              data-asset-id="stone_6"
+              data-asset-name="Stone 6"
+              title="Stone Floor 6 (stone_6)"
+            >
+              <div class="asset-card-thumb">
+                <img src="/assets/floor/stone_6.png" alt="Stone 6" class="asset-thumb-img" />
+                <span class="asset-card-check">✓</span>
+              </div>
+              <div class="asset-card-info">
+                <span class="asset-card-name">Stone 6</span>
+                <span class="asset-card-code">stone_6</span>
+              </div>
+            </button>
+
+            <!-- Stone 7 (stone_7) -->
+            <button
+              type="button"
+              class="editor-asset-card"
+              data-asset-id="stone_7"
+              data-asset-name="Stone 7"
+              title="Stone Floor 7 (stone_7)"
+            >
+              <div class="asset-card-thumb">
+                <img src="/assets/floor/stone_7.png" alt="Stone 7" class="asset-thumb-img" />
+                <span class="asset-card-check">✓</span>
+              </div>
+              <div class="asset-card-info">
+                <span class="asset-card-name">Stone 7</span>
+                <span class="asset-card-code">stone_7</span>
+              </div>
+            </button>
+
+            <!-- Stone 8 (stone_8) -->
+            <button
+              type="button"
+              class="editor-asset-card"
+              data-asset-id="stone_8"
+              data-asset-name="Stone 8"
+              title="Stone Floor 8 (stone_8)"
+            >
+              <div class="asset-card-thumb">
+                <img src="/assets/floor/stone_8.png" alt="Stone 8" class="asset-thumb-img" />
+                <span class="asset-card-check">✓</span>
+              </div>
+              <div class="asset-card-info">
+                <span class="asset-card-name">Stone 8</span>
+                <span class="asset-card-code">stone_8</span>
+              </div>
+            </button>
+
+            <!-- Marble 1 (marble_1) -->
+            <button
+              type="button"
+              class="editor-asset-card"
+              data-asset-id="marble_1"
+              data-asset-name="Marble 1"
+              title="Marble Floor 1 (marble_1)"
+            >
+              <div class="asset-card-thumb">
+                <img src="/assets/floor/marble_1.png" alt="Marble 1" class="asset-thumb-img" />
+                <span class="asset-card-check">✓</span>
+              </div>
+              <div class="asset-card-info">
+                <span class="asset-card-name">Marble 1</span>
+                <span class="asset-card-code">marble_1</span>
+              </div>
+            </button>
+
+            <!-- Marble 2 (marble_2) -->
+            <button
+              type="button"
+              class="editor-asset-card"
+              data-asset-id="marble_2"
+              data-asset-name="Marble 2"
+              title="Marble Floor 2 (marble_2)"
+            >
+              <div class="asset-card-thumb">
+                <img src="/assets/floor/marble_2.png" alt="Marble 2" class="asset-thumb-img" />
+                <span class="asset-card-check">✓</span>
+              </div>
+              <div class="asset-card-info">
+                <span class="asset-card-name">Marble 2</span>
+                <span class="asset-card-code">marble_2</span>
+              </div>
+            </button>
+
+            <!-- Marble 3 (marble_3) -->
+            <button
+              type="button"
+              class="editor-asset-card"
+              data-asset-id="marble_3"
+              data-asset-name="Marble 3"
+              title="Marble Floor 3 (marble_3)"
+            >
+              <div class="asset-card-thumb">
+                <img src="/assets/floor/marble_3.png" alt="Marble 3" class="asset-thumb-img" />
+                <span class="asset-card-check">✓</span>
+              </div>
+              <div class="asset-card-info">
+                <span class="asset-card-name">Marble 3</span>
+                <span class="asset-card-code">marble_3</span>
+              </div>
+            </button>
+
+            <!-- Marble 4 (marble_4) -->
+            <button
+              type="button"
+              class="editor-asset-card"
+              data-asset-id="marble_4"
+              data-asset-name="Marble 4"
+              title="Marble Floor 4 (marble_4)"
+            >
+              <div class="asset-card-thumb">
+                <img src="/assets/floor/marble_4.png" alt="Marble 4" class="asset-thumb-img" />
+                <span class="asset-card-check">✓</span>
+              </div>
+              <div class="asset-card-info">
+                <span class="asset-card-name">Marble 4</span>
+                <span class="asset-card-code">marble_4</span>
+              </div>
+            </button>
+
+            <!-- Plain / Solid Color Tile (color_tile) -->
             <button
               type="button"
               class="editor-asset-card"
@@ -348,20 +1024,49 @@
                 <span class="asset-card-code">color_tile</span>
               </div>
             </button>
+
+            <!-- Overlay Plain Tile (color_tile_overlay) -->
+            <button
+              type="button"
+              class="editor-asset-card"
+              data-asset-id="color_tile_overlay"
+              data-asset-name="Overlay Plain Tile"
+              data-is-overlay-floor="true"
+              title="Overlay Plain Tile (color_tile_overlay) - Rendered on top of floor (does not replace floor). Click placed overlay to remove."
+            >
+              <div class="asset-card-thumb plain-tile-thumb overlay-plain-tile-thumb">
+                <div class="plain-tile-preview-square" id="overlay-plain-tile-preview-square"></div>
+                <span class="asset-card-badge wall-badge" style="background:#2563eb;">Overlay</span>
+                <span class="asset-card-check">✓</span>
+              </div>
+              <div class="asset-card-info">
+                <span class="asset-card-name">Overlay Plain</span>
+                <span class="asset-card-code">color_tile_overlay</span>
+              </div>
+            </button>
+          </div>
           </div>
         </div>
 
         <!-- Decoration Category (Placed on top of bottom tile) -->
-        <div class="editor-category-group">
-          <div class="editor-category-header">
+        <div class="editor-category-group" data-category="decoration" data-tab-panel="decoration">
+          <div class="editor-category-header" role="button" tabindex="0" aria-expanded="true">
             <div class="editor-category-name-wrap">
               <span class="category-icon">🪴</span>
               <span class="category-title">Decoration</span>
             </div>
-            <span class="category-count">7 items</span>
+            <div class="editor-category-header-right">
+              <span class="category-count">8 items</span>
+              <span class="category-chevron-icon" aria-hidden="true">
+                <svg class="category-chevron-svg" viewBox="0 0 24 24" width="16" height="16">
+                  <path fill="currentColor" d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"/>
+                </svg>
+              </span>
+            </div>
           </div>
 
-          <!-- Decoration Passage Option (Passable vs Solid) -->
+          <div class="editor-category-content">
+            <!-- Decoration Passage Option (Passable vs Solid) -->
           <div class="editor-deco-options" id="editor-deco-options">
             <div class="editor-deco-options-header">
               <span class="editor-deco-options-title">Passage / Collision:</span>
@@ -425,170 +1130,260 @@
             </div>
           </div>
 
+          <!-- Decoration / Overlay Layer Level Option (Up / Down Arrow Keys) -->
+          <div class="editor-deco-options" id="editor-deco-level-options">
+            <div class="editor-deco-options-header">
+              <span class="editor-deco-options-title">Layer Level (↑/↓ Arrows):</span>
+              <span class="editor-deco-options-hint" id="deco-level-hint">Layer 0</span>
+            </div>
+            <div class="editor-deco-toggle-group">
+              <button
+                type="button"
+                id="btn-deco-level-down"
+                class="editor-deco-toggle-btn"
+                title="Decrease Layer Level (Down Arrow Key) - Renders under higher layers"
+              >
+                <span class="deco-toggle-icon">⬇️</span>
+                <span class="deco-toggle-label">Down (↓)</span>
+                <span class="deco-toggle-sub">Lower Layer</span>
+              </button>
+              <button
+                type="button"
+                id="btn-deco-level-up"
+                class="editor-deco-toggle-btn"
+                title="Increase Layer Level (Up Arrow Key) - Renders above lower layers"
+              >
+                <span class="deco-toggle-icon">⬆️</span>
+                <span class="deco-toggle-label">Up (↑)</span>
+                <span class="deco-toggle-sub">Higher Layer</span>
+              </button>
+            </div>
+          </div>
+
           <div class="editor-assets-grid">
-            <!-- Asset 1: Table Left (table_left_150) -->
+            <!-- Asset: Table 1 Left (table_1_left) -->
             <button
               type="button"
               class="editor-asset-card"
-              data-asset-id="table_left_150"
-              data-asset-name="Table Left"
+              data-asset-id="table_1_left"
+              data-asset-name="Table 1 Left"
               data-tile-type="decoration"
-              title="Table Left (table_left_150) - Decorative tile placed on top of other tiles"
+              title="Table 1 Left (table_1_left) - Decorative tile placed on top of other tiles"
             >
               <div class="asset-card-thumb">
-                <img src="/assets/table_left_150.png" alt="Table Left" class="asset-thumb-img" />
+                <img src="/assets/decoration/table_1_left.png" alt="Table 1 Left" class="asset-thumb-img" />
                 <span class="asset-card-badge decoration-badge">Deco</span>
                 <span class="asset-card-check">✓</span>
               </div>
               <div class="asset-card-info">
-                <span class="asset-card-name">Table Left</span>
-                <span class="asset-card-code">table_left_150</span>
+                <span class="asset-card-name">Table 1 Left</span>
+                <span class="asset-card-code">table_1_left</span>
               </div>
             </button>
 
-            <!-- Asset 2: Table Middle (table_middle_150) -->
+            <!-- Asset: Table 1 Middle (table_1_middle) -->
             <button
               type="button"
               class="editor-asset-card"
-              data-asset-id="table_middle_150"
-              data-asset-name="Table Middle"
+              data-asset-id="table_1_middle"
+              data-asset-name="Table 1 Middle"
               data-tile-type="decoration"
-              title="Table Middle (table_middle_150) - Decorative tile placed on top of other tiles"
+              title="Table 1 Middle (table_1_middle) - Decorative tile placed on top of other tiles"
             >
               <div class="asset-card-thumb">
-                <img src="/assets/table_middle_150.png" alt="Table Middle" class="asset-thumb-img" />
+                <img src="/assets/decoration/table_1_middle.png" alt="Table 1 Middle" class="asset-thumb-img" />
                 <span class="asset-card-badge decoration-badge">Deco</span>
                 <span class="asset-card-check">✓</span>
               </div>
               <div class="asset-card-info">
-                <span class="asset-card-name">Table Middle</span>
-                <span class="asset-card-code">table_middle_150</span>
+                <span class="asset-card-name">Table 1 Middle</span>
+                <span class="asset-card-code">table_1_middle</span>
               </div>
             </button>
 
-            <!-- Asset 3: Table Right (table_right_150) -->
+            <!-- Asset: Table 1 Right (table_1_right) -->
             <button
               type="button"
               class="editor-asset-card"
-              data-asset-id="table_right_150"
-              data-asset-name="Table Right"
+              data-asset-id="table_1_right"
+              data-asset-name="Table 1 Right"
               data-tile-type="decoration"
-              title="Table Right (table_right_150) - Decorative tile placed on top of other tiles"
+              title="Table 1 Right (table_1_right) - Decorative tile placed on top of other tiles"
             >
               <div class="asset-card-thumb">
-                <img src="/assets/table_right_150.png" alt="Table Right" class="asset-thumb-img" />
+                <img src="/assets/decoration/table_1_right.png" alt="Table 1 Right" class="asset-thumb-img" />
                 <span class="asset-card-badge decoration-badge">Deco</span>
                 <span class="asset-card-check">✓</span>
               </div>
               <div class="asset-card-info">
-                <span class="asset-card-name">Table Right</span>
-                <span class="asset-card-code">table_right_150</span>
+                <span class="asset-card-name">Table 1 Right</span>
+                <span class="asset-card-code">table_1_right</span>
               </div>
             </button>
 
-            <!-- Asset: Round Table (round_table_150) -->
+            <!-- Asset: Table 2 Left (table_2_left) -->
             <button
               type="button"
               class="editor-asset-card"
-              data-asset-id="round_table_150"
-              data-asset-name="Round Table"
+              data-asset-id="table_2_left"
+              data-asset-name="Table 2 Left"
               data-tile-type="decoration"
-              title="Round Table (round_table_150) - Decorative round table, bounded by grid"
+              title="Table 2 Left (table_2_left) - Decorative tile placed on top of other tiles"
             >
               <div class="asset-card-thumb">
-                <img src="/assets/round_table_150.png" alt="Round Table" class="asset-thumb-img" />
+                <img src="/assets/decoration/table_2_left.png" alt="Table 2 Left" class="asset-thumb-img" />
                 <span class="asset-card-badge decoration-badge">Deco</span>
                 <span class="asset-card-check">✓</span>
               </div>
               <div class="asset-card-info">
-                <span class="asset-card-name">Round Table</span>
-                <span class="asset-card-code">round_table_150</span>
+                <span class="asset-card-name">Table 2 Left</span>
+                <span class="asset-card-code">table_2_left</span>
               </div>
             </button>
 
-            <!-- Asset 4: Office Chair (office_chair_150) -->
+            <!-- Asset: Table 2 Middle (table_2_middle) -->
             <button
               type="button"
               class="editor-asset-card"
-              data-asset-id="office_chair_150"
-              data-asset-name="Office Chair"
+              data-asset-id="table_2_middle"
+              data-asset-name="Table 2 Middle"
+              data-tile-type="decoration"
+              title="Table 2 Middle (table_2_middle) - Decorative tile placed on top of other tiles"
+            >
+              <div class="asset-card-thumb">
+                <img src="/assets/decoration/table_2_middle.png" alt="Table 2 Middle" class="asset-thumb-img" />
+                <span class="asset-card-badge decoration-badge">Deco</span>
+                <span class="asset-card-check">✓</span>
+              </div>
+              <div class="asset-card-info">
+                <span class="asset-card-name">Table 2 Middle</span>
+                <span class="asset-card-code">table_2_middle</span>
+              </div>
+            </button>
+
+            <!-- Asset: Table 2 Right (table_2_right) -->
+            <button
+              type="button"
+              class="editor-asset-card"
+              data-asset-id="table_2_right"
+              data-asset-name="Table 2 Right"
+              data-tile-type="decoration"
+              title="Table 2 Right (table_2_right) - Decorative tile placed on top of other tiles"
+            >
+              <div class="asset-card-thumb">
+                <img src="/assets/decoration/table_2_right.png" alt="Table 2 Right" class="asset-thumb-img" />
+                <span class="asset-card-badge decoration-badge">Deco</span>
+                <span class="asset-card-check">✓</span>
+              </div>
+              <div class="asset-card-info">
+                <span class="asset-card-name">Table 2 Right</span>
+                <span class="asset-card-code">table_2_right</span>
+              </div>
+            </button>
+
+            <!-- Asset: Round Table 1 (round_table_1) -->
+            <button
+              type="button"
+              class="editor-asset-card"
+              data-asset-id="round_table_1"
+              data-asset-name="Round Table 1"
+              data-tile-type="decoration"
+              title="Round Table 1 (round_table_1) - Decorative round table, bounded by grid"
+            >
+              <div class="asset-card-thumb">
+                <img src="/assets/decoration/round_table_1.png" alt="Round Table 1" class="asset-thumb-img" />
+                <span class="asset-card-badge decoration-badge">Deco</span>
+                <span class="asset-card-check">✓</span>
+              </div>
+              <div class="asset-card-info">
+                <span class="asset-card-name">Round Table 1</span>
+                <span class="asset-card-code">round_table_1</span>
+              </div>
+            </button>
+
+            <!-- Asset: Office Chair 1 Front (office_chair_1_front) -->
+            <button
+              type="button"
+              class="editor-asset-card"
+              data-asset-id="office_chair_1_front"
+              data-asset-name="Office Chair 1 Front"
               data-tile-type="decoration"
               data-freeform="true"
-              title="Office Chair (office_chair_150) - Freeform decoration (not bounded by grid, place anywhere anyhow)"
+              title="Office Chair 1 Front (office_chair_1_front) - Freeform decoration (not bounded by grid, place anywhere anyhow)"
             >
               <div class="asset-card-thumb">
-                <img src="/assets/office_chair_150.png" alt="Office Chair" class="asset-thumb-img" />
+                <img src="/assets/decoration/office_chair_1_front.png" alt="Office Chair 1 Front" class="asset-thumb-img" />
                 <span class="asset-card-badge freeform-badge">Freeform</span>
                 <span class="asset-card-check">✓</span>
               </div>
               <div class="asset-card-info">
-                <span class="asset-card-name">Office Chair</span>
-                <span class="asset-card-code">office_chair_150</span>
+                <span class="asset-card-name">Office Chair 1 Front</span>
+                <span class="asset-card-code">office_chair_1_front</span>
               </div>
             </button>
 
-            <!-- Asset 5: Office Chair Back (office_chair_back_150) -->
+            <!-- Asset: Office Chair 1 Back (office_chair_1_back) -->
             <button
               type="button"
               class="editor-asset-card"
-              data-asset-id="office_chair_back_150"
-              data-asset-name="Office Chair Back"
+              data-asset-id="office_chair_1_back"
+              data-asset-name="Office Chair 1 Back"
               data-tile-type="decoration"
               data-freeform="true"
-              title="Office Chair Back (office_chair_back_150) - Freeform decoration (not bounded by grid, place anywhere anyhow)"
+              title="Office Chair 1 Back (office_chair_1_back) - Freeform decoration (not bounded by grid, place anywhere anyhow)"
             >
               <div class="asset-card-thumb">
-                <img src="/assets/office_chair_back_150.png" alt="Office Chair Back" class="asset-thumb-img" />
+                <img src="/assets/decoration/office_chair_1_back.png" alt="Office Chair 1 Back" class="asset-thumb-img" />
                 <span class="asset-card-badge freeform-badge">Freeform</span>
                 <span class="asset-card-check">✓</span>
               </div>
               <div class="asset-card-info">
-                <span class="asset-card-name">Office Chair Back</span>
-                <span class="asset-card-code">office_chair_back_150</span>
+                <span class="asset-card-name">Office Chair 1 Back</span>
+                <span class="asset-card-code">office_chair_1_back</span>
               </div>
             </button>
 
-            <!-- Asset 4: YouTube Jukebox (Special Freeform Decoration) -->
+            <!-- Asset: YouTube Jukebox (jukebox_1) -->
             <button
               type="button"
               class="editor-asset-card"
               id="tool-jukebox"
               data-tool-type="jukebox"
-              data-asset-id="jukebox_150"
+              data-asset-id="jukebox_1"
               data-asset-name="YouTube Jukebox"
               data-tile-type="decoration"
-              title="YouTube Jukebox (jukebox_150) - Special decorative jukebox, freeform placement (not bounded by grid)"
+              title="YouTube Jukebox (jukebox_1) - Special decorative jukebox, freeform placement (not bounded by grid)"
             >
               <div class="asset-card-thumb jukebox-tool-thumb">
-                <img src="/assets/jukebox_150.png" alt="Jukebox" class="jukebox-card-img" />
+                <img src="/assets/decoration/jukebox_1.png" alt="Jukebox" class="jukebox-card-img" />
                 <span class="asset-card-badge jukebox-badge">Jukebox</span>
                 <span class="asset-card-check">✓</span>
               </div>
               <div class="asset-card-info">
-                <span class="asset-card-name">Jukebox</span>
-                <span class="asset-card-code">jukebox_150</span>
+                <span class="asset-card-name">Jukebox 1</span>
+                <span class="asset-card-code">jukebox_1</span>
               </div>
             </button>
 
-            <!-- Asset: Typewriter (Special Freeform Interactive Decoration) -->
+            <!-- Asset: Typewriter (typewriter_1) -->
             <button
               type="button"
               class="editor-asset-card"
               id="tool-typewriter"
               data-tool-type="typewriter"
-              data-asset-id="typewriter_150"
+              data-asset-id="typewriter_1"
               data-asset-name="Typewriter"
               data-tile-type="decoration"
-              title="Typewriter (typewriter_150) - Typeracing Game, freeform placement (not bounded by grid)"
+              title="Typewriter (typewriter_1) - Typeracing Game, freeform placement (not bounded by grid)"
             >
               <div class="asset-card-thumb typewriter-tool-thumb">
-                <img src="/assets/typewriter_150.png" alt="Typewriter" class="typewriter-card-img" />
+                <img src="/assets/decoration/typewriter_1.png" alt="Typewriter" class="typewriter-card-img" />
                 <span class="asset-card-badge typewriter-badge">Game</span>
                 <span class="asset-card-check">✓</span>
               </div>
               <div class="asset-card-info">
-                <span class="asset-card-name">Typewriter</span>
-                <span class="asset-card-code">typewriter_150</span>
+                <span class="asset-card-name">Typewriter 1</span>
+                <span class="asset-card-code">typewriter_1</span>
               </div>
             </button>
 
@@ -615,112 +1410,296 @@
               </div>
             </button>
           </div>
+          </div>
         </div>
 
         <!-- Walls Category (With Obstacle Tile) -->
-        <div class="editor-category-group">
-          <div class="editor-category-header">
+        <div class="editor-category-group" data-category="walls" data-tab-panel="wall">
+          <div class="editor-category-header" role="button" tabindex="0" aria-expanded="true">
             <div class="editor-category-name-wrap">
               <span class="category-icon">🧱</span>
               <span class="category-title">Walls</span>
             </div>
-            <span class="category-count">4 styles</span>
+            <div class="editor-category-header-right">
+              <span class="category-count">11 styles</span>
+              <span class="category-chevron-icon" aria-hidden="true">
+                <svg class="category-chevron-svg" viewBox="0 0 24 24" width="16" height="16">
+                  <path fill="currentColor" d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"/>
+                </svg>
+              </span>
+            </div>
           </div>
 
-          <div class="editor-assets-grid">
-            <!-- Asset 4: Half Wall (wall_half_150) -->
-            <button
-              type="button"
-              class="editor-asset-card"
-              data-asset-id="wall_half_150"
-              data-asset-name="Half Wall"
-              data-is-wall="true"
-              title="Half Wall (wall_half_150) - Comes with Obstacle tile. Can be cleared using Clear Obstacle to allow passage."
-            >
-              <div class="asset-card-thumb">
-                <img src="/assets/wall_half_150.png" alt="Half Wall" class="asset-thumb-img" />
-                <span class="asset-card-badge wall-badge">Wall</span>
-                <span class="asset-card-check">✓</span>
-              </div>
-              <div class="asset-card-info">
-                <span class="asset-card-name">Half Wall</span>
-                <span class="asset-card-code">wall_half_150</span>
-              </div>
-            </button>
+          <div class="editor-category-content">
+            <div class="editor-assets-grid">
+              <!-- Glass Wall 1 (glass_1) -->
+              <button
+                type="button"
+                class="editor-asset-card"
+                data-asset-id="glass_1"
+                data-asset-name="Glass Wall 1"
+                data-is-wall="true"
+                title="Glass Wall 1 (glass_1) - Comes with Obstacle tile. Can be cleared using Clear Obstacle to allow passage."
+              >
+                <div class="asset-card-thumb">
+                  <img src="/assets/wall/glass_1.png" alt="Glass Wall 1" class="asset-thumb-img" />
+                  <span class="asset-card-badge wall-badge">Wall</span>
+                  <span class="asset-card-check">✓</span>
+                </div>
+                <div class="asset-card-info">
+                  <span class="asset-card-name">Glass Wall 1</span>
+                  <span class="asset-card-code">glass_1</span>
+                </div>
+              </button>
 
-            <!-- Asset 5: Top Wall (wall_top_150) -->
-            <button
-              type="button"
-              class="editor-asset-card"
-              data-asset-id="wall_top_150"
-              data-asset-name="Top Wall"
-              data-is-wall="true"
-              title="Top Wall (wall_top_150) - Comes with Obstacle tile. Can be cleared using Clear Obstacle to allow passage."
-            >
-              <div class="asset-card-thumb">
-                <img src="/assets/wall_top_150.png" alt="Top Wall" class="asset-thumb-img" />
-                <span class="asset-card-badge wall-badge">Wall</span>
-                <span class="asset-card-check">✓</span>
-              </div>
-              <div class="asset-card-info">
-                <span class="asset-card-name">Top Wall</span>
-                <span class="asset-card-code">wall_top_150</span>
-              </div>
-            </button>
+              <!-- Wood Wall 1 (wood_wall_1) -->
+              <button
+                type="button"
+                class="editor-asset-card"
+                data-asset-id="wood_wall_1"
+                data-asset-name="Wood Wall 1"
+                data-is-wall="true"
+                title="Wood Wall 1 (wood_wall_1) - Solid wall with Obstacle tile. Can be cleared using Clear Obstacle to allow passage."
+              >
+                <div class="asset-card-thumb">
+                  <img src="/assets/wall/wood_1.png" alt="Wood Wall 1" class="asset-thumb-img" />
+                  <span class="asset-card-badge wall-badge">Wall</span>
+                  <span class="asset-card-check">✓</span>
+                </div>
+                <div class="asset-card-info">
+                  <span class="asset-card-name">Wood Wall 1</span>
+                  <span class="asset-card-code">wood_wall_1</span>
+                </div>
+              </button>
 
-            <!-- Asset 6: Horizontal Glass Wall (horizontal_glass_wall_150) -->
-            <button
-              type="button"
-              class="editor-asset-card"
-              data-asset-id="horizontal_glass_wall_150"
-              data-asset-name="Horizontal Glass Wall"
-              data-is-wall="true"
-              title="Horizontal Glass Wall (horizontal_glass_wall_150) - Comes with Obstacle tile. Can be cleared using Clear Obstacle to allow passage."
-            >
-              <div class="asset-card-thumb">
-                <img src="/assets/horizontal_glass_wall_150.png" alt="Horizontal Glass Wall" class="asset-thumb-img" />
-                <span class="asset-card-badge wall-badge">Wall</span>
-                <span class="asset-card-check">✓</span>
-              </div>
-              <div class="asset-card-info">
-                <span class="asset-card-name">Horizontal Glass</span>
-                <span class="asset-card-code">horizontal_glass_wall_150</span>
-              </div>
-            </button>
+              <!-- Wood Wall 2 (wood_wall_2) -->
+              <button
+                type="button"
+                class="editor-asset-card"
+                data-asset-id="wood_wall_2"
+                data-asset-name="Wood Wall 2"
+                data-is-wall="true"
+                data-is-overlay-wall="true"
+                title="Wood Wall 2 (wood_wall_2) - Transparent wall rendered on top of floor (does not replace floor). Comes with Obstacle tile."
+              >
+                <div class="asset-card-thumb">
+                  <img src="/assets/wall/wood_2.png" alt="Wood Wall 2" class="asset-thumb-img" />
+                  <span class="asset-card-badge wall-badge" style="background:#2563eb;">Overlay</span>
+                  <span class="asset-card-check">✓</span>
+                </div>
+                <div class="asset-card-info">
+                  <span class="asset-card-name">Wood Wall 2</span>
+                  <span class="asset-card-code">wood_wall_2</span>
+                </div>
+              </button>
 
-            <!-- Asset 7: Vertical Glass Wall (vertical_glass_wall_150) -->
-            <button
-              type="button"
-              class="editor-asset-card"
-              data-asset-id="vertical_glass_wall_150"
-              data-asset-name="Vertical Glass Wall"
-              data-is-wall="true"
-              title="Vertical Glass Wall (vertical_glass_wall_150) - Comes with Obstacle tile. Can be cleared using Clear Obstacle to allow passage."
-            >
-              <div class="asset-card-thumb">
-                <img src="/assets/vertical_glass_wall_150.png" alt="Vertical Glass Wall" class="asset-thumb-img" />
-                <span class="asset-card-badge wall-badge">Wall</span>
-                <span class="asset-card-check">✓</span>
-              </div>
-              <div class="asset-card-info">
-                <span class="asset-card-name">Vertical Glass</span>
-                <span class="asset-card-code">vertical_glass_wall_150</span>
-              </div>
-            </button>
+              <!-- Wood Wall 3 (wood_wall_3) -->
+              <button
+                type="button"
+                class="editor-asset-card"
+                data-asset-id="wood_wall_3"
+                data-asset-name="Wood Wall 3"
+                data-is-wall="true"
+                title="Wood Wall 3 (wood_wall_3) - Solid wall with Obstacle tile. Can be cleared using Clear Obstacle to allow passage."
+              >
+                <div class="asset-card-thumb">
+                  <img src="/assets/wall/wood_3.png" alt="Wood Wall 3" class="asset-thumb-img" />
+                  <span class="asset-card-badge wall-badge">Wall</span>
+                  <span class="asset-card-check">✓</span>
+                </div>
+                <div class="asset-card-info">
+                  <span class="asset-card-name">Wood Wall 3</span>
+                  <span class="asset-card-code">wood_wall_3</span>
+                </div>
+              </button>
+
+              <!-- Wood Wall 4 (wood_wall_4) -->
+              <button
+                type="button"
+                class="editor-asset-card"
+                data-asset-id="wood_wall_4"
+                data-asset-name="Wood Wall 4"
+                data-is-wall="true"
+                title="Wood Wall 4 (wood_wall_4) - Solid wall with Obstacle tile. Can be cleared using Clear Obstacle to allow passage."
+              >
+                <div class="asset-card-thumb">
+                  <img src="/assets/wall/wood_4.png" alt="Wood Wall 4" class="asset-thumb-img" />
+                  <span class="asset-card-badge wall-badge">Wall</span>
+                  <span class="asset-card-check">✓</span>
+                </div>
+                <div class="asset-card-info">
+                  <span class="asset-card-name">Wood Wall 4</span>
+                  <span class="asset-card-code">wood_wall_4</span>
+                </div>
+              </button>
+
+              <!-- Wood Wall 5 (wood_wall_5) -->
+              <button
+                type="button"
+                class="editor-asset-card"
+                data-asset-id="wood_wall_5"
+                data-asset-name="Wood Wall 5"
+                data-is-wall="true"
+                title="Wood Wall 5 (wood_wall_5) - Solid wall with Obstacle tile. Can be cleared using Clear Obstacle to allow passage."
+              >
+                <div class="asset-card-thumb">
+                  <img src="/assets/wall/wood_5.png" alt="Wood Wall 5" class="asset-thumb-img" />
+                  <span class="asset-card-badge wall-badge">Wall</span>
+                  <span class="asset-card-check">✓</span>
+                </div>
+                <div class="asset-card-info">
+                  <span class="asset-card-name">Wood Wall 5</span>
+                  <span class="asset-card-code">wood_wall_5</span>
+                </div>
+              </button>
+
+              <!-- Wood Wall 6 (wood_wall_6) -->
+              <button
+                type="button"
+                class="editor-asset-card"
+                data-asset-id="wood_wall_6"
+                data-asset-name="Wood Wall 6"
+                data-is-wall="true"
+                title="Wood Wall 6 (wood_wall_6) - Solid wall with Obstacle tile. Can be cleared using Clear Obstacle to allow passage."
+              >
+                <div class="asset-card-thumb">
+                  <img src="/assets/wall/wood_6.png" alt="Wood Wall 6" class="asset-thumb-img" />
+                  <span class="asset-card-badge wall-badge">Wall</span>
+                  <span class="asset-card-check">✓</span>
+                </div>
+                <div class="asset-card-info">
+                  <span class="asset-card-name">Wood Wall 6</span>
+                  <span class="asset-card-code">wood_wall_6</span>
+                </div>
+              </button>
+
+              <!-- Wood Wall 7 (wood_wall_7) -->
+              <button
+                type="button"
+                class="editor-asset-card"
+                data-asset-id="wood_wall_7"
+                data-asset-name="Wood Wall 7"
+                data-is-wall="true"
+                title="Wood Wall 7 (wood_wall_7) - Solid wall with Obstacle tile. Can be cleared using Clear Obstacle to allow passage."
+              >
+                <div class="asset-card-thumb">
+                  <img src="/assets/wall/wood_7.png" alt="Wood Wall 7" class="asset-thumb-img" />
+                  <span class="asset-card-badge wall-badge">Wall</span>
+                  <span class="asset-card-check">✓</span>
+                </div>
+                <div class="asset-card-info">
+                  <span class="asset-card-name">Wood Wall 7</span>
+                  <span class="asset-card-code">wood_wall_7</span>
+                </div>
+              </button>
+
+              <!-- Glass Wall 2 (glass_2) -->
+              <button
+                type="button"
+                class="editor-asset-card"
+                data-asset-id="glass_2"
+                data-asset-name="Glass Wall 2"
+                data-is-wall="true"
+                data-is-overlay-wall="true"
+                title="Glass Wall 2 (glass_2) - Transparent wall rendered on top of floor (does not replace floor). Comes with Obstacle tile."
+              >
+                <div class="asset-card-thumb">
+                  <img src="/assets/wall/glass_2.png" alt="Glass Wall 2" class="asset-thumb-img" />
+                  <span class="asset-card-badge wall-badge" style="background:#2563eb;">Overlay</span>
+                  <span class="asset-card-check">✓</span>
+                </div>
+                <div class="asset-card-info">
+                  <span class="asset-card-name">Glass Wall 2</span>
+                  <span class="asset-card-code">glass_2</span>
+                </div>
+              </button>
+
+              <!-- Glass Wall 3 (glass_3) -->
+              <button
+                type="button"
+                class="editor-asset-card"
+                data-asset-id="glass_3"
+                data-asset-name="Glass Wall 3"
+                data-is-wall="true"
+                data-is-overlay-wall="true"
+                title="Glass Wall 3 (glass_3) - Transparent wall rendered on top of floor (does not replace floor). Comes with Obstacle tile."
+              >
+                <div class="asset-card-thumb">
+                  <img src="/assets/wall/glass_3.png" alt="Glass Wall 3" class="asset-thumb-img" />
+                  <span class="asset-card-badge wall-badge" style="background:#2563eb;">Overlay</span>
+                  <span class="asset-card-check">✓</span>
+                </div>
+                <div class="asset-card-info">
+                  <span class="asset-card-name">Glass Wall 3</span>
+                  <span class="asset-card-code">glass_3</span>
+                </div>
+              </button>
+
+              <!-- Glass Wall 4 (glass_4) -->
+              <button
+                type="button"
+                class="editor-asset-card"
+                data-asset-id="glass_4"
+                data-asset-name="Glass Wall 4"
+                data-is-wall="true"
+                data-is-overlay-wall="true"
+                title="Glass Wall 4 (glass_4) - Transparent wall rendered on top of floor (does not replace floor). Comes with Obstacle tile."
+              >
+                <div class="asset-card-thumb">
+                  <img src="/assets/wall/glass_4.png" alt="Glass Wall 4" class="asset-thumb-img" />
+                  <span class="asset-card-badge wall-badge" style="background:#2563eb;">Overlay</span>
+                  <span class="asset-card-check">✓</span>
+                </div>
+                <div class="asset-card-info">
+                  <span class="asset-card-name">Glass Wall 4</span>
+                  <span class="asset-card-code">glass_4</span>
+                </div>
+              </button>
+            </div>
           </div>
         </div>
 
         <!-- Utilities Category -->
-        <div class="editor-category-group editor-utilities-group">
-          <div class="editor-category-header">
+        <div class="editor-category-group editor-utilities-group active-tab-panel" data-category="utilities" data-tab-panel="utilities">
+          <div class="editor-category-header" role="button" tabindex="0" aria-expanded="true">
             <div class="editor-category-name-wrap">
               <span class="category-icon">🛠️</span>
               <span class="category-title">Utilities</span>
             </div>
-            <span class="category-count">Utility Tools</span>
+            <div class="editor-category-header-right">
+              <span class="category-count">Utility Tools</span>
+              <span class="category-chevron-icon" aria-hidden="true">
+                <svg class="category-chevron-svg" viewBox="0 0 24 24" width="16" height="16">
+                  <path fill="currentColor" d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"/>
+                </svg>
+              </span>
+            </div>
           </div>
 
-          <div class="editor-assets-grid" style="grid-template-columns: repeat(2, 1fr);">
+          <div class="editor-category-content">
+            <div class="editor-assets-grid">
+            <!-- Tool 0: Cursor (Inspect / Delete Map Items) -->
+            <button
+              type="button"
+              class="editor-asset-card editor-tool-card"
+              id="tool-cursor"
+              data-tool-type="cursor"
+              data-tool-name="Cursor"
+              title="Cursor - Click any item on the map (wall, decoration, typewriter, jukebox, floor, etc.) to open its menu and delete it"
+            >
+              <div class="asset-card-thumb cursor-tool-thumb">
+                <svg class="private-card-svg cursor-card-svg" viewBox="0 0 24 24">
+                  <path fill="currentColor" d="M5.5 3.21V20.8c0 .45.54.67.85.35l4.86-4.86a.5.5 0 0 1 .35-.15h6.87a.5.5 0 0 0 .35-.85L6.35 2.85a.5.5 0 0 0-.85.36z"/>
+                </svg>
+                <span class="asset-card-badge cursor-badge">Cursor</span>
+                <span class="asset-card-check">✓</span>
+              </div>
+              <div class="asset-card-info">
+                <span class="asset-card-name">Cursor</span>
+                <span class="asset-card-code">Select &amp; Menu</span>
+              </div>
+            </button>
+
             <!-- Tool 1: Flag Private Area -->
             <button
               type="button"
@@ -862,86 +1841,8 @@
               <div class="editor-zones-empty">None yet. Drag on map to flag area.</div>
             </div>
           </div>
-        </div>
-
-        <!-- Tile Color & Tint Picker Category -->
-        <div class="editor-category-group editor-color-group">
-          <div class="editor-category-header">
-            <div class="editor-category-name-wrap">
-              <span class="category-icon">🎨</span>
-              <span class="category-title">Tile Color / Tint</span>
-            </div>
-            <div class="editor-color-header-actions" style="display: flex; gap: 6px; align-items: center;">
-              <button
-                type="button"
-                id="btn-dropper-shortcut"
-                class="editor-color-reset-btn dropper-shortcut-btn"
-                title="Pick color from map tile (Color Dropper)"
-              >
-                💧 Dropper
-              </button>
-              <button
-                type="button"
-                id="btn-reset-tile-color"
-                class="editor-color-reset-btn"
-                title="Reset to original asset texture (No tint)"
-              >
-                ↺ Original
-              </button>
-            </div>
           </div>
-
-          <!-- Active Brush Combined Preview -->
-          <div class="editor-brush-card" id="editor-brush-card">
-            <div class="brush-swatch-box" id="brush-swatch-box">
-              <div class="brush-pattern-layer" id="brush-pattern-layer"></div>
-              <div class="brush-tint-layer" id="brush-tint-layer"></div>
-            </div>
-            <div class="brush-info">
-              <div class="brush-headline" id="brush-headline">Birch Floor</div>
-              <div class="brush-color-status">
-                <span class="brush-dot" id="brush-dot"></span>
-                <span class="brush-color-text" id="brush-color-text">Original (No Tint)</span>
-              </div>
-            </div>
-          </div>
-
-          <!-- Custom Color Picker Row -->
-          <div class="editor-custom-color-row">
-            <label class="editor-color-input-wrap" title="Click to pick custom color">
-              <input type="color" id="editor-tile-color-input" value="#3B8282" />
-              <span class="editor-color-circle" id="editor-color-circle" style="background-color: #3B8282;"></span>
-              <span class="editor-color-picker-title">Pick Custom Color</span>
-            </label>
-            <div class="editor-hex-wrap">
-              <span class="editor-hex-hash">#</span>
-              <input
-                type="text"
-                id="editor-tile-hex-input"
-                class="editor-hex-field"
-                value="3B8282"
-                maxlength="6"
-                placeholder="RRGGBB"
-                spellcheck="false"
-              />
-            </div>
-          </div>
-
-          <!-- Preset Colors Palette Grid -->
-          <div class="editor-swatches-title">Preset Colors</div>
-          <div class="editor-color-palette" id="editor-color-palette"></div>
         </div>
-      </div>
-
-      <!-- Sidebar Footer -->
-      <div class="editor-sidebar-footer">
-        <div class="editor-tip-box">
-          <span class="tip-icon">💡</span>
-          <p class="tip-text"><strong>Select a tile to place:</strong> UI disappears so you can see behind bars. Press <kbd class="editor-tip-kbd">Esc</kbd> when done putting tiles.</p>
-        </div>
-        <button type="button" id="btn-close-map-editor" class="editor-finish-btn">
-          <span>✓</span> Done Editing
-        </button>
       </div>
     </aside>
 
@@ -979,7 +1880,7 @@
             title="Area Chat"
           >
             <span class="chat-tab-icon">🗺️</span>
-            <span class="chat-tab-name" id="chat-tab-map-name">Central Plaza</span>
+            <span class="chat-tab-name" id="chat-tab-map-name">CO3</span>
             <span class="chat-tab-badge hidden" id="chat-map-badge"></span>
           </button>
 
@@ -1025,7 +1926,7 @@
               type="text"
               id="chat-input-field"
               class="chat-input-field"
-              placeholder="Message #Central Plaza..."
+              placeholder="Message #CO3..."
               maxlength="250"
               autocomplete="off"
               spellcheck="false"
@@ -1053,7 +1954,7 @@
       <!-- Left: User Avatar & Profile Section -->
       <div id="topbar-profile-trigger" class="topbar-profile-pill" role="button" tabindex="0" title="Account Menu">
         <div class="topbar-avatar-container">
-          <img id="topbar-avatar-img" class="topbar-avatar-img" alt="Avatar" src="/assets/man_still.png" />
+          <img id="topbar-avatar-img" class="topbar-avatar-img" alt="Avatar" src="/assets/sprite1.png" />
           <span id="topbar-status-dot" class="topbar-status-dot" title="Online"></span>
         </div>
         <div class="topbar-user-details">
@@ -1141,6 +2042,24 @@
         </div>
       </div>
 
+      <!-- Floating Map Editor Cursor Item Context Menu -->
+      <div id="editor-item-context-menu" class="player-context-menu editor-item-context-menu hidden" role="dialog" aria-label="Map Item Actions">
+        <div class="player-context-menu-arrow"></div>
+        <div class="player-context-header">
+          <div class="player-context-user-info">
+            <span class="editor-item-menu-badge" id="editor-item-menu-badge">Item</span>
+            <span class="player-context-name" id="editor-item-menu-name">Wall</span>
+          </div>
+          <button type="button" class="player-context-close-btn" id="btn-close-editor-item-menu" title="Close menu" aria-label="Close">✕</button>
+        </div>
+        <div class="player-context-body">
+          <button type="button" class="player-context-btn editor-item-delete-btn" id="btn-editor-item-delete" title="Delete this item from the map">
+            <span class="player-context-btn-icon">🗑️</span>
+            <span class="player-context-btn-label">Delete</span>
+          </button>
+        </div>
+      </div>
+
       <!-- Bottom HUD Controls Hint -->
       <div class="hud-footer" id="hud-footer">
         <div class="controls-hint">
@@ -1149,11 +2068,6 @@
           <span class="key-badge" id="hud-btn-a" data-dir="left">A</span>
           <span class="key-badge" id="hud-btn-s" data-dir="down">S</span>
           <span class="key-badge" id="hud-btn-d" data-dir="right">D</span>
-          <span>or</span>
-          <span class="key-badge" id="hud-btn-up" data-dir="up">▲</span>
-          <span class="key-badge" id="hud-btn-left" data-dir="left">◄</span>
-          <span class="key-badge" id="hud-btn-down" data-dir="down">▼</span>
-          <span class="key-badge" id="hud-btn-right" data-dir="right">►</span>
           <span>to move</span>
         </div>
       </div>
@@ -1343,7 +2257,7 @@
         <div class="preview-box">
           <div class="preview-character-container">
             <div id="preview-name" class="preview-name-tag">Player</div>
-            <img id="preview-avatar" class="preview-avatar" alt="Character Preview" src="/assets/man_still.png" />
+            <img id="preview-avatar" class="preview-avatar" alt="Character Preview" src="/assets/sprite1.png" />
           </div>
           <!-- Direction Preview Switcher -->
           <div id="preview-directions-bar" class="preview-directions-bar">
@@ -1751,7 +2665,7 @@
                 <h2 class="modal-title">Select Destination</h2>
                 <div class="current-space-chip">
                   <span class="status-dot"></span>
-                  <span>Currently at: <strong id="map-current-space-name">Central Plaza</strong></span>
+                  <span>Currently at: <strong id="map-current-space-name">CO3</strong></span>
                 </div>
               </div>
             </div>
@@ -1804,7 +2718,7 @@
             <span class="space-error-return-label">Returned to:</span>
             <div class="space-error-return-target">
               <span class="space-error-return-icon">🏠</span>
-              <span id="space-error-return-name" class="space-error-return-name">Central Plaza</span>
+              <span id="space-error-return-name" class="space-error-return-name">CO3</span>
             </div>
           </div>
         </div>

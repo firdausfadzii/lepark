@@ -50,6 +50,7 @@ export class MultiplayerManager {
   private onTilesUpdateCallbacks: TilesUpdateCallback[] = [];
   private onPrivateZonesUpdateCallbacks: PrivateZonesUpdateCallback[] = [];
   private onChatMessageCallbacks: ChatMessageCallback[] = [];
+  private onChatHistoryCallbacks: ((messages: ChatMessage[]) => void)[] = [];
   private onRoomJoinedCallbacks: (() => void)[] = [];
   private onJukeboxesSyncCallbacks: JukeboxesSyncCallback[] = [];
   private onJukeboxUpdateCallbacks: JukeboxUpdateCallback[] = [];
@@ -232,6 +233,12 @@ export class MultiplayerManager {
     this.room.onMessage("CHAT_MESSAGE", (message: ChatMessage) => {
       if (message && typeof message === "object") {
         this.notifyChatMessage(message);
+      }
+    });
+
+    this.room.onMessage("CHAT_HISTORY", (history: ChatMessage[]) => {
+      if (Array.isArray(history)) {
+        this.notifyChatHistory(history);
       }
     });
 
@@ -467,6 +474,20 @@ export class MultiplayerManager {
     });
   }
 
+  public onChatHistory(cb: (history: ChatMessage[]) => void) {
+    this.onChatHistoryCallbacks.push(cb);
+  }
+
+  private notifyChatHistory(history: ChatMessage[]) {
+    this.onChatHistoryCallbacks.forEach((cb) => {
+      try {
+        cb(history);
+      } catch (err) {
+        console.error("Chat history callback error:", err);
+      }
+    });
+  }
+
   public sendChatMessage(payload: SendChatMessagePayload) {
     if (this.room) {
       this.room.send("SEND_CHAT_MESSAGE", payload);
@@ -665,9 +686,15 @@ export class MultiplayerManager {
     });
   }
 
-  public placeJukebox(x: number, y: number, passable: boolean = false, ontop: boolean = false) {
+  public placeJukebox(
+    x: number,
+    y: number,
+    passable: boolean = false,
+    ontop: boolean = false,
+    layer: number = 0
+  ) {
     if (this.room) {
-      this.room.send("JUKEBOX_PLACE", { x, y, passable, ontop });
+      this.room.send("JUKEBOX_PLACE", { x, y, passable, ontop, layer });
     }
   }
 
@@ -807,9 +834,15 @@ export class MultiplayerManager {
     this.onTypeRaceEndedCallbacks.push(cb);
   }
 
-  public placeTypewriter(x: number, y: number, passable: boolean = false, ontop: boolean = false) {
+  public placeTypewriter(
+    x: number,
+    y: number,
+    passable: boolean = false,
+    ontop: boolean = false,
+    layer: number = 0
+  ) {
     if (this.room) {
-      this.room.send("TYPEWRITER_PLACE", { x, y, passable, ontop });
+      this.room.send("TYPEWRITER_PLACE", { x, y, passable, ontop, layer });
     }
   }
 

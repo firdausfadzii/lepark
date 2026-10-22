@@ -1,6 +1,6 @@
 import Phaser from "phaser";
 import { MultiplayerManager } from "./network/MultiplayerManager";
-import { GameScene } from "./scenes/GameScene";
+import { GameScene, InspectableMapItem } from "./scenes/GameScene";
 import {
   DEFAULT_PRESET_COLORS,
   PlayerAvatars,
@@ -20,6 +20,8 @@ import {
   TypewriterState,
   TypeRaceRoomState,
   isWallAsset,
+  isOverlayWallAsset,
+  isOverlayFloorAsset,
   isFreeformAsset,
 } from "shared";
 import { VoiceManager, VoiceError } from "./network/VoiceManager";
@@ -170,6 +172,12 @@ const editorPlacingToast = document.getElementById(
 const placingToastName = document.getElementById(
   "placing-toast-name",
 ) as HTMLElement | null;
+const placingToastLayer = document.getElementById(
+  "placing-toast-layer",
+) as HTMLElement | null;
+const placingToastHint = document.getElementById(
+  "placing-toast-hint",
+) as HTMLElement | null;
 const btnToastDonePlacing = document.getElementById(
   "btn-toast-done-placing",
 ) as HTMLButtonElement | null;
@@ -206,6 +214,18 @@ const brushTintLayer = document.getElementById(
 ) as HTMLElement | null;
 const plainTilePreviewSquare = document.getElementById(
   "plain-tile-preview-square",
+) as HTMLElement | null;
+const overlayPlainTilePreviewSquare = document.getElementById(
+  "overlay-plain-tile-preview-square",
+) as HTMLElement | null;
+const editorTileAlphaSlider = document.getElementById(
+  "editor-tile-alpha-slider",
+) as HTMLInputElement | null;
+const editorTileAlphaInput = document.getElementById(
+  "editor-tile-alpha-input",
+) as HTMLInputElement | null;
+const editorAlphaTrackBg = document.getElementById(
+  "editor-alpha-track-bg",
 ) as HTMLElement | null;
 
 // Top Bar Right Actions (Map, Ping, Loss)
@@ -540,7 +560,7 @@ let activePreviewDir: DirectionSlot = "idle";
 
 // Spaces & Categories State
 let currentSpaceId = "space_central_plaza";
-let currentSpaceName = "Central Plaza";
+let currentSpaceName = "CO3";
 let loadedSpaces: Space[] = [];
 let loadedCategories: string[] = [];
 let myPersonalSpace: Space | null = null;
@@ -930,16 +950,16 @@ function updatePreviewFrame() {
       previewStatusHint.classList.remove("hidden");
     }
   } else {
-    // Default male avatar preview (animating walk cycles for directions, still for idle)
+    // Default avatar preview (animating idle/walk cycles based on direction)
     const defaultFrames =
       DEFAULT_AVATARS[activePreviewDir] || DEFAULT_AVATARS.idle;
     const currentImg = defaultFrames[previewFrameIndex % defaultFrames.length];
     previewAvatar.src = currentImg;
 
     if (activePreviewDir === "idle") {
-      previewStatusHint.textContent = "Default male character (standing still)";
+      previewStatusHint.textContent = "Default character (idle south)";
     } else {
-      previewStatusHint.textContent = `Default male character (${activePreviewDir} walk)`;
+      previewStatusHint.textContent = `Default character (${activePreviewDir})`;
     }
     previewStatusHint.classList.remove("hidden");
   }
@@ -1396,10 +1416,38 @@ if (btnMapSettings) {
 
 let isEditModeActive = false;
 let isEditorUIHidden = false;
-let currentSelectedAssetId = "birch_floor_150";
-let currentSelectedAssetName = "Birch Floor";
-let currentSelectedTileColor: string | null = null; // null = original/no tint
+let currentSelectedAssetId = "";
+let currentSelectedAssetName = "No Asset Selected";
+let currentSelectedTileRgb: string | null = null; // 6-digit #RRGGBB or null for Original
+let currentSelectedTileAlpha: number = 100; // 0 to 100%
+let currentSelectedTileColor: string | null = null; // null = original/no tint, #RRGGBB, or #RRGGBBAA
 let placingToastFadeTimeout: any = null;
+
+function computeCombinedTileColor(rgbHex: string | null, alphaPercent: number): string | null {
+  const clampedAlpha = Math.max(0, Math.min(100, Math.round(alphaPercent)));
+  if (!rgbHex && clampedAlpha >= 100) {
+    return null;
+  }
+  const cleanRgb = (rgbHex || "#FFFFFF").replace("#", "").slice(0, 6).toUpperCase();
+  if (clampedAlpha >= 100) {
+    return `#${cleanRgb}`;
+  }
+  const alphaByte = Math.round((clampedAlpha / 100) * 255);
+  const alphaHex = alphaByte.toString(16).padStart(2, "0").toUpperCase();
+  return `#${cleanRgb}${alphaHex}`;
+}
+
+function formatColorBadgeLabel(colorHex: string | null): string {
+  if (!colorHex) return "Original (No Tint)";
+  const clean = colorHex.replace("#", "").toUpperCase();
+  if (clean.length === 8) {
+    const rgbPart = clean.slice(0, 6);
+    const alphaByte = parseInt(clean.slice(6, 8), 16);
+    const pct = Number.isNaN(alphaByte) ? 100 : Math.round((alphaByte / 255) * 100);
+    return `#${rgbPart} (${pct}%)`;
+  }
+  return `#${clean}`;
+}
 
 const MAP_EDITOR_PRESET_COLORS = [
   { name: "Original", hex: null },
@@ -1427,7 +1475,7 @@ function setupMapEditorColorPicker() {
     swatch.className = "editor-palette-swatch";
     if (preset.hex === null) {
       swatch.classList.add("swatch-none");
-      swatch.title = "Original (No tint)";
+      swatch.title = "Original (No tint, 100% opacity)";
       if (currentSelectedTileColor === null) {
         swatch.classList.add("selected");
       }
@@ -1436,14 +1484,14 @@ function setupMapEditorColorPicker() {
       swatch.title = `${preset.name} (${preset.hex})`;
       swatch.setAttribute("data-color", preset.hex);
       if (
-        currentSelectedTileColor?.toLowerCase() === preset.hex.toLowerCase()
+        currentSelectedTileRgb?.toLowerCase() === preset.hex.toLowerCase()
       ) {
         swatch.classList.add("selected");
       }
     }
 
     swatch.addEventListener("click", () => {
-      selectTileColor(preset.hex);
+      selectTileColor(preset.hex, preset.hex !== null);
     });
 
     editorColorPalette.appendChild(swatch);
@@ -1452,23 +1500,127 @@ function setupMapEditorColorPicker() {
   if (editorTileColorInput) {
     editorTileColorInput.addEventListener("input", (e) => {
       const val = (e.target as HTMLInputElement).value;
-      selectTileColor(val);
+      selectTileColor(val, true);
     });
   }
 
   if (editorTileHexInput) {
     editorTileHexInput.addEventListener("input", (e) => {
-      let raw = (e.target as HTMLInputElement).value.trim().replace("#", "");
+      const raw = (e.target as HTMLInputElement).value.trim().replace("#", "");
       if (raw.length === 6 && /^[0-9a-fA-F]{6}$/.test(raw)) {
-        const hex = `#${raw}`;
-        selectTileColor(hex);
+        selectTileColor(`#${raw}`, true, true);
+      } else if (raw.length === 8 && /^[0-9a-fA-F]{8}$/.test(raw)) {
+        selectTileColor(`#${raw}`, false, true);
+      }
+    });
+  }
+
+  if (editorTileAlphaSlider) {
+    editorTileAlphaSlider.addEventListener("input", (e) => {
+      const val = parseInt((e.target as HTMLInputElement).value, 10);
+      if (!Number.isNaN(val)) {
+        setTileAlpha(val);
+      }
+    });
+  }
+
+  if (editorTileAlphaInput) {
+    editorTileAlphaInput.addEventListener("input", (e) => {
+      const raw = (e.target as HTMLInputElement).value.trim();
+      if (raw === "") return;
+      const val = parseInt(raw, 10);
+      if (!Number.isNaN(val)) {
+        setTileAlpha(Math.max(0, Math.min(100, val)), true);
+      }
+    });
+    editorTileAlphaInput.addEventListener("blur", () => {
+      if (editorTileAlphaInput) {
+        editorTileAlphaInput.value = String(currentSelectedTileAlpha);
       }
     });
   }
 
   if (btnResetTileColor) {
-    btnResetTileColor.addEventListener("click", () => {
-      selectTileColor(null);
+    btnResetTileColor.addEventListener("click", (e) => {
+      e.stopPropagation();
+      selectTileColor(null, false);
+    });
+  }
+}
+
+function switchEditorTab(tabName: "utilities" | "flooring" | "wall" | "decoration") {
+  const tabBtns = document.querySelectorAll<HTMLButtonElement>(".editor-tab-btn[data-editor-tab]");
+  tabBtns.forEach((btn) => {
+    const isActive = btn.dataset.editorTab === tabName;
+    btn.classList.toggle("active", isActive);
+    btn.setAttribute("aria-selected", String(isActive));
+  });
+
+  const tabPanels = document.querySelectorAll<HTMLElement>(
+    "#map-editor-sidebar .editor-category-group[data-tab-panel]"
+  );
+  tabPanels.forEach((panel) => {
+    const isActive = panel.dataset.tabPanel === tabName;
+    panel.classList.toggle("active-tab-panel", isActive);
+  });
+}
+
+function setupMapEditorAccordions() {
+  // 1. Bottom bar tabs navigation
+  const tabBtns = document.querySelectorAll<HTMLButtonElement>(".editor-tab-btn[data-editor-tab]");
+  tabBtns.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const tab = btn.dataset.editorTab as
+        | "utilities"
+        | "flooring"
+        | "wall"
+        | "decoration"
+        | undefined;
+      if (tab) {
+        switchEditorTab(tab);
+      }
+    });
+  });
+
+  // 2. Left Color Picker Sidebar Hide & Expand controls
+  const colorSidebar = document.getElementById("map-editor-color-sidebar");
+  const colorHeader = document.getElementById("color-sidebar-header-toggle");
+  const btnToggleColor = document.getElementById("btn-toggle-color-sidebar");
+  const btnExpandColor = document.getElementById("btn-expand-color-sidebar");
+
+  const setColorSidebarCollapsed = (collapsed: boolean) => {
+    if (!colorSidebar) return;
+    colorSidebar.classList.toggle("collapsed", collapsed);
+    if (colorHeader) {
+      colorHeader.setAttribute("aria-expanded", String(!collapsed));
+    }
+  };
+
+  if (btnToggleColor) {
+    btnToggleColor.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const isNowCollapsed = !colorSidebar?.classList.contains("collapsed");
+      setColorSidebarCollapsed(isNowCollapsed);
+    });
+  }
+
+  if (btnExpandColor) {
+    btnExpandColor.addEventListener("click", (e) => {
+      e.stopPropagation();
+      setColorSidebarCollapsed(false);
+    });
+  }
+
+  if (colorHeader) {
+    colorHeader.addEventListener("click", (e) => {
+      if (
+        e.target instanceof Element &&
+        (e.target.closest("#btn-dropper-shortcut") || e.target.closest("#btn-reset-tile-color"))
+      ) {
+        return;
+      }
+      const isNowCollapsed = !colorSidebar?.classList.contains("collapsed");
+      setColorSidebarCollapsed(isNowCollapsed);
     });
   }
 }
@@ -1503,27 +1655,100 @@ function setupMapEditorDecorationControls() {
       setDecorationRenderLayer(true);
     });
   }
+
+  const btnLevelDown = document.getElementById("btn-deco-level-down");
+  const btnLevelUp = document.getElementById("btn-deco-level-up");
+
+  if (btnLevelDown) {
+    btnLevelDown.addEventListener("click", () => {
+      adjustPlacementLayer(-1);
+    });
+  }
+
+  if (btnLevelUp) {
+    btnLevelUp.addEventListener("click", () => {
+      adjustPlacementLayer(1);
+    });
+  }
 }
 
-function selectTileColor(colorHex: string | null) {
-  currentSelectedTileColor = colorHex;
+function setTileAlpha(alphaPercent: number, skipNumberInputUpdate: boolean = false) {
+  currentSelectedTileAlpha = Math.max(0, Math.min(100, Math.round(alphaPercent)));
+  currentSelectedTileColor = computeCombinedTileColor(
+    currentSelectedTileRgb,
+    currentSelectedTileAlpha,
+  );
+  syncColorPickerUI(false, skipNumberInputUpdate);
+}
 
-  if (colorHex) {
-    if (editorTileColorInput) editorTileColorInput.value = colorHex;
-    if (editorTileHexInput)
-      editorTileHexInput.value = colorHex.replace("#", "").toUpperCase();
-    if (editorColorCircle) editorColorCircle.style.backgroundColor = colorHex;
+function selectTileColor(
+  colorHex: string | null,
+  preserveAlpha: boolean = false,
+  skipHexInputUpdate: boolean = false,
+) {
+  if (!colorHex) {
+    currentSelectedTileRgb = null;
+    currentSelectedTileAlpha = 100;
+    currentSelectedTileColor = null;
+  } else {
+    const clean = colorHex.replace("#", "").toUpperCase();
+    const rgbPart = `#${clean.slice(0, 6)}`;
+    currentSelectedTileRgb = rgbPart;
+    if (clean.length === 8) {
+      const alphaByte = parseInt(clean.slice(6, 8), 16);
+      if (!Number.isNaN(alphaByte)) {
+        currentSelectedTileAlpha = Math.round((alphaByte / 255) * 100);
+      }
+    } else if (!preserveAlpha) {
+      currentSelectedTileAlpha = 100;
+    }
+    currentSelectedTileColor = computeCombinedTileColor(
+      currentSelectedTileRgb,
+      currentSelectedTileAlpha,
+    );
+  }
+
+  syncColorPickerUI(skipHexInputUpdate, false);
+}
+
+function syncColorPickerUI(
+  skipHexInputUpdate: boolean = false,
+  skipNumberInputUpdate: boolean = false,
+) {
+  const displayRgb = currentSelectedTileRgb || "#3B8282";
+  if (editorTileColorInput && currentSelectedTileRgb) {
+    editorTileColorInput.value = currentSelectedTileRgb;
+  }
+  if (!skipHexInputUpdate && editorTileHexInput) {
+    if (currentSelectedTileColor) {
+      editorTileHexInput.value = currentSelectedTileColor.replace("#", "").toUpperCase();
+    } else if (currentSelectedTileRgb) {
+      editorTileHexInput.value = currentSelectedTileRgb.replace("#", "").toUpperCase();
+    }
+  }
+  if (editorColorCircle) {
+    editorColorCircle.style.backgroundColor = currentSelectedTileColor || displayRgb;
+  }
+  if (editorTileAlphaSlider) {
+    editorTileAlphaSlider.value = String(currentSelectedTileAlpha);
+  }
+  if (!skipNumberInputUpdate && editorTileAlphaInput) {
+    editorTileAlphaInput.value = String(currentSelectedTileAlpha);
+  }
+  if (editorAlphaTrackBg) {
+    const trackColor = currentSelectedTileRgb || "#FFFFFF";
+    editorAlphaTrackBg.style.background = `linear-gradient(to right, transparent, ${trackColor})`;
   }
 
   // Update palette swatches active class
   document.querySelectorAll(".editor-palette-swatch").forEach((el) => {
     const swatchColor = el.getAttribute("data-color");
-    if (!colorHex && el.classList.contains("swatch-none")) {
+    if (!currentSelectedTileColor && el.classList.contains("swatch-none")) {
       el.classList.add("selected");
     } else if (
-      colorHex &&
+      currentSelectedTileRgb &&
       swatchColor &&
-      swatchColor.toLowerCase() === colorHex.toLowerCase()
+      swatchColor.toLowerCase() === currentSelectedTileRgb.toLowerCase()
     ) {
       el.classList.add("selected");
     } else {
@@ -1537,116 +1762,131 @@ function selectTileColor(colorHex: string | null) {
   if (gameInstance) {
     const scene = gameInstance.scene.getScene("GameScene") as GameScene;
     if (scene) {
-      scene.setSelectedColor(colorHex);
+      scene.setSelectedColor(currentSelectedTileColor);
     }
   }
 }
 
 function updateBrushPreview() {
   if (brushHeadline) {
-    brushHeadline.textContent = currentSelectedAssetName;
+    brushHeadline.textContent = currentSelectedAssetId
+      ? currentSelectedAssetName
+      : "No Asset Selected";
   }
 
   if (brushColorText) {
-    if (currentSelectedTileColor) {
-      brushColorText.textContent = currentSelectedTileColor.toUpperCase();
-    } else {
-      brushColorText.textContent = "Original (No Tint)";
-    }
+    brushColorText.textContent = formatColorBadgeLabel(currentSelectedTileColor);
   }
 
   if (brushDot) {
     if (currentSelectedTileColor) {
       brushDot.style.display = "inline-block";
       brushDot.style.backgroundColor = currentSelectedTileColor;
-      brushDot.style.boxShadow = `0 0 6px ${currentSelectedTileColor}`;
+      brushDot.style.boxShadow = `0 0 6px ${currentSelectedTileRgb || "#ffffff"}`;
     } else {
       brushDot.style.display = "none";
     }
   }
 
+function normalizeFloorAssetKey(key: string): string {
+  if (key === "birch_floor_150" || key === "birch_floor_100") return "wood_5";
+  if (key === "carpet_grey_150") return "carpet_4";
+  if (key === "grass_150" || key === "grass_100" || key === "grass_tile") return "grass_4";
+  return key;
+}
+
+function normalizeDecorationAssetKey(key: string): string {
+  if (key === "table_left_150") return "table_2_left";
+  if (key === "table_middle_150") return "table_2_middle";
+  if (key === "table_right_150") return "table_2_right";
+  if (key === "round_table_150") return "round_table_1";
+  if (key === "office_chair_150") return "office_chair_1_front";
+  if (key === "office_chair_back_150") return "office_chair_1_back";
+  if (key === "jukebox_150") return "jukebox_1";
+  if (key === "typewriter_150") return "typewriter_1";
+  return key;
+}
+
+function getAssetImagePath(assetId: string): string | null {
+  const normalized = normalizeDecorationAssetKey(normalizeFloorAssetKey(assetId));
+  const floorAssets = new Set([
+    "carpet_1", "carpet_2", "carpet_3", "carpet_4", "carpet_5", "carpet_6", "carpet_7", "carpet_8",
+    "grass_1", "grass_2", "grass_3", "grass_4",
+    "marble_1", "marble_2", "marble_3", "marble_4",
+    "stone_1", "stone_2", "stone_3", "stone_4", "stone_5", "stone_6", "stone_7", "stone_8",
+    "wood_1", "wood_2", "wood_3", "wood_4", "wood_5", "wood_6"
+  ]);
+  if (floorAssets.has(normalized)) {
+    return `/assets/floor/${normalized}.png`;
+  }
+  const glassWallAssets = new Set([
+    "glass_1", "glass_2", "glass_3", "glass_4"
+  ]);
+  if (glassWallAssets.has(normalized)) {
+    return `/assets/wall/${normalized}.png`;
+  }
+  if (normalized.startsWith("wood_wall_")) {
+    const num = normalized.replace("wood_wall_", "");
+    return `/assets/wall/wood_${num}.png`;
+  }
+  if (normalized.startsWith("wall_wood_")) {
+    const num = normalized.replace("wall_wood_", "");
+    return `/assets/wall/wood_${num}.png`;
+  }
+  const decoAssets = new Set([
+    "table_1_left", "table_1_middle", "table_1_right",
+    "table_2_left", "table_2_middle", "table_2_right",
+    "round_table_1", "typewriter_1",
+    "office_chair_1_front", "office_chair_1_back",
+    "jukebox_1"
+  ]);
+  if (decoAssets.has(normalized)) {
+    return `/assets/decoration/${normalized}.png`;
+  }
+  return null;
+}
+
+  const assetPath = getAssetImagePath(currentSelectedAssetId);
+  const alphaRatio = String(currentSelectedTileAlpha / 100);
+
+  if (brushPatternLayer) {
+    if (assetPath) {
+      brushPatternLayer.style.backgroundImage = `url("${assetPath}")`;
+      brushPatternLayer.style.backgroundColor = "transparent";
+      brushPatternLayer.style.opacity = alphaRatio;
+    } else {
+      // Plain tile or Overlay Plain tile
+      brushPatternLayer.style.backgroundImage = "none";
+      brushPatternLayer.style.backgroundColor = currentSelectedTileRgb || "#ffffff";
+      brushPatternLayer.style.opacity = alphaRatio;
+    }
+  }
+
   if (brushTintLayer) {
-    if (currentSelectedTileColor) {
-      brushTintLayer.style.backgroundColor = currentSelectedTileColor;
-      brushTintLayer.style.opacity = "0.75";
+    if (assetPath && currentSelectedTileRgb) {
+      brushTintLayer.style.backgroundColor = currentSelectedTileRgb;
+      brushTintLayer.style.opacity = String(0.75 * (currentSelectedTileAlpha / 100));
     } else {
       brushTintLayer.style.opacity = "0";
     }
   }
 
-  if (brushPatternLayer) {
-    if (currentSelectedAssetId === "birch_floor_150") {
-      brushPatternLayer.style.backgroundImage =
-        'url("/assets/birch_floor_150.png")';
-      brushPatternLayer.style.backgroundColor = "transparent";
-    } else if (currentSelectedAssetId === "carpet_grey_150") {
-      brushPatternLayer.style.backgroundImage =
-        'url("/assets/carpet_grey_150.png")';
-      brushPatternLayer.style.backgroundColor = "transparent";
-    } else if (currentSelectedAssetId === "grass_150") {
-      brushPatternLayer.style.backgroundImage = 'url("/assets/grass_150.png")';
-      brushPatternLayer.style.backgroundColor = "transparent";
-    } else if (currentSelectedAssetId === "table_left_150") {
-      brushPatternLayer.style.backgroundImage =
-        'url("/assets/table_left_150.png")';
-      brushPatternLayer.style.backgroundColor = "transparent";
-    } else if (currentSelectedAssetId === "table_middle_150") {
-      brushPatternLayer.style.backgroundImage =
-        'url("/assets/table_middle_150.png")';
-      brushPatternLayer.style.backgroundColor = "transparent";
-    } else if (currentSelectedAssetId === "table_right_150") {
-      brushPatternLayer.style.backgroundImage =
-        'url("/assets/table_right_150.png")';
-      brushPatternLayer.style.backgroundColor = "transparent";
-    } else if (currentSelectedAssetId === "round_table_150") {
-      brushPatternLayer.style.backgroundImage =
-        'url("/assets/round_table_150.png")';
-      brushPatternLayer.style.backgroundColor = "transparent";
-    } else if (currentSelectedAssetId === "typewriter_150") {
-      brushPatternLayer.style.backgroundImage =
-        'url("/assets/typewriter_150.png")';
-      brushPatternLayer.style.backgroundColor = "transparent";
-    } else if (currentSelectedAssetId === "office_chair_150") {
-      brushPatternLayer.style.backgroundImage =
-        'url("/assets/office_chair_150.png")';
-      brushPatternLayer.style.backgroundColor = "transparent";
-    } else if (currentSelectedAssetId === "office_chair_back_150") {
-      brushPatternLayer.style.backgroundImage =
-        'url("/assets/office_chair_back_150.png")';
-      brushPatternLayer.style.backgroundColor = "transparent";
-    } else if (currentSelectedAssetId === "wall_half_150") {
-      brushPatternLayer.style.backgroundImage =
-        'url("/assets/wall_half_150.png")';
-      brushPatternLayer.style.backgroundColor = "transparent";
-    } else if (currentSelectedAssetId === "wall_top_150") {
-      brushPatternLayer.style.backgroundImage =
-        'url("/assets/wall_top_150.png")';
-      brushPatternLayer.style.backgroundColor = "transparent";
-    } else if (currentSelectedAssetId === "horizontal_glass_wall_150") {
-      brushPatternLayer.style.backgroundImage =
-        'url("/assets/horizontal_glass_wall_150.png")';
-      brushPatternLayer.style.backgroundColor = "transparent";
-    } else if (currentSelectedAssetId === "vertical_glass_wall_150") {
-      brushPatternLayer.style.backgroundImage =
-        'url("/assets/vertical_glass_wall_150.png")';
-      brushPatternLayer.style.backgroundColor = "transparent";
-    } else {
-      // Plain tile
-      brushPatternLayer.style.backgroundImage = "none";
-      brushPatternLayer.style.backgroundColor = "#ffffff";
-    }
-  }
-
+  const previewColor = currentSelectedTileColor || "#ffffff";
   if (plainTilePreviewSquare) {
-    if (currentSelectedTileColor) {
-      plainTilePreviewSquare.style.backgroundColor = currentSelectedTileColor;
-    } else {
-      plainTilePreviewSquare.style.backgroundColor = "#ffffff";
-    }
+    plainTilePreviewSquare.style.backgroundColor = previewColor;
+  }
+  if (overlayPlainTilePreviewSquare) {
+    overlayPlainTilePreviewSquare.style.backgroundColor = previewColor;
+  }
+  const collapsedSwatch = document.getElementById("color-Collapsed-swatch");
+  if (collapsedSwatch) {
+    collapsedSwatch.style.backgroundColor = currentSelectedTileRgb || "#3B8282";
   }
 }
 
 let activeEditorTool:
+  | "none"
+  | "cursor"
   | "flooring"
   | "decoration"
   | "clear_decoration"
@@ -1658,10 +1898,12 @@ let activeEditorTool:
   | "typewriter"
   | "freeform_decoration"
   | "spawn_point"
-  | "color_dropper" = "flooring";
+  | "color_dropper" = "none";
 
 let previousToolBeforeDropper: {
   tool:
+    | "none"
+    | "cursor"
     | "flooring"
     | "decoration"
     | "clear_decoration"
@@ -1676,13 +1918,87 @@ let previousToolBeforeDropper: {
   assetId: string;
   assetName: string;
 } = {
-  tool: "flooring",
-  assetId: "birch_floor_150",
-  assetName: "Birch Floor",
+  tool: "none",
+  assetId: "",
+  assetName: "No Asset Selected",
 };
 
 let isDecorationPassable: boolean = true;
 let isDecorationOntop: boolean = false;
+let currentPlacementLayer: number = 0;
+
+function isCurrentToolLayerable(): boolean {
+  if (
+    activeEditorTool === "decoration" ||
+    activeEditorTool === "freeform_decoration" ||
+    activeEditorTool === "jukebox" ||
+    activeEditorTool === "typewriter"
+  ) {
+    return true;
+  }
+  if (
+    activeEditorTool === "flooring" &&
+    (isOverlayFloorAsset(currentSelectedAssetId) || isOverlayWallAsset(currentSelectedAssetId))
+  ) {
+    return true;
+  }
+  return false;
+}
+
+function updatePlacementLayerUI() {
+  const hintEl = document.getElementById("deco-level-hint");
+  if (hintEl) {
+    hintEl.textContent = `Layer ${currentPlacementLayer} (↑/↓)`;
+  }
+
+  // Update placing toast layer badge
+  if (placingToastLayer) {
+    if (isCurrentToolLayerable()) {
+      placingToastLayer.textContent = `Layer ${currentPlacementLayer} (↑/↓)`;
+      placingToastLayer.classList.remove("hidden");
+    } else {
+      placingToastLayer.classList.add("hidden");
+    }
+  }
+
+  updateEditBannerText();
+
+  // If in placing mode, refresh toast and wake from faded state
+  if (isEditModeActive && isEditorUIHidden && isCurrentToolLayerable()) {
+    if (editorPlacingToast) {
+      editorPlacingToast.classList.remove("hidden");
+      editorPlacingToast.classList.remove("faded");
+      if (placingToastFadeTimeout) {
+        clearTimeout(placingToastFadeTimeout);
+      }
+      placingToastFadeTimeout = setTimeout(() => {
+        if (isEditorUIHidden && editorPlacingToast) {
+          editorPlacingToast.classList.add("faded");
+        }
+      }, 3500);
+    }
+  }
+}
+
+function setPlacementLayer(layer: number, notifyScene: boolean = true) {
+  currentPlacementLayer = Math.max(-50, Math.min(50, Math.round(layer)));
+  if (notifyScene && gameInstance) {
+    const scene = gameInstance.scene.getScene("GameScene") as GameScene;
+    if (scene && typeof scene.setPlacementLayer === "function") {
+      scene.setPlacementLayer(currentPlacementLayer);
+    }
+  }
+  updatePlacementLayerUI();
+}
+
+let lastPlacementLayerAdjustTime = 0;
+function adjustPlacementLayer(delta: number) {
+  const now = performance.now();
+  if (now - lastPlacementLayerAdjustTime < 25) return;
+  lastPlacementLayerAdjustTime = now;
+  setPlacementLayer(currentPlacementLayer + delta, true);
+}
+(window as any).adjustPlacementLayer = adjustPlacementLayer;
 
 function setDecorationPassable(passable: boolean) {
   isDecorationPassable = passable;
@@ -1749,13 +2065,23 @@ function setDecorationRenderLayer(ontop: boolean) {
 function updateEditBannerText() {
   if (!editBannerAssetText) return;
 
+  if (activeEditorTool === "none") {
+    editBannerAssetText.innerHTML = `<em>No tool selected • Pick a tool or asset from the bottom bar</em>`;
+    return;
+  }
+
+  if (activeEditorTool === "cursor") {
+    editBannerAssetText.innerHTML = `<span class="banner-cursor-tag">🖱️ Cursor</span> Active: <strong>Inspect &amp; Delete</strong> • <em>Click any item on the map (wall, typewriter, jukebox, decoration, floor) to open its menu</em>`;
+    return;
+  }
+
   if (activeEditorTool === "jukebox") {
-    editBannerAssetText.innerHTML = `<span class="banner-private-tag" style="background: rgba(245, 158, 11, 0.2); color: #fbbf24; border-color: rgba(245, 158, 11, 0.4);">📻 YouTube Jukebox</span> Active: <strong>Freeform Placement</strong> • <em>Click anywhere to place without grid restriction</em>`;
+    editBannerAssetText.innerHTML = `<span class="banner-private-tag" style="background: rgba(245, 158, 11, 0.2); color: #fbbf24; border-color: rgba(245, 158, 11, 0.4);">📻 YouTube Jukebox</span> Active: <strong>Freeform Placement</strong> • <span class="banner-layer-tag">Layer ${currentPlacementLayer} (↑/↓)</span> • <em>Click anywhere to place • Use ↑/↓ arrow keys to change layer</em>`;
     return;
   }
 
   if (activeEditorTool === "typewriter") {
-    editBannerAssetText.innerHTML = `<span class="banner-private-tag" style="background: rgba(139, 92, 246, 0.2); color: #c084fc; border-color: rgba(139, 92, 246, 0.4);">⌨️ Typewriter</span> Active: <strong>Type Racing Game (Freeform)</strong> • <em>Click anywhere to place without grid restriction</em>`;
+    editBannerAssetText.innerHTML = `<span class="banner-private-tag" style="background: rgba(139, 92, 246, 0.2); color: #c084fc; border-color: rgba(139, 92, 246, 0.4);">⌨️ Typewriter</span> Active: <strong>Type Racing Game (Freeform)</strong> • <span class="banner-layer-tag">Layer ${currentPlacementLayer} (↑/↓)</span> • <em>Click anywhere to place • Use ↑/↓ arrow keys to change layer</em>`;
     return;
   }
 
@@ -1791,7 +2117,7 @@ function updateEditBannerText() {
   }
   if (activeEditorTool === "freeform_decoration") {
     const colorMarkup = currentSelectedTileColor
-      ? `<span class="banner-color-indicator" style="background:${currentSelectedTileColor};"></span><strong>${currentSelectedTileColor.toUpperCase()}</strong>`
+      ? `<span class="banner-color-indicator" style="background:${currentSelectedTileColor};"></span><strong>${formatColorBadgeLabel(currentSelectedTileColor)}</strong>`
       : `<em>(No Tint)</em>`;
     const passageMarkup = isDecorationPassable
       ? `<span class="banner-passable-tag">🟢 Passable</span>`
@@ -1799,12 +2125,13 @@ function updateEditBannerText() {
     const layerMarkup = isDecorationOntop
       ? `<span class="banner-layer-tag">🔼 On Top</span>`
       : `<span class="banner-layer-tag">🔽 Behind</span>`;
-    editBannerAssetText.innerHTML = `<span class="banner-deco-tag" style="background:linear-gradient(135deg,#8b5cf6,#ec4899);">🪑 Freeform</span> Active: <strong>${currentSelectedAssetName}</strong> • ${passageMarkup} • ${layerMarkup} • Color: ${colorMarkup} • <em>Click anywhere to place • Click item to remove</em>`;
+    const levelMarkup = `<span class="banner-layer-tag">Layer ${currentPlacementLayer} (↑/↓)</span>`;
+    editBannerAssetText.innerHTML = `<span class="banner-deco-tag" style="background:linear-gradient(135deg,#8b5cf6,#ec4899);">🪑 Freeform</span> Active: <strong>${currentSelectedAssetName}</strong> • ${passageMarkup} • ${layerMarkup} • ${levelMarkup} • Color: ${colorMarkup} • <em>Click to place • ↑/↓ arrows for layer</em>`;
     return;
   }
   if (activeEditorTool === "decoration") {
     const colorMarkup = currentSelectedTileColor
-      ? `<span class="banner-color-indicator" style="background:${currentSelectedTileColor};"></span><strong>${currentSelectedTileColor.toUpperCase()}</strong>`
+      ? `<span class="banner-color-indicator" style="background:${currentSelectedTileColor};"></span><strong>${formatColorBadgeLabel(currentSelectedTileColor)}</strong>`
       : `<em>(No Tint)</em>`;
     const passageMarkup = isDecorationPassable
       ? `<span class="banner-passable-tag">🟢 Passable</span>`
@@ -1812,24 +2139,53 @@ function updateEditBannerText() {
     const layerMarkup = isDecorationOntop
       ? `<span class="banner-layer-tag">🔼 On Top</span>`
       : `<span class="banner-layer-tag">🔽 Behind</span>`;
-    editBannerAssetText.innerHTML = `<span class="banner-deco-tag">🪴 Decoration</span> Active: <strong>${currentSelectedAssetName}</strong> • ${passageMarkup} • ${layerMarkup} • Color: ${colorMarkup} • <em>Click to place • Click item to remove</em>`;
+    const levelMarkup = `<span class="banner-layer-tag">Layer ${currentPlacementLayer} (↑/↓)</span>`;
+    editBannerAssetText.innerHTML = `<span class="banner-deco-tag">🪴 Decoration</span> Active: <strong>${currentSelectedAssetName}</strong> • ${passageMarkup} • ${layerMarkup} • ${levelMarkup} • Color: ${colorMarkup} • <em>Click to place • ↑/↓ arrows for layer</em>`;
     return;
   }
 
   const isWall = isWallAsset(currentSelectedAssetId);
-  const wallTag = isWall
+  const isOverlayWall = isOverlayWallAsset(currentSelectedAssetId);
+  const isOverlayFloor = isOverlayFloorAsset(currentSelectedAssetId);
+  const wallTag = isOverlayWall
+    ? `<span class="banner-wall-tag" style="background:rgba(59,130,246,0.3);border-color:rgba(59,130,246,0.6);">🧱 Overlay Wall + Obstacle</span> `
+    : isOverlayFloor
+    ? `<span class="banner-wall-tag" style="background:rgba(59,130,246,0.3);border-color:rgba(59,130,246,0.6);">🟦 Overlay Floor</span> `
+    : isWall
     ? `<span class="banner-wall-tag">🧱 Wall + Obstacle</span> `
     : "";
+  const overlayLevelTag =
+    isOverlayWall || isOverlayFloor
+      ? ` • <span class="banner-layer-tag">Layer ${currentPlacementLayer} (↑/↓)</span>`
+      : "";
+  const hintText = isOverlayWall || isOverlayFloor
+    ? ` • <em>Renders on top of floor • ↑/↓ arrows for layer</em>`
+    : "";
   const colorMarkup = currentSelectedTileColor
-    ? `<span class="banner-color-indicator" style="background:${currentSelectedTileColor};"></span><strong>${currentSelectedTileColor.toUpperCase()}</strong>`
+    ? `<span class="banner-color-indicator" style="background:${currentSelectedTileColor};"></span><strong>${formatColorBadgeLabel(currentSelectedTileColor)}</strong>`
     : `<em>(No Tint)</em>`;
-  editBannerAssetText.innerHTML = `${wallTag}Active: <strong>${currentSelectedAssetName}</strong> • Color: ${colorMarkup}`;
+  editBannerAssetText.innerHTML = `${wallTag}Active: <strong>${currentSelectedAssetName}</strong>${overlayLevelTag} • Color: ${colorMarkup}${hintText}`;
 }
 
 function showPlacingToast(assetName: string) {
   if (!editorPlacingToast) return;
   if (placingToastName) {
     placingToastName.textContent = assetName;
+  }
+  if (placingToastLayer) {
+    if (isCurrentToolLayerable()) {
+      placingToastLayer.textContent = `Layer ${currentPlacementLayer} (↑/↓)`;
+      placingToastLayer.classList.remove("hidden");
+    } else {
+      placingToastLayer.classList.add("hidden");
+    }
+  }
+  if (placingToastHint) {
+    if (isCurrentToolLayerable()) {
+      placingToastHint.innerHTML = `Press <kbd class="placing-kbd">↑</kbd> <kbd class="placing-kbd">↓</kbd> to change layer • <kbd class="placing-kbd">Esc</kbd> when done`;
+    } else {
+      placingToastHint.innerHTML = `Drag map to put tiles • Press <kbd class="placing-kbd">Esc</kbd> when done`;
+    }
   }
   if (placingToastFadeTimeout) {
     clearTimeout(placingToastFadeTimeout);
@@ -1843,7 +2199,7 @@ function showPlacingToast(assetName: string) {
     if (isEditorUIHidden && editorPlacingToast) {
       editorPlacingToast.classList.add("faded");
     }
-  }, 3000);
+  }, 3500);
 }
 
 function hidePlacingToast() {
@@ -1869,6 +2225,7 @@ function showEditorUI() {
   isEditorUIHidden = false;
   document.body.classList.remove("editor-placing-mode");
   hidePlacingToast();
+  closeEditorItemContextMenu();
 
   if (gameInstance) {
     const scene = gameInstance.scene.getScene("GameScene") as GameScene;
@@ -1885,11 +2242,29 @@ function enterEditMode() {
   }
   isEditModeActive = true;
   isEditorUIHidden = false;
+  activeEditorTool = "none";
+  currentSelectedAssetId = "";
+  currentSelectedAssetName = "No Asset Selected";
+  document.querySelectorAll(".editor-asset-card").forEach((card) => {
+    card.classList.remove("selected");
+  });
+
   document.body.classList.add("edit-mode-active");
   document.body.classList.remove("editor-placing-mode");
   hidePlacingToast();
+  closeEditorItemContextMenu();
+  closeAudioSettingsDropdown();
+  if (document.activeElement === chatInputField) {
+    chatInputField?.blur();
+    setGameControlsActive(true);
+  }
+  const toprightBar = document.getElementById("topright-bar");
+  if (toprightBar) toprightBar.classList.add("hidden");
+  if (chatSidebar) chatSidebar.classList.add("hidden");
 
   if (mapEditorSidebar) mapEditorSidebar.classList.remove("hidden");
+  const colorSidebarEl = document.getElementById("map-editor-color-sidebar");
+  if (colorSidebarEl) colorSidebarEl.classList.remove("hidden");
   if (mapEditBanner) mapEditBanner.classList.remove("hidden");
   if (btnEditMap) {
     btnEditMap.classList.add("active");
@@ -1910,10 +2285,12 @@ function enterEditMode() {
       scene.setSelectedColor(currentSelectedTileColor);
       scene.setDecorationPassable(isDecorationPassable);
       scene.setDecorationOntop(isDecorationOntop);
+      scene.setPlacementLayer(currentPlacementLayer);
     }
   }
 
   updateBrushPreview();
+  updatePlacementLayerUI();
   updateEditBannerText();
 }
 
@@ -1924,8 +2301,14 @@ function exitEditMode() {
   document.body.classList.remove("edit-mode-active");
   document.body.classList.remove("editor-placing-mode");
   hidePlacingToast();
+  const toprightBar = document.getElementById("topright-bar");
+  if (toprightBar) toprightBar.classList.remove("hidden");
+  if (chatSidebar) chatSidebar.classList.remove("hidden");
 
   if (mapEditorSidebar) mapEditorSidebar.classList.add("hidden");
+  const colorSidebarEl = document.getElementById("map-editor-color-sidebar");
+  if (colorSidebarEl) colorSidebarEl.classList.add("hidden");
+  closeEditorItemContextMenu();
   if (mapEditBanner) mapEditBanner.classList.add("hidden");
   if (btnEditMap) {
     btnEditMap.classList.remove("active");
@@ -1974,6 +2357,7 @@ function selectEditorAsset(assetId: string, assetName: string) {
     }
   }
 
+  const isOverlay = isOverlayWallAsset(assetId) || isOverlayFloorAsset(assetId);
   hideEditorUIForPlacing(assetName);
 }
 
@@ -2002,6 +2386,7 @@ function selectDecorationAsset(assetId: string, assetName: string) {
       scene.setSelectedAsset(assetId);
       scene.setDecorationPassable(isDecorationPassable);
       scene.setDecorationOntop(isDecorationOntop);
+      scene.setPlacementLayer(currentPlacementLayer);
     }
   }
 
@@ -2101,10 +2486,11 @@ function selectJukeboxTool() {
     const scene = gameInstance.scene.getScene("GameScene") as GameScene;
     if (scene) {
       scene.setActiveEditorTool("jukebox");
+      scene.setPlacementLayer(currentPlacementLayer);
     }
   }
 
-  hideEditorUIForPlacing("YouTube Jukebox (Click anywhere to place freely)");
+  hideEditorUIForPlacing("YouTube Jukebox");
 }
 
 function selectTypewriterTool() {
@@ -2125,10 +2511,11 @@ function selectTypewriterTool() {
     const scene = gameInstance.scene.getScene("GameScene") as GameScene;
     if (scene) {
       scene.setActiveEditorTool("typewriter");
+      scene.setPlacementLayer(currentPlacementLayer);
     }
   }
 
-  hideEditorUIForPlacing("Typewriter (Click anywhere to place freely)");
+  hideEditorUIForPlacing("Typewriter");
 }
 
 function selectSpawnPointTool() {
@@ -2190,12 +2577,123 @@ function selectColorDropperTool() {
   hideEditorUIForPlacing("Color Dropper (Click any tile on map to pick color)");
 }
 
-function setupSceneEditorToolEvents(scene: GameScene) {
-  scene.onColorPicked = (pickedColor: string | null) => {
-    selectTileColor(pickedColor);
-    const hexDisplay = pickedColor ? pickedColor.toUpperCase() : "Original Texture (No Tint)";
+function selectCursorTool() {
+  activeEditorTool = "cursor";
+  closeEditorItemContextMenu();
 
-    // Resume previous tool (or flooring/decoration) so user can immediately paint with the new color
+  const cards = document.querySelectorAll(".editor-asset-card");
+  cards.forEach((card) => {
+    if ((card as HTMLElement).dataset.toolType === "cursor") {
+      card.classList.add("selected");
+    } else {
+      card.classList.remove("selected");
+    }
+  });
+
+  updateEditBannerText();
+
+  if (gameInstance) {
+    const scene = gameInstance.scene.getScene("GameScene") as GameScene;
+    if (scene) {
+      scene.setActiveEditorTool("cursor");
+    }
+  }
+
+  hideEditorUIForPlacing("Cursor (Click any item on map for menu)");
+}
+
+let activeEditorContextMenuItem: InspectableMapItem | null = null;
+
+function showEditorItemContextMenu(
+  item: InspectableMapItem,
+  screenX: number,
+  screenY: number
+) {
+  activeEditorContextMenuItem = item;
+  const menuEl = document.getElementById("editor-item-context-menu");
+  const badgeEl = document.getElementById("editor-item-menu-badge");
+  const nameEl = document.getElementById("editor-item-menu-name");
+  if (!menuEl) return;
+
+  if (badgeEl) {
+    badgeEl.textContent = item.categoryLabel || "Item";
+  }
+  if (nameEl) {
+    nameEl.textContent = item.label || "Map Item";
+  }
+
+  positionEditorItemContextMenu(screenX, screenY);
+  menuEl.classList.remove("hidden");
+}
+
+function positionEditorItemContextMenu(screenX: number, screenY: number) {
+  const menuEl = document.getElementById("editor-item-context-menu");
+  if (!menuEl) return;
+
+  const menuWidth = 190;
+  const menuHeight = 96;
+  const padding = 12;
+
+  const clampedX = Math.max(
+    menuWidth / 2 + padding,
+    Math.min(window.innerWidth - menuWidth / 2 - padding, screenX)
+  );
+  let clampedY = screenY - 8;
+  let isFlipped = false;
+
+  if (clampedY < menuHeight + 20) {
+    clampedY = screenY + 56;
+    isFlipped = true;
+  }
+
+  menuEl.style.left = `${clampedX}px`;
+  menuEl.style.top = `${clampedY}px`;
+  if (isFlipped) {
+    menuEl.classList.add("flipped");
+  } else {
+    menuEl.classList.remove("flipped");
+  }
+}
+
+function closeEditorItemContextMenu() {
+  activeEditorContextMenuItem = null;
+  const menuEl = document.getElementById("editor-item-context-menu");
+  if (menuEl) {
+    menuEl.classList.add("hidden");
+  }
+  if (gameInstance) {
+    const scene = gameInstance.scene.getScene("GameScene") as GameScene;
+    if (scene && typeof scene.closeEditorItemMenu === "function") {
+      scene.closeEditorItemMenu();
+    }
+  }
+}
+
+function setupSceneEditorToolEvents(scene: GameScene) {
+  scene.onPlacementLayerChange = (layer: number) => {
+    setPlacementLayer(layer, false);
+  };
+
+  scene.onEditorItemContextMenu = ({ item, screenX, screenY }) => {
+    showEditorItemContextMenu(item, screenX, screenY);
+  };
+
+  scene.onEditorItemMenuPositionUpdate = ({ screenX, screenY, visible }) => {
+    const menuEl = document.getElementById("editor-item-context-menu");
+    if (!menuEl) return;
+    if (!visible) {
+      activeEditorContextMenuItem = null;
+      menuEl.classList.add("hidden");
+      return;
+    }
+    positionEditorItemContextMenu(screenX, screenY);
+  };
+
+  scene.onColorPicked = (pickedColor: string | null) => {
+    selectTileColor(pickedColor, false);
+    const hexDisplay = formatColorBadgeLabel(pickedColor);
+
+    // Resume previous tool (or show UI if none was selected)
     const returnTool = previousToolBeforeDropper.tool;
     if (returnTool === "decoration" || returnTool === "freeform_decoration") {
       selectDecorationAsset(
@@ -2203,12 +2701,17 @@ function setupSceneEditorToolEvents(scene: GameScene) {
         previousToolBeforeDropper.assetName,
       );
       showPlacingToast(`Color picked: ${hexDisplay}! Resumed ${previousToolBeforeDropper.assetName}`);
-    } else {
+    } else if (returnTool === "flooring" && previousToolBeforeDropper.assetId) {
       selectEditorAsset(
-        previousToolBeforeDropper.assetId || "birch_floor_150",
-        previousToolBeforeDropper.assetName || "Birch Floor",
+        previousToolBeforeDropper.assetId,
+        previousToolBeforeDropper.assetName,
       );
-      showPlacingToast(`Color picked: ${hexDisplay}! Resumed ${previousToolBeforeDropper.assetName || "Flooring"}`);
+      showPlacingToast(`Color picked: ${hexDisplay}! Resumed ${previousToolBeforeDropper.assetName}`);
+    } else {
+      activeEditorTool = "none";
+      if (scene) scene.setActiveEditorTool("none");
+      showEditorUI();
+      updateEditBannerText();
     }
   };
 }
@@ -2890,9 +3393,26 @@ function onSpaceChanged(newSpaceName: string) {
   }
 }
 
+function handleIncomingChatHistory(history: ChatMessage[]) {
+  if (!Array.isArray(history)) return;
+  chatMessagesMap.length = 0;
+  for (const msg of history) {
+    if (msg && msg.roomType === "map") {
+      chatMessagesMap.push(msg);
+    }
+  }
+  if (activeChatRoom === "map") {
+    renderCurrentChatMessages();
+    scrollChatToBottom();
+  }
+}
+
 function setupMultiplayerChatListeners(mgr: MultiplayerManager) {
   mgr.onChatMessage((msg: ChatMessage) => {
     handleIncomingChatMessage(msg);
+  });
+  mgr.onChatHistory((history: ChatMessage[]) => {
+    handleIncomingChatHistory(history);
   });
 }
 
@@ -2908,7 +3428,6 @@ function isAnyModalOpen(): boolean {
   if (adminSpaceModal && !adminSpaceModal.classList.contains("hidden")) return true;
   if (privateZoneNameModal && !privateZoneNameModal.classList.contains("hidden")) return true;
   if (playerContextMenu && !playerContextMenu.classList.contains("hidden")) return true;
-  if (isEditModeActive) return true;
   return false;
 }
 
@@ -4697,7 +5216,9 @@ if (editorBrushCard) {
   editorBrushCard.style.cursor = "pointer";
   editorBrushCard.title = "Click to start putting tiles (Hides UI)";
   editorBrushCard.addEventListener("click", () => {
-    hideEditorUIForPlacing(currentSelectedAssetName);
+    if (activeEditorTool !== "none") {
+      hideEditorUIForPlacing(currentSelectedAssetName);
+    }
   });
 }
 
@@ -4724,7 +5245,9 @@ const editorAssetCards =
 editorAssetCards.forEach((card) => {
   card.addEventListener("click", () => {
     const toolType = card.dataset.toolType;
-    if (toolType === "private_zone" || toolType === "clear_private_zone") {
+    if (toolType === "cursor") {
+      selectCursorTool();
+    } else if (toolType === "private_zone" || toolType === "clear_private_zone") {
       selectPrivateTool(toolType);
     } else if (toolType === "obstacle" || toolType === "clear_obstacle") {
       selectObstacleTool(toolType);
@@ -4739,8 +5262,8 @@ editorAssetCards.forEach((card) => {
     } else if (toolType === "color_dropper") {
       selectColorDropperTool();
     } else {
-      const id = card.dataset.assetId || "birch_floor_150";
-      const name = card.dataset.assetName || "Birch Floor";
+      const id = card.dataset.assetId || "wood_5";
+      const name = card.dataset.assetName || "Wood 5";
       const tileType = card.dataset.tileType;
       if (tileType === "decoration") {
         selectDecorationAsset(id, name);
@@ -4751,9 +5274,33 @@ editorAssetCards.forEach((card) => {
   });
 });
 
+const btnCloseEditorItemMenu = document.getElementById("btn-close-editor-item-menu");
+if (btnCloseEditorItemMenu) {
+  btnCloseEditorItemMenu.addEventListener("click", (e) => {
+    e.stopPropagation();
+    closeEditorItemContextMenu();
+  });
+}
+
+const btnEditorItemDelete = document.getElementById("btn-editor-item-delete");
+if (btnEditorItemDelete) {
+  btnEditorItemDelete.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (!activeEditorContextMenuItem) return;
+    if (gameInstance) {
+      const scene = gameInstance.scene.getScene("GameScene") as GameScene;
+      if (scene && typeof scene.deleteInspectableItem === "function") {
+        scene.deleteInspectableItem(activeEditorContextMenuItem);
+      }
+    }
+    closeEditorItemContextMenu();
+  });
+}
+
 const btnDropperShortcut = document.getElementById("btn-dropper-shortcut");
 if (btnDropperShortcut) {
-  btnDropperShortcut.addEventListener("click", () => {
+  btnDropperShortcut.addEventListener("click", (e) => {
+    e.stopPropagation();
     selectColorDropperTool();
   });
 }
@@ -4770,6 +5317,45 @@ window.addEventListener(
         e.stopImmediatePropagation();
       }
     }
+  },
+  true
+);
+
+// Global capture listener to ensure Up/Down arrow keys adjust layer in Edit Mode
+window.addEventListener(
+  "keydown",
+  (e: KeyboardEvent) => {
+    if (!isEditModeActive) return;
+
+    const isUp =
+      e.key === "ArrowUp" || e.key === "Up" || e.code === "ArrowUp" || e.keyCode === 38;
+    const isDown =
+      e.key === "ArrowDown" || e.key === "Down" || e.code === "ArrowDown" || e.keyCode === 40;
+
+    if (!isUp && !isDown) return;
+
+    const target = e.target as HTMLElement | null;
+    const activeEl = document.activeElement as HTMLElement | null;
+    const targetTag = target?.tagName;
+    const activeTag = activeEl?.tagName;
+
+    // Do not interfere if user is typing in an input element
+    if (
+      targetTag === "INPUT" ||
+      targetTag === "TEXTAREA" ||
+      targetTag === "SELECT" ||
+      activeTag === "INPUT" ||
+      activeTag === "TEXTAREA" ||
+      activeTag === "SELECT"
+    ) {
+      return;
+    }
+
+    if (isAnyModalOpen()) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+    adjustPlacementLayer(isUp ? 1 : -1);
   },
   true
 );
@@ -4803,6 +5389,11 @@ window.addEventListener("keydown", (e: KeyboardEvent) => {
       return;
     }
     if (isEditModeActive) {
+      const editorItemMenuEl = document.getElementById("editor-item-context-menu");
+      if (editorItemMenuEl && !editorItemMenuEl.classList.contains("hidden")) {
+        closeEditorItemContextMenu();
+        return;
+      }
       if (isEditorUIHidden) {
         showEditorUI();
         return;
@@ -4816,6 +5407,7 @@ window.addEventListener("keydown", (e: KeyboardEvent) => {
   if (
     e.key === "Enter" &&
     document.activeElement !== chatInputField &&
+    !isEditModeActive &&
     !isAnyModalOpen() &&
     !isAudioSettingsOpen
   ) {
@@ -4834,6 +5426,7 @@ window.addEventListener("keydown", (e: KeyboardEvent) => {
     document.activeElement?.tagName !== "INPUT" &&
     document.activeElement?.tagName !== "TEXTAREA" &&
     document.activeElement?.tagName !== "SELECT" &&
+    !isEditModeActive &&
     !isAnyModalOpen() &&
     !isAudioSettingsOpen
   ) {
@@ -4893,7 +5486,7 @@ function updateTopBarUI() {
 
   // Update Avatar Visual in Top Bar
   const isCustomActive = switchUploadPictures.checked && uploadedFrames.idle.length > 0 && uploadedFrames.idle[0].startsWith("data:image/");
-  const topbarImgUrl = isCustomActive ? uploadedFrames.idle[0] : "/assets/man_still.png";
+  const topbarImgUrl = isCustomActive ? uploadedFrames.idle[0] : "/assets/sprite1.png";
   topbarAvatarImg.src = topbarImgUrl;
   topbarAvatarImg.classList.remove("hidden");
   if (topbarAvatarDot) topbarAvatarDot.classList.add("hidden");
@@ -4965,6 +5558,11 @@ async function fetchSpaces() {
     const res = await fetch(getApiUrl("/api/spaces"), {
       headers: { Authorization: `Bearer ${authToken}` },
     });
+    if (res.status === 401) {
+      console.warn("Session expired or user no longer exists. Logging out.");
+      handleLogout();
+      return;
+    }
     const data: SpacesListResponse = await res.json();
     if (res.ok && data.success) {
       loadedSpaces = data.spaces || [];
@@ -5158,6 +5756,12 @@ async function switchSpace(
 
   currentSpaceId = newSpaceId;
   currentSpaceName = newSpaceName;
+  chatMessagesMap.length = 0;
+  chatMessagesZone.clear();
+  unreadMapCount = 0;
+  if (chatMapBadge) {
+    chatMapBadge.classList.add("hidden");
+  }
   updateTopBarUI();
   renderSpacesList();
   onSpaceChanged(newSpaceName);
@@ -5202,7 +5806,7 @@ async function switchSpace(
 
     if (!isFallback) {
       const fallbackId = previousSpaceId || "space_central_plaza";
-      const fallbackName = previousSpaceName || "Central Plaza";
+      const fallbackName = previousSpaceName || "CO3";
 
       const rawMsg = err?.message || "";
       const isPrivateOrForbidden =
@@ -5226,9 +5830,9 @@ async function switchSpace(
       // Lead back to previous space
       await switchSpace(fallbackId, fallbackName, true);
     } else {
-      // Fall back to default Central Plaza if even fallback space failed
+      // Fall back to default CO3 if even fallback space failed
       if (currentSpaceId !== "space_central_plaza") {
-        await switchSpace("space_central_plaza", "Central Plaza", true);
+        await switchSpace("space_central_plaza", "CO3", true);
       }
     }
   }
@@ -5589,7 +6193,7 @@ async function confirmDeleteAdminSpace(space: Space) {
     const data = await res.json();
     if (res.ok && data.success) {
       if (currentSpaceId === space.id) {
-        switchSpace("space_central_plaza", "Central Plaza");
+        switchSpace("space_central_plaza", "CO3");
       } else {
         await fetchSpaces();
       }
@@ -5669,6 +6273,7 @@ async function enterGameSession() {
       type: Phaser.AUTO,
       parent: "game-container",
       backgroundColor: "#ffffff",
+      roundPixels: true,
       scale: {
         mode: Phaser.Scale.RESIZE,
         autoCenter: Phaser.Scale.CENTER_BOTH,
@@ -5805,6 +6410,7 @@ async function init() {
   setupColorSwatches();
   setupMapEditorColorPicker();
   setupMapEditorDecorationControls();
+  setupMapEditorAccordions();
   setupUploadSlots();
   setupHudControlBadges();
 

@@ -53,6 +53,9 @@ import {
   updateSpaceTypewriters,
   findUserById,
   ensureUserPersonalSpace,
+  saveChatMessage,
+  getRecentChatMessages,
+  migrateTileString,
 } from "../db";
 import { verifyToken } from "../auth";
 import { extractPlaylistId, fetchPlaylistVideos } from "../services/youtubePlaylist";
@@ -93,6 +96,7 @@ export class GameRoom extends Room<GameState> {
   private voiceParticipants: Set<string> = new Set();
   private spaceOwnerId: number | null = null;
   private clientAuthMap: Map<string, any> = new Map();
+  private recentChatMessages: ChatMessage[] = [];
   private dbSyncCounter: number = 0;
 
   async onAuth(client: Client, options: PlayerJoinOptions, request?: any) {
@@ -114,6 +118,12 @@ export class GameRoom extends Room<GameState> {
     let user = null;
     if (options.token) {
       user = verifyToken(options.token);
+      if (user) {
+        const userExists = await findUserById(user.id);
+        if (!userExists) {
+          user = null;
+        }
+      }
     }
 
     // 1. Personal user space rule:
@@ -167,7 +177,7 @@ export class GameRoom extends Room<GameState> {
     return { user, space };
   }
 
-  onCreate(options: any) {
+  async onCreate(options: any) {
     this.spaceId = options.spaceId || "space_central_plaza";
     this.setMetadata({ spaceId: this.spaceId });
     this.setState(new GameState());
@@ -256,46 +266,37 @@ export class GameRoom extends Room<GameState> {
       },
     );
 
-    // Load initial tiles and space metadata
-    getSpaceTiles(this.spaceId)
-      .then((loadedTiles) => {
-        this.tiles = loadedTiles || {};
-      })
-      .catch((err) => console.warn("Failed loading space tiles:", err));
+    // Load initial tiles, space metadata, zones, jukeboxes, typewriters, and recent chat history
+    try {
+      const [loadedTiles, space, loadedZones, loadedJukeboxes, loadedTypewriters, loadedChats] =
+        await Promise.all([
+          getSpaceTiles(this.spaceId),
+          getSpaceById(this.spaceId),
+          getSpacePrivateZones(this.spaceId),
+          getSpaceJukeboxes(this.spaceId),
+          getSpaceTypewriters(this.spaceId),
+          getRecentChatMessages(this.spaceId, "map", 50),
+        ]);
 
-    getSpaceById(this.spaceId)
-      .then((space) => {
-        if (space) {
-          this.spaceOwnerId = space.owner_id;
+      this.tiles = loadedTiles || {};
+      if (space) {
+        this.spaceOwnerId = space.owner_id;
+      }
+      this.privateZones = loadedZones || [];
+      if (loadedJukeboxes && Array.isArray(loadedJukeboxes)) {
+        for (const jb of loadedJukeboxes) {
+          this.jukeboxes.set(jb.id, jb);
         }
-      })
-      .catch((err) => console.warn("Failed loading space metadata:", err));
-
-    getSpacePrivateZones(this.spaceId)
-      .then((loadedZones) => {
-        this.privateZones = loadedZones || [];
-      })
-      .catch((err) => console.warn("Failed loading space private zones:", err));
-
-    getSpaceJukeboxes(this.spaceId)
-      .then((loadedJukeboxes) => {
-        if (loadedJukeboxes && Array.isArray(loadedJukeboxes)) {
-          for (const jb of loadedJukeboxes) {
-            this.jukeboxes.set(jb.id, jb);
-          }
+      }
+      if (loadedTypewriters && Array.isArray(loadedTypewriters)) {
+        for (const tw of loadedTypewriters) {
+          this.typewriters.set(tw.id, tw);
         }
-      })
-      .catch((err) => console.warn("Failed loading space jukeboxes:", err));
-
-    getSpaceTypewriters(this.spaceId)
-      .then((loadedTypewriters) => {
-        if (loadedTypewriters && Array.isArray(loadedTypewriters)) {
-          for (const tw of loadedTypewriters) {
-            this.typewriters.set(tw.id, tw);
-          }
-        }
-      })
-      .catch((err) => console.warn("Failed loading space typewriters:", err));
+      }
+      this.recentChatMessages = loadedChats || [];
+    } catch (err) {
+      console.warn(`[GameRoom] Error preloading data for space ${this.spaceId}:`, err);
+    }
 
     QuoteService.loadQuotes().catch((err) =>
       console.warn("Failed preloading quotes:", err)
@@ -346,14 +347,18 @@ export class GameRoom extends Room<GameState> {
         }
 
         if (data && data.updates && typeof data.updates === "object") {
+          const migratedUpdates: Record<string, string> = {};
           for (const [k, v] of Object.entries(data.updates)) {
             if (v === "" || v === null || v === undefined) {
               delete this.tiles[k];
+              migratedUpdates[k] = "";
             } else {
-              this.tiles[k] = v;
+              const migratedVal = migrateTileString(String(v));
+              this.tiles[k] = migratedVal;
+              migratedUpdates[k] = migratedVal;
             }
           }
-          this.broadcast("TILES_UPDATED", data.updates);
+          this.broadcast("TILES_UPDATED", migratedUpdates);
           await updateSpaceTiles(this.spaceId, this.tiles);
         }
       },
@@ -393,7 +398,7 @@ export class GameRoom extends Room<GameState> {
     // 1. Place Jukebox (owner/superadmin)
     this.onMessage(
       "JUKEBOX_PLACE",
-      async (client: Client, data: { x: number; y: number; passable?: boolean; ontop?: boolean }) => {
+      async (client: Client, data: { x: number; y: number; passable?: boolean; ontop?: boolean; layer?: number }) => {
         const auth = this.clientAuthMap.get(client.sessionId);
         const user = auth?.user;
         const isSuperadmin = user?.role === "superadmin";
@@ -418,6 +423,7 @@ export class GameRoom extends Room<GameState> {
           playlist: [],
           passable: data.passable ?? false,
           ontop: data.ontop ?? false,
+          layer: typeof data.layer === "number" ? Math.round(data.layer) : 0,
         };
 
         this.jukeboxes.set(newJb.id, newJb);
@@ -751,7 +757,7 @@ export class GameRoom extends Room<GameState> {
       "TYPEWRITER_PLACE",
       async (
         client: Client,
-        data: { x: number; y: number; passable?: boolean; ontop?: boolean }
+        data: { x: number; y: number; passable?: boolean; ontop?: boolean; layer?: number }
       ) => {
         const auth = this.clientAuthMap.get(client.sessionId);
         const user = auth?.user;
@@ -778,6 +784,7 @@ export class GameRoom extends Room<GameState> {
           y: Math.round(data.y),
           passable: data.passable ?? false,
           ontop: data.ontop ?? false,
+          layer: typeof data.layer === "number" ? Math.round(data.layer) : 0,
         };
 
         this.typewriters.set(newTw.id, newTw);
@@ -1113,6 +1120,11 @@ export class GameRoom extends Room<GameState> {
 
           // Echo to sender so their tab updates
           client.send("CHAT_MESSAGE", chatMsg);
+
+          // Persist whisper chat message to DB
+          saveChatMessage(chatMsg).catch((err) =>
+            console.error("Error saving whisper message to DB:", err)
+          );
         } else if (data.roomType === "zone") {
           // Find target private zone (either by provided roomId or player's current location)
           let targetZone = this.privateZones.find((z) => z.id === data.roomId);
@@ -1173,6 +1185,11 @@ export class GameRoom extends Room<GameState> {
           if (!senderReceived) {
             client.send("CHAT_MESSAGE", chatMsg);
           }
+
+          // Persist zone chat message to DB
+          saveChatMessage(chatMsg).catch((err) =>
+            console.error("Error saving zone message to DB:", err)
+          );
         } else {
           // Default: Map / Area chat
           const chatMsg: ChatMessage = {
@@ -1188,7 +1205,17 @@ export class GameRoom extends Room<GameState> {
             timestamp,
           };
 
+          this.recentChatMessages.push(chatMsg);
+          if (this.recentChatMessages.length > 50) {
+            this.recentChatMessages.shift();
+          }
+
           this.broadcast("CHAT_MESSAGE", chatMsg);
+
+          // Persist map chat message to DB
+          saveChatMessage(chatMsg).catch((err) =>
+            console.error("Error saving map message to DB:", err)
+          );
         }
       },
     );
@@ -1390,6 +1417,11 @@ export class GameRoom extends Room<GameState> {
 
     // Send current space typewriters to joining client
     client.send("CURRENT_TYPEWRITERS", Array.from(this.typewriters.values()));
+
+    // Send recent chat messages from DB to joining client
+    if (this.recentChatMessages && this.recentChatMessages.length > 0) {
+      client.send("CHAT_HISTORY", this.recentChatMessages);
+    }
   }
 
   onLeave(client: Client, consented?: boolean) {

@@ -27,14 +27,34 @@ CREATE TABLE IF NOT EXISTS spaces (
     id VARCHAR(64) PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
     category VARCHAR(50) DEFAULT 'General',
-    owner_id INT REFERENCES users(id) ON DELETE CASCADE,
+    owner_id INT REFERENCES users(id) ON DELETE SET NULL,
     is_public BOOLEAN DEFAULT TRUE,
     is_superadmin_space BOOLEAN DEFAULT FALSE,
     whitelist JSONB DEFAULT '[]'::jsonb,
+    tiles JSONB DEFAULT '{}'::jsonb,
+    private_zones JSONB DEFAULT '[]'::jsonb,
+    jukeboxes JSONB DEFAULT '[]'::jsonb,
+    typewriters JSONB DEFAULT '[]'::jsonb,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_spaces_superadmin ON spaces (is_superadmin_space, category);
 
+CREATE TABLE IF NOT EXISTS chat_messages (
+    id VARCHAR(64) PRIMARY KEY,
+    sender_id VARCHAR(64) NOT NULL,
+    sender_name VARCHAR(50) NOT NULL,
+    sender_color VARCHAR(30) DEFAULT '#3b82f6',
+    is_superadmin BOOLEAN DEFAULT FALSE,
+    room_type VARCHAR(20) NOT NULL,
+    room_id VARCHAR(64) NOT NULL,
+    room_name VARCHAR(100),
+    target_id VARCHAR(64),
+    target_name VARCHAR(50),
+    text TEXT NOT NULL,
+    timestamp BIGINT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
 
+CREATE INDEX IF NOT EXISTS idx_chat_messages_room ON chat_messages (room_type, room_id, timestamp ASC);

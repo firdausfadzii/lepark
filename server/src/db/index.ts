@@ -1,7 +1,13 @@
-import { Pool } from "pg";
+import { Pool, PoolClient } from "pg";
 import dotenv from "dotenv";
 import { hashPassword } from "../auth";
-import { PrivateZone, JukeboxState, TypewriterState } from "shared";
+import {
+  PrivateZone,
+  JukeboxState,
+  TypewriterState,
+  ChatMessage,
+  ChatRoomType,
+} from "shared";
 
 dotenv.config();
 
@@ -11,11 +17,22 @@ const pool = new Pool({
   user: process.env.DB_USER || "gameuser",
   password: process.env.DB_PASSWORD || "gamepassword",
   database: process.env.DB_NAME || "gamedb",
-  connectionTimeoutMillis: 3000,
-  max: 10,
+  connectionTimeoutMillis: 5000,
+  idleTimeoutMillis: 30000,
+  max: 15,
+  keepAlive: true,
 });
 
 let isDbConnected = false;
+let isReconnecting = false;
+let reconnectTimer: NodeJS.Timeout | null = null;
+
+// Catch unexpected background pool errors to keep process alive and trigger auto-reconnect
+pool.on("error", (err) => {
+  console.warn(`⚠️ PostgreSQL pool background error: ${err.message}`);
+  isDbConnected = false;
+  scheduleReconnect();
+});
 
 export interface UserRecord {
   id: number;
@@ -44,15 +61,16 @@ export interface SpaceRecord {
   updated_at: Date;
 }
 
-// In-memory fallback
+// In-memory fallback (used only if database is offline or temporarily reconnecting)
 const inMemoryUsers: Map<string, UserRecord> = new Map();
 const inMemorySpaces: Map<string, SpaceRecord> = new Map();
+const inMemoryChats: ChatMessage[] = [];
 let inMemoryIdCounter = 1;
 
 /**
  * Seed initial superadmin accounts and default spaces
  */
-async function seedDefaultData(isPostgres: boolean, client?: any) {
+async function seedDefaultData(isPostgres: boolean, client?: PoolClient) {
   const defaultSuperadmins = [
     { username: "admin", password: "adminpassword123", displayName: "Server Admin" },
     { username: "superadmin", password: "adminpassword123", displayName: "Super Administrator" },
@@ -72,7 +90,6 @@ async function seedDefaultData(isPostgres: boolean, client?: any) {
           [adminData.username, adminData.displayName, passwordHash]
         );
       } else {
-        // Ensure role is superadmin
         await client.query("UPDATE users SET role = 'superadmin' WHERE id = $1", [
           existing.rows[0].id,
         ]);
@@ -108,70 +125,33 @@ async function seedDefaultData(isPostgres: boolean, client?: any) {
     if (adminUser) adminId = adminUser.id;
   }
 
-  // Default superadmin spaces with rich categories
+  // Default spaces for fresh database setup
   const defaultSpaces = [
     {
       id: "space_central_plaza",
-      name: "Central Plaza",
-      category: "Town Square",
-      is_public: true,
-      is_superadmin_space: true,
-      whitelist: [],
-    },
-    {
-      id: "space_town_hall",
-      name: "Town Hall",
-      category: "Town Square",
-      is_public: true,
-      is_superadmin_space: true,
-      whitelist: [],
-    },
-    {
-      id: "space_neon_cafe",
-      name: "Neon Café",
+      name: "CO3",
       category: "Hangout Lounges",
-      is_public: true,
-      is_superadmin_space: true,
-      whitelist: [],
-    },
-    {
-      id: "space_vip_lounge",
-      name: "VIP Sky Lounge",
-      category: "Hangout Lounges",
-      is_public: false,
-      is_superadmin_space: true,
-      whitelist: ["admin", "superadmin"],
-    },
-    {
-      id: "space_retro_arcade",
-      name: "Retro Arcade",
-      category: "Gaming Zones",
-      is_public: true,
-      is_superadmin_space: true,
-      whitelist: [],
-    },
-    {
-      id: "space_botanical_garden",
-      name: "Botanical Garden",
-      category: "Chill Parks",
       is_public: true,
       is_superadmin_space: true,
       whitelist: [],
     },
   ];
 
-  for (const s of defaultSpaces) {
-    if (isPostgres && client) {
-      const existing = await client.query("SELECT id FROM spaces WHERE id = $1", [s.id]);
-      if (existing.rows.length === 0) {
+  if (isPostgres && client) {
+    const countRes = await client.query("SELECT COUNT(*) FROM spaces");
+    const totalSpaces = parseInt(countRes.rows[0].count, 10);
+    if (totalSpaces === 0) {
+      for (const s of defaultSpaces) {
         await client.query(
           `INSERT INTO spaces (id, name, category, owner_id, is_public, is_superadmin_space, whitelist)
            VALUES ($1, $2, $3, $4, $5, $6, $7)`,
           [s.id, s.name, s.category, adminId, s.is_public, s.is_superadmin_space, JSON.stringify(s.whitelist)]
         );
       }
-    } else {
-      if (!inMemorySpaces.has(s.id)) {
+    }
+  } else {
+    if (inMemorySpaces.size === 0) {
+      for (const s of defaultSpaces) {
         inMemorySpaces.set(s.id, {
           id: s.id,
           name: s.name,
@@ -189,89 +169,272 @@ async function seedDefaultData(isPostgres: boolean, client?: any) {
   }
 }
 
-export async function initDb(): Promise<boolean> {
-  // Always seed in-memory defaults first so fallback is immediately ready
-  await seedDefaultData(false);
+/**
+ * Initialize all database tables, columns, and indexes in PostgreSQL
+ */
+async function setupDatabaseSchema(client: PoolClient) {
+  // 1. Users table
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS users (
+      id SERIAL PRIMARY KEY,
+      username VARCHAR(50) UNIQUE NOT NULL,
+      display_name VARCHAR(50),
+      password_hash VARCHAR(255) NOT NULL,
+      role VARCHAR(20) DEFAULT 'user' NOT NULL,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username_lower ON users (LOWER(username));
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(20) DEFAULT 'user';
+  `);
 
+  // 2. Players table
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS players (
+      id VARCHAR(64) PRIMARY KEY,
+      name VARCHAR(50) NOT NULL,
+      color VARCHAR(30) NOT NULL,
+      x DOUBLE PRECISION DEFAULT 400,
+      y DOUBLE PRECISION DEFAULT 300,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      last_seen TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_players_last_seen ON players (last_seen DESC);
+  `);
+
+  // 3. Spaces table with custom map tiles, zones, jukeboxes, typewriters
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS spaces (
+      id VARCHAR(64) PRIMARY KEY,
+      name VARCHAR(100) NOT NULL,
+      category VARCHAR(50) DEFAULT 'General',
+      owner_id INT REFERENCES users(id) ON DELETE SET NULL,
+      is_public BOOLEAN DEFAULT TRUE,
+      is_superadmin_space BOOLEAN DEFAULT FALSE,
+      whitelist JSONB DEFAULT '[]'::jsonb,
+      tiles JSONB DEFAULT '{}'::jsonb,
+      private_zones JSONB DEFAULT '[]'::jsonb,
+      jukeboxes JSONB DEFAULT '[]'::jsonb,
+      typewriters JSONB DEFAULT '[]'::jsonb,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+    ALTER TABLE spaces ADD COLUMN IF NOT EXISTS tiles JSONB DEFAULT '{}'::jsonb;
+    ALTER TABLE spaces ADD COLUMN IF NOT EXISTS private_zones JSONB DEFAULT '[]'::jsonb;
+    ALTER TABLE spaces ADD COLUMN IF NOT EXISTS jukeboxes JSONB DEFAULT '[]'::jsonb;
+    ALTER TABLE spaces ADD COLUMN IF NOT EXISTS typewriters JSONB DEFAULT '[]'::jsonb;
+    CREATE INDEX IF NOT EXISTS idx_spaces_superadmin ON spaces (is_superadmin_space, category);
+
+    -- Auto-migrate legacy tile assets in all spaces
+    UPDATE spaces
+    SET tiles = REPLACE(
+      REPLACE(
+        REPLACE(
+          REPLACE(
+            REPLACE(tiles::text, 'birch_floor_150', 'wood_5'),
+            'birch_floor_100', 'wood_5'
+          ),
+          'carpet_grey_150', 'carpet_4'
+        ),
+        'grass_150', 'grass_4'
+      ),
+      'grass_100', 'grass_4'
+    )::jsonb
+    WHERE tiles IS NOT NULL AND tiles != '{}'::jsonb;
+  `);
+
+  // 4. Chat messages table for full persistence across server restarts
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS chat_messages (
+      id VARCHAR(64) PRIMARY KEY,
+      sender_id VARCHAR(64) NOT NULL,
+      sender_name VARCHAR(50) NOT NULL,
+      sender_color VARCHAR(30) DEFAULT '#3b82f6',
+      is_superadmin BOOLEAN DEFAULT FALSE,
+      room_type VARCHAR(20) NOT NULL,
+      room_id VARCHAR(64) NOT NULL,
+      room_name VARCHAR(100),
+      target_id VARCHAR(64),
+      target_name VARCHAR(50),
+      text TEXT NOT NULL,
+      timestamp BIGINT NOT NULL,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_chat_messages_room ON chat_messages (room_type, room_id, timestamp ASC);
+  `);
+}
+
+/**
+ * If the server had to accept users/spaces/chats while in fallback mode,
+ * gracefully sync them to PostgreSQL upon reconnection.
+ */
+async function syncInMemoryToPostgres(client: PoolClient) {
+  // Sync users
+  for (const user of inMemoryUsers.values()) {
+    try {
+      const existing = await client.query(
+        "SELECT id FROM users WHERE LOWER(username) = LOWER($1)",
+        [user.username]
+      );
+      if (existing.rows.length === 0) {
+        await client.query(
+          `INSERT INTO users (username, display_name, password_hash, role)
+           VALUES ($1, $2, $3, $4)
+           ON CONFLICT (username) DO NOTHING`,
+          [user.username, user.display_name, user.password_hash, user.role]
+        );
+      }
+    } catch (err) {
+      console.warn(`[DB Sync] Error syncing user ${user.username}:`, err);
+    }
+  }
+
+  // Load canonical spaces from PostgreSQL into inMemorySpaces cache (PostgreSQL is source of truth)
+  try {
+    const res = await client.query("SELECT * FROM spaces");
+    inMemorySpaces.clear();
+    for (const row of res.rows) {
+      inMemorySpaces.set(row.id, {
+        id: row.id,
+        name: row.name,
+        category: row.category || "General",
+        owner_id: row.owner_id,
+        is_public: row.is_public,
+        is_superadmin_space: row.is_superadmin_space,
+        whitelist: parseWhitelist(row.whitelist),
+        tiles: typeof row.tiles === "string" ? JSON.parse(row.tiles) : (row.tiles || {}),
+        private_zones: parsePrivateZones(row.private_zones),
+        jukeboxes: parseJukeboxes(row.jukeboxes),
+        typewriters: parseTypewriters(row.typewriters),
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+      });
+    }
+  } catch (err) {
+    console.warn("[DB Sync] Error loading spaces from DB into cache:", err);
+  }
+
+  // Sync chat messages
+  for (const msg of inMemoryChats) {
+    try {
+      await client.query(
+        `INSERT INTO chat_messages (id, sender_id, sender_name, sender_color, is_superadmin, room_type, room_id, room_name, target_id, target_name, text, timestamp)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+         ON CONFLICT (id) DO NOTHING`,
+        [
+          msg.id,
+          msg.senderId,
+          msg.senderName,
+          msg.senderColor || "#3b82f6",
+          !!msg.isSuperadmin,
+          msg.roomType,
+          msg.roomId,
+          msg.roomName || null,
+          msg.targetId || null,
+          msg.targetName || null,
+          msg.text,
+          msg.timestamp || Date.now(),
+        ]
+      );
+    } catch (err) {
+      console.warn(`[DB Sync] Error syncing chat message ${msg.id}:`, err);
+    }
+  }
+}
+
+/**
+ * Attempts connection and setup against PostgreSQL
+ */
+async function tryConnectDb(): Promise<boolean> {
+  if (isReconnecting) return false;
+  isReconnecting = true;
   try {
     const client = await pool.connect();
     console.log(" Connected to PostgreSQL database in Docker (port 5433)!");
 
-    // Initialize users table with role column
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS users (
-        id SERIAL PRIMARY KEY,
-        username VARCHAR(50) UNIQUE NOT NULL,
-        display_name VARCHAR(50),
-        password_hash VARCHAR(255) NOT NULL,
-        role VARCHAR(20) DEFAULT 'user' NOT NULL,
-        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-      );
-      CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username_lower ON users (LOWER(username));
-    `);
-
-    // Ensure role column exists if table was created previously without it
-    await client.query(`
-      ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(20) DEFAULT 'user';
-    `);
-
-    // Initialize players table
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS players (
-        id VARCHAR(64) PRIMARY KEY,
-        name VARCHAR(50) NOT NULL,
-        color VARCHAR(30) NOT NULL,
-        x DOUBLE PRECISION DEFAULT 400,
-        y DOUBLE PRECISION DEFAULT 300,
-        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-        last_seen TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-      );
-    `);
-
-    // Initialize spaces table
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS spaces (
-        id VARCHAR(64) PRIMARY KEY,
-        name VARCHAR(100) NOT NULL,
-        category VARCHAR(50) DEFAULT 'General',
-        owner_id INT REFERENCES users(id) ON DELETE CASCADE,
-        is_public BOOLEAN DEFAULT TRUE,
-        is_superadmin_space BOOLEAN DEFAULT FALSE,
-        whitelist JSONB DEFAULT '[]'::jsonb,
-        tiles JSONB DEFAULT '{}'::jsonb,
-        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-      );
-      ALTER TABLE spaces ADD COLUMN IF NOT EXISTS tiles JSONB DEFAULT '{}'::jsonb;
-      ALTER TABLE spaces ADD COLUMN IF NOT EXISTS private_zones JSONB DEFAULT '[]'::jsonb;
-      ALTER TABLE spaces ADD COLUMN IF NOT EXISTS jukeboxes JSONB DEFAULT '[]'::jsonb;
-      ALTER TABLE spaces ADD COLUMN IF NOT EXISTS typewriters JSONB DEFAULT '[]'::jsonb;
-      CREATE INDEX IF NOT EXISTS idx_spaces_superadmin ON spaces (is_superadmin_space, category);
-    `);
-
-    // Seed default admin and spaces into Postgres
+    await setupDatabaseSchema(client);
     await seedDefaultData(true, client);
+    await syncInMemoryToPostgres(client);
 
     client.release();
     isDbConnected = true;
+    isReconnecting = false;
     return true;
   } catch (err: any) {
-    console.warn(
-      `⚠️ PostgreSQL connection failed: ${err.message}. (Server running with in-memory storage fallback).`
-    );
+    console.error("Failed to connect to PostgreSQL:", err.message);
     isDbConnected = false;
+    isReconnecting = false;
+    scheduleReconnect();
     return false;
   }
+}
+
+function scheduleReconnect() {
+  if (reconnectTimer) return;
+  reconnectTimer = setTimeout(async () => {
+    reconnectTimer = null;
+    await tryConnectDb();
+  }, 4000);
+}
+
+function handleDbQueryError(context: string, err: any) {
+  console.error(`${context}:`, err);
+  const isConnError =
+    err?.code === "ECONNREFUSED" ||
+    err?.code === "57P01" ||
+    err?.code === "57P02" ||
+    err?.code === "57P03" ||
+    err?.code === "08000" ||
+    err?.code === "08003" ||
+    err?.code === "08006" ||
+    err?.code === "08001" ||
+    err?.code === "08004" ||
+    (typeof err?.message === "string" && (
+      err.message.includes("Connection terminated") ||
+      err.message.includes("client has already been released") ||
+      err.message.includes("connection closed")
+    ));
+
+  if (isConnError) {
+    console.warn(`[DB] Database connection lost during "${context}". Scheduling reconnect.`);
+    isDbConnected = false;
+    scheduleReconnect();
+  }
+}
+
+/**
+ * Initializes database with automatic retry loop for Docker boot-up
+ */
+export async function initDb(): Promise<boolean> {
+  // Pre-seed in-memory defaults so fallback is instant if needed
+  await seedDefaultData(false);
+
+  // Attempt connection with up to 5 immediate retries (useful when docker container is starting)
+  const maxAttempts = 5;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const ok = await tryConnectDb();
+    if (ok) return true;
+    if (attempt < maxAttempts) {
+      console.log(`[DB] Waiting for PostgreSQL in Docker (attempt ${attempt}/${maxAttempts})...`);
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+    }
+  }
+
+  console.warn(
+    "⚠️ PostgreSQL connection could not be established immediately. Server running with in-memory fallback (background auto-reconnect is active)."
+  );
+  scheduleReconnect();
+  return false;
 }
 
 export function isDatabaseHealthy(): boolean {
   return isDbConnected;
 }
 
-/**
- * Find user by case-insensitive username.
- */
+// ==========================================
+// User Database Operations
+// ==========================================
+
 export async function findUserByUsername(username: string): Promise<UserRecord | null> {
   const cleanUsername = username.trim();
   if (isDbConnected) {
@@ -288,8 +451,7 @@ export async function findUserByUsername(username: string): Promise<UserRecord |
       }
       return null;
     } catch (err) {
-      console.error("Error finding user by username:", err);
-      return null;
+      handleDbQueryError("Error finding user by username", err);
     }
   }
 
@@ -303,9 +465,6 @@ export async function findUserByUsername(username: string): Promise<UserRecord |
   return null;
 }
 
-/**
- * Find user by ID.
- */
 export async function findUserById(id: number): Promise<UserRecord | null> {
   if (isDbConnected) {
     try {
@@ -321,8 +480,7 @@ export async function findUserById(id: number): Promise<UserRecord | null> {
       }
       return null;
     } catch (err) {
-      console.error("Error finding user by id:", err);
-      return null;
+      handleDbQueryError("Error finding user by id", err);
     }
   }
 
@@ -334,9 +492,6 @@ export async function findUserById(id: number): Promise<UserRecord | null> {
   return null;
 }
 
-/**
- * Create a new user record and automatically initialize their personal space.
- */
 export async function createUser(
   username: string,
   passwordHash: string,
@@ -349,18 +504,37 @@ export async function createUser(
   let createdUser: UserRecord;
 
   if (isDbConnected) {
-    const res = await pool.query(
-      `INSERT INTO users (username, display_name, password_hash, role)
-       VALUES ($1, $2, $3, $4)
-       RETURNING id, username, display_name, password_hash, role, created_at, updated_at`,
-      [cleanUsername, cleanDisplayName, passwordHash, role]
-    );
-    createdUser = {
-      ...res.rows[0],
-      role: res.rows[0].role === "superadmin" ? "superadmin" : "user",
-    };
+    try {
+      const res = await pool.query(
+        `INSERT INTO users (username, display_name, password_hash, role)
+         VALUES ($1, $2, $3, $4)
+         RETURNING id, username, display_name, password_hash, role, created_at, updated_at`,
+        [cleanUsername, cleanDisplayName, passwordHash, role]
+      );
+      createdUser = {
+        ...res.rows[0],
+        role: res.rows[0].role === "superadmin" ? "superadmin" : "user",
+      };
+      // Keep in-memory cache aligned
+      inMemoryUsers.set(cleanUsername.toLowerCase(), createdUser);
+    } catch (err: any) {
+      if (err?.code === "23505") {
+        throw new Error("Username is already taken.");
+      }
+      handleDbQueryError("Error creating user in DB, falling back to in-memory", err);
+      const record: UserRecord = {
+        id: inMemoryIdCounter++,
+        username: cleanUsername,
+        display_name: cleanDisplayName,
+        password_hash: passwordHash,
+        role,
+        created_at: new Date(),
+        updated_at: new Date(),
+      };
+      inMemoryUsers.set(cleanUsername.toLowerCase(), record);
+      createdUser = record;
+    }
   } else {
-    // Fallback in-memory
     const record: UserRecord = {
       id: inMemoryIdCounter++,
       username: cleanUsername,
@@ -380,9 +554,6 @@ export async function createUser(
   return createdUser;
 }
 
-/**
- * Update display name for a user.
- */
 export async function updateUserDisplayName(
   id: number,
   displayName: string | null
@@ -399,15 +570,16 @@ export async function updateUserDisplayName(
         [id, cleanDisplayName]
       );
       if (res.rows[0]) {
-        return {
+        const updated = {
           ...res.rows[0],
           role: res.rows[0].role === "superadmin" ? "superadmin" : "user",
         };
+        inMemoryUsers.set(updated.username.toLowerCase(), updated);
+        return updated;
       }
       return null;
     } catch (err) {
-      console.error("Error updating user display name:", err);
-      return null;
+      handleDbQueryError("Error updating user display name", err);
     }
   }
 
@@ -469,9 +641,6 @@ export function parseTypewriters(raw: any): TypewriterState[] {
   return [];
 }
 
-/**
- * Get all superadmin spaces (visible in listing), grouped or filterable by category.
- */
 export async function getSuperadminSpaces(): Promise<SpaceRecord[]> {
   if (isDbConnected) {
     try {
@@ -496,7 +665,7 @@ export async function getSuperadminSpaces(): Promise<SpaceRecord[]> {
         updated_at: row.updated_at,
       }));
     } catch (err) {
-      console.error("Error fetching superadmin spaces:", err);
+      handleDbQueryError("Error fetching superadmin spaces", err);
     }
   }
 
@@ -510,14 +679,11 @@ export async function getSuperadminSpaces(): Promise<SpaceRecord[]> {
   return results.sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name));
 }
 
-/**
- * Get single space by ID.
- */
 export async function getSpaceById(id: string): Promise<SpaceRecord | null> {
   if (isDbConnected) {
     try {
       const res = await pool.query(
-        `SELECT s.id, s.name, s.category, s.owner_id, s.is_public, s.is_superadmin_space, s.whitelist, s.private_zones, s.created_at, s.updated_at,
+        `SELECT s.id, s.name, s.category, s.owner_id, s.is_public, s.is_superadmin_space, s.whitelist, s.private_zones, s.jukeboxes, s.typewriters, s.created_at, s.updated_at,
                 u.username as owner_username
          FROM spaces s
          LEFT JOIN users u ON s.owner_id = u.id
@@ -544,8 +710,7 @@ export async function getSpaceById(id: string): Promise<SpaceRecord | null> {
       }
       return null;
     } catch (err) {
-      console.error("Error fetching space by id:", err);
-      return null;
+      handleDbQueryError("Error fetching space by id", err);
     }
   }
 
@@ -561,9 +726,6 @@ export async function getSpaceById(id: string): Promise<SpaceRecord | null> {
     : null;
 }
 
-/**
- * Get a user's single personal space.
- */
 export async function getUserPersonalSpace(userId: number): Promise<SpaceRecord | null> {
   if (isDbConnected) {
     try {
@@ -592,7 +754,7 @@ export async function getUserPersonalSpace(userId: number): Promise<SpaceRecord 
         };
       }
     } catch (err) {
-      console.error("Error getting user personal space:", err);
+      handleDbQueryError("Error getting user personal space", err);
     }
   }
 
@@ -604,10 +766,13 @@ export async function getUserPersonalSpace(userId: number): Promise<SpaceRecord 
   return null;
 }
 
-/**
- * Ensure each user has their 1 personal space created.
- */
-export async function ensureUserPersonalSpace(userId: number, username: string): Promise<SpaceRecord> {
+export async function ensureUserPersonalSpace(userId: number, username: string): Promise<SpaceRecord | null> {
+  // First, verify the user actually exists in the database
+  const user = await findUserById(userId);
+  if (!user) {
+    return null;
+  }
+
   const existing = await getUserPersonalSpace(userId);
   if (existing) {
     return existing;
@@ -615,7 +780,7 @@ export async function ensureUserPersonalSpace(userId: number, username: string):
 
   const spaceId = `user_space_${userId}`;
   const spaceName = `${username}'s Space`;
-  const isPublic = false; // default private for personal spaces
+  const isPublic = false;
   const whitelist: string[] = [];
 
   if (isDbConnected) {
@@ -623,11 +788,12 @@ export async function ensureUserPersonalSpace(userId: number, username: string):
       const res = await pool.query(
         `INSERT INTO spaces (id, name, category, owner_id, is_public, is_superadmin_space, whitelist)
          VALUES ($1, $2, 'Personal', $3, $4, false, $5)
+         ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, owner_id = EXCLUDED.owner_id
          RETURNING id, name, category, owner_id, is_public, is_superadmin_space, whitelist, created_at, updated_at`,
         [spaceId, spaceName, userId, isPublic, JSON.stringify(whitelist)]
       );
       const row = res.rows[0];
-      return {
+      const record: SpaceRecord = {
         id: row.id,
         name: row.name,
         category: "Personal",
@@ -639,30 +805,36 @@ export async function ensureUserPersonalSpace(userId: number, username: string):
         created_at: row.created_at,
         updated_at: row.updated_at,
       };
-    } catch (err) {
-      console.error("Error creating personal space in DB:", err);
+      inMemorySpaces.set(spaceId, record);
+      return record;
+    } catch (err: any) {
+      handleDbQueryError("Error creating personal space in DB", err);
+      if (err?.code === "23503") {
+        return null;
+      }
     }
   }
 
-  const record: SpaceRecord = {
-    id: spaceId,
-    name: spaceName,
-    category: "Personal",
-    owner_id: userId,
-    owner_username: username,
-    is_public: isPublic,
-    is_superadmin_space: false,
-    whitelist,
-    created_at: new Date(),
-    updated_at: new Date(),
-  };
-  inMemorySpaces.set(spaceId, record);
-  return record;
+  if (!isDbConnected) {
+    const record: SpaceRecord = {
+      id: spaceId,
+      name: spaceName,
+      category: "Personal",
+      owner_id: userId,
+      owner_username: username,
+      is_public: isPublic,
+      is_superadmin_space: false,
+      whitelist,
+      created_at: new Date(),
+      updated_at: new Date(),
+    };
+    inMemorySpaces.set(spaceId, record);
+    return record;
+  }
+
+  return null;
 }
 
-/**
- * Superadmin creates a new space (public or private with category).
- */
 export async function createSuperadminSpace(params: {
   name: string;
   category: string;
@@ -676,24 +848,30 @@ export async function createSuperadminSpace(params: {
   const whitelist = params.whitelist || [];
 
   if (isDbConnected) {
-    const res = await pool.query(
-      `INSERT INTO spaces (id, name, category, owner_id, is_public, is_superadmin_space, whitelist)
-       VALUES ($1, $2, $3, $4, $5, true, $6)
-       RETURNING id, name, category, owner_id, is_public, is_superadmin_space, whitelist, created_at, updated_at`,
-      [id, cleanName, cleanCategory, params.ownerId, params.isPublic, JSON.stringify(whitelist)]
-    );
-    const row = res.rows[0];
-    return {
-      id: row.id,
-      name: row.name,
-      category: row.category,
-      owner_id: row.owner_id,
-      is_public: row.is_public,
-      is_superadmin_space: true,
-      whitelist: parseWhitelist(row.whitelist),
-      created_at: row.created_at,
-      updated_at: row.updated_at,
-    };
+    try {
+      const res = await pool.query(
+        `INSERT INTO spaces (id, name, category, owner_id, is_public, is_superadmin_space, whitelist)
+         VALUES ($1, $2, $3, $4, $5, true, $6)
+         RETURNING id, name, category, owner_id, is_public, is_superadmin_space, whitelist, created_at, updated_at`,
+        [id, cleanName, cleanCategory, params.ownerId, params.isPublic, JSON.stringify(whitelist)]
+      );
+      const row = res.rows[0];
+      const record: SpaceRecord = {
+        id: row.id,
+        name: row.name,
+        category: row.category,
+        owner_id: row.owner_id,
+        is_public: row.is_public,
+        is_superadmin_space: true,
+        whitelist: parseWhitelist(row.whitelist),
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+      };
+      inMemorySpaces.set(id, record);
+      return record;
+    } catch (err) {
+      handleDbQueryError("Error creating superadmin space in DB", err);
+    }
   }
 
   const record: SpaceRecord = {
@@ -711,9 +889,6 @@ export async function createSuperadminSpace(params: {
   return record;
 }
 
-/**
- * Update space settings (name, category, is_public, whitelist).
- */
 export async function updateSpace(
   spaceId: string,
   updates: {
@@ -742,7 +917,7 @@ export async function updateSpace(
       );
       if (res.rows[0]) {
         const row = res.rows[0];
-        return {
+        const updatedRecord: SpaceRecord = {
           id: row.id,
           name: row.name,
           category: row.category,
@@ -753,9 +928,11 @@ export async function updateSpace(
           created_at: row.created_at,
           updated_at: row.updated_at,
         };
+        inMemorySpaces.set(spaceId, updatedRecord);
+        return updatedRecord;
       }
     } catch (err) {
-      console.error("Error updating space in DB:", err);
+      handleDbQueryError("Error updating space in DB", err);
     }
   }
 
@@ -771,28 +948,47 @@ export async function updateSpace(
   return null;
 }
 
-/**
- * Delete a space (superadmin spaces only).
- */
 export async function deleteSpace(spaceId: string): Promise<boolean> {
+  let deleted = false;
   if (isDbConnected) {
     try {
       const res = await pool.query(
         "DELETE FROM spaces WHERE id = $1 AND is_superadmin_space = true",
         [spaceId]
       );
-      return (res.rowCount ?? 0) > 0;
+      deleted = (res.rowCount ?? 0) > 0;
     } catch (err) {
       console.error("Error deleting space from DB:", err);
-      return false;
     }
   }
 
-  const space = inMemorySpaces.get(spaceId);
-  if (space && space.is_superadmin_space) {
-    return inMemorySpaces.delete(spaceId);
+  inMemorySpaces.delete(spaceId);
+  return deleted;
+}
+
+/**
+ * Migrate legacy floor tile identifiers:
+ * - birch_floor_150 / birch_floor_100 -> wood_5 (90 degree)
+ * - carpet_grey_150 -> carpet_4
+ * - grass_150 / grass_100 -> grass_4
+ */
+export function migrateTileString(tileStr: string): string {
+  if (!tileStr) return tileStr;
+  return tileStr
+    .replace(/\bbirch_floor_150\b/g, "wood_5")
+    .replace(/\bbirch_floor_100\b/g, "wood_5")
+    .replace(/\bcarpet_grey_150\b/g, "carpet_4")
+    .replace(/\bgrass_150\b/g, "grass_4")
+    .replace(/\bgrass_100\b/g, "grass_4");
+}
+
+export function migrateTilesMap(tiles: Record<string, string>): Record<string, string> {
+  if (!tiles || typeof tiles !== "object") return {};
+  const result: Record<string, string> = {};
+  for (const [k, v] of Object.entries(tiles)) {
+    result[k] = migrateTileString(v);
   }
-  return false;
+  return result;
 }
 
 /**
@@ -803,42 +999,70 @@ export async function getSpaceTiles(spaceId: string): Promise<Record<string, str
     try {
       const res = await pool.query("SELECT tiles FROM spaces WHERE id = $1", [spaceId]);
       if (res.rows[0]?.tiles) {
-        return typeof res.rows[0].tiles === "string"
+        const rawTiles = typeof res.rows[0].tiles === "string"
           ? JSON.parse(res.rows[0].tiles)
           : res.rows[0].tiles;
+        return migrateTilesMap(rawTiles || {});
       }
     } catch (err) {
-      console.error("Error fetching space tiles from DB:", err);
+      handleDbQueryError("Error fetching space tiles from DB", err);
     }
   }
 
   const inMem = inMemorySpaces.get(spaceId);
-  return inMem?.tiles ? { ...inMem.tiles } : {};
+  return inMem?.tiles ? migrateTilesMap(inMem.tiles) : {};
 }
 
 /**
- * Update and persist custom map tiles for a space
+ * Update and persist custom map tiles for a space.
+ * Guarantees that tiles are never dropped if space row is missing.
  */
 export async function updateSpaceTiles(
   spaceId: string,
   tiles: Record<string, string>
 ): Promise<boolean> {
+  const migratedTiles = migrateTilesMap(tiles);
   if (isDbConnected) {
     try {
-      await pool.query(
+      const res = await pool.query(
         "UPDATE spaces SET tiles = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1",
-        [spaceId, JSON.stringify(tiles)]
+        [spaceId, JSON.stringify(migratedTiles)]
       );
+      if (res.rowCount === 0) {
+        // Space record did not exist yet; insert it so map tiles are preserved
+        await pool.query(
+          `INSERT INTO spaces (id, name, category, is_public, tiles)
+           VALUES ($1, $2, 'General', true, $3)
+           ON CONFLICT (id) DO UPDATE SET tiles = EXCLUDED.tiles, updated_at = CURRENT_TIMESTAMP`,
+          [
+            spaceId,
+            spaceId.startsWith("user_space_") ? "Personal Space" : spaceId,
+            JSON.stringify(migratedTiles),
+          ]
+        );
+      }
     } catch (err) {
-      console.error("Error updating space tiles in DB:", err);
+      handleDbQueryError("Error updating space tiles in DB", err);
     }
   }
 
-  const inMem = inMemorySpaces.get(spaceId);
-  if (inMem) {
-    inMem.tiles = { ...tiles };
-    inMem.updated_at = new Date();
+  let inMem = inMemorySpaces.get(spaceId);
+  if (!inMem) {
+    inMem = {
+      id: spaceId,
+      name: spaceId,
+      category: "General",
+      owner_id: 1,
+      is_public: true,
+      is_superadmin_space: false,
+      whitelist: [],
+      created_at: new Date(),
+      updated_at: new Date(),
+    };
+    inMemorySpaces.set(spaceId, inMem);
   }
+  inMem.tiles = { ...migratedTiles };
+  inMem.updated_at = new Date();
   return true;
 }
 
@@ -853,7 +1077,7 @@ export async function getSpacePrivateZones(spaceId: string): Promise<PrivateZone
         return parsePrivateZones(res.rows[0].private_zones);
       }
     } catch (err) {
-      console.error("Error fetching space private zones from DB:", err);
+      handleDbQueryError("Error fetching space private zones from DB", err);
     }
   }
 
@@ -870,16 +1094,28 @@ export async function updateSpacePrivateZones(
 ): Promise<boolean> {
   if (isDbConnected) {
     try {
-      await pool.query(
+      const res = await pool.query(
         "UPDATE spaces SET private_zones = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1",
         [spaceId, JSON.stringify(zones)]
       );
+      if (res.rowCount === 0) {
+        await pool.query(
+          `INSERT INTO spaces (id, name, category, is_public, private_zones)
+           VALUES ($1, $2, 'General', true, $3)
+           ON CONFLICT (id) DO UPDATE SET private_zones = EXCLUDED.private_zones, updated_at = CURRENT_TIMESTAMP`,
+          [
+            spaceId,
+            spaceId.startsWith("user_space_") ? "Personal Space" : spaceId,
+            JSON.stringify(zones),
+          ]
+        );
+      }
     } catch (err) {
-      console.error("Error updating space private zones in DB:", err);
+      handleDbQueryError("Error updating space private zones in DB", err);
     }
   }
 
-  const inMem = inMemorySpaces.get(spaceId);
+  let inMem = inMemorySpaces.get(spaceId);
   if (inMem) {
     inMem.private_zones = [...zones];
     inMem.updated_at = new Date();
@@ -898,7 +1134,7 @@ export async function getSpaceJukeboxes(spaceId: string): Promise<JukeboxState[]
         return parseJukeboxes(res.rows[0].jukeboxes);
       }
     } catch (err) {
-      console.error("Error fetching space jukeboxes from DB:", err);
+      handleDbQueryError("Error fetching space jukeboxes from DB", err);
     }
   }
 
@@ -915,16 +1151,28 @@ export async function updateSpaceJukeboxes(
 ): Promise<boolean> {
   if (isDbConnected) {
     try {
-      await pool.query(
+      const res = await pool.query(
         "UPDATE spaces SET jukeboxes = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1",
         [spaceId, JSON.stringify(jukeboxes)]
       );
+      if (res.rowCount === 0) {
+        await pool.query(
+          `INSERT INTO spaces (id, name, category, is_public, jukeboxes)
+           VALUES ($1, $2, 'General', true, $3)
+           ON CONFLICT (id) DO UPDATE SET jukeboxes = EXCLUDED.jukeboxes, updated_at = CURRENT_TIMESTAMP`,
+          [
+            spaceId,
+            spaceId.startsWith("user_space_") ? "Personal Space" : spaceId,
+            JSON.stringify(jukeboxes),
+          ]
+        );
+      }
     } catch (err) {
-      console.error("Error updating space jukeboxes in DB:", err);
+      handleDbQueryError("Error updating space jukeboxes in DB", err);
     }
   }
 
-  const inMem = inMemorySpaces.get(spaceId);
+  let inMem = inMemorySpaces.get(spaceId);
   if (inMem) {
     inMem.jukeboxes = [...jukeboxes];
     inMem.updated_at = new Date();
@@ -943,7 +1191,7 @@ export async function getSpaceTypewriters(spaceId: string): Promise<TypewriterSt
         return parseTypewriters(res.rows[0].typewriters);
       }
     } catch (err) {
-      console.error("Error fetching space typewriters from DB:", err);
+      handleDbQueryError("Error fetching space typewriters from DB", err);
     }
   }
 
@@ -960,16 +1208,28 @@ export async function updateSpaceTypewriters(
 ): Promise<boolean> {
   if (isDbConnected) {
     try {
-      await pool.query(
+      const res = await pool.query(
         "UPDATE spaces SET typewriters = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1",
         [spaceId, JSON.stringify(typewriters)]
       );
+      if (res.rowCount === 0) {
+        await pool.query(
+          `INSERT INTO spaces (id, name, category, is_public, typewriters)
+           VALUES ($1, $2, 'General', true, $3)
+           ON CONFLICT (id) DO UPDATE SET typewriters = EXCLUDED.typewriters, updated_at = CURRENT_TIMESTAMP`,
+          [
+            spaceId,
+            spaceId.startsWith("user_space_") ? "Personal Space" : spaceId,
+            JSON.stringify(typewriters),
+          ]
+        );
+      }
     } catch (err) {
-      console.error("Error updating space typewriters in DB:", err);
+      handleDbQueryError("Error updating space typewriters in DB", err);
     }
   }
 
-  const inMem = inMemorySpaces.get(spaceId);
+  let inMem = inMemorySpaces.get(spaceId);
   if (inMem) {
     inMem.typewriters = [...typewriters];
     inMem.updated_at = new Date();
@@ -977,9 +1237,97 @@ export async function updateSpaceTypewriters(
   return true;
 }
 
+// ==========================================
+// Chat Messages Database Operations
+// ==========================================
+
 /**
- * Upsert player in DB
+ * Save chat message to PostgreSQL
  */
+export async function saveChatMessage(msg: ChatMessage): Promise<void> {
+  // Always maintain recent cache
+  inMemoryChats.push(msg);
+  if (inMemoryChats.length > 500) {
+    inMemoryChats.shift();
+  }
+
+  if (isDbConnected) {
+    try {
+      await pool.query(
+        `INSERT INTO chat_messages (id, sender_id, sender_name, sender_color, is_superadmin, room_type, room_id, room_name, target_id, target_name, text, timestamp)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+         ON CONFLICT (id) DO NOTHING`,
+        [
+          msg.id,
+          msg.senderId,
+          msg.senderName,
+          msg.senderColor || "#3b82f6",
+          !!msg.isSuperadmin,
+          msg.roomType,
+          msg.roomId,
+          msg.roomName || null,
+          msg.targetId || null,
+          msg.targetName || null,
+          msg.text,
+          msg.timestamp || Date.now(),
+        ]
+      );
+    } catch (err) {
+      handleDbQueryError("Error saving chat message to DB", err);
+    }
+  }
+}
+
+/**
+ * Get recent chat messages for a room/space (ordered chronologically)
+ */
+export async function getRecentChatMessages(
+  roomId: string,
+  roomType: ChatRoomType,
+  limit: number = 50
+): Promise<ChatMessage[]> {
+  if (isDbConnected) {
+    try {
+      const res = await pool.query(
+        `SELECT id, sender_id, sender_name, sender_color, is_superadmin, room_type, room_id, room_name, target_id, target_name, text, timestamp
+         FROM (
+           SELECT * FROM chat_messages
+           WHERE room_id = $1 AND room_type = $2
+           ORDER BY timestamp DESC
+           LIMIT $3
+         ) sub
+         ORDER BY timestamp ASC`,
+        [roomId, roomType, limit]
+      );
+      return res.rows.map((row) => ({
+        id: row.id,
+        senderId: row.sender_id,
+        senderName: row.sender_name,
+        senderColor: row.sender_color,
+        isSuperadmin: !!row.is_superadmin,
+        roomType: row.room_type as ChatRoomType,
+        roomId: row.room_id,
+        roomName: row.room_name || "",
+        targetId: row.target_id || undefined,
+        targetName: row.target_name || undefined,
+        text: row.text,
+        timestamp: Number(row.timestamp),
+      }));
+    } catch (err) {
+      handleDbQueryError("Error getting recent chat messages from DB", err);
+    }
+  }
+
+  // Fallback in-memory
+  return inMemoryChats
+    .filter((m) => m.roomId === roomId && m.roomType === roomType)
+    .slice(-limit);
+}
+
+// ==========================================
+// Player Positioning Operations
+// ==========================================
+
 export async function upsertPlayer(player: {
   id: string;
   name: string;
