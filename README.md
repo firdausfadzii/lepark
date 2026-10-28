@@ -33,17 +33,23 @@ npm install
    npm run db:up
    ```
 
-2. **Start the Game Server**:
+2. **(Optional) Import / Restore Existing Database Data**:
+   ```bash
+   npm run db:import
+   ```
+   *(To export current database state anytime: `npm run db:export`)*
+
+3. **Start the Game Server**:
    ```bash
    npm run dev:server
    ```
 
-3. **Start the Client (Vite)**:
+4. **Start the Client (Vite)**:
    ```bash
    npm run dev:client
    ```
 
-4. Open [http://localhost:5173](http://localhost:5173) in your browser!
+5. Open [http://localhost:5173](http://localhost:5173) in your browser!
 
 ## 📁 Project Structure
 

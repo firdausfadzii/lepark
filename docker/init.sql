@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS spaces (
     id VARCHAR(64) PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
     category VARCHAR(50) DEFAULT 'General',
-    owner_id INT REFERENCES users(id) ON DELETE SET NULL,
+    owner_id INT REFERENCES users(id) ON DELETE CASCADE,
     is_public BOOLEAN DEFAULT TRUE,
     is_superadmin_space BOOLEAN DEFAULT FALSE,
     whitelist JSONB DEFAULT '[]'::jsonb,
@@ -35,6 +35,8 @@ CREATE TABLE IF NOT EXISTS spaces (
     private_zones JSONB DEFAULT '[]'::jsonb,
     jukeboxes JSONB DEFAULT '[]'::jsonb,
     typewriters JSONB DEFAULT '[]'::jsonb,
+    ashtrays JSONB DEFAULT '[]'::jsonb,
+    chess_boards JSONB DEFAULT '[]'::jsonb,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );

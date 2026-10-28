@@ -12,6 +12,8 @@
     "db:up": "docker compose up -d",
     "db:down": "docker compose down",
     "db:logs": "docker compose logs -f postgres",
+    "db:export": "node scripts/db-export.js",
+    "db:import": "node scripts/db-import.js",
     "dev:server": "npm run dev --workspace=server",
     "dev:client": "npm run dev --workspace=client",
     "build:shared": "npm run build --workspace=shared",
