@@ -13,26 +13,96 @@
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
-    <!-- Game Canvas Root -->
-    <div id="game-container"></div>
+    <!-- Top Full-Width Navigation Bar (40px) -->
+    <header id="top-bar" class="top-nav-bar">
+      <!-- Left Section: Space Settings & Edit Map -->
+      <div id="topleft-bar" class="topleft-bar">
+        <!-- Space Settings Gear Icon -->
+        <button type="button" id="btn-map-settings" class="topleft-settings-btn hidden" title="Space Settings" aria-label="Space Settings">
+          <svg class="gear-svg-icon" viewBox="0 0 24 24">
+            <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>
+          </svg>
+        </button>
 
-    <!-- Top-Left Action Controls (Shown if user can configure this space) -->
-    <div id="topleft-bar" class="topleft-bar">
-      <!-- Space Settings Gear Icon -->
-      <button type="button" id="btn-map-settings" class="topleft-settings-btn hidden" title="Space Settings" aria-label="Space Settings">
-        <svg class="gear-svg-icon" viewBox="0 0 24 24">
-          <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>
-        </svg>
-      </button>
+        <!-- Edit Map Button (Right side of gear icon) -->
+        <button type="button" id="btn-edit-map" class="topleft-edit-btn hidden" title="Edit Map Flooring" aria-label="Edit Map">
+          <svg class="edit-svg-icon" viewBox="0 0 24 24">
+            <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
+          </svg>
+          <span class="edit-btn-label">Edit Map</span>
+        </button>
+      </div>
 
-      <!-- Edit Map Button (Right side of gear icon) -->
-      <button type="button" id="btn-edit-map" class="topleft-edit-btn hidden" title="Edit Map Flooring" aria-label="Edit Map">
-        <svg class="edit-svg-icon" viewBox="0 0 24 24">
-          <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
-        </svg>
-        <span class="edit-btn-label">Edit Map</span>
-      </button>
-    </div>
+      <!-- Center Section: Brand, Profile Pill, Map Icon, Ping & Packet Loss -->
+      <div id="topcenter-bar" class="topcenter-bar">
+        <!-- Lepark Brand Logo Badge -->
+        <div class="topbar-brand" title="Lepark">
+          <img src="/assets/lepark_800.png" alt="Lepark Logo" class="topbar-logo-img" />
+        </div>
+
+        <!-- User Avatar & Profile Section -->
+        <div id="topbar-profile-trigger" class="topbar-profile-pill" role="button" tabindex="0" title="Account Menu">
+          <div class="topbar-avatar-container">
+            <img id="topbar-avatar-img" class="topbar-avatar-img" alt="Avatar" src="/assets/sprites/default/sprite1.png" />
+            <span id="topbar-status-dot" class="topbar-status-dot" title="Online"></span>
+          </div>
+          <div class="topbar-user-details">
+            <div class="topbar-name-row">
+              <span id="topbar-admin-crown" class="topbar-crown-icon hidden" title="Superadmin">👑</span>
+              <span id="topbar-user-name" class="topbar-user-name">Player</span>
+            </div>
+            <span id="topbar-status-subtitle" class="topbar-status-subtitle hidden">Online</span>
+          </div>
+          <span class="topbar-chevron">▾</span>
+
+          <!-- Dropdown Menu -->
+          <div id="user-profile-dropdown" class="user-profile-dropdown hidden">
+            <button type="button" id="dropdown-my-space-btn" class="dropdown-item">
+              <span class="dropdown-icon">🏠</span>
+              <div class="dropdown-text">
+                <span class="dropdown-title">Go to my space</span>
+                <span id="dropdown-my-space-sub" class="dropdown-sub">Enter personal space</span>
+              </div>
+            </button>
+            <button type="button" id="dropdown-update-char-btn" class="dropdown-item">
+              <span class="dropdown-icon">⚙️</span>
+              <div class="dropdown-text">
+                <span class="dropdown-title">Update character</span>
+                <span class="dropdown-sub">Customize avatar & appearance</span>
+              </div>
+            </button>
+            <div class="dropdown-divider"></div>
+            <button type="button" id="dropdown-logout-btn" class="dropdown-item danger">
+              <span class="dropdown-icon">🚪</span>
+              <div class="dropdown-text">
+                <span class="dropdown-title">Logout</span>
+              </div>
+            </button>
+          </div>
+        </div>
+
+        <!-- Right: Map Icon, Ping & Packet Loss -->
+        <div class="topbar-actions-group">
+          <!-- Map Icon Button -->
+          <button type="button" id="btn-open-map" class="topbar-map-btn" title="Explore Spaces (Map)">
+            <svg class="map-svg-icon" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M20.5 3l-6 2.25L8.5 3 3.5 4.88v16.12l6-2.25 6 2.25 5-1.88V3zM9.5 5.15l5 1.88v11.82l-5-1.88V5.15zM5 6.42l3-1.12v12.28l-3 1.13V6.42zm14 11.16l-3 1.13V6.43l3-1.13v12.28z"/>
+            </svg>
+          </button>
+
+          <!-- Network Ping & Loss Pill -->
+          <div class="topbar-net-stats" title="Connection latency & packet loss">
+            <svg class="net-svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+              <line x1="8" y1="21" x2="16" y2="21"></line>
+              <line x1="12" y1="17" x2="12" y2="21"></line>
+            </svg>
+            <span id="topbar-ping-stat" class="net-stat-val">-- ms</span>
+            <span class="net-stat-div">|</span>
+            <span id="topbar-loss-stat" class="net-stat-val">0% loss</span>
+          </div>
+        </div>
+      </div>
 
     <!-- Top-Right Action Controls (Chat & Voice toggle triggers) -->
     <div id="topright-bar" class="topright-bar">
@@ -152,6 +222,10 @@
         </div>
       </div>
     </div>
+  </header>
+
+  <!-- Game Canvas Root -->
+  <div id="game-container"></div>
 
     <!-- Top Edit Mode Floating Notice Banner -->
     <div id="map-edit-banner" class="map-edit-banner hidden">
@@ -2214,77 +2288,6 @@
       </div>
     </aside>
 
-    <!-- Middle Top Bar (Floats centered at top) -->
-    <header id="top-bar" class="middle-top-bar">
-      <!-- Lepark Brand Logo Badge -->
-      <div class="topbar-brand" title="Lepark">
-        <img src="/assets/lepark_800.png" alt="Lepark Logo" class="topbar-logo-img" />
-      </div>
-
-      <!-- Left: User Avatar & Profile Section -->
-      <div id="topbar-profile-trigger" class="topbar-profile-pill" role="button" tabindex="0" title="Account Menu">
-        <div class="topbar-avatar-container">
-          <img id="topbar-avatar-img" class="topbar-avatar-img" alt="Avatar" src="/assets/sprite1.png" />
-          <span id="topbar-status-dot" class="topbar-status-dot" title="Online"></span>
-        </div>
-        <div class="topbar-user-details">
-          <div class="topbar-name-row">
-            <span id="topbar-admin-crown" class="topbar-crown-icon hidden" title="Superadmin">👑</span>
-            <span id="topbar-user-name" class="topbar-user-name">Player</span>
-          </div>
-          <span id="topbar-status-subtitle" class="topbar-status-subtitle">Online</span>
-        </div>
-        <span class="topbar-chevron">▾</span>
-
-        <!-- Dropdown Menu -->
-        <div id="user-profile-dropdown" class="user-profile-dropdown hidden">
-          <button type="button" id="dropdown-my-space-btn" class="dropdown-item">
-            <span class="dropdown-icon">🏠</span>
-            <div class="dropdown-text">
-              <span class="dropdown-title">Go to my space</span>
-              <span id="dropdown-my-space-sub" class="dropdown-sub">Enter personal space</span>
-            </div>
-          </button>
-          <button type="button" id="dropdown-update-char-btn" class="dropdown-item">
-            <span class="dropdown-icon">⚙️</span>
-            <div class="dropdown-text">
-              <span class="dropdown-title">Update character</span>
-              <span class="dropdown-sub">Customize avatar & appearance</span>
-            </div>
-          </button>
-          <div class="dropdown-divider"></div>
-          <button type="button" id="dropdown-logout-btn" class="dropdown-item danger">
-            <span class="dropdown-icon">🚪</span>
-            <div class="dropdown-text">
-              <span class="dropdown-title">Logout</span>
-            </div>
-          </button>
-        </div>
-      </div>
-
-      <!-- Right: Map Icon, Ping & Packet Loss -->
-      <div class="topbar-actions-group">
-        <!-- Map Icon Button -->
-        <button type="button" id="btn-open-map" class="topbar-map-btn" title="Explore Spaces (Map)">
-          <svg class="map-svg-icon" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M20.5 3l-6 2.25L8.5 3 3.5 4.88v16.12l6-2.25 6 2.25 5-1.88V3zM9.5 5.15l5 1.88v11.82l-5-1.88V5.15zM5 6.42l3-1.12v12.28l-3 1.13V6.42zm14 11.16l-3 1.13V6.43l3-1.13v12.28z"/>
-          </svg>
-        </button>
-
-        <!-- Network Ping & Loss Pill -->
-        <div class="topbar-net-stats" title="Connection latency & packet loss">
-          <svg class="net-svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
-            <line x1="8" y1="21" x2="16" y2="21"></line>
-            <line x1="12" y1="17" x2="12" y2="21"></line>
-          </svg>
-          <span id="topbar-ping-stat" class="net-stat-val">-- ms</span>
-          <span class="net-stat-div">|</span>
-          <span id="topbar-loss-stat" class="net-stat-val">0% loss</span>
-        </div>
-      </div>
-    </header>
-
     <!-- UI Overlay Layer -->
     <div id="ui-layer">
 
@@ -2531,17 +2534,13 @@
         <div class="preview-box">
           <div class="preview-character-container">
             <div id="preview-name" class="preview-name-tag">Player</div>
-            <img id="preview-avatar" class="preview-avatar" alt="Character Preview" src="/assets/sprite1.png" />
+            <img id="preview-avatar" class="preview-avatar" alt="Character Preview" src="/assets/sprites/default/sprite1.png" />
           </div>
-          <!-- Direction Preview Switcher -->
-          <div id="preview-directions-bar" class="preview-directions-bar">
+          <!-- Direction Preview Switcher (Hidden: only still preview is displayed) -->
+          <div id="preview-directions-bar" class="preview-directions-bar hidden" style="display: none;">
             <button type="button" class="preview-dir-btn active" data-dir="idle" title="Standing Still">🧍 Still</button>
-            <button type="button" class="preview-dir-btn" data-dir="left" title="Left">⬅️ Left</button>
-            <button type="button" class="preview-dir-btn" data-dir="right" title="Right">➡️ Right</button>
-            <button type="button" class="preview-dir-btn" data-dir="up" title="Up">⬆️ Up</button>
-            <button type="button" class="preview-dir-btn" data-dir="down" title="Down">⬇️ Down</button>
           </div>
-          <div id="preview-status-hint" class="preview-status-hint"></div>
+          <div id="preview-status-hint" class="preview-status-hint">Default template (idle)</div>
         </div>
 
         <form id="profile-form">
@@ -2561,8 +2560,8 @@
             <span class="field-hint">If blank, your username (<span id="current-username-tag"></span>) will be used.</span>
           </div>
 
-          <!-- Switch to Upload Custom Sprites -->
-          <div class="form-group switch-group">
+          <!-- Switch to Upload Custom Sprites (Hidden for now) -->
+          <div class="form-group switch-group hidden" style="display: none;">
             <div class="switch-row">
               <div class="switch-info">
                 <label class="switch-title" for="switch-upload-pictures">Customize Sprites</label>
@@ -2575,19 +2574,18 @@
             </div>
           </div>
 
-          <!-- Section 1: Default Character (Visible when switch is false) -->
-          <div id="default-character-section" class="input-section">
-            <div class="default-avatar-card">
-              <span class="default-avatar-card-icon">🧍</span>
-              <div class="default-avatar-card-info">
-                <span class="default-avatar-card-title">Default Male Character</span>
-                <span class="default-avatar-card-desc">Equipped with complete walk animations (Standing still, Left, Right, Up, and Down). Toggle "Customize Sprites" above to upload custom frames!</span>
-              </div>
+          <!-- Sprite Template Selection (Rendered dynamically based on added sprites) -->
+          <div class="form-group sprite-templates-group">
+            <label class="form-label">
+              Sprite Template <span class="badge-optional" id="badge-template-count">2 Available</span>
+            </label>
+            <div id="sprite-templates-grid" class="sprite-templates-grid">
+              <!-- Dynamically populated based on added sprites -->
             </div>
           </div>
 
-          <!-- Section 2: Upload Pictures Form (Visible when switch is true) -->
-          <div id="upload-pictures-section" class="input-section hidden">
+          <!-- Section 2: Upload Pictures Form (Hidden for now) -->
+          <div id="upload-pictures-section" class="input-section hidden" style="display: none;">
             <div class="section-notice">
               <span class="notice-icon">💡</span>
               <span class="notice-text">
@@ -3657,7 +3655,7 @@
                 <!-- White Player Card -->
                 <div class="chess-player-card" id="chess-player-white-card">
                   <div class="chess-player-avatar-wrap">
-                    <img id="chess-white-avatar" src="/assets/sprite1.png" alt="White Player" class="chess-player-avatar" />
+                    <img id="chess-white-avatar" src="/assets/sprites/default/sprite1.png" alt="White Player" class="chess-player-avatar" />
                     <span class="chess-color-dot white-dot" title="White"></span>
                   </div>
                   <div class="chess-player-info">
@@ -3677,7 +3675,7 @@
                 <!-- Black Player Card -->
                 <div class="chess-player-card" id="chess-player-black-card">
                   <div class="chess-player-avatar-wrap">
-                    <img id="chess-black-avatar" src="/assets/sprite1.png" alt="Black Player" class="chess-player-avatar" />
+                    <img id="chess-black-avatar" src="/assets/sprites/default/sprite1.png" alt="Black Player" class="chess-player-avatar" />
                     <span class="chess-color-dot black-dot" title="Black"></span>
                   </div>
                   <div class="chess-player-info">

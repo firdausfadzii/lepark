@@ -289,13 +289,13 @@ const btnJoin = document.getElementById("btn-join") as HTMLButtonElement;
 // Switch and Sections for Custom Sprites
 const switchUploadPictures = document.getElementById(
   "switch-upload-pictures",
-) as HTMLInputElement;
+) as HTMLInputElement | null;
 const defaultCharacterSection = document.getElementById(
   "default-character-section",
 ) as HTMLDivElement | null;
 const uploadPicturesSection = document.getElementById(
   "upload-pictures-section",
-) as HTMLDivElement;
+) as HTMLDivElement | null;
 
 // DOM Elements - My Space Settings Modal
 const mySpaceSettingsModal = document.getElementById(
@@ -771,9 +771,10 @@ registerForm.addEventListener("submit", async (e) => {
     });
     localStorage.setItem("player_avatar_frames", JSON.stringify(uploadedFrames));
     localStorage.setItem("player_upload_switch", "false");
-    switchUploadPictures.checked = false;
+    localStorage.setItem("player_sprite_template", "default");
+    if (switchUploadPictures) switchUploadPictures.checked = false;
     defaultCharacterSection?.classList.remove("hidden");
-    uploadPicturesSection.classList.add("hidden");
+    uploadPicturesSection?.classList.add("hidden");
 
     closeAuthModal();
     await enterGameSession();
@@ -922,11 +923,175 @@ function selectColor(colorHex: string) {
   updatePreview();
 }
 
+// Sprite Templates Definition
+interface SpriteTemplate {
+  id: string;
+  name: string;
+  idleFrames: string[];
+  directionalFrames?: PlayerAvatars;
+}
+
+const SPRITE_TEMPLATES: SpriteTemplate[] = [
+  {
+    id: "default",
+    name: "Default",
+    idleFrames: [
+      "/assets/sprites/default/sprite1.png",
+      "/assets/sprites/default/sprite2.png",
+      "/assets/sprites/default/sprite3.png",
+      "/assets/sprites/default/sprite4.png",
+    ],
+  },
+  {
+    id: "slime",
+    name: "Slime",
+    idleFrames: [
+      "/assets/sprites/slime/sprite-1-1.png",
+      "/assets/sprites/slime/sprite-1-2.png",
+      "/assets/sprites/slime/sprite-1-3.png",
+      "/assets/sprites/slime/sprite-1-4.png",
+      "/assets/sprites/slime/sprite-1-5.png",
+      "/assets/sprites/slime/sprite-1-6.png",
+    ],
+    directionalFrames: {
+      idle: [
+        "/assets/sprites/slime/sprite-1-1.png",
+        "/assets/sprites/slime/sprite-1-2.png",
+        "/assets/sprites/slime/sprite-1-3.png",
+        "/assets/sprites/slime/sprite-1-4.png",
+        "/assets/sprites/slime/sprite-1-5.png",
+        "/assets/sprites/slime/sprite-1-6.png",
+      ],
+      down: [
+        "/assets/sprites/slime/sprite-1-1.png",
+        "/assets/sprites/slime/sprite-1-2.png",
+        "/assets/sprites/slime/sprite-1-3.png",
+        "/assets/sprites/slime/sprite-1-4.png",
+        "/assets/sprites/slime/sprite-1-5.png",
+        "/assets/sprites/slime/sprite-1-6.png",
+      ],
+      left: [
+        "/assets/sprites/slime/sprite-3-1.png",
+        "/assets/sprites/slime/sprite-3-2.png",
+        "/assets/sprites/slime/sprite-3-3.png",
+        "/assets/sprites/slime/sprite-3-4.png",
+        "/assets/sprites/slime/sprite-3-5.png",
+        "/assets/sprites/slime/sprite-3-6.png",
+      ],
+      right: [
+        "/assets/sprites/slime/sprite-4-1.png",
+        "/assets/sprites/slime/sprite-4-2.png",
+        "/assets/sprites/slime/sprite-4-3.png",
+        "/assets/sprites/slime/sprite-4-4.png",
+        "/assets/sprites/slime/sprite-4-5.png",
+        "/assets/sprites/slime/sprite-4-6.png",
+      ],
+      up: [
+        "/assets/sprites/slime/sprite-2-1.png",
+        "/assets/sprites/slime/sprite-2-2.png",
+        "/assets/sprites/slime/sprite-2-3.png",
+        "/assets/sprites/slime/sprite-2-4.png",
+        "/assets/sprites/slime/sprite-2-5.png",
+        "/assets/sprites/slime/sprite-2-6.png",
+      ],
+    },
+  },
+];
+
+let selectedTemplateId = localStorage.getItem("player_sprite_template") || "default";
+
+function getActiveTemplate(): SpriteTemplate {
+  return SPRITE_TEMPLATES.find((t) => t.id === selectedTemplateId) || SPRITE_TEMPLATES[0];
+}
+
+function renderSpriteTemplatesGrid() {
+  const grid = document.getElementById("sprite-templates-grid");
+  const countBadge = document.getElementById("badge-template-count");
+  if (countBadge) {
+    countBadge.textContent = `${SPRITE_TEMPLATES.length} Available`;
+  }
+  if (!grid) return;
+
+  grid.innerHTML = "";
+
+  SPRITE_TEMPLATES.forEach((tpl) => {
+    const isActive = tpl.id === selectedTemplateId;
+    const card = document.createElement("div");
+    card.className = `sprite-template-card ${isActive ? "active" : ""}`;
+    card.setAttribute("data-template-id", tpl.id);
+    card.setAttribute("role", "button");
+    card.setAttribute("tabindex", "0");
+    card.title = `${tpl.name} Sprite`;
+
+    const initialImg = tpl.idleFrames[0] || "/assets/sprites/default/sprite1.png";
+
+    card.innerHTML = `
+      <span class="template-card-check">✓</span>
+      <div class="template-preview-box">
+        <img id="template-anim-${tpl.id}" class="template-idle-img" src="${initialImg}" alt="${tpl.name} Sprite" />
+      </div>
+      <span class="template-card-name">${escapeHtml(tpl.name)}</span>
+      <span class="template-card-status">${isActive ? "Active" : "Select"}</span>
+    `;
+
+    card.addEventListener("click", () => {
+      selectSpriteTemplate(tpl.id);
+    });
+
+    grid.appendChild(card);
+  });
+}
+
+function selectSpriteTemplate(templateId: string) {
+  const targetTpl = SPRITE_TEMPLATES.find((t) => t.id === templateId) || SPRITE_TEMPLATES[0];
+  selectedTemplateId = targetTpl.id;
+  try {
+    localStorage.setItem("player_sprite_template", selectedTemplateId);
+  } catch (err) {
+    console.warn("Could not save sprite template:", err);
+  }
+
+  const cards = document.querySelectorAll<HTMLElement>(".sprite-template-card");
+  cards.forEach((card) => {
+    const tplId = card.getAttribute("data-template-id");
+    const statusSpan = card.querySelector(".template-card-status");
+    if (tplId === selectedTemplateId) {
+      card.classList.add("active");
+      if (statusSpan) statusSpan.textContent = "Active";
+    } else {
+      card.classList.remove("active");
+      if (statusSpan) statusSpan.textContent = "Select";
+    }
+  });
+
+  updatePreview();
+}
+
+function setupSpriteTemplates() {
+  renderSpriteTemplatesGrid();
+  selectSpriteTemplate(selectedTemplateId);
+}
+
+function updateTemplateGridAnimations() {
+  SPRITE_TEMPLATES.forEach((tpl) => {
+    if (tpl.idleFrames && tpl.idleFrames.length > 0) {
+      const img = document.getElementById(`template-anim-${tpl.id}`) as HTMLImageElement | null;
+      if (img) {
+        const frame = tpl.idleFrames[previewFrameIndex % tpl.idleFrames.length];
+        if (img.src !== frame && !img.src.endsWith(frame)) {
+          img.src = frame;
+        }
+      }
+    }
+  });
+}
+
 function startPreviewAnimation() {
   if (previewAnimTimer !== null) return;
   previewAnimTimer = window.setInterval(() => {
     previewFrameIndex++;
     updatePreviewFrame();
+    updateTemplateGridAnimations();
   }, 166);
 }
 
@@ -940,39 +1105,26 @@ function updatePreview() {
 }
 
 function updatePreviewFrame() {
-  const isSwitchOn = switchUploadPictures.checked;
+  const isSwitchOn = switchUploadPictures ? switchUploadPictures.checked : false;
 
   if (isSwitchOn && uploadedFrames.idle.length > 0) {
-    const frames =
-      uploadedFrames[activePreviewDir].length > 0
-        ? uploadedFrames[activePreviewDir]
-        : uploadedFrames.idle;
-
-    const currentImg = frames[previewFrameIndex % frames.length];
-    previewAvatar.src = currentImg;
-
-    if (activePreviewDir === "idle") {
-      previewStatusHint.classList.add("hidden");
-    } else if (uploadedFrames[activePreviewDir].length > 0) {
-      previewStatusHint.textContent = `Showing custom ${activePreviewDir} (${uploadedFrames[activePreviewDir].length} frame${uploadedFrames[activePreviewDir].length > 1 ? "s" : ""})`;
-      previewStatusHint.classList.remove("hidden");
-    } else {
-      previewStatusHint.textContent = `Using standing still fallback for ${activePreviewDir}`;
+    const currentImg = uploadedFrames.idle[previewFrameIndex % uploadedFrames.idle.length];
+    if (previewAvatar) previewAvatar.src = currentImg;
+    if (previewStatusHint) {
+      previewStatusHint.textContent = `Custom character (idle)`;
       previewStatusHint.classList.remove("hidden");
     }
   } else {
-    // Default avatar preview (animating idle/walk cycles based on direction)
-    const defaultFrames =
-      DEFAULT_AVATARS[activePreviewDir] || DEFAULT_AVATARS.idle;
-    const currentImg = defaultFrames[previewFrameIndex % defaultFrames.length];
-    previewAvatar.src = currentImg;
+    // Selected template still idle preview animation
+    const tpl = getActiveTemplate();
+    const frames = tpl.idleFrames.length > 0 ? tpl.idleFrames : DEFAULT_AVATARS.idle;
+    const currentImg = frames[previewFrameIndex % frames.length];
+    if (previewAvatar) previewAvatar.src = currentImg;
 
-    if (activePreviewDir === "idle") {
-      previewStatusHint.textContent = "Default character (idle south)";
-    } else {
-      previewStatusHint.textContent = `Default character (${activePreviewDir})`;
+    if (previewStatusHint) {
+      previewStatusHint.textContent = `${tpl.name} character (idle)`;
+      previewStatusHint.classList.remove("hidden");
     }
-    previewStatusHint.classList.remove("hidden");
   }
 }
 
@@ -1202,13 +1354,13 @@ function setupUploadSlots() {
   startPreviewAnimation();
 }
 
-switchUploadPictures.addEventListener("change", () => {
+switchUploadPictures?.addEventListener("change", () => {
   if (switchUploadPictures.checked) {
     defaultCharacterSection?.classList.add("hidden");
-    uploadPicturesSection.classList.remove("hidden");
+    uploadPicturesSection?.classList.remove("hidden");
   } else {
     defaultCharacterSection?.classList.remove("hidden");
-    uploadPicturesSection.classList.add("hidden");
+    uploadPicturesSection?.classList.add("hidden");
   }
   updatePreview();
 });
@@ -1229,6 +1381,7 @@ function openUpdateCharacterModal() {
       ? `@${currentUser.username}`
       : "";
   }
+  selectSpriteTemplate(selectedTemplateId);
   updatePreview();
 
   modal.classList.remove("hidden");
@@ -1255,30 +1408,35 @@ btnCloseModal.addEventListener("click", () => {
 });
 
 function computeActiveAvatars(): PlayerAvatars | undefined {
-  const isSwitchOn = switchUploadPictures.checked;
-  if (!isSwitchOn || uploadedFrames.idle.length === 0) {
-    return undefined;
+  const isSwitchOn = switchUploadPictures ? switchUploadPictures.checked : false;
+  if (isSwitchOn && uploadedFrames.idle.length > 0) {
+    // Check if actual custom base64 frames exist
+    const slots: DirectionSlot[] = ["idle", "left", "right", "up", "down"];
+    const hasCustomFrames = slots.some((s) =>
+      uploadedFrames[s].some((f) => typeof f === "string" && f.startsWith("data:image/"))
+    );
+    if (hasCustomFrames) {
+      const idle = uploadedFrames.idle.filter((f) => typeof f === "string" && f.startsWith("data:image/"));
+      if (idle.length > 0) {
+        return {
+          idle,
+          left: uploadedFrames.left.length > 0 ? uploadedFrames.left : idle,
+          right: uploadedFrames.right.length > 0 ? uploadedFrames.right : idle,
+          up: uploadedFrames.up.length > 0 ? uploadedFrames.up : idle,
+          down: uploadedFrames.down.length > 0 ? uploadedFrames.down : idle,
+        };
+      }
+    }
   }
 
-  // Check if actual custom base64 frames exist
-  const slots: DirectionSlot[] = ["idle", "left", "right", "up", "down"];
-  const hasCustomFrames = slots.some((s) =>
-    uploadedFrames[s].some((f) => typeof f === "string" && f.startsWith("data:image/"))
-  );
-  if (!hasCustomFrames) {
-    return undefined;
+  // Active sprite template branch (e.g. Slime)
+  const tpl = getActiveTemplate();
+  if (tpl && tpl.directionalFrames) {
+    return tpl.directionalFrames;
   }
 
-  const idle = uploadedFrames.idle.filter((f) => typeof f === "string" && f.startsWith("data:image/"));
-  if (idle.length === 0) return undefined;
-
-  return {
-    idle,
-    left: uploadedFrames.left.length > 0 ? uploadedFrames.left : idle,
-    right: uploadedFrames.right.length > 0 ? uploadedFrames.right : idle,
-    up: uploadedFrames.up.length > 0 ? uploadedFrames.up : idle,
-    down: uploadedFrames.down.length > 0 ? uploadedFrames.down : idle,
-  };
+  // Default character template uses built-in atlas
+  return undefined;
 }
 
 // Handle Update Character Form Submission
@@ -1320,8 +1478,9 @@ async function handleUpdateCharacter(e: Event) {
     localStorage.setItem("player_color", color);
     localStorage.setItem(
       "player_upload_switch",
-      switchUploadPictures.checked ? "true" : "false",
+      switchUploadPictures ? (switchUploadPictures.checked ? "true" : "false") : "false",
     );
+    localStorage.setItem("player_sprite_template", selectedTemplateId);
     localStorage.setItem(
       "player_avatar_frames",
       JSON.stringify(uploadedFrames),
@@ -5705,7 +5864,7 @@ function updateSmokingGameUI(state: SmokingGameRoomState) {
         }
 
         const isMeTag = p.sessionId === mySessionId ? ` <span class="ashtray-you-tag">(You)</span>` : "";
-        const avatarUrl = p.avatarUrl || "/assets/sprite1.png";
+        const avatarUrl = p.avatarUrl || "/assets/sprites/default/sprite1.png";
 
         card.innerHTML = `
           <div class="lobby-player-meta">
@@ -5761,7 +5920,7 @@ function updateSmokingGameUI(state: SmokingGameRoomState) {
         const curMashes = isMe ? localCurrentMashes : (p.currentMashes || 0);
         const finishedCount = isMe ? localCigarettesFinished : (p.cigarettesFinished || 0);
         const pct = Math.min(100, Math.max(0, Math.round((curMashes / mashesNeeded) * 100)));
-        const avatarUrl = p.avatarUrl || "/assets/sprite1.png";
+        const avatarUrl = p.avatarUrl || "/assets/sprites/default/sprite1.png";
         const isMeTag = isMe ? ` <span class="smoking-you-tag">(You)</span>` : "";
         const starterCrown = p.isStarter ? ` <span class="smoking-crown-icon" title="Starter">👑</span>` : "";
 
@@ -5839,7 +5998,7 @@ function updateSmokingGameUI(state: SmokingGameRoomState) {
         else if (res.rank === 3) rankBadge = "🥉 3rd";
 
         const isMeTag = res.sessionId === mySessionId ? ` <span style="font-size:10px;color:#94a3b8;">(You)</span>` : "";
-        const avatarUrl = res.avatarUrl || "/assets/sprite1.png";
+        const avatarUrl = res.avatarUrl || "/assets/sprites/default/sprite1.png";
 
         row.innerHTML = `
           <td class="col-rank"><strong>${rankBadge}</strong></td>
@@ -6294,9 +6453,9 @@ function renderChessLobby(state: ChessLobbyState) {
       const statusText = game.inCheck ? `⚠️ Check! (${turnLabel})` : `🟢 In Progress • ${turnLabel}`;
 
       const whiteName = game.whitePlayer?.name || "Player 1";
-      const whiteAvatar = game.whitePlayer?.avatarUrl || "/assets/sprite1.png";
+      const whiteAvatar = game.whitePlayer?.avatarUrl || "/assets/sprites/default/sprite1.png";
       const blackName = game.blackPlayer?.name || "Player 2";
-      const blackAvatar = game.blackPlayer?.avatarUrl || "/assets/sprite1.png";
+      const blackAvatar = game.blackPlayer?.avatarUrl || "/assets/sprites/default/sprite1.png";
 
       card.innerHTML = `
         <div class="chess-card-top-row">
@@ -6696,7 +6855,7 @@ function renderSpectatorsList(spectators: Record<string, any>) {
   list.forEach((spec: any) => {
     const item = document.createElement("div");
     item.className = "chess-spectator-item";
-    const avatarUrl = spec.avatarUrl || "/assets/sprite1.png";
+    const avatarUrl = spec.avatarUrl || "/assets/sprites/default/sprite1.png";
     item.innerHTML = `
       <img src="${avatarUrl}" class="chess-spectator-avatar" alt="${escapeHtml(spec.name || "Spectator")}" />
       <span class="chess-spectator-name">${escapeHtml(spec.name || "Spectator")}</span>
@@ -7230,8 +7389,10 @@ function updateTopBarUI() {
   }
 
   // Update Avatar Visual in Top Bar
-  const isCustomActive = switchUploadPictures.checked && uploadedFrames.idle.length > 0 && uploadedFrames.idle[0].startsWith("data:image/");
-  const topbarImgUrl = isCustomActive ? uploadedFrames.idle[0] : "/assets/sprite1.png";
+  const isCustomActive = switchUploadPictures ? switchUploadPictures.checked && uploadedFrames.idle.length > 0 && uploadedFrames.idle[0].startsWith("data:image/") : false;
+  const activeTpl = getActiveTemplate();
+  const templateImg = (activeTpl && activeTpl.idleFrames.length > 0) ? activeTpl.idleFrames[0] : "/assets/sprites/default/sprite1.png";
+  const topbarImgUrl = isCustomActive ? uploadedFrames.idle[0] : templateImg;
   topbarAvatarImg.src = topbarImgUrl;
   topbarAvatarImg.classList.remove("hidden");
   if (topbarAvatarDot) topbarAvatarDot.classList.add("hidden");
@@ -8018,6 +8179,8 @@ async function enterGameSession() {
       voiceManager.connectToVoice();
     }
 
+    const TOP_BAR_HEIGHT = 40;
+
     const config: Phaser.Types.Core.GameConfig = {
       type: Phaser.AUTO,
       parent: "game-container",
@@ -8027,7 +8190,7 @@ async function enterGameSession() {
         mode: Phaser.Scale.RESIZE,
         autoCenter: Phaser.Scale.CENTER_BOTH,
         width: window.innerWidth,
-        height: window.innerHeight,
+        height: window.innerHeight - TOP_BAR_HEIGHT,
       },
       physics: {
         default: "arcade",
@@ -8086,7 +8249,8 @@ async function enterGameSession() {
 // Window Resize Handler
 window.addEventListener("resize", () => {
   if (gameInstance) {
-    gameInstance.scale.resize(window.innerWidth, window.innerHeight);
+    const TOP_BAR_HEIGHT = 40;
+    gameInstance.scale.resize(window.innerWidth, window.innerHeight - TOP_BAR_HEIGHT);
   }
 });
 
@@ -8163,6 +8327,7 @@ async function init() {
   setupMapEditorDecorationControls();
   setupMapEditorAccordions();
   setupUploadSlots();
+  setupSpriteTemplates();
   setupHudControlBadges();
 
   const savedColor = localStorage.getItem("player_color");
@@ -8200,14 +8365,16 @@ async function init() {
   }
   slots.forEach((s) => renderSlotFrames(s));
 
-  if (savedSwitch === "true") {
-    switchUploadPictures.checked = true;
-    defaultCharacterSection?.classList.add("hidden");
-    uploadPicturesSection.classList.remove("hidden");
-  } else {
-    switchUploadPictures.checked = false;
-    defaultCharacterSection?.classList.remove("hidden");
-    uploadPicturesSection.classList.add("hidden");
+  if (switchUploadPictures) {
+    if (savedSwitch === "true") {
+      switchUploadPictures.checked = true;
+      defaultCharacterSection?.classList.add("hidden");
+      uploadPicturesSection?.classList.remove("hidden");
+    } else {
+      switchUploadPictures.checked = false;
+      defaultCharacterSection?.classList.remove("hidden");
+      uploadPicturesSection?.classList.add("hidden");
+    }
   }
 
   // Initialize Chat UI state

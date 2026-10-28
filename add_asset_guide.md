@@ -27,9 +27,7 @@ Lepark is built with **Phaser 3 (WebGL Engine)** on the client, **Colyseus (WebS
 ```mermaid
 flowchart TD
     subgraph Filesystem["Asset Storage"]
-        Src["Root Asset Source<br/>/assets/<category>/"]
-        Pub["Client Public Directory<br/>/client/public/assets/<category>/"]
-        Src -.->|Mirror / Copy| Pub
+        Pub["Client Public Directory (Single Source of Truth)<br/>/client/public/assets/<category>/"]
     end
 
     subgraph ClientLoad["Frontend Client Pipeline"]
@@ -55,11 +53,10 @@ flowchart TD
 
 ### Key Architectural Concepts
 
-1. **Dual Directory Requirement:**
-   - Source repository: [`/assets/<category>/`](file:///Users/firdausfadzi/Desktop/game/assets/)
-   - Vite public folder: [`/client/public/assets/<category>/`](file:///Users/firdausfadzi/Desktop/game/client/public/assets/)
+1. **Single Source of Truth:**
+   - Public asset directory: [`/client/public/assets/<category>/`](file:///Users/firdausfadzi/Desktop/game/client/public/assets/)
    > [!IMPORTANT]
-   > Vite serves assets statically from `/client/public/`. Any image loaded by Phaser via `/assets/...` or rendered in the HTML editor modal must exist inside [`client/public/assets/`](file:///Users/firdausfadzi/Desktop/game/client/public/assets/). Always keep both folders synchronized.
+   > Vite serves assets statically from `/client/public/`. Any image loaded by Phaser via `/assets/...` or rendered in the HTML editor modal must exist inside [`client/public/assets/`](file:///Users/firdausfadzi/Desktop/game/client/public/assets/). The root `/assets/` directory is gitignored and deprecated.
 
 2. **Shared Package Invalidation:**
    - Any modification to [`shared/src/collision.ts`](file:///Users/firdausfadzi/Desktop/game/shared/src/collision.ts) or [`shared/src/types.ts`](file:///Users/firdausfadzi/Desktop/game/shared/src/types.ts) requires running `npm run build:shared` (or `npm run build`) so both `client` and `server` compile against the latest collision rules.
@@ -68,25 +65,18 @@ flowchart TD
 
 ## 2. Asset Categories & Directory Layout
 
-The asset library is divided into the following categories:
+The asset library is located in `client/public/assets/`:
 
 ```
 lepark/
-├── assets/                               # Project-wide source assets
-│   ├── floor/                            # Flooring tile patterns (wood, stone, carpet, etc.)
-│   ├── wall/                             # Wall textures (solid wood walls, glass walls, etc.)
-│   ├── decoration/                       # Furniture, props, jukebox, typewriter, etc.
-│   ├── 16x32_idle_sheet.png              # Character idle animation sheet
-│   ├── 16x32_walk_sheet.png              # Character walk animation sheet
-│   ├── idle_sprites_mapping.json         # TexturePacker atlas map for idle
-│   └── walk_sprites_mapping.json         # TexturePacker atlas map for walk
+├── assets/                               # Gitignored (empty placeholder)
 └── client/
     └── public/
-        └── assets/                       # Vite static public mirror of assets/
-            ├── floor/
-            ├── wall/
-            ├── decoration/
-            └── ...
+        └── assets/                       # Single source of truth for all assets
+            ├── floor/                    # Flooring tile patterns (wood, stone, carpet, etc.)
+            ├── wall/                     # Wall textures (solid wood walls, glass walls, etc.)
+            ├── decoration/               # Furniture, props, jukebox, typewriter, chess, etc.
+            └── sprites/                  # Character sprite sheets and frames
 ```
 
 ---
@@ -113,9 +103,8 @@ lepark/
 Follow this 4-step procedure when adding a new floor pattern (e.g. `stone_9` or `carpet_9`):
 
 ### Step 1: Save Images to Disk
-Place your PNG file in both asset locations:
-1. `assets/floor/<asset_id>.png`
-2. `client/public/assets/floor/<asset_id>.png`
+Place your PNG file in the assets location:
+- `client/public/assets/floor/<asset_id>.png`
 
 ### Step 2: Register in GameScene Preload
 Open [`client/src/scenes/GameScene.ts`](file:///Users/firdausfadzi/Desktop/game/client/src/scenes/GameScene.ts) and add the key to `floorAssets`:
@@ -182,8 +171,8 @@ Update the counter in the header:
 Walls can either completely replace the underlying floor tile (**Solid Wall**) or render above the floor tile while maintaining transparency (**Overlay Wall**, like glass railings or translucent wood slats).
 
 ### Step 1: Place Image Files
-1. `assets/wall/<asset_id>.png`
-2. `client/public/assets/wall/<asset_id>.png`
+Save your PNG file directly to:
+- `client/public/assets/wall/<asset_id>.png`
 
 ### Step 2: Register in Shared Collision Logic
 Open [`shared/src/collision.ts`](file:///Users/firdausfadzi/Desktop/game/shared/src/collision.ts):
@@ -303,8 +292,8 @@ In [`client/index.html`](file:///Users/firdausfadzi/Desktop/game/client/index.ht
 Grid decorations are bounded by the $50\times 50\text{ px}$ tile grid (e.g. modular table sections, floor plants, carpets, rugs).
 
 ### Step 1: Place Image Files
-1. `assets/decoration/<asset_id>.png`
-2. `client/public/assets/decoration/<asset_id>.png`
+Save your PNG file directly to:
+- `client/public/assets/decoration/<asset_id>.png`
 
 ### Step 2: Register in GameScene Preload
 In [`client/src/scenes/GameScene.ts`](file:///Users/firdausfadzi/Desktop/game/client/src/scenes/GameScene.ts):
@@ -368,8 +357,8 @@ In [`client/index.html`](file:///Users/firdausfadzi/Desktop/game/client/index.ht
 Freeform props are **not** bounded by the grid. They can be placed anywhere at continuous pixel coordinates $(X, Y)$ (drag-and-drop or point-and-click), like chairs, couches, cushions, or tabletop accessories.
 
 ### Step 1: Place Image Files
-1. `assets/decoration/<asset_id>.png`
-2. `client/public/assets/decoration/<asset_id>.png`
+Save your PNG file directly to:
+- `client/public/assets/decoration/<asset_id>.png`
 
 ### Step 2: Register in Shared Types (`shared/src/types.ts`)
 Freeform assets require server and client agreement:
@@ -465,7 +454,7 @@ sequenceDiagram
 ### Step-by-Step Implementation
 
 1. **Place Asset Image:**
-   - Save to `assets/decoration/<entity_name>_1.png` and `client/public/assets/decoration/<entity_name>_1.png`.
+   - Save to `client/public/assets/decoration/<entity_name>_1.png`.
 2. **Preload in GameScene:**
    - `this.load.image("<entity_name>_1", "/assets/decoration/<entity_name>_1.png");`
 3. **Define Shared State (`shared/src/types.ts`):**
@@ -511,34 +500,34 @@ Characters use 5 movement states: `idle`, `left`, `right`, `up`, and `down`.
 // shared/src/types.ts
 export const DEFAULT_AVATARS: Record<"idle" | "left" | "right" | "up" | "down", string[]> = {
   idle: [
-    "/assets/sprite1.png",
-    "/assets/sprite2.png",
-    "/assets/sprite3.png",
-    "/assets/sprite4.png",
+    "/assets/sprites/default/sprite1.png",
+    "/assets/sprites/default/sprite2.png",
+    "/assets/sprites/default/sprite3.png",
+    "/assets/sprites/default/sprite4.png",
   ],
   left: [
-    "/assets/walk_sprite9_flip.png",
-    "/assets/walk_sprite10_flip.png",
-    "/assets/walk_sprite11_flip.png",
-    "/assets/walk_sprite12_flip.png",
+    "/assets/sprites/default/walk_sprite9_flip.png",
+    "/assets/sprites/default/walk_sprite10_flip.png",
+    "/assets/sprites/default/walk_sprite11_flip.png",
+    "/assets/sprites/default/walk_sprite12_flip.png",
   ],
   right: [
-    "/assets/walk_sprite9.png",
-    "/assets/walk_sprite10.png",
-    "/assets/walk_sprite11.png",
-    "/assets/walk_sprite12.png",
+    "/assets/sprites/default/walk_sprite9.png",
+    "/assets/sprites/default/walk_sprite10.png",
+    "/assets/sprites/default/walk_sprite11.png",
+    "/assets/sprites/default/walk_sprite12.png",
   ],
   up: [
-    "/assets/walk_sprite17.png",
-    "/assets/walk_sprite18.png",
-    "/assets/walk_sprite19.png",
-    "/assets/walk_sprite20.png",
+    "/assets/sprites/default/walk_sprite17.png",
+    "/assets/sprites/default/walk_sprite18.png",
+    "/assets/sprites/default/walk_sprite19.png",
+    "/assets/sprites/default/walk_sprite20.png",
   ],
   down: [
-    "/assets/walk_sprite1.png",
-    "/assets/walk_sprite2.png",
-    "/assets/walk_sprite3.png",
-    "/assets/walk_sprite4.png",
+    "/assets/sprites/default/walk_sprite1.png",
+    "/assets/sprites/default/walk_sprite2.png",
+    "/assets/sprites/default/walk_sprite3.png",
+    "/assets/sprites/default/walk_sprite4.png",
   ],
 };
 ```
@@ -546,7 +535,7 @@ export const DEFAULT_AVATARS: Record<"idle" | "left" | "right" | "up" | "down", 
 ### Adding New Built-In Character Atlases
 
 1. **Format Sheet:** Create a PNG spritesheet (e.g. `my_char_sheet.png`) and standard TexturePacker JSON mapping (`my_char_mapping.json`).
-2. **Place in Assets:** Put in `assets/` and `client/public/assets/`.
+2. **Place in Assets:** Put in `client/public/assets/sprites/` (or `client/public/assets/`).
 3. **Preload Atlas in `GameScene.ts`:**
    ```typescript
    this.load.atlas(
@@ -563,7 +552,7 @@ export const DEFAULT_AVATARS: Record<"idle" | "left" | "right" | "up" | "down", 
 
 When you add any asset, use this quick checklist before submitting a pull request:
 
-- [ ] **Dual File Copy:** Image placed in both `assets/<dir>/` and `client/public/assets/<dir>/`.
+- [ ] **Single Source File Placement:** Image placed in `client/public/assets/<dir>/`.
 - [ ] **Dimensions & Aspect Ratio:** Verified pixel dimensions ($50\times 50\text{ px}$, $96\times 96\text{ px}$, or $150\times 150\text{ px}$).
 - [ ] **Transparency:** Alpha channel checked for clean background cutouts (no black or white matte artifacts).
 - [ ] **Phaser Preload:** Registered in `client/src/scenes/GameScene.ts` `preload()`.
@@ -584,7 +573,7 @@ When you add any asset, use this quick checklist before submitting a pull reques
 
 | Problem | Root Cause | Solution |
 | :--- | :--- | :--- |
-| **Missing Image / 404 in Browser Console** | File was copied to `/assets/` but missed in `/client/public/assets/`. | Copy the asset into [`client/public/assets/`](file:///Users/firdausfadzi/Desktop/game/client/public/assets/). Vite serves public root files. |
+| **Missing Image / 404 in Browser Console** | File was not placed in `/client/public/assets/`. | Copy the asset into [`client/public/assets/`](file:///Users/firdausfadzi/Desktop/game/client/public/assets/). Vite serves public root files. |
 | **Phaser Texture Missing Warning (`Texture.error`)** | Asset ID not included in `preload()` in [`GameScene.ts`](file:///Users/firdausfadzi/Desktop/game/client/src/scenes/GameScene.ts). | Ensure `this.load.image("<id>", "/assets/...")` is called during the scene's preload stage. |
 | **Brush Preview is Blank / White Square** | `getAssetImagePath()` in [`main.ts`](file:///Users/firdausfadzi/Desktop/game/client/src/main.ts) doesn't know about the new ID. | Add the ID to the appropriate category Set in `getAssetImagePath()`. |
 | **Player Walks Through Wall** | Wall asset not registered in `isWallAsset()` in `shared/src/collision.ts`, or shared not rebuilt. | Add key to `WALL_ASSET_KEYS` and `isWallAsset()`, then run `npm run build:shared`. |

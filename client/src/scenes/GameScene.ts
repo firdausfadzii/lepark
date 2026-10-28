@@ -388,23 +388,30 @@ export class GameScene extends Phaser.Scene {
     // Default character avatar atlas & frames
     this.load.atlas(
       "player_idle_sheet",
-      "/assets/16x32_idle_sheet.png",
-      "/assets/idle_sprites_mapping.json"
+      "/assets/sprites/default/16x32_idle_sheet.png",
+      "/assets/sprites/default/idle_sprites_mapping.json"
     );
     this.load.atlas(
       "player_walk_sheet",
-      "/assets/16x32_walk_sheet.png",
-      "/assets/walk_sprites_mapping.json"
+      "/assets/sprites/default/16x32_walk_sheet.png",
+      "/assets/sprites/default/walk_sprites_mapping.json"
     );
-    this.load.image("default_avatar_idle", "/assets/sprite1.png");
-    this.load.image("default_avatar_left_0", "/assets/walk_sprite9_flip.png");
-    this.load.image("default_avatar_left_1", "/assets/walk_sprite10_flip.png");
-    this.load.image("default_avatar_right_0", "/assets/walk_sprite9.png");
-    this.load.image("default_avatar_right_1", "/assets/walk_sprite10.png");
-    this.load.image("default_avatar_up_0", "/assets/walk_sprite17.png");
-    this.load.image("default_avatar_up_1", "/assets/walk_sprite18.png");
-    this.load.image("default_avatar_down_0", "/assets/walk_sprite1.png");
-    this.load.image("default_avatar_down_1", "/assets/walk_sprite2.png");
+    this.load.image("default_avatar_idle", "/assets/sprites/default/sprite1.png");
+    this.load.image("default_avatar_left_0", "/assets/sprites/default/walk_sprite9_flip.png");
+    this.load.image("default_avatar_left_1", "/assets/sprites/default/walk_sprite10_flip.png");
+    this.load.image("default_avatar_right_0", "/assets/sprites/default/walk_sprite9.png");
+    this.load.image("default_avatar_right_1", "/assets/sprites/default/walk_sprite10.png");
+    this.load.image("default_avatar_up_0", "/assets/sprites/default/walk_sprite17.png");
+    this.load.image("default_avatar_up_1", "/assets/sprites/default/walk_sprite18.png");
+    this.load.image("default_avatar_down_0", "/assets/sprites/default/walk_sprite1.png");
+    this.load.image("default_avatar_down_1", "/assets/sprites/default/walk_sprite2.png");
+
+    // Slime avatar atlas & frames
+    this.load.atlas(
+      "slime_sheet",
+      "/assets/sprites/slime/slime_spritesheet.png",
+      "/assets/sprites/slime/slime_sprites.json"
+    );
   }
 
   create() {
@@ -1259,7 +1266,7 @@ export class GameScene extends Phaser.Scene {
 
     const hasCustomUploads = avatars && dirs.some((dir) => {
       const frames = normalizeFrames(avatars[dir]);
-      return frames.some((f) => typeof f === "string" && f.startsWith("data:image/"));
+      return frames.some((f) => typeof f === "string" && (f.startsWith("data:image/") || f.startsWith("/") || f.startsWith("http")));
     });
 
     if (!hasCustomUploads) {
@@ -1281,11 +1288,10 @@ export class GameScene extends Phaser.Scene {
       if (frames.length === 0) return;
 
       frames.slice(0, 6).forEach((frameSrc, idx) => {
-        if (!frameSrc || !frameSrc.startsWith("data:image/")) return;
+        if (!frameSrc || (!frameSrc.startsWith("data:image/") && !frameSrc.startsWith("/") && !frameSrc.startsWith("http"))) return;
 
         const texKey = `avatar_${sessionId}_${dir}_${idx}`;
-        const img = new Image();
-        img.onload = () => {
+        const registerTex = () => {
           try {
             if (this.textures.exists(texKey)) {
               this.textures.remove(texKey);
@@ -1300,7 +1306,13 @@ export class GameScene extends Phaser.Scene {
           }
           this.updateVisualSprite(sessionId);
         };
+
+        const img = new Image();
+        img.onload = registerTex;
         img.src = frameSrc;
+        if (img.complete && img.naturalWidth > 0) {
+          registerTex();
+        }
       });
     });
   }
@@ -1326,8 +1338,8 @@ export class GameScene extends Phaser.Scene {
         const frameKey = customFrames[visual.currentFrameIdx % customFrames.length];
         if (this.textures.exists(frameKey)) {
           visual.sprite.setTexture(frameKey);
-          visual.sprite.setOrigin(0.5, 0.5);
-          visual.sprite.setPosition(0, 0);
+          visual.sprite.setOrigin(0.5, 1.0);
+          visual.sprite.setPosition(0, CHARACTER_MAX_SIZE / 2);
           visual.sprite.setFlipX(false);
 
           const MAX_DIM = CHARACTER_MAX_SIZE;
@@ -1339,8 +1351,7 @@ export class GameScene extends Phaser.Scene {
           } else {
             visual.sprite.setDisplaySize(MAX_DIM, MAX_DIM);
           }
-          const halfH = Math.max(PLAYER_RADIUS, visual.sprite.displayHeight / 2);
-          visual.nameTag.setPosition(0, -halfH - 12);
+          visual.nameTag.setPosition(0, -CHARACTER_MAX_SIZE / 2 - 12);
           return;
         }
       }

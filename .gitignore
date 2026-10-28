@@ -34,3 +34,8 @@ client/certs/
 *.pem
 *.key
 *.crt
+
+# Root assets (client/public/assets is the single source of truth)
+/assets/*
+!/assets/.gitkeep
+

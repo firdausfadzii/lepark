@@ -1403,7 +1403,7 @@ export class GameRoom extends Room<GameState> {
           }
         }
         if (!avatarUrl) {
-          avatarUrl = "/assets/sprite1.png";
+          avatarUrl = "/assets/sprites/default/sprite1.png";
         }
 
         const isViewer =
@@ -3078,7 +3078,7 @@ export class GameRoom extends Room<GameState> {
         return avatars.idle;
       }
     }
-    return "/assets/sprite1.png";
+    return "/assets/sprites/default/sprite1.png";
   }
 
   private getChessLobbyState(chessBoardId: string): ChessLobbyState {
