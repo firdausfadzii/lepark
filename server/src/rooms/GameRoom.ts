@@ -40,6 +40,19 @@ import {
   TypeRaceResult,
   TypeRaceRoomState,
   TypeRaceStatus,
+  AshtrayState,
+  SmokingGamePlayer,
+  SmokingGameResult,
+  SmokingGameRoomState,
+  SmokingGameStatus,
+  SmokingGameSettings,
+  SmokingGameJoinPayload,
+  SmokingGameLeavePayload,
+  SmokingGameReadyPayload,
+  SmokingGameUpdateSettingsPayload,
+  SmokingGameStartPayload,
+  SmokingGameMashPayload,
+  SmokingGamePlayAgainPayload,
 } from "shared";
 import {
   upsertPlayer,
@@ -53,6 +66,8 @@ import {
   updateSpaceJukeboxes,
   getSpaceTypewriters,
   updateSpaceTypewriters,
+  getSpaceAshtrays,
+  updateSpaceAshtrays,
   findUserById,
   ensureUserPersonalSpace,
   saveChatMessage,
@@ -95,6 +110,25 @@ export class GameRoom extends Room<GameState> {
     }
   > = new Map();
   private clientTypewriterRaceMap: Map<string, string> = new Map();
+  private ashtrays: Map<string, AshtrayState> = new Map();
+  private smokingSessions: Map<
+    string,
+    {
+      ashtrayId: string;
+      status: SmokingGameStatus;
+      starterSessionId: string;
+      settings: SmokingGameSettings;
+      startTime: number;
+      endTime: number;
+      countdown: number;
+      countdownTimer?: NodeJS.Timeout;
+      matchTimer?: NodeJS.Timeout;
+      lastBroadcastAt?: number;
+      players: Map<string, SmokingGamePlayer>;
+      results: SmokingGameResult[];
+    }
+  > = new Map();
+  private clientAshtrayGameMap: Map<string, string> = new Map();
   private voiceParticipants: Set<string> = new Set();
   private spaceOwnerId: number | null = null;
   private clientAuthMap: Map<string, any> = new Map();
@@ -108,6 +142,7 @@ export class GameRoom extends Room<GameState> {
         tiles: this.tiles,
         jukeboxes: this.jukeboxes.values(),
         typewriters: this.typewriters.values(),
+        ashtrays: this.ashtrays.values(),
       });
     }
     return this.cachedPixelCollisionChecker;
@@ -284,15 +319,16 @@ export class GameRoom extends Room<GameState> {
       },
     );
 
-    // Load initial tiles, space metadata, zones, jukeboxes, typewriters, and recent chat history
+    // Load initial tiles, space metadata, zones, jukeboxes, typewriters, ashtrays, and recent chat history
     try {
-      const [loadedTiles, space, loadedZones, loadedJukeboxes, loadedTypewriters, loadedChats] =
+      const [loadedTiles, space, loadedZones, loadedJukeboxes, loadedTypewriters, loadedAshtrays, loadedChats] =
         await Promise.all([
           getSpaceTiles(this.spaceId),
           getSpaceById(this.spaceId),
           getSpacePrivateZones(this.spaceId),
           getSpaceJukeboxes(this.spaceId),
           getSpaceTypewriters(this.spaceId),
+          getSpaceAshtrays(this.spaceId),
           getRecentChatMessages(this.spaceId, "map", 50),
         ]);
 
@@ -309,6 +345,11 @@ export class GameRoom extends Room<GameState> {
       if (loadedTypewriters && Array.isArray(loadedTypewriters)) {
         for (const tw of loadedTypewriters) {
           this.typewriters.set(tw.id, tw);
+        }
+      }
+      if (loadedAshtrays && Array.isArray(loadedAshtrays)) {
+        for (const at of loadedAshtrays) {
+          this.ashtrays.set(at.id, at);
         }
       }
       this.recentChatMessages = loadedChats || [];
@@ -1133,6 +1174,355 @@ export class GameRoom extends Room<GameState> {
       }
     );
 
+    // --- Ashtray & Smoking Game Handlers ---
+
+    // 1. Place Ashtray (owner/superadmin)
+    this.onMessage(
+      "ASHTRAY_PLACE",
+      async (
+        client: Client,
+        data: { x: number; y: number; passable?: boolean; ontop?: boolean; layer?: number }
+      ) => {
+        const auth = this.clientAuthMap.get(client.sessionId);
+        const user = auth?.user;
+        const isSuperadmin = user?.role === "superadmin";
+        const isOwner =
+          user && this.spaceOwnerId !== null && user.id === this.spaceOwnerId;
+
+        if (!isSuperadmin && !isOwner) {
+          client.send("ERROR", {
+            message:
+              "Permission denied: Only space owner or superadmin can place an ashtray.",
+          });
+          return;
+        }
+
+        const newAt: AshtrayState = {
+          id:
+            "ashtray_" +
+            Date.now() +
+            "_" +
+            Math.random().toString(36).substring(2, 7),
+          spaceId: this.spaceId,
+          x: Math.round(data.x),
+          y: Math.round(data.y),
+          passable: data.passable ?? false,
+          ontop: data.ontop ?? false,
+          layer: typeof data.layer === "number" ? Math.round(data.layer) : 0,
+        };
+
+        this.ashtrays.set(newAt.id, newAt);
+        this.invalidatePixelCollisionChecker();
+        this.broadcast("ASHTRAY_UPDATED", newAt);
+        await this.persistAshtrays();
+      }
+    );
+
+    // 2. Move Ashtray (owner/superadmin)
+    this.onMessage(
+      "ASHTRAY_MOVE",
+      async (
+        client: Client,
+        data: { ashtrayId: string; x: number; y: number }
+      ) => {
+        const auth = this.clientAuthMap.get(client.sessionId);
+        const user = auth?.user;
+        const isSuperadmin = user?.role === "superadmin";
+        const isOwner =
+          user && this.spaceOwnerId !== null && user.id === this.spaceOwnerId;
+
+        if (!isSuperadmin && !isOwner) {
+          client.send("ERROR", {
+            message:
+              "Permission denied: Only space owner or superadmin can move an ashtray.",
+          });
+          return;
+        }
+
+        const at = this.ashtrays.get(data.ashtrayId);
+        if (at) {
+          at.x = Math.round(data.x);
+          at.y = Math.round(data.y);
+          this.invalidatePixelCollisionChecker();
+          this.broadcast("ASHTRAY_UPDATED", at);
+          await this.persistAshtrays();
+        }
+      }
+    );
+
+    // 3. Delete Ashtray (owner/superadmin)
+    this.onMessage(
+      "ASHTRAY_DELETE",
+      async (client: Client, data: { ashtrayId: string }) => {
+        const auth = this.clientAuthMap.get(client.sessionId);
+        const user = auth?.user;
+        const isSuperadmin = user?.role === "superadmin";
+        const isOwner =
+          user && this.spaceOwnerId !== null && user.id === this.spaceOwnerId;
+
+        if (!isSuperadmin && !isOwner) {
+          client.send("ERROR", {
+            message:
+              "Permission denied: Only space owner or superadmin can delete an ashtray.",
+          });
+          return;
+        }
+
+        if (this.ashtrays.delete(data.ashtrayId)) {
+          this.invalidatePixelCollisionChecker();
+          this.broadcast("ASHTRAY_DELETED", {
+            ashtrayId: data.ashtrayId,
+          });
+          const session = this.smokingSessions.get(data.ashtrayId);
+          if (session) {
+            if (session.countdownTimer) clearInterval(session.countdownTimer);
+            if (session.matchTimer) clearTimeout(session.matchTimer);
+            this.smokingSessions.delete(data.ashtrayId);
+          }
+          await this.persistAshtrays();
+        }
+      }
+    );
+
+    // 3b. Set Ashtray Passable (owner/superadmin)
+    this.onMessage(
+      "ASHTRAY_PASSABLE",
+      async (client: Client, data: { ashtrayId: string; passable: boolean }) => {
+        const auth = this.clientAuthMap.get(client.sessionId);
+        const user = auth?.user;
+        const isSuperadmin = user?.role === "superadmin";
+        const isOwner =
+          user && this.spaceOwnerId !== null && user.id === this.spaceOwnerId;
+
+        if (!isSuperadmin && !isOwner) {
+          client.send("ERROR", {
+            message:
+              "Permission denied: Only space owner or superadmin can update an ashtray.",
+          });
+          return;
+        }
+
+        const at = this.ashtrays.get(data.ashtrayId);
+        if (at) {
+          at.passable = Boolean(data.passable);
+          this.invalidatePixelCollisionChecker();
+          this.broadcast("ASHTRAY_UPDATED", at);
+          await this.persistAshtrays();
+        }
+      }
+    );
+
+    // 4. Join Smoking Game
+    this.onMessage(
+      "SMOKING_GAME_JOIN",
+      (client: Client, data: { ashtrayId: string }) => {
+        if (!data?.ashtrayId) return;
+        const atId = data.ashtrayId;
+        let session = this.smokingSessions.get(atId);
+        if (!session) {
+          session = {
+            ashtrayId: atId,
+            status: "waiting",
+            starterSessionId: client.sessionId,
+            settings: {
+              mashesPerCigarette: 50,
+              gameDuration: 60,
+            },
+            startTime: 0,
+            endTime: 0,
+            countdown: 0,
+            players: new Map(),
+            results: [],
+          };
+          this.smokingSessions.set(atId, session);
+        }
+
+        const auth = this.clientAuthMap.get(client.sessionId);
+        const name =
+          auth?.user?.displayName || auth?.user?.username || "Player";
+        const color =
+          this.state.players.get(client.sessionId)?.color || "#3b82f6";
+        const userId = auth?.user?.id;
+
+        const avatars = this.playerAvatars.get(client.sessionId);
+        let avatarUrl: string | undefined = undefined;
+        if (avatars?.idle) {
+          if (Array.isArray(avatars.idle) && avatars.idle.length > 0) {
+            avatarUrl = avatars.idle[0];
+          } else if (typeof avatars.idle === "string") {
+            avatarUrl = avatars.idle;
+          }
+        }
+        if (!avatarUrl) {
+          avatarUrl = "/assets/sprite1.png";
+        }
+
+        const isViewer =
+          session.status === "smoking" || session.status === "starting";
+
+        // If starter left or session had no players, set client as starter
+        if (
+          !session.starterSessionId ||
+          !session.players.has(session.starterSessionId) ||
+          session.players.size === 0
+        ) {
+          session.starterSessionId = client.sessionId;
+        }
+
+        const isStarter = session.starterSessionId === client.sessionId;
+
+        session.players.set(client.sessionId, {
+          sessionId: client.sessionId,
+          userId,
+          name,
+          color,
+          avatarUrl,
+          isReady: isStarter ? true : false,
+          isStarter,
+          isViewer,
+          currentMashes: 0,
+          cigarettesFinished: 0,
+          totalMashes: 0,
+          mashesPerSecond: 0,
+          joinedAt: Date.now(),
+        });
+
+        this.clientAshtrayGameMap.set(client.sessionId, atId);
+        client.send("SMOKING_GAME_STATE", this.getSmokingRoomState(session));
+        this.broadcastSmokingGameState(session);
+      }
+    );
+
+    // 5. Leave Smoking Game
+    this.onMessage(
+      "SMOKING_GAME_LEAVE",
+      (client: Client, data: { ashtrayId: string }) => {
+        const atId =
+          data?.ashtrayId ||
+          this.clientAshtrayGameMap.get(client.sessionId);
+        if (atId) {
+          this.handleSmokingGameLeave(client.sessionId, atId);
+        }
+      }
+    );
+
+    // 6. Ready status toggle
+    this.onMessage(
+      "SMOKING_GAME_READY",
+      (client: Client, data: { ashtrayId: string; ready: boolean }) => {
+        if (!data?.ashtrayId) return;
+        const session = this.smokingSessions.get(data.ashtrayId);
+        if (!session || session.status !== "waiting") return;
+
+        const player = session.players.get(client.sessionId);
+        if (!player || player.isViewer) return;
+
+        player.isReady = Boolean(data.ready);
+        this.broadcastSmokingGameState(session);
+      }
+    );
+
+    // 7. Update Settings (Game Starter only)
+    this.onMessage(
+      "SMOKING_GAME_UPDATE_SETTINGS",
+      (
+        client: Client,
+        data: { ashtrayId: string; mashesPerCigarette?: number; gameDuration?: number }
+      ) => {
+        if (!data?.ashtrayId) return;
+        const session = this.smokingSessions.get(data.ashtrayId);
+        if (!session || session.status !== "waiting") return;
+
+        // Verify client is the game starter
+        if (session.starterSessionId !== client.sessionId) return;
+
+        if (typeof data.mashesPerCigarette === "number" && data.mashesPerCigarette > 0) {
+          session.settings.mashesPerCigarette = Math.min(500, Math.max(5, Math.round(data.mashesPerCigarette)));
+        }
+        if (typeof data.gameDuration === "number" && data.gameDuration > 0) {
+          session.settings.gameDuration = Math.min(600, Math.max(10, Math.round(data.gameDuration)));
+        }
+
+        this.broadcastSmokingGameState(session);
+      }
+    );
+
+    // 8. Start Game (Game Starter only)
+    this.onMessage(
+      "SMOKING_GAME_START",
+      (client: Client, data: { ashtrayId: string }) => {
+        if (!data?.ashtrayId) return;
+        const session = this.smokingSessions.get(data.ashtrayId);
+        if (!session || session.status !== "waiting") return;
+
+        // Verify client is the game starter
+        if (session.starterSessionId !== client.sessionId) return;
+
+        this.startSmokingGameCountdown(session);
+      }
+    );
+
+    // 9. Mash Progress Update
+    this.onMessage(
+      "SMOKING_GAME_MASH",
+      (
+        client: Client,
+        data: {
+          ashtrayId: string;
+          currentMashes: number;
+          cigarettesFinished: number;
+          totalMashes: number;
+          mashesPerSecond: number;
+        }
+      ) => {
+        if (!data?.ashtrayId) return;
+        const session = this.smokingSessions.get(data.ashtrayId);
+        if (!session || session.status !== "smoking") return;
+
+        const player = session.players.get(client.sessionId);
+        if (!player || player.isViewer) return;
+
+        player.currentMashes = Math.max(0, data.currentMashes || 0);
+        player.cigarettesFinished = Math.max(0, data.cigarettesFinished || 0);
+        player.totalMashes = Math.max(0, data.totalMashes || 0);
+        player.mashesPerSecond = Math.max(0, parseFloat((data.mashesPerSecond || 0).toFixed(1)));
+
+        this.broadcastSmokingGameStateThrottled(session);
+      }
+    );
+
+    // 10. Play Again / Reset to Lobby
+    this.onMessage(
+      "SMOKING_GAME_PLAY_AGAIN",
+      (client: Client, data: { ashtrayId: string }) => {
+        if (!data?.ashtrayId) return;
+        const session = this.smokingSessions.get(data.ashtrayId);
+        if (!session || session.status !== "ended") return;
+
+        if (session.countdownTimer) clearInterval(session.countdownTimer);
+        if (session.matchTimer) clearTimeout(session.matchTimer);
+
+        session.status = "waiting";
+        session.results = [];
+        session.countdown = 0;
+        session.startTime = 0;
+        session.endTime = 0;
+
+        // Reset players and make viewers active players for next match
+        for (const p of session.players.values()) {
+          p.isViewer = false;
+          p.isReady = p.isStarter ? true : false;
+          p.currentMashes = 0;
+          p.cigarettesFinished = 0;
+          p.totalMashes = 0;
+          p.mashesPerSecond = 0;
+          p.rank = undefined;
+        }
+
+        this.broadcastSmokingGameState(session);
+      }
+    );
+
     // Handle chat messages from clients
     this.onMessage(
       "SEND_CHAT_MESSAGE",
@@ -1496,6 +1886,9 @@ export class GameRoom extends Room<GameState> {
     // Send current space typewriters to joining client
     client.send("CURRENT_TYPEWRITERS", Array.from(this.typewriters.values()));
 
+    // Send current space ashtrays to joining client
+    client.send("CURRENT_ASHTRAYS", Array.from(this.ashtrays.values()));
+
     // Send recent chat messages from DB to joining client
     if (this.recentChatMessages && this.recentChatMessages.length > 0) {
       client.send("CHAT_HISTORY", this.recentChatMessages);
@@ -1513,6 +1906,12 @@ export class GameRoom extends Room<GameState> {
     if (this.clientTypewriterRaceMap.has(client.sessionId)) {
       const twId = this.clientTypewriterRaceMap.get(client.sessionId)!;
       this.handleTypeRaceLeave(client.sessionId, twId);
+    }
+
+    // Cleanup smoking game session if user was in smoking game
+    if (this.clientAshtrayGameMap.has(client.sessionId)) {
+      const atId = this.clientAshtrayGameMap.get(client.sessionId)!;
+      this.handleSmokingGameLeave(client.sessionId, atId);
     }
 
     const player = this.state.players.get(client.sessionId);
@@ -1763,6 +2162,221 @@ export class GameRoom extends Room<GameState> {
     }, 1000);
   }
 
+  // --- Ashtray & Smoking Game Helper Methods ---
+
+  private getSmokingRoomState(session: {
+    ashtrayId: string;
+    status: SmokingGameStatus;
+    starterSessionId: string;
+    settings: SmokingGameSettings;
+    startTime: number;
+    endTime: number;
+    countdown: number;
+    players: Map<string, SmokingGamePlayer>;
+    results: SmokingGameResult[];
+  }): SmokingGameRoomState {
+    const playersObj: Record<string, SmokingGamePlayer> = {};
+    for (const [sId, p] of session.players.entries()) {
+      playersObj[sId] = { ...p };
+    }
+    return {
+      ashtrayId: session.ashtrayId,
+      status: session.status,
+      starterSessionId: session.starterSessionId,
+      settings: { ...session.settings },
+      startTime: session.startTime,
+      endTime: session.endTime,
+      countdown: session.countdown,
+      players: playersObj,
+      results: [...session.results],
+    };
+  }
+
+  private broadcastSmokingGameState(session: {
+    ashtrayId: string;
+    status: SmokingGameStatus;
+    starterSessionId: string;
+    settings: SmokingGameSettings;
+    startTime: number;
+    endTime: number;
+    countdown: number;
+    players: Map<string, SmokingGamePlayer>;
+    results: SmokingGameResult[];
+  }) {
+    const state = this.getSmokingRoomState(session);
+    this.broadcast("SMOKING_GAME_STATE", state);
+  }
+
+  private broadcastSmokingGameStateThrottled(session: {
+    ashtrayId: string;
+    status: SmokingGameStatus;
+    starterSessionId: string;
+    settings: SmokingGameSettings;
+    startTime: number;
+    endTime: number;
+    countdown: number;
+    players: Map<string, SmokingGamePlayer>;
+    results: SmokingGameResult[];
+    lastBroadcastAt?: number;
+  }) {
+    const now = Date.now();
+    if (!session.lastBroadcastAt || now - session.lastBroadcastAt >= 100) {
+      session.lastBroadcastAt = now;
+      this.broadcastSmokingGameState(session);
+    }
+  }
+
+  private startSmokingGameCountdown(session: {
+    ashtrayId: string;
+    status: SmokingGameStatus;
+    starterSessionId: string;
+    settings: SmokingGameSettings;
+    startTime: number;
+    endTime: number;
+    countdown: number;
+    countdownTimer?: NodeJS.Timeout;
+    matchTimer?: NodeJS.Timeout;
+    players: Map<string, SmokingGamePlayer>;
+    results: SmokingGameResult[];
+  }) {
+    if (session.countdownTimer) clearInterval(session.countdownTimer);
+    session.status = "starting";
+    session.countdown = 3;
+    this.broadcastSmokingGameState(session);
+
+    session.countdownTimer = setInterval(() => {
+      session.countdown -= 1;
+      if (session.countdown > 0) {
+        this.broadcastSmokingGameState(session);
+      } else {
+        if (session.countdownTimer) {
+          clearInterval(session.countdownTimer);
+          session.countdownTimer = undefined;
+        }
+
+        session.status = "smoking";
+        session.startTime = Date.now();
+        session.endTime = session.startTime + session.settings.gameDuration * 1000;
+        session.results = [];
+
+        // Reset all active players for match start
+        for (const p of session.players.values()) {
+          p.currentMashes = 0;
+          p.cigarettesFinished = 0;
+          p.totalMashes = 0;
+          p.mashesPerSecond = 0;
+          p.rank = undefined;
+        }
+
+        this.broadcastSmokingGameState(session);
+        this.broadcast("SMOKING_GAME_START", this.getSmokingRoomState(session));
+
+        // Start timer for duration
+        session.matchTimer = setTimeout(() => {
+          this.endSmokingGame(session);
+        }, session.settings.gameDuration * 1000);
+      }
+    }, 1000);
+  }
+
+  private endSmokingGame(session: {
+    ashtrayId: string;
+    status: SmokingGameStatus;
+    starterSessionId: string;
+    settings: SmokingGameSettings;
+    startTime: number;
+    endTime: number;
+    countdown: number;
+    countdownTimer?: NodeJS.Timeout;
+    matchTimer?: NodeJS.Timeout;
+    players: Map<string, SmokingGamePlayer>;
+    results: SmokingGameResult[];
+  }) {
+    if (session.matchTimer) {
+      clearTimeout(session.matchTimer);
+      session.matchTimer = undefined;
+    }
+    session.status = "ended";
+
+    // Sort players: 1st by cigarettesFinished desc, then by currentMashes desc, then by totalMashes desc
+    const sortedPlayers = Array.from(session.players.values())
+      .filter((p) => !p.isViewer)
+      .sort((a, b) => {
+        if (b.cigarettesFinished !== a.cigarettesFinished) {
+          return b.cigarettesFinished - a.cigarettesFinished;
+        }
+        if (b.currentMashes !== a.currentMashes) {
+          return b.currentMashes - a.currentMashes;
+        }
+        return b.totalMashes - a.totalMashes;
+      });
+
+    session.results = [];
+    sortedPlayers.forEach((p, idx) => {
+      const rank = idx + 1;
+      p.rank = rank;
+      session.results.push({
+        sessionId: p.sessionId,
+        name: p.name,
+        color: p.color,
+        avatarUrl: p.avatarUrl,
+        cigarettesFinished: p.cigarettesFinished,
+        currentMashes: p.currentMashes,
+        totalMashes: p.totalMashes,
+        mashesPerSecond: p.mashesPerSecond,
+        rank,
+      });
+    });
+
+    const finalState = this.getSmokingRoomState(session);
+    this.broadcast("SMOKING_GAME_STATE", finalState);
+    this.broadcast("SMOKING_GAME_ENDED", {
+      ashtrayId: session.ashtrayId,
+      results: session.results,
+    });
+  }
+
+  private handleSmokingGameLeave(sessionId: string, ashtrayId: string) {
+    this.clientAshtrayGameMap.delete(sessionId);
+    const session = this.smokingSessions.get(ashtrayId);
+    if (!session) return;
+
+    session.players.delete(sessionId);
+
+    if (session.players.size === 0) {
+      if (session.countdownTimer) clearInterval(session.countdownTimer);
+      if (session.matchTimer) clearTimeout(session.matchTimer);
+      this.smokingSessions.delete(ashtrayId);
+      return;
+    }
+
+    // Whoever is the first join will be the game starter. If game starter leave, the next first will be the game starter and so on.
+    if (session.starterSessionId === sessionId) {
+      const remaining = Array.from(session.players.values()).sort(
+        (a, b) => a.joinedAt - b.joinedAt
+      );
+      if (remaining.length > 0) {
+        const nextStarter = remaining[0];
+        session.starterSessionId = nextStarter.sessionId;
+        nextStarter.isStarter = true;
+        nextStarter.isReady = true;
+      }
+    }
+
+    this.broadcastSmokingGameState(session);
+  }
+
+  private async persistAshtrays() {
+    try {
+      await updateSpaceAshtrays(
+        this.spaceId,
+        Array.from(this.ashtrays.values())
+      );
+    } catch (err) {
+      console.error("[GameRoom] Error persisting space ashtrays:", err);
+    }
+  }
+
   private getSolidBoxes(): SolidBox[] {
     const boxes: SolidBox[] = [];
     for (const jb of this.jukeboxes.values()) {
@@ -1782,6 +2396,16 @@ export class GameRoom extends Room<GameState> {
           maxX: tw.x + 20,
           minY: tw.y - 18,
           maxY: tw.y + 18,
+        });
+      }
+    }
+    for (const at of this.ashtrays.values()) {
+      if (at.passable === false) {
+        boxes.push({
+          minX: at.x - 20,
+          maxX: at.x + 20,
+          minY: at.y - 18,
+          maxY: at.y + 18,
         });
       }
     }
@@ -1836,5 +2460,10 @@ export class GameRoom extends Room<GameState> {
       if (session.matchTimer) clearTimeout(session.matchTimer);
     }
     this.typeRaceSessions.clear();
+    for (const session of this.smokingSessions.values()) {
+      if (session.countdownTimer) clearInterval(session.countdownTimer);
+      if (session.matchTimer) clearTimeout(session.matchTimer);
+    }
+    this.smokingSessions.clear();
   }
 }

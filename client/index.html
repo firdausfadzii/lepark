@@ -1387,6 +1387,28 @@
               </div>
             </button>
 
+            <!-- Asset: Ashtray (ashtray_1) -->
+            <button
+              type="button"
+              class="editor-asset-card"
+              id="tool-ashtray"
+              data-tool-type="ashtray"
+              data-asset-id="ashtray_1"
+              data-asset-name="Ashtray"
+              data-tile-type="decoration"
+              title="Ashtray (ashtray_1) - Cigarette Smoking Button-Spam Game, freeform placement"
+            >
+              <div class="asset-card-thumb ashtray-tool-thumb">
+                <img src="/assets/decoration/ashtray_1.png" alt="Ashtray" class="ashtray-card-img" />
+                <span class="asset-card-badge ashtray-badge">Game</span>
+                <span class="asset-card-check">✓</span>
+              </div>
+              <div class="asset-card-info">
+                <span class="asset-card-name">Ashtray 1</span>
+                <span class="asset-card-code">ashtray_1</span>
+              </div>
+            </button>
+
             <!-- Tool: Remove Decoration -->
             <button
               type="button"
@@ -3248,6 +3270,269 @@
             </button>
             <button type="button" id="btn-typerace-leave" class="btn-secondary btn-typerace-leave">
               <span>✕ Leave Race</span>
+            </button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ASHTRAY MODAL: Cigarette Smoking Duel -->
+    <div id="ashtray-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="ashtray-modal-title">
+      <div class="modal-card ashtray-modal-card">
+        <!-- Header -->
+        <div class="modal-header ashtray-modal-header">
+          <div class="modal-header-row">
+            <div class="ashtray-header-title-box">
+              <span class="ashtray-header-icon">🚬</span>
+              <div>
+                <h2 id="ashtray-modal-title" class="modal-title">Cigarette Smoking Duel</h2>
+                <span class="modal-subtitle">Fast-paced button spamming competition</span>
+              </div>
+            </div>
+            <div class="ashtray-header-actions">
+              <button type="button" id="btn-ashtray-keybinds" class="btn-secondary btn-ashtray-settings" title="Change spam keys">
+                ⚙️ Keys: <strong id="ashtray-keybinds-summary">A & D</strong>
+              </button>
+              <button type="button" id="btn-close-ashtray-modal" class="btn-modal-close" title="Close">✕</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Viewer / Spectator Banner -->
+        <div id="ashtray-viewer-banner" class="ashtray-viewer-banner hidden">
+          <span class="viewer-banner-icon">👀</span>
+          <div class="viewer-banner-info">
+            <strong>Spectator Mode</strong>
+            <span>A smoking showdown is currently in progress. You will join the duel next round!</span>
+          </div>
+        </div>
+
+        <!-- Keybinds Setup Modal / Drawer (Inline) -->
+        <div id="ashtray-keybinds-drawer" class="ashtray-keybinds-drawer hidden">
+          <div class="keybinds-box">
+            <div class="keybinds-header">
+              <h4>Customize Spam Buttons</h4>
+              <button type="button" id="btn-close-keybinds" class="btn-keybinds-close">✕</button>
+            </div>
+            <p class="keybinds-desc">Click either button below, then press any keyboard key to rebind it.</p>
+            <div class="keybinds-slots">
+              <div class="keybind-slot">
+                <span class="keybind-label">Button 1:</span>
+                <button type="button" id="btn-remap-key1" class="keybind-key-btn">A</button>
+              </div>
+              <div class="keybind-slot">
+                <span class="keybind-label">Button 2:</span>
+                <button type="button" id="btn-remap-key2" class="keybind-key-btn">D</button>
+              </div>
+            </div>
+            <div class="keybinds-hint" id="keybinds-status-hint">Default: Alternating [A] and [D]</div>
+            <button type="button" id="btn-reset-keybinds" class="btn-tertiary">Reset to Default (A & D)</button>
+          </div>
+        </div>
+
+        <!-- VIEW 1: LOBBY VIEW (Waiting / Starting) -->
+        <div id="ashtray-lobby-view" class="ashtray-view-section">
+          <div class="ashtray-lobby-hero">
+            <div class="lobby-status-pill">
+              <span class="lobby-pulse-dot"></span>
+              <span id="ashtray-lobby-status-text">LOBBY • WAITING FOR STARTER</span>
+            </div>
+            <h3 class="lobby-headline">Prepare Your Fingers!</h3>
+            <p class="lobby-subtext">Mash the two buttons alternately to smoke cigarettes. Most cigarettes smoked wins!</p>
+
+            <!-- Game Starter Settings Panel -->
+            <div class="ashtray-settings-panel">
+              <div class="ashtray-starter-badge-row">
+                <span id="ashtray-starter-info-badge" class="ashtray-starter-pill">👑 Game Starter: <strong>Loading...</strong></span>
+              </div>
+              
+              <div class="ashtray-config-grid">
+                <!-- Mashes per Cigarette Config -->
+                <div class="ashtray-config-card">
+                  <div class="config-label-row">
+                    <span class="config-icon">🎯</span>
+                    <span class="config-title">Mashes per Cigarette</span>
+                  </div>
+                  <div class="config-input-wrap">
+                    <input type="number" id="input-ashtray-mashes" min="5" max="500" value="50" step="5" class="ashtray-number-input" />
+                    <span class="config-unit">mashes</span>
+                  </div>
+                  <div class="config-preset-pills" id="mashes-preset-pills">
+                    <button type="button" class="preset-pill" data-val="25">25</button>
+                    <button type="button" class="preset-pill active" data-val="50">50 (Def)</button>
+                    <button type="button" class="preset-pill" data-val="100">100</button>
+                  </div>
+                </div>
+
+                <!-- Game Timer Config -->
+                <div class="ashtray-config-card">
+                  <div class="config-label-row">
+                    <span class="config-icon">⏱️</span>
+                    <span class="config-title">Game Duration</span>
+                  </div>
+                  <div class="config-input-wrap">
+                    <input type="number" id="input-ashtray-timer" min="10" max="300" value="60" step="10" class="ashtray-number-input" />
+                    <span class="config-unit">seconds</span>
+                  </div>
+                  <div class="config-preset-pills" id="timer-preset-pills">
+                    <button type="button" class="preset-pill" data-val="30">30s</button>
+                    <button type="button" class="preset-pill active" data-val="60">60s (Def)</button>
+                    <button type="button" class="preset-pill" data-val="90">90s</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="lobby-ready-actions">
+              <!-- Starter Action: Start Game -->
+              <button type="button" id="btn-ashtray-start" class="btn-primary btn-ashtray-start hidden">
+                <span>🔥 Start Smoking Duel</span>
+              </button>
+              <!-- Non-Starter Action: Ready Toggle -->
+              <button type="button" id="btn-ashtray-ready" class="btn-primary btn-ashtray-ready">
+                <span id="btn-ashtray-ready-text">✓ Ready Up</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Lobby Players Grid -->
+          <div class="ashtray-lobby-players-section">
+            <div class="lobby-players-header">
+              <span>Players in Lobby</span>
+              <span class="lobby-players-count" id="ashtray-lobby-count">0 Players</span>
+            </div>
+            <div class="ashtray-lobby-players-grid" id="ashtray-lobby-players-list">
+              <!-- Dynamically populated player cards with models and ready state -->
+            </div>
+          </div>
+
+          <!-- Countdown Overlay during "starting" state -->
+          <div id="ashtray-countdown-overlay" class="ashtray-countdown-overlay hidden">
+            <div class="countdown-content">
+              <span class="countdown-badge">DUEL BEGINNING IN</span>
+              <div class="countdown-number" id="ashtray-countdown-num">3</div>
+              <span class="countdown-sub">Get ready to spam your buttons!</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- VIEW 2: GAME VIEW (Live Smoking Showdown) -->
+        <div id="ashtray-game-view" class="ashtray-view-section hidden">
+          <!-- Live Game Top Bar -->
+          <div class="ashtray-game-topbar">
+            <div class="game-timer-card">
+              <span class="timer-icon">⏳</span>
+              <span class="timer-value" id="ashtray-live-timer">01:00</span>
+            </div>
+            <div class="game-rule-pill">
+              <span>🎯 Target: <strong id="ashtray-rule-mashes">50</strong> mashes / cigarette</span>
+            </div>
+            <div class="game-keys-pill">
+              <span>Spam Keys: <strong id="ashtray-live-keys">A & D</strong></span>
+            </div>
+          </div>
+
+          <!-- Active Player Interactive Spamming Arena -->
+          <div class="ashtray-interactive-arena" id="ashtray-interactive-arena">
+            <!-- Cigarette Visual Widget -->
+            <div class="cigarette-stage">
+              <div class="cigarette-smoke-canvas-wrap">
+                <div class="smoke-puff-container" id="smoke-puff-container"></div>
+              </div>
+              <div class="cigarette-visual-stick">
+                <div class="cigarette-filter"></div>
+                <div class="cigarette-body">
+                  <div class="cigarette-burn-overlay" id="cigarette-burn-overlay"></div>
+                </div>
+                <div class="cigarette-cherry" id="cigarette-cherry">
+                  <div class="cherry-flame"></div>
+                  <div class="cherry-spark"></div>
+                </div>
+              </div>
+              <div class="cigarette-label-stats">
+                <span id="cigarette-stage-text">Smoking Cigarette #1</span>
+              </div>
+            </div>
+
+            <!-- Big Alternating Spam Buttons -->
+            <div class="ashtray-spam-buttons-wrap">
+              <div class="spam-keys-prompt" id="spam-keys-prompt">Mash alternately!</div>
+              <div class="spam-buttons-row">
+                <button type="button" class="mash-btn" id="mash-btn-1">
+                  <span class="mash-key-char" id="mash-key-1-label">A</span>
+                  <span class="mash-pulse-glow"></span>
+                </button>
+                <div class="mash-vs-indicator">⇄</div>
+                <button type="button" class="mash-btn" id="mash-btn-2">
+                  <span class="mash-key-char" id="mash-key-2-label">D</span>
+                  <span class="mash-pulse-glow"></span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Live Personal Speed & Progress Bar -->
+            <div class="ashtray-personal-metrics">
+              <div class="metric-card">
+                <span class="metric-val" id="ashtray-my-finished">0</span>
+                <span class="metric-lbl">🚬 Finished</span>
+              </div>
+              <div class="metric-card">
+                <span class="metric-val" id="ashtray-my-current">0%</span>
+                <span class="metric-lbl">Current Cigarette</span>
+              </div>
+              <div class="metric-card">
+                <span class="metric-val" id="ashtray-my-speed">0.0</span>
+                <span class="metric-lbl">Mashes / Sec</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- All Players Duel Tracker (Lanes) -->
+          <div class="ashtray-players-tracker-section">
+            <div class="tracker-header">
+              <span class="tracker-title">🏆 Competitors' Cigarette Progress</span>
+              <span class="tracker-sub">Most cigarettes smoked wins!</span>
+            </div>
+            <div class="ashtray-players-lanes" id="ashtray-players-lanes">
+              <!-- Dynamically populated rows showing player model, name, mini progress bar, and total cigarettes finished -->
+            </div>
+          </div>
+        </div>
+
+        <!-- VIEW 3: RESULTS / SCOREBOARD VIEW -->
+        <div id="ashtray-results-view" class="ashtray-view-section hidden">
+          <div class="scoreboard-hero">
+            <span class="scoreboard-trophy-icon">🏆</span>
+            <h3 class="scoreboard-title" id="ashtray-winner-title">Winner Announced!</h3>
+            <p class="scoreboard-subtitle" id="ashtray-winner-sub">Here are the final standings for this smoking duel:</p>
+          </div>
+
+          <!-- Scoreboard Table -->
+          <div class="scoreboard-table-wrap">
+            <table class="scoreboard-table ashtray-table">
+              <thead>
+                <tr>
+                  <th class="col-rank">Rank</th>
+                  <th class="col-player">Competitor</th>
+                  <th class="col-finished">🚬 Cigarettes Smoked</th>
+                  <th class="col-last">Last Cigarette</th>
+                  <th class="col-speed">Speed</th>
+                  <th class="col-total">Total Mashes</th>
+                </tr>
+              </thead>
+              <tbody id="ashtray-scoreboard-body">
+                <!-- Dynamically populated scoreboard rows -->
+              </tbody>
+            </table>
+          </div>
+
+          <div class="scoreboard-actions-row">
+            <button type="button" id="btn-ashtray-play-again" class="btn-primary btn-ashtray-play-again">
+              <span>🔄 Play Again</span>
+            </button>
+            <button type="button" id="btn-ashtray-leave" class="btn-secondary btn-ashtray-leave">
+              <span>✕ Leave Duel</span>
             </button>
           </div>
         </div>

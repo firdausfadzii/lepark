@@ -117,6 +117,7 @@ export interface Space {
   privateZones?: PrivateZone[];
   jukeboxes?: JukeboxState[];
   typewriters?: TypewriterState[];
+  ashtrays?: AshtrayState[];
   playerCount?: number;
   createdAt?: string;
   updatedAt?: string;
@@ -328,6 +329,121 @@ export interface TypeRaceProgressPayload {
 
 export interface TypeRacePlayAgainPayload {
   typewriterId: string;
+}
+
+// ==========================================
+// Ashtray & Smoking Game Types
+// ==========================================
+
+export interface AshtrayState {
+  id: string; // Ashtray entity ID
+  spaceId: string; // Space ID where ashtray is located
+  x: number; // Freeform world X coordinate (pixels, NOT snapped to grid)
+  y: number; // Freeform world Y coordinate (pixels, NOT snapped to grid)
+  passable?: boolean; // Whether players can walk through it (default false = solid obstacle)
+  ontop?: boolean; // Render on top of character (true) or behind character (false)
+  layer?: number; // Layer placement level (integer, default 0)
+}
+
+export interface AshtrayPlacePayload {
+  x: number; // Freeform world X (pixels)
+  y: number; // Freeform world Y (pixels)
+  passable?: boolean;
+  ontop?: boolean;
+  layer?: number;
+}
+
+export interface AshtrayMovePayload {
+  ashtrayId: string;
+  x: number;
+  y: number;
+}
+
+export interface AshtrayDeletePayload {
+  ashtrayId: string;
+}
+
+export type SmokingGameStatus = "waiting" | "starting" | "smoking" | "ended";
+
+export interface SmokingGameSettings {
+  mashesPerCigarette: number; // Default: 50
+  gameDuration: number; // Default: 60 (in seconds)
+}
+
+export interface SmokingGamePlayer {
+  sessionId: string;
+  userId?: number;
+  name: string;
+  color: string;
+  avatarUrl?: string;
+  isReady: boolean;
+  isStarter: boolean;
+  isViewer: boolean; // True if joined while match in progress
+  currentMashes: number; // Mashes on current cigarette
+  cigarettesFinished: number; // Total finished cigarettes
+  totalMashes: number; // Total lifetime mashes during match
+  mashesPerSecond: number;
+  rank?: number;
+  joinedAt: number;
+}
+
+export interface SmokingGameResult {
+  sessionId: string;
+  name: string;
+  color: string;
+  avatarUrl?: string;
+  cigarettesFinished: number;
+  currentMashes: number;
+  totalMashes: number;
+  mashesPerSecond: number;
+  rank: number;
+}
+
+export interface SmokingGameRoomState {
+  ashtrayId: string;
+  status: SmokingGameStatus;
+  starterSessionId: string;
+  settings: SmokingGameSettings;
+  startTime: number;
+  endTime: number;
+  countdown: number;
+  players: Record<string, SmokingGamePlayer>;
+  results?: SmokingGameResult[];
+}
+
+export interface SmokingGameJoinPayload {
+  ashtrayId: string;
+}
+
+export interface SmokingGameLeavePayload {
+  ashtrayId: string;
+}
+
+export interface SmokingGameReadyPayload {
+  ashtrayId: string;
+  ready: boolean;
+}
+
+export interface SmokingGameUpdateSettingsPayload {
+  ashtrayId: string;
+  mashesPerCigarette?: number;
+  gameDuration?: number;
+}
+
+export interface SmokingGameStartPayload {
+  ashtrayId: string;
+}
+
+export interface SmokingGameMashPayload {
+  ashtrayId: string;
+  currentMashes: number;
+  cigarettesFinished: number;
+  totalMashes: number;
+  mashesPerSecond: number;
+}
+
+export interface SmokingGamePlayAgainPayload {
+  ashtrayId: string;
 }
 
 export const FREEFORM_ASSET_KEYS = [

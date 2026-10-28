@@ -12,6 +12,9 @@ import {
   TypewriterState,
   TypeRaceRoomState,
   TypeRaceResult,
+  AshtrayState,
+  SmokingGameRoomState,
+  SmokingGameResult,
 } from "shared";
 
 export interface NetworkStats {
@@ -34,6 +37,12 @@ export type TypewriterDeleteCallback = (typewriterId: string) => void;
 export type TypeRaceStateCallback = (state: TypeRaceRoomState) => void;
 export type TypeRaceStartCallback = (data: { typewriterId: string; quote: string; startTime: number }) => void;
 export type TypeRaceEndedCallback = (data: { typewriterId: string; results: TypeRaceResult[] }) => void;
+export type AshtraysSyncCallback = (ashtrays: AshtrayState[]) => void;
+export type AshtrayUpdateCallback = (ashtray: AshtrayState) => void;
+export type AshtrayDeleteCallback = (ashtrayId: string) => void;
+export type SmokingGameStateCallback = (state: SmokingGameRoomState) => void;
+export type SmokingGameStartCallback = (state: SmokingGameRoomState) => void;
+export type SmokingGameEndedCallback = (data: { ashtrayId: string; results: SmokingGameResult[] }) => void;
 
 export class MultiplayerManager {
   private client!: Client;
@@ -63,10 +72,17 @@ export class MultiplayerManager {
   private onTypeRaceStateCallbacks: TypeRaceStateCallback[] = [];
   private onTypeRaceStartCallbacks: TypeRaceStartCallback[] = [];
   private onTypeRaceEndedCallbacks: TypeRaceEndedCallback[] = [];
+  private onAshtraysSyncCallbacks: AshtraysSyncCallback[] = [];
+  private onAshtrayUpdateCallbacks: AshtrayUpdateCallback[] = [];
+  private onAshtrayDeleteCallbacks: AshtrayDeleteCallback[] = [];
+  private onSmokingGameStateCallbacks: SmokingGameStateCallback[] = [];
+  private onSmokingGameStartCallbacks: SmokingGameStartCallback[] = [];
+  private onSmokingGameEndedCallbacks: SmokingGameEndedCallback[] = [];
   public currentTiles: Record<string, string> = {};
   public currentPrivateZones: PrivateZone[] = [];
   public currentJukeboxes: Map<string, JukeboxState> = new Map();
   public currentTypewriters: Map<string, TypewriterState> = new Map();
+  public currentAshtrays: Map<string, AshtrayState> = new Map();
   public playerAvatarsMap = new Map<string, PlayerAvatars>();
 
   private pingTimer: number | null = null;
@@ -128,6 +144,8 @@ export class MultiplayerManager {
     this.playerAvatarsMap.clear();
     this.currentTiles = {};
     this.currentPrivateZones = [];
+    this.currentTypewriters.clear();
+    this.currentAshtrays.clear();
     if (this.room) {
       try {
         this.room.leave();
@@ -333,6 +351,51 @@ export class MultiplayerManager {
       (data: { typewriterId: string; results: TypeRaceResult[] }) => {
         if (data) {
           this.notifyTypeRaceEnded(data);
+        }
+      }
+    );
+
+    this.room.onMessage("CURRENT_ASHTRAYS", (ashtrays: AshtrayState[]) => {
+      this.currentAshtrays.clear();
+      if (Array.isArray(ashtrays)) {
+        for (const at of ashtrays) {
+          this.currentAshtrays.set(at.id, at);
+        }
+      }
+      this.notifyAshtraysSync(Array.from(this.currentAshtrays.values()));
+    });
+
+    this.room.onMessage("ASHTRAY_UPDATED", (ashtray: AshtrayState) => {
+      if (ashtray && ashtray.id) {
+        this.currentAshtrays.set(ashtray.id, ashtray);
+        this.notifyAshtrayUpdate(ashtray);
+      }
+    });
+
+    this.room.onMessage("ASHTRAY_DELETED", (data: { ashtrayId: string }) => {
+      if (data && data.ashtrayId) {
+        this.currentAshtrays.delete(data.ashtrayId);
+        this.notifyAshtrayDelete(data.ashtrayId);
+      }
+    });
+
+    this.room.onMessage("SMOKING_GAME_STATE", (state: SmokingGameRoomState) => {
+      if (state && state.ashtrayId) {
+        this.notifySmokingGameState(state);
+      }
+    });
+
+    this.room.onMessage("SMOKING_GAME_START", (state: SmokingGameRoomState) => {
+      if (state && state.ashtrayId) {
+        this.notifySmokingGameStart(state);
+      }
+    });
+
+    this.room.onMessage(
+      "SMOKING_GAME_ENDED",
+      (data: { ashtrayId: string; results: SmokingGameResult[] }) => {
+        if (data) {
+          this.notifySmokingGameEnded(data);
         }
       }
     );
@@ -911,6 +974,182 @@ export class MultiplayerManager {
   public requestTypeRacePlayAgain(typewriterId: string) {
     if (this.room) {
       this.room.send("TYPERACE_PLAY_AGAIN", { typewriterId });
+    }
+  }
+
+  // --- Ashtray & Smoking Game Methods ---
+
+  private notifyAshtraysSync(ashtrays: AshtrayState[]) {
+    this.onAshtraysSyncCallbacks.forEach((cb) => {
+      try {
+        cb(ashtrays);
+      } catch (err) {
+        console.error("Error in onAshtraysSync callback:", err);
+      }
+    });
+  }
+
+  private notifyAshtrayUpdate(ashtray: AshtrayState) {
+    this.onAshtrayUpdateCallbacks.forEach((cb) => {
+      try {
+        cb(ashtray);
+      } catch (err) {
+        console.error("Error in onAshtrayUpdate callback:", err);
+      }
+    });
+  }
+
+  private notifyAshtrayDelete(ashtrayId: string) {
+    this.onAshtrayDeleteCallbacks.forEach((cb) => {
+      try {
+        cb(ashtrayId);
+      } catch (err) {
+        console.error("Error in onAshtrayDelete callback:", err);
+      }
+    });
+  }
+
+  private notifySmokingGameState(state: SmokingGameRoomState) {
+    this.onSmokingGameStateCallbacks.forEach((cb) => {
+      try {
+        cb(state);
+      } catch (err) {
+        console.error("Error in onSmokingGameState callback:", err);
+      }
+    });
+  }
+
+  private notifySmokingGameStart(state: SmokingGameRoomState) {
+    this.onSmokingGameStartCallbacks.forEach((cb) => {
+      try {
+        cb(state);
+      } catch (err) {
+        console.error("Error in onSmokingGameStart callback:", err);
+      }
+    });
+  }
+
+  private notifySmokingGameEnded(data: { ashtrayId: string; results: SmokingGameResult[] }) {
+    this.onSmokingGameEndedCallbacks.forEach((cb) => {
+      try {
+        cb(data);
+      } catch (err) {
+        console.error("Error in onSmokingGameEnded callback:", err);
+      }
+    });
+  }
+
+  public onAshtraysSync(cb: AshtraysSyncCallback) {
+    this.onAshtraysSyncCallbacks.push(cb);
+  }
+
+  public onAshtrayUpdate(cb: AshtrayUpdateCallback) {
+    this.onAshtrayUpdateCallbacks.push(cb);
+  }
+
+  public onAshtrayDelete(cb: AshtrayDeleteCallback) {
+    this.onAshtrayDeleteCallbacks.push(cb);
+  }
+
+  public onSmokingGameState(cb: SmokingGameStateCallback) {
+    this.onSmokingGameStateCallbacks.push(cb);
+  }
+
+  public onSmokingGameStart(cb: SmokingGameStartCallback) {
+    this.onSmokingGameStartCallbacks.push(cb);
+  }
+
+  public onSmokingGameEnded(cb: SmokingGameEndedCallback) {
+    this.onSmokingGameEndedCallbacks.push(cb);
+  }
+
+  public placeAshtray(
+    x: number,
+    y: number,
+    passable: boolean = false,
+    ontop: boolean = false,
+    layer: number = 0
+  ) {
+    if (this.room) {
+      this.room.send("ASHTRAY_PLACE", { x, y, passable, ontop, layer });
+    }
+  }
+
+  public moveAshtray(ashtrayId: string, x: number, y: number) {
+    if (this.room) {
+      this.room.send("ASHTRAY_MOVE", { ashtrayId, x, y });
+    }
+  }
+
+  public deleteAshtray(ashtrayId: string) {
+    if (this.room) {
+      this.room.send("ASHTRAY_DELETE", { ashtrayId });
+    }
+  }
+
+  public setAshtrayPassable(ashtrayId: string, passable: boolean) {
+    if (this.room) {
+      this.room.send("ASHTRAY_PASSABLE", { ashtrayId, passable });
+    }
+  }
+
+  public joinSmokingGame(ashtrayId: string) {
+    if (this.room) {
+      this.room.send("SMOKING_GAME_JOIN", { ashtrayId });
+    }
+  }
+
+  public leaveSmokingGame(ashtrayId: string) {
+    if (this.room) {
+      this.room.send("SMOKING_GAME_LEAVE", { ashtrayId });
+    }
+  }
+
+  public setSmokingGameReady(ashtrayId: string, ready: boolean) {
+    if (this.room) {
+      this.room.send("SMOKING_GAME_READY", { ashtrayId, ready });
+    }
+  }
+
+  public updateSmokingGameSettings(
+    ashtrayId: string,
+    settings: { mashesPerCigarette?: number; gameDuration?: number }
+  ) {
+    if (this.room) {
+      this.room.send("SMOKING_GAME_UPDATE_SETTINGS", {
+        ashtrayId,
+        ...settings,
+      });
+    }
+  }
+
+  public startSmokingGame(ashtrayId: string) {
+    if (this.room) {
+      this.room.send("SMOKING_GAME_START", { ashtrayId });
+    }
+  }
+
+  public sendSmokingGameMash(
+    ashtrayId: string,
+    currentMashes: number,
+    cigarettesFinished: number,
+    totalMashes: number,
+    mashesPerSecond: number
+  ) {
+    if (this.room) {
+      this.room.send("SMOKING_GAME_MASH", {
+        ashtrayId,
+        currentMashes,
+        cigarettesFinished,
+        totalMashes,
+        mashesPerSecond,
+      });
+    }
+  }
+
+  public requestSmokingGamePlayAgain(ashtrayId: string) {
+    if (this.room) {
+      this.room.send("SMOKING_GAME_PLAY_AGAIN", { ashtrayId });
     }
   }
 }

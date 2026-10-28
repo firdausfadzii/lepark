@@ -5,6 +5,7 @@ import {
   PrivateZone,
   JukeboxState,
   TypewriterState,
+  AshtrayState,
   ChatMessage,
   ChatRoomType,
 } from "shared";
@@ -57,6 +58,7 @@ export interface SpaceRecord {
   private_zones?: PrivateZone[];
   jukeboxes?: JukeboxState[];
   typewriters?: TypewriterState[];
+  ashtrays?: AshtrayState[];
   created_at: Date;
   updated_at: Date;
 }
@@ -216,6 +218,7 @@ async function setupDatabaseSchema(client: PoolClient) {
       private_zones JSONB DEFAULT '[]'::jsonb,
       jukeboxes JSONB DEFAULT '[]'::jsonb,
       typewriters JSONB DEFAULT '[]'::jsonb,
+      ashtrays JSONB DEFAULT '[]'::jsonb,
       created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     );
@@ -223,6 +226,7 @@ async function setupDatabaseSchema(client: PoolClient) {
     ALTER TABLE spaces ADD COLUMN IF NOT EXISTS private_zones JSONB DEFAULT '[]'::jsonb;
     ALTER TABLE spaces ADD COLUMN IF NOT EXISTS jukeboxes JSONB DEFAULT '[]'::jsonb;
     ALTER TABLE spaces ADD COLUMN IF NOT EXISTS typewriters JSONB DEFAULT '[]'::jsonb;
+    ALTER TABLE spaces ADD COLUMN IF NOT EXISTS ashtrays JSONB DEFAULT '[]'::jsonb;
     CREATE INDEX IF NOT EXISTS idx_spaces_superadmin ON spaces (is_superadmin_space, category);
 
     -- Auto-migrate legacy tile assets in all spaces
@@ -306,6 +310,7 @@ async function syncInMemoryToPostgres(client: PoolClient) {
         private_zones: parsePrivateZones(row.private_zones),
         jukeboxes: parseJukeboxes(row.jukeboxes),
         typewriters: parseTypewriters(row.typewriters),
+        ashtrays: parseAshtrays(row.ashtrays),
         created_at: row.created_at,
         updated_at: row.updated_at,
       });
@@ -641,6 +646,17 @@ export function parseTypewriters(raw: any): TypewriterState[] {
   return [];
 }
 
+export function parseAshtrays(raw: any): AshtrayState[] {
+  if (Array.isArray(raw)) return raw;
+  if (typeof raw === "string") {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    } catch {}
+  }
+  return [];
+}
+
 export async function getSuperadminSpaces(): Promise<SpaceRecord[]> {
   if (isDbConnected) {
     try {
@@ -683,7 +699,7 @@ export async function getSpaceById(id: string): Promise<SpaceRecord | null> {
   if (isDbConnected) {
     try {
       const res = await pool.query(
-        `SELECT s.id, s.name, s.category, s.owner_id, s.is_public, s.is_superadmin_space, s.whitelist, s.private_zones, s.jukeboxes, s.typewriters, s.created_at, s.updated_at,
+        `SELECT s.id, s.name, s.category, s.owner_id, s.is_public, s.is_superadmin_space, s.whitelist, s.private_zones, s.jukeboxes, s.typewriters, s.ashtrays, s.created_at, s.updated_at,
                 u.username as owner_username
          FROM spaces s
          LEFT JOIN users u ON s.owner_id = u.id
@@ -704,6 +720,7 @@ export async function getSpaceById(id: string): Promise<SpaceRecord | null> {
           private_zones: parsePrivateZones(row.private_zones),
           jukeboxes: parseJukeboxes(row.jukeboxes),
           typewriters: parseTypewriters(row.typewriters),
+          ashtrays: parseAshtrays(row.ashtrays),
           created_at: row.created_at,
           updated_at: row.updated_at,
         };
@@ -722,6 +739,7 @@ export async function getSpaceById(id: string): Promise<SpaceRecord | null> {
         private_zones: space.private_zones ? [...space.private_zones] : [],
         jukeboxes: space.jukeboxes ? [...space.jukeboxes] : [],
         typewriters: space.typewriters ? [...space.typewriters] : [],
+        ashtrays: space.ashtrays ? [...space.ashtrays] : [],
       }
     : null;
 }
@@ -1232,6 +1250,63 @@ export async function updateSpaceTypewriters(
   let inMem = inMemorySpaces.get(spaceId);
   if (inMem) {
     inMem.typewriters = [...typewriters];
+    inMem.updated_at = new Date();
+  }
+  return true;
+}
+
+/**
+ * Get ashtrays for a space
+ */
+export async function getSpaceAshtrays(spaceId: string): Promise<AshtrayState[]> {
+  if (isDbConnected) {
+    try {
+      const res = await pool.query("SELECT ashtrays FROM spaces WHERE id = $1", [spaceId]);
+      if (res.rows[0]?.ashtrays) {
+        return parseAshtrays(res.rows[0].ashtrays);
+      }
+    } catch (err) {
+      handleDbQueryError("Error fetching space ashtrays from DB", err);
+    }
+  }
+
+  const inMem = inMemorySpaces.get(spaceId);
+  return inMem?.ashtrays ? [...inMem.ashtrays] : [];
+}
+
+/**
+ * Update and persist ashtrays for a space
+ */
+export async function updateSpaceAshtrays(
+  spaceId: string,
+  ashtrays: AshtrayState[]
+): Promise<boolean> {
+  if (isDbConnected) {
+    try {
+      const res = await pool.query(
+        "UPDATE spaces SET ashtrays = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1",
+        [spaceId, JSON.stringify(ashtrays)]
+      );
+      if (res.rowCount === 0) {
+        await pool.query(
+          `INSERT INTO spaces (id, name, category, is_public, ashtrays)
+           VALUES ($1, $2, 'General', true, $3)
+           ON CONFLICT (id) DO UPDATE SET ashtrays = EXCLUDED.ashtrays, updated_at = CURRENT_TIMESTAMP`,
+          [
+            spaceId,
+            spaceId.startsWith("user_space_") ? "Personal Space" : spaceId,
+            JSON.stringify(ashtrays),
+          ]
+        );
+      }
+    } catch (err) {
+      handleDbQueryError("Error updating space ashtrays in DB", err);
+    }
+  }
+
+  let inMem = inMemorySpaces.get(spaceId);
+  if (inMem) {
+    inMem.ashtrays = [...ashtrays];
     inMem.updated_at = new Date();
   }
   return true;

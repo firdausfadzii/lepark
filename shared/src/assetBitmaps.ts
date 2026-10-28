@@ -314,6 +314,8 @@ export const ASSET_ALIASES: Record<string, string> = {
   jukebox: "jukebox_1",
   typewriter_150: "typewriter_1",
   typewriter: "typewriter_1",
+  ashtray_1: "typewriter_1",
+  ashtray: "typewriter_1",
 };
 
 const BITMAP_CACHE = new Map<string, AssetBitmap>();

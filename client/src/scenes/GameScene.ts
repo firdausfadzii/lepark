@@ -27,6 +27,7 @@ import {
   PrivateZone,
   JukeboxState,
   TypewriterState,
+  AshtrayState,
   isFreeformAsset,
   FreeformDecorationData,
   parseFreeformTile,
@@ -54,6 +55,14 @@ interface TypewriterVisual {
   hitZone: Phaser.GameObjects.Rectangle;
   promptText: Phaser.GameObjects.Text;
   state: TypewriterState;
+}
+
+interface AshtrayVisual {
+  container: Phaser.GameObjects.Container;
+  sprite: Phaser.GameObjects.Image;
+  hitZone: Phaser.GameObjects.Rectangle;
+  promptText: Phaser.GameObjects.Text;
+  state: AshtrayState;
 }
 
 interface PlayerVisual {
@@ -93,6 +102,7 @@ export function normalizeDecorationAssetKey(key: string): string {
 
 export interface InspectableMapItem {
   kind:
+    | "ashtray"
     | "typewriter"
     | "jukebox"
     | "freeform_decoration"
@@ -171,6 +181,7 @@ export class GameScene extends Phaser.Scene {
     | "clear_private_zone"
     | "jukebox"
     | "typewriter"
+    | "ashtray"
     | "freeform_decoration"
     | "spawn_point"
     | "color_dropper" = "none";
@@ -216,6 +227,12 @@ export class GameScene extends Phaser.Scene {
   private nearbyTypewriterId: string | null = null;
   private editorTypewriterGhost: Phaser.GameObjects.Image | null = null;
 
+  // Ashtray State & Smoking Game Objects
+  private ashtrayVisuals: Map<string, AshtrayVisual> = new Map();
+  public onAshtrayClick?: (ashtrayId: string) => void;
+  private nearbyAshtrayId: string | null = null;
+  private editorAshtrayGhost: Phaser.GameObjects.Image | null = null;
+
   // Freeform Decorations State (e.g. Chairs, not bounded by grid)
   private freeformVisuals: Map<
     string,
@@ -255,6 +272,7 @@ export class GameScene extends Phaser.Scene {
         tiles: this.currentTilesMap,
         jukeboxes: Array.from(this.jukeboxVisuals.values()).map((v) => v.state),
         typewriters: Array.from(this.typewriterVisuals.values()).map((v) => v.state),
+        ashtrays: Array.from(this.ashtrayVisuals.values()).map((v) => v.state),
         freeformDecorations: Array.from(this.freeformVisuals.values()).map((v) => v.data),
       });
     }
@@ -332,6 +350,7 @@ export class GameScene extends Phaser.Scene {
       "office_chair_1_back",
       "jukebox_1",
       "typewriter_1",
+      "ashtray_1",
     ];
     for (const da of decoAssets) {
       this.load.image(da, `/assets/decoration/${da}.png`);
@@ -613,6 +632,13 @@ export class GameScene extends Phaser.Scene {
     this.editorTypewriterGhost.setDepth(136);
     this.editorTypewriterGhost.setVisible(false);
 
+    // Ghost preview for freeform ashtray placement
+    this.editorAshtrayGhost = this.add.image(0, 0, "ashtray_1");
+    this.editorAshtrayGhost.setDisplaySize(48, 48);
+    this.editorAshtrayGhost.setAlpha(0.65);
+    this.editorAshtrayGhost.setDepth(136);
+    this.editorAshtrayGhost.setVisible(false);
+
     // Ghost preview for freeform decoration placement (e.g. chairs, not bounded by grid)
     this.editorFreeformGhost = this.add.image(0, 0, "office_chair_1_front");
     this.editorFreeformGhost.setDisplaySize(50, 50);
@@ -624,8 +650,10 @@ export class GameScene extends Phaser.Scene {
     if (this.input.keyboard) {
       this.keyE = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.E);
       this.keyE.on("down", () => {
-        if (this.isTyperaceModalOpen()) return;
-        if (this.nearbyTypewriterId && !this.isEditMode && this.onTypewriterClick) {
+        if (this.isTyperaceModalOpen() || this.isSmokingGameModalOpen()) return;
+        if (this.nearbyAshtrayId && !this.isEditMode && this.onAshtrayClick) {
+          this.onAshtrayClick(this.nearbyAshtrayId);
+        } else if (this.nearbyTypewriterId && !this.isEditMode && this.onTypewriterClick) {
           this.onTypewriterClick(this.nearbyTypewriterId);
         } else if (this.nearbyJukeboxId && !this.isEditMode && this.onJukeboxClick) {
           this.onJukeboxClick(this.nearbyJukeboxId);
@@ -659,6 +687,20 @@ export class GameScene extends Phaser.Scene {
     });
     if (this.multiplayer.currentTypewriters && this.multiplayer.currentTypewriters.size > 0) {
       this.setTypewriters(Array.from(this.multiplayer.currentTypewriters.values()));
+    }
+
+    // Hook up ashtrays updates from multiplayer
+    this.multiplayer.onAshtraysSync((ashtrays) => {
+      this.setAshtrays(ashtrays);
+    });
+    this.multiplayer.onAshtrayUpdate((ashtray) => {
+      this.updateAshtray(ashtray);
+    });
+    this.multiplayer.onAshtrayDelete((ashtrayId) => {
+      this.removeAshtray(ashtrayId);
+    });
+    if (this.multiplayer.currentAshtrays && this.multiplayer.currentAshtrays.size > 0) {
+      this.setAshtrays(Array.from(this.multiplayer.currentAshtrays.values()));
     }
 
     // Pointer events for Map Editor (click and drag to select area)
@@ -799,6 +841,9 @@ export class GameScene extends Phaser.Scene {
     }
     if (this.editorTypewriterGhost) {
       this.editorTypewriterGhost.setDepth(ghostDepth);
+    }
+    if (this.editorAshtrayGhost) {
+      this.editorAshtrayGhost.setDepth(ghostDepth);
     }
   }
 
@@ -1545,8 +1590,13 @@ export class GameScene extends Phaser.Scene {
     return !!(el && !el.classList.contains("hidden"));
   }
 
+  public isSmokingGameModalOpen(): boolean {
+    const el = document.getElementById("ashtray-modal");
+    return !!(el && !el.classList.contains("hidden"));
+  }
+
   public setControlsActive(active: boolean) {
-    if (active && this.isTyperaceModalOpen()) {
+    if (active && (this.isTyperaceModalOpen() || this.isSmokingGameModalOpen())) {
       active = false;
     }
     this.controlsActive = active;
@@ -1646,7 +1696,7 @@ export class GameScene extends Phaser.Scene {
     let up = false;
     let down = false;
 
-    if (this.isTyperaceModalOpen()) {
+    if (this.isTyperaceModalOpen() || this.isSmokingGameModalOpen()) {
       if (this.controlsActive) {
         this.setControlsActive(false);
       }
@@ -2036,6 +2086,24 @@ export class GameScene extends Phaser.Scene {
         const nearbyTw = closestTypewriterDist <= 1.5 * TILE_SIZE ? closestTypewriter : null;
         this.nearbyTypewriterId = nearbyTw ? (nearbyTw as TypewriterState).id : null;
 
+        // Update nearby ashtray state for interaction
+        let closestAshtray: AshtrayState | null = null;
+        let closestAshtrayDist = Infinity;
+        this.ashtrayVisuals.forEach((atVisual) => {
+          const at = atVisual.state;
+          const dist = Phaser.Math.Distance.Between(lx, ly, at.x, at.y);
+          if (dist < closestAshtrayDist) {
+            closestAshtrayDist = dist;
+            closestAshtray = at;
+          }
+          const isNearby = dist <= 1.5 * TILE_SIZE;
+          if (atVisual.promptText) {
+            atVisual.promptText.setVisible(isNearby && !this.isEditMode && !this.isSmokingGameModalOpen());
+          }
+        });
+        const nearbyAt = closestAshtrayDist <= 1.5 * TILE_SIZE ? closestAshtray : null;
+        this.nearbyAshtrayId = nearbyAt ? (nearbyAt as AshtrayState).id : null;
+
         // Apply audio attenuation to JukeboxManager
         if (this.jukeboxManager) {
           if (bestJukebox && highestVolume > 0) {
@@ -2127,7 +2195,7 @@ export class GameScene extends Phaser.Scene {
         }
       }
       const anyModalOpen = document.querySelector(".modal-overlay:not(.hidden)");
-      if (!anyModalOpen && !this.controlsActive && !this.isTyperaceModalOpen()) {
+      if (!anyModalOpen && !this.controlsActive && !this.isTyperaceModalOpen() && !this.isSmokingGameModalOpen()) {
         this.setControlsActive(true);
       }
 
@@ -2174,6 +2242,20 @@ export class GameScene extends Phaser.Scene {
           this.multiplayer.placeTypewriter(
             tx,
             ty,
+            this.decorationPassable,
+            this.decorationOntop,
+            this.placementLayer
+          );
+          return;
+        }
+
+        if (this.activeEditorTool === "ashtray") {
+          // Unbounded free-placement (not snapped to grid):
+          const ax = Math.round(pointer.worldX);
+          const ay = Math.round(pointer.worldY);
+          this.multiplayer.placeAshtray(
+            ax,
+            ay,
             this.decorationPassable,
             this.decorationOntop,
             this.placementLayer
@@ -2250,6 +2332,7 @@ export class GameScene extends Phaser.Scene {
         this.editorHoverGraphics.clear();
         if (this.editorJukeboxGhost) this.editorJukeboxGhost.setVisible(false);
         if (this.editorTypewriterGhost) this.editorTypewriterGhost.setVisible(false);
+        if (this.editorAshtrayGhost) this.editorAshtrayGhost.setVisible(false);
         if (this.editorFreeformGhost) this.editorFreeformGhost.setVisible(false);
         if (this.game.canvas) this.game.canvas.style.cursor = "default";
         return;
@@ -2282,6 +2365,7 @@ export class GameScene extends Phaser.Scene {
         this.editorHoverGraphics.clear();
         if (this.editorFreeformGhost) this.editorFreeformGhost.setVisible(false);
         if (this.editorJukeboxGhost) this.editorJukeboxGhost.setVisible(false);
+        if (this.editorAshtrayGhost) this.editorAshtrayGhost.setVisible(false);
         if (this.editorTypewriterGhost) {
           this.editorTypewriterGhost.setDepth(
             this.computeLayerDepth(this.placementLayer, this.decorationOntop)
@@ -2298,6 +2382,30 @@ export class GameScene extends Phaser.Scene {
       } else {
         if (this.editorTypewriterGhost) {
           this.editorTypewriterGhost.setVisible(false);
+        }
+      }
+
+      if (this.activeEditorTool === "ashtray") {
+        this.editorHoverGraphics.clear();
+        if (this.editorFreeformGhost) this.editorFreeformGhost.setVisible(false);
+        if (this.editorJukeboxGhost) this.editorJukeboxGhost.setVisible(false);
+        if (this.editorTypewriterGhost) this.editorTypewriterGhost.setVisible(false);
+        if (this.editorAshtrayGhost) {
+          this.editorAshtrayGhost.setDepth(
+            this.computeLayerDepth(this.placementLayer, this.decorationOntop)
+          );
+          this.editorAshtrayGhost.setPosition(pointer.worldX, pointer.worldY);
+          this.editorAshtrayGhost.setVisible(true);
+        }
+        this.editorOverlayText.setText(
+          `🚬 Ashtray • Layer ${this.placementLayer} (↑/↓) • Click to place`
+        );
+        this.editorOverlayText.setPosition(pointer.worldX + 28, Math.max(8, pointer.worldY - 28));
+        this.editorOverlayText.setVisible(true);
+        return;
+      } else {
+        if (this.editorAshtrayGhost) {
+          this.editorAshtrayGhost.setVisible(false);
         }
       }
 
@@ -3158,6 +3266,17 @@ export class GameScene extends Phaser.Scene {
         });
       }
     }
+    for (const visual of this.ashtrayVisuals.values()) {
+      const at = visual.state;
+      if (at.passable === false) {
+        boxes.push({
+          minX: at.x - 20,
+          maxX: at.x + 20,
+          minY: at.y - 18,
+          maxY: at.y + 18,
+        });
+      }
+    }
     for (const visual of this.freeformVisuals.values()) {
       if (!visual.data.passable) {
         boxes.push({
@@ -3290,6 +3409,19 @@ export class GameScene extends Phaser.Scene {
           this.multiplayer.placeTypewriter(
             tx,
             ty,
+            this.decorationPassable,
+            this.decorationOntop,
+            this.placementLayer
+          );
+          return;
+        }
+
+        if (this.activeEditorTool === "ashtray") {
+          const ax = Math.round(pointer.worldX);
+          const ay = Math.round(pointer.worldY);
+          this.multiplayer.placeAshtray(
+            ax,
+            ay,
             this.decorationPassable,
             this.decorationOntop,
             this.placementLayer
@@ -3606,6 +3738,18 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
+    // Highlight solid ashtrays in edit mode
+    for (const visual of this.ashtrayVisuals.values()) {
+      if (visual.state.passable === false) {
+        const bx = visual.state.x - 24;
+        const by = visual.state.y - 24;
+        const rects = getAssetRects("ashtray_1");
+        for (const [rx, ry, rw, rh] of rects) {
+          this.obstaclesGraphics.fillRect(bx + rx, by + ry, rw, rh);
+        }
+      }
+    }
+
     // Highlight solid freeform decorations in edit mode
     for (const visual of this.freeformVisuals.values()) {
       if (!visual.data.passable) {
@@ -3792,6 +3936,7 @@ export class GameScene extends Phaser.Scene {
       | "clear_private_zone"
       | "jukebox"
       | "typewriter"
+      | "ashtray"
       | "freeform_decoration"
       | "spawn_point"
       | "color_dropper"
@@ -3820,6 +3965,9 @@ export class GameScene extends Phaser.Scene {
     if (tool !== "typewriter" && this.editorTypewriterGhost) {
       this.editorTypewriterGhost.setVisible(false);
     }
+    if (tool !== "ashtray" && this.editorAshtrayGhost) {
+      this.editorAshtrayGhost.setVisible(false);
+    }
     if (tool !== "freeform_decoration" && this.editorFreeformGhost) {
       this.editorFreeformGhost.setVisible(false);
     }
@@ -3828,6 +3976,7 @@ export class GameScene extends Phaser.Scene {
   public formatAssetDisplayName(rawKey: string): string {
     const clean = rawKey.includes("|") ? rawKey.split("|")[0] : rawKey;
     const norm = normalizeDecorationAssetKey(normalizeFloorAssetKey(clean));
+    if (norm === "ashtray_1") return "Ashtray";
     if (norm === "typewriter_1") return "Typewriter";
     if (norm === "jukebox_1") return "YouTube Jukebox";
     if (norm === "office_chair_1_front") return "Office Chair 1 Front";
@@ -3853,6 +4002,22 @@ export class GameScene extends Phaser.Scene {
   }
 
   public getInspectableItemAt(worldX: number, worldY: number): InspectableMapItem | null {
+    // 0. Check Ashtrays (freeform)
+    for (const vis of this.ashtrayVisuals.values()) {
+      const at = vis.state;
+      if (Math.abs(worldX - at.x) <= 26 && Math.abs(worldY - at.y) <= 26) {
+        return {
+          kind: "ashtray",
+          id: at.id,
+          label: "Ashtray",
+          categoryLabel: "Game",
+          worldX: at.x,
+          worldY: at.y - 24,
+          bounds: { x: at.x - 24, y: at.y - 24, width: 48, height: 48 },
+        };
+      }
+    }
+
     // 1. Check Typewriters (freeform)
     for (const vis of this.typewriterVisuals.values()) {
       const tw = vis.state;
@@ -4092,7 +4257,12 @@ export class GameScene extends Phaser.Scene {
   public deleteInspectableItem(item: InspectableMapItem) {
     if (!item) return;
 
-    if (item.kind === "typewriter") {
+    if (item.kind === "ashtray") {
+      this.removeAshtray(item.id);
+      if (this.multiplayer) {
+        this.multiplayer.deleteAshtray(item.id);
+      }
+    } else if (item.kind === "typewriter") {
       this.removeTypewriter(item.id);
       if (this.multiplayer) {
         this.multiplayer.deleteTypewriter(item.id);
@@ -4205,6 +4375,10 @@ export class GameScene extends Phaser.Scene {
       const tw = this.typewriterVisuals.get(item.id)?.state;
       return tw ? tw.passable === false : false;
     }
+    if (item.kind === "ashtray") {
+      const at = this.ashtrayVisuals.get(item.id)?.state;
+      return at ? at.passable === false : false;
+    }
     if (item.kind === "obstacle") {
       return true;
     }
@@ -4272,6 +4446,17 @@ export class GameScene extends Phaser.Scene {
       tw.passable = !newState;
       if (this.multiplayer) {
         this.multiplayer.setTypewriterPassable(item.id, tw.passable);
+      }
+      this.drawObstacles();
+      return newState;
+    }
+    if (item.kind === "ashtray") {
+      const at = this.ashtrayVisuals.get(item.id)?.state;
+      if (!at) return false;
+      const newState = at.passable !== false; // if previously passable, newState is true (obstacle ON)
+      at.passable = !newState;
+      if (this.multiplayer) {
+        this.multiplayer.setAshtrayPassable(item.id, at.passable);
       }
       this.drawObstacles();
       return newState;
@@ -4603,6 +4788,18 @@ export class GameScene extends Phaser.Scene {
             );
             return;
           }
+          if (this.activeEditorTool === "ashtray") {
+            const ax = Math.round(pointer.worldX);
+            const ay = Math.round(pointer.worldY);
+            this.multiplayer.placeAshtray(
+              ax,
+              ay,
+              this.decorationPassable,
+              this.decorationOntop,
+              this.placementLayer
+            );
+            return;
+          }
           if (this.activeEditorTool === "freeform_decoration") {
             const fx = Math.round(pointer.worldX);
             const fy = Math.round(pointer.worldY);
@@ -4779,6 +4976,18 @@ export class GameScene extends Phaser.Scene {
             }
             return;
           }
+          if (this.activeEditorTool === "ashtray") {
+            const tx = Math.round(pointer.worldX);
+            const ty = Math.round(pointer.worldY);
+            this.multiplayer.placeAshtray(
+              tx,
+              ty,
+              this.decorationPassable,
+              this.decorationOntop,
+              this.placementLayer
+            );
+            return;
+          }
           if (this.activeEditorTool === "jukebox") {
             const jx = Math.round(pointer.worldX);
             const jy = Math.round(pointer.worldY);
@@ -4841,5 +5050,174 @@ export class GameScene extends Phaser.Scene {
       state: tw,
     };
     this.typewriterVisuals.set(tw.id, visual);
+  }
+
+  // --- Ashtray World Visuals & Smoking Game Interaction ---
+
+  public setAshtrays(ashtrays: AshtrayState[]) {
+    if (!Array.isArray(ashtrays)) return;
+    const activeIds = new Set<string>();
+
+    for (const at of ashtrays) {
+      activeIds.add(at.id);
+      this.updateAshtray(at);
+    }
+
+    this.ashtrayVisuals.forEach((_vis, id) => {
+      if (!activeIds.has(id)) {
+        this.removeAshtray(id);
+      }
+    });
+  }
+
+  public updateAshtray(at: AshtrayState) {
+    if (!at || !at.id) return;
+    const existing = this.ashtrayVisuals.get(at.id);
+    if (existing) {
+      existing.state = at;
+      existing.container.setPosition(at.x, at.y);
+      existing.container.setDepth(this.computeLayerDepth(at.layer ?? 0, !!at.ontop));
+    } else {
+      this.createAshtrayVisual(at);
+    }
+    this.drawObstacles();
+  }
+
+  public removeAshtray(atId: string) {
+    const existing = this.ashtrayVisuals.get(atId);
+    if (existing) {
+      existing.container.destroy();
+      this.ashtrayVisuals.delete(atId);
+      if (this.nearbyAshtrayId === atId) {
+        this.nearbyAshtrayId = null;
+      }
+      this.drawObstacles();
+    }
+  }
+
+  private createAshtrayVisual(at: AshtrayState) {
+    const sprite = this.add.image(0, 0, "ashtray_1");
+    sprite.setDisplaySize(48, 48);
+
+    const hitZone = this.add.rectangle(0, 0, 52, 52, 0x000000, 0);
+    hitZone.setInteractive({ useHandCursor: true });
+    hitZone.on(
+      "pointerdown",
+      (
+        pointer: Phaser.Input.Pointer,
+        _lx: number,
+        _ly: number,
+        event: Phaser.Types.Input.EventData
+      ) => {
+        if (!pointer.leftButtonDown()) return;
+        event.stopPropagation();
+
+        if (this.isEditMode) {
+          if (this.activeEditorTool === "cursor") {
+            this.openEditorItemMenu({
+              kind: "ashtray",
+              id: at.id,
+              label: "Ashtray",
+              categoryLabel: "Game",
+              worldX: at.x,
+              worldY: at.y - 24,
+              bounds: { x: at.x - 24, y: at.y - 24, width: 48, height: 48 },
+            });
+            return;
+          }
+          if (this.activeEditorTool === "clear_decoration") {
+            this.multiplayer.deleteAshtray(at.id);
+            return;
+          }
+          if (this.activeEditorTool === "ashtray") {
+            if ((at.layer ?? 0) === this.placementLayer) {
+              this.multiplayer.deleteAshtray(at.id);
+            } else {
+              const tx = Math.round(pointer.worldX);
+              const ty = Math.round(pointer.worldY);
+              this.multiplayer.placeAshtray(
+                tx,
+                ty,
+                this.decorationPassable,
+                this.decorationOntop,
+                this.placementLayer
+              );
+            }
+            return;
+          }
+          if (this.activeEditorTool === "typewriter") {
+            const tx = Math.round(pointer.worldX);
+            const ty = Math.round(pointer.worldY);
+            this.multiplayer.placeTypewriter(
+              tx,
+              ty,
+              this.decorationPassable,
+              this.decorationOntop,
+              this.placementLayer
+            );
+            return;
+          }
+          if (this.activeEditorTool === "jukebox") {
+            const jx = Math.round(pointer.worldX);
+            const jy = Math.round(pointer.worldY);
+            this.multiplayer.placeJukebox(
+              jx,
+              jy,
+              this.decorationPassable,
+              this.decorationOntop,
+              this.placementLayer
+            );
+            return;
+          }
+          if (this.activeEditorTool === "freeform_decoration") {
+            const fx = Math.round(pointer.worldX);
+            const fy = Math.round(pointer.worldY);
+            this.placeFreeformDecoration(
+              this.selectedAssetKey,
+              fx,
+              fy,
+              this.selectedTileColor,
+              this.decorationPassable,
+              this.decorationOntop,
+              this.placementLayer
+            );
+            return;
+          }
+          const col = Math.max(0, Math.min(GRID_COLS - 1, Math.floor(pointer.worldX / TILE_SIZE)));
+          const row = Math.max(0, Math.min(GRID_ROWS - 1, Math.floor(pointer.worldY / TILE_SIZE)));
+          this.isSelectingArea = true;
+          this.selectionStartTile = { x: col, y: row };
+          this.selectionCurrentTile = { x: col, y: row };
+          this.updateSelectionVisuals();
+        } else {
+          if (this.onAshtrayClick) {
+            this.onAshtrayClick(at.id);
+          }
+        }
+      }
+    );
+
+    const promptText = this.add.text(0, -32, "Press E to Smoke", {
+      fontFamily: "Outfit, sans-serif",
+      fontSize: "11px",
+      fontStyle: "bold",
+      color: "#ffffff",
+      backgroundColor: "rgba(15, 23, 42, 0.88)",
+      padding: { x: 6, y: 2.5 },
+    });
+    promptText.setOrigin(0.5, 0.5);
+    promptText.setVisible(false);
+
+    const container = this.add.container(at.x, at.y, [sprite, hitZone, promptText]);
+    container.setDepth(this.computeLayerDepth(at.layer ?? 0, !!at.ontop));
+
+    const visual: AshtrayVisual = {
+      container,
+      sprite,
+      hitZone,
+      promptText,
+      state: at,
+    };
+    this.ashtrayVisuals.set(at.id, visual);
   }
 }

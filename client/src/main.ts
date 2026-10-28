@@ -19,6 +19,8 @@ import {
   JukeboxTrack,
   TypewriterState,
   TypeRaceRoomState,
+  AshtrayState,
+  SmokingGameRoomState,
   isWallAsset,
   isOverlayWallAsset,
   isOverlayFloorAsset,
@@ -619,6 +621,10 @@ function getEffectivePlayerName(): string {
 
 function setGameControlsActive(active: boolean) {
   if (active) {
+    const atModal = document.getElementById("ashtray-modal");
+    if (atModal && !atModal.classList.contains("hidden")) {
+      return;
+    }
     const twModal = document.getElementById("typerace-modal");
     if (twModal && !twModal.classList.contains("hidden")) {
       return;
@@ -1851,7 +1857,7 @@ function getAssetImagePath(assetId: string): string | null {
   const decoAssets = new Set([
     "table_1_left", "table_1_middle", "table_1_right",
     "table_2_left", "table_2_middle", "table_2_right",
-    "round_table_1", "typewriter_1",
+    "round_table_1", "typewriter_1", "ashtray_1",
     "office_chair_1_front", "office_chair_1_back",
     "jukebox_1"
   ]);
@@ -1909,6 +1915,7 @@ let activeEditorTool:
   | "clear_private_zone"
   | "jukebox"
   | "typewriter"
+  | "ashtray"
   | "freeform_decoration"
   | "spawn_point"
   | "color_dropper" = "none";
@@ -1924,6 +1931,7 @@ let previousToolBeforeDropper: {
     | "clear_private_zone"
     | "jukebox"
     | "typewriter"
+    | "ashtray"
     | "freeform_decoration"
     | "spawn_point";
   assetId: string;
@@ -2320,6 +2328,7 @@ function enterEditMode() {
       setupScenePrivateZoneEvents(scene);
       setupSceneJukeboxEvents(scene);
       setupSceneTypewriterEvents(scene);
+      setupSceneAshtrayEvents(scene);
       setupSceneEditorToolEvents(scene);
       scene.setEditMode(true);
       scene.setActiveEditorTool(activeEditorTool);
@@ -2537,6 +2546,31 @@ function selectTypewriterTool() {
   }
 
   hideEditorUIForPlacing("Typewriter");
+}
+
+function selectAshtrayTool() {
+  activeEditorTool = "ashtray";
+
+  const cards = document.querySelectorAll(".editor-asset-card");
+  cards.forEach((card) => {
+    if ((card as HTMLElement).dataset.toolType === "ashtray") {
+      card.classList.add("selected");
+    } else {
+      card.classList.remove("selected");
+    }
+  });
+
+  updateEditBannerText();
+
+  if (gameInstance) {
+    const scene = gameInstance.scene.getScene("GameScene") as GameScene;
+    if (scene) {
+      scene.setActiveEditorTool("ashtray");
+      scene.setPlacementLayer(currentPlacementLayer);
+    }
+  }
+
+  hideEditorUIForPlacing("Ashtray");
 }
 
 function selectSpawnPointTool() {
@@ -3474,6 +3508,8 @@ function setupMultiplayerChatListeners(mgr: MultiplayerManager) {
 }
 
 function isAnyModalOpen(): boolean {
+  const atModal = document.getElementById("ashtray-modal");
+  if (atModal && !atModal.classList.contains("hidden")) return true;
   const twModal = document.getElementById("typerace-modal");
   if (twModal && !twModal.classList.contains("hidden")) return true;
   const jbModal = document.getElementById("jukebox-modal");
@@ -4058,6 +4094,7 @@ async function toggleMic() {
       initVoiceManager(multiplayer);
     initJukeboxManager(multiplayer);
     setupMultiplayerTypeRaceListeners(multiplayer);
+    setupMultiplayerSmokingGameListeners(multiplayer);
     } else {
       showVoiceNotification({
         code: "CONNECTING",
@@ -5218,6 +5255,826 @@ function setupMultiplayerTypeRaceListeners(mgr: MultiplayerManager) {
   });
 }
 
+// ==========================================
+// Ashtray & Cigarette Smoking Game UI Logic
+// ==========================================
+
+let activeAshtrayId: string | null = null;
+let currentSmokingGameState: SmokingGameRoomState | null = null;
+let smokeKey1: string = localStorage.getItem("lepark_smoke_key1") || "A";
+let smokeKey2: string = localStorage.getItem("lepark_smoke_key2") || "D";
+let remappingSlot: 1 | 2 | null = null;
+
+let localCurrentMashes: number = 0;
+let localCigarettesFinished: number = 0;
+let localTotalMashes: number = 0;
+let localMashesThisWindow: number = 0;
+let localMashesPerSec: number = 0;
+let nextExpectedSlot: 1 | 2 = 1;
+let lastMashReportedAt: number = 0;
+let mashSpeedInterval: any = null;
+let liveTimerInterval: any = null;
+
+// DOM Elements - Ashtray Modal
+const ashtrayModal = document.getElementById("ashtray-modal") as HTMLDivElement | null;
+const btnCloseAshtrayModal = document.getElementById("btn-close-ashtray-modal") as HTMLButtonElement | null;
+const ashtrayViewerBanner = document.getElementById("ashtray-viewer-banner") as HTMLDivElement | null;
+const ashtrayLobbyView = document.getElementById("ashtray-lobby-view") as HTMLDivElement | null;
+const ashtrayGameView = document.getElementById("ashtray-game-view") as HTMLDivElement | null;
+const ashtrayResultsView = document.getElementById("ashtray-results-view") as HTMLDivElement | null;
+const ashtrayKeybindsDrawer = document.getElementById("ashtray-keybinds-drawer") as HTMLDivElement | null;
+const btnAshtrayKeybinds = document.getElementById("btn-ashtray-keybinds") as HTMLButtonElement | null;
+const btnCloseKeybinds = document.getElementById("btn-close-keybinds") as HTMLButtonElement | null;
+const btnRemapKey1 = document.getElementById("btn-remap-key1") as HTMLButtonElement | null;
+const btnRemapKey2 = document.getElementById("btn-remap-key2") as HTMLButtonElement | null;
+const btnResetKeybinds = document.getElementById("btn-reset-keybinds") as HTMLButtonElement | null;
+const ashtrayKeybindsSummary = document.getElementById("ashtray-keybinds-summary") as HTMLElement | null;
+const keybindsStatusHint = document.getElementById("keybinds-status-hint") as HTMLElement | null;
+
+// Lobby elements
+const ashtrayLobbyStatusText = document.getElementById("ashtray-lobby-status-text") as HTMLElement | null;
+const ashtrayStarterInfoBadge = document.getElementById("ashtray-starter-info-badge") as HTMLElement | null;
+const inputAshtrayMashes = document.getElementById("input-ashtray-mashes") as HTMLInputElement | null;
+const inputAshtrayTimer = document.getElementById("input-ashtray-timer") as HTMLInputElement | null;
+const btnAshtrayStart = document.getElementById("btn-ashtray-start") as HTMLButtonElement | null;
+const btnAshtrayReady = document.getElementById("btn-ashtray-ready") as HTMLButtonElement | null;
+const btnAshtrayReadyText = document.getElementById("btn-ashtray-ready-text") as HTMLElement | null;
+const ashtrayLobbyCount = document.getElementById("ashtray-lobby-count") as HTMLElement | null;
+const ashtrayLobbyPlayersList = document.getElementById("ashtray-lobby-players-list") as HTMLDivElement | null;
+const ashtrayCountdownOverlay = document.getElementById("ashtray-countdown-overlay") as HTMLDivElement | null;
+const ashtrayCountdownNum = document.getElementById("ashtray-countdown-num") as HTMLElement | null;
+
+// Game elements
+const ashtrayLiveTimer = document.getElementById("ashtray-live-timer") as HTMLElement | null;
+const ashtrayRuleMashes = document.getElementById("ashtray-rule-mashes") as HTMLElement | null;
+const ashtrayLiveKeys = document.getElementById("ashtray-live-keys") as HTMLElement | null;
+const cigaretteStageText = document.getElementById("cigarette-stage-text") as HTMLElement | null;
+const cigaretteBurnOverlay = document.getElementById("cigarette-burn-overlay") as HTMLElement | null;
+const cigaretteCherry = document.getElementById("cigarette-cherry") as HTMLElement | null;
+const smokePuffContainer = document.getElementById("smoke-puff-container") as HTMLDivElement | null;
+const spamKeysPrompt = document.getElementById("spam-keys-prompt") as HTMLElement | null;
+const mashBtn1 = document.getElementById("mash-btn-1") as HTMLButtonElement | null;
+const mashBtn2 = document.getElementById("mash-btn-2") as HTMLButtonElement | null;
+const mashKey1Label = document.getElementById("mash-key-1-label") as HTMLElement | null;
+const mashKey2Label = document.getElementById("mash-key-2-label") as HTMLElement | null;
+const ashtrayMyFinished = document.getElementById("ashtray-my-finished") as HTMLElement | null;
+const ashtrayMyCurrent = document.getElementById("ashtray-my-current") as HTMLElement | null;
+const ashtrayMySpeed = document.getElementById("ashtray-my-speed") as HTMLElement | null;
+const ashtrayPlayersLanes = document.getElementById("ashtray-players-lanes") as HTMLDivElement | null;
+
+// Results elements
+const ashtrayWinnerTitle = document.getElementById("ashtray-winner-title") as HTMLElement | null;
+const ashtrayWinnerSub = document.getElementById("ashtray-winner-sub") as HTMLElement | null;
+const ashtrayScoreboardBody = document.getElementById("ashtray-scoreboard-body") as HTMLTableSectionElement | null;
+const btnAshtrayPlayAgain = document.getElementById("btn-ashtray-play-again") as HTMLButtonElement | null;
+const btnAshtrayLeave = document.getElementById("btn-ashtray-leave") as HTMLButtonElement | null;
+
+function setupSceneAshtrayEvents(scene: GameScene) {
+  if (!scene) return;
+  if ((scene as any)._ashtrayEventsBound) return;
+  (scene as any)._ashtrayEventsBound = true;
+
+  scene.onAshtrayClick = (atId: string) => {
+    openSmokingGameModal(atId);
+  };
+}
+
+function updateKeybindLabels() {
+  if (mashKey1Label) mashKey1Label.textContent = smokeKey1;
+  if (mashKey2Label) mashKey2Label.textContent = smokeKey2;
+  if (btnRemapKey1) btnRemapKey1.textContent = smokeKey1;
+  if (btnRemapKey2) btnRemapKey2.textContent = smokeKey2;
+  if (ashtrayKeybindsSummary) ashtrayKeybindsSummary.textContent = `${smokeKey1} & ${smokeKey2}`;
+  if (ashtrayLiveKeys) ashtrayLiveKeys.textContent = `${smokeKey1} & ${smokeKey2}`;
+  if (spamKeysPrompt) {
+    const nextKey = nextExpectedSlot === 1 ? smokeKey1 : smokeKey2;
+    spamKeysPrompt.textContent = `Mash [ ${nextKey} ] next!`;
+  }
+}
+
+function openSmokingGameModal(ashtrayId: string) {
+  if (!ashtrayModal) return;
+  activeAshtrayId = ashtrayId;
+  ashtrayModal.classList.remove("hidden");
+  setGameControlsActive(false);
+
+  updateKeybindLabels();
+  ashtrayKeybindsDrawer?.classList.add("hidden");
+  remappingSlot = null;
+
+  if (multiplayer) {
+    multiplayer.joinSmokingGame(ashtrayId);
+  }
+}
+
+function closeSmokingGameModal() {
+  if (!ashtrayModal) return;
+  stopSmokingGameTimers();
+  if (activeAshtrayId && multiplayer) {
+    multiplayer.leaveSmokingGame(activeAshtrayId);
+  }
+  activeAshtrayId = null;
+  currentSmokingGameState = null;
+  ashtrayModal.classList.add("hidden");
+  ashtrayKeybindsDrawer?.classList.add("hidden");
+  remappingSlot = null;
+  setGameControlsActive(true);
+}
+
+function startSmokingGameTimers() {
+  stopSmokingGameTimers();
+
+  // Speed calculation every 500ms
+  mashSpeedInterval = setInterval(() => {
+    localMashesPerSec = parseFloat((localMashesThisWindow * 2).toFixed(1));
+    localMashesThisWindow = 0;
+    if (ashtrayMySpeed) ashtrayMySpeed.textContent = localMashesPerSec.toFixed(1);
+  }, 500);
+
+  // Live timer tick every 200ms
+  liveTimerInterval = setInterval(() => {
+    if (!currentSmokingGameState || currentSmokingGameState.status !== "smoking") return;
+    const remaining = Math.max(0, Math.ceil((currentSmokingGameState.endTime - Date.now()) / 1000));
+    const mins = Math.floor(remaining / 60);
+    const secs = remaining % 60;
+    const formatted = `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+    if (ashtrayLiveTimer) {
+      ashtrayLiveTimer.textContent = formatted;
+      if (remaining <= 10) {
+        ashtrayLiveTimer.classList.add("timer-warning");
+      } else {
+        ashtrayLiveTimer.classList.remove("timer-warning");
+      }
+    }
+  }, 200);
+}
+
+function stopSmokingGameTimers() {
+  if (mashSpeedInterval) {
+    clearInterval(mashSpeedInterval);
+    mashSpeedInterval = null;
+  }
+  if (liveTimerInterval) {
+    clearInterval(liveTimerInterval);
+    liveTimerInterval = null;
+  }
+}
+
+function triggerSmokePuff(isBigRing: boolean = false) {
+  if (!smokePuffContainer) return;
+  const puff = document.createElement("div");
+  puff.className = isBigRing ? "smoke-ring-burst" : "smoke-puff-particle";
+
+  const offsetX = (Math.random() - 0.5) * 16;
+  const offsetY = (Math.random() - 0.5) * 10;
+  puff.style.left = `calc(50% + ${offsetX}px)`;
+  puff.style.top = `calc(50% + ${offsetY}px)`;
+
+  smokePuffContainer.appendChild(puff);
+  setTimeout(() => {
+    puff.remove();
+  }, isBigRing ? 1200 : 700);
+}
+
+function handleMashInput(slot: 1 | 2) {
+  if (!ashtrayModal || ashtrayModal.classList.contains("hidden")) return;
+  if (!activeAshtrayId || !multiplayer || !currentSmokingGameState) return;
+  if (currentSmokingGameState.status !== "smoking") return;
+
+  const mySessionId = multiplayer.room?.sessionId || "";
+  const me = currentSmokingGameState.players[mySessionId];
+  if (!me || me.isViewer) return;
+
+  // Enforce alternating keys!
+  if (slot !== nextExpectedSlot) {
+    // Incorrect button pressed: trigger slight warning feedback on wrong button
+    const wrongBtn = slot === 1 ? mashBtn1 : mashBtn2;
+    if (wrongBtn) {
+      wrongBtn.classList.add("wrong-press");
+      setTimeout(() => wrongBtn.classList.remove("wrong-press"), 100);
+    }
+    return;
+  }
+
+  // Valid alternating mash!
+  const pressedBtn = slot === 1 ? mashBtn1 : mashBtn2;
+  if (pressedBtn) {
+    pressedBtn.classList.add("active-punch");
+    setTimeout(() => pressedBtn.classList.remove("active-punch"), 80);
+  }
+
+  // Switch expected button
+  nextExpectedSlot = slot === 1 ? 2 : 1;
+  if (mashBtn1) mashBtn1.classList.toggle("next-expected", nextExpectedSlot === 1);
+  if (mashBtn2) mashBtn2.classList.toggle("next-expected", nextExpectedSlot === 2);
+  if (spamKeysPrompt) {
+    const nextKey = nextExpectedSlot === 1 ? smokeKey1 : smokeKey2;
+    spamKeysPrompt.textContent = `Mash [ ${nextKey} ] next!`;
+  }
+
+  localCurrentMashes++;
+  localTotalMashes++;
+  localMashesThisWindow++;
+
+  const mashesPerCig = currentSmokingGameState.settings.mashesPerCigarette || 50;
+  const isCigFinished = localCurrentMashes >= mashesPerCig;
+
+  triggerSmokePuff(isCigFinished);
+
+  if (isCigFinished) {
+    localCigarettesFinished++;
+    localCurrentMashes = 0;
+
+    // Pulse cherry ember brightly
+    if (cigaretteCherry) {
+      cigaretteCherry.classList.add("cherry-flare");
+      setTimeout(() => cigaretteCherry?.classList.remove("cherry-flare"), 400);
+    }
+
+    // Immediately notify server of finished cigarette
+    lastMashReportedAt = Date.now();
+    multiplayer.sendSmokingGameMash(
+      activeAshtrayId,
+      localCurrentMashes,
+      localCigarettesFinished,
+      localTotalMashes,
+      localMashesPerSec
+    );
+  } else {
+    // Throttled update to server
+    const now = Date.now();
+    if (now - lastMashReportedAt >= 100) {
+      lastMashReportedAt = now;
+      multiplayer.sendSmokingGameMash(
+        activeAshtrayId,
+        localCurrentMashes,
+        localCigarettesFinished,
+        localTotalMashes,
+        localMashesPerSec
+      );
+    }
+  }
+
+  // Update personal interactive stage
+  if (ashtrayMyFinished) ashtrayMyFinished.textContent = String(localCigarettesFinished);
+  const myCurrentPct = Math.min(100, Math.max(0, Math.round((localCurrentMashes / mashesPerCig) * 100)));
+  if (ashtrayMyCurrent) ashtrayMyCurrent.textContent = `${myCurrentPct}%`;
+  if (cigaretteStageText) cigaretteStageText.textContent = `Smoking Cigarette #${localCigarettesFinished + 1}`;
+  if (cigaretteBurnOverlay) {
+    const burnPct = (localCurrentMashes / mashesPerCig) * 100;
+    cigaretteBurnOverlay.style.width = `${burnPct}%`;
+  }
+
+  // Also update my row in the live lanes immediately for zero lag
+  if (ashtrayPlayersLanes) {
+    const myLane = ashtrayPlayersLanes.querySelector(`[data-session-id="${mySessionId}"]`);
+    if (myLane) {
+      const statsSpan = myLane.querySelector(".mini-bar-stats");
+      const fillBar = myLane.querySelector(".smoking-mini-bar-fill") as HTMLElement | null;
+      const finishedBadge = myLane.querySelector(".smoking-finished-badge");
+      const totalMashesSpan = myLane.querySelector(".smoking-total-mashes");
+      const mpsSpan = myLane.querySelector(".smoking-player-mps");
+
+      const pct = Math.min(100, Math.max(0, Math.round((localCurrentMashes / mashesPerCig) * 100)));
+      if (statsSpan) statsSpan.textContent = `${pct}%`;
+      if (fillBar) fillBar.style.width = `${pct}%`;
+      if (finishedBadge) finishedBadge.textContent = `🚬 ${localCigarettesFinished} ${localCigarettesFinished === 1 ? 'cigarette' : 'cigarettes'} finished`;
+      if (totalMashesSpan) totalMashesSpan.textContent = `Total: ${localTotalMashes} mashes`;
+      if (mpsSpan) mpsSpan.textContent = `${localMashesPerSec} mash/s`;
+    }
+  }
+}
+
+function updateSmokingGameUI(state: SmokingGameRoomState) {
+  currentSmokingGameState = state;
+  const mySessionId = multiplayer?.room?.sessionId || "";
+  const players = Object.values(state.players);
+  const me = state.players[mySessionId];
+  const isViewer = me ? me.isViewer : false;
+  const isStarter = state.starterSessionId === mySessionId;
+  const starter = state.players[state.starterSessionId];
+
+  // Viewer Banner
+  if (ashtrayViewerBanner) {
+    ashtrayViewerBanner.classList.toggle("hidden", !isViewer);
+  }
+
+  if (state.status === "waiting" || state.status === "starting") {
+    stopSmokingGameTimers();
+    ashtrayLobbyView?.classList.remove("hidden");
+    ashtrayGameView?.classList.add("hidden");
+    ashtrayResultsView?.classList.add("hidden");
+
+    // Countdown overlay
+    if (ashtrayCountdownOverlay && ashtrayCountdownNum) {
+      if (state.status === "starting") {
+        ashtrayCountdownOverlay.classList.remove("hidden");
+        ashtrayCountdownNum.textContent = String(state.countdown || 3);
+      } else {
+        ashtrayCountdownOverlay.classList.add("hidden");
+      }
+    }
+
+    // Starter Pill & Settings configuration
+    if (ashtrayStarterInfoBadge) {
+      if (isStarter) {
+        ashtrayStarterInfoBadge.innerHTML = `👑 <strong>You are the Game Starter</strong> • Configure rules below`;
+      } else {
+        ashtrayStarterInfoBadge.innerHTML = `👑 Game Starter: <strong>${escapeHtml(starter?.name || "Waiting...")}</strong>`;
+      }
+    }
+
+    if (inputAshtrayMashes) {
+      if (document.activeElement !== inputAshtrayMashes) {
+        inputAshtrayMashes.value = String(state.settings.mashesPerCigarette || 50);
+      }
+      inputAshtrayMashes.disabled = !isStarter;
+    }
+
+    if (inputAshtrayTimer) {
+      if (document.activeElement !== inputAshtrayTimer) {
+        inputAshtrayTimer.value = String(state.settings.gameDuration || 60);
+      }
+      inputAshtrayTimer.disabled = !isStarter;
+    }
+
+    // Preset pills active state
+    document.querySelectorAll("#mashes-preset-pills .preset-pill").forEach((pill) => {
+      const val = parseInt((pill as HTMLElement).dataset.val || "0", 10);
+      pill.classList.toggle("active", val === state.settings.mashesPerCigarette);
+      (pill as HTMLButtonElement).disabled = !isStarter;
+    });
+
+    document.querySelectorAll("#timer-preset-pills .preset-pill").forEach((pill) => {
+      const val = parseInt((pill as HTMLElement).dataset.val || "0", 10);
+      pill.classList.toggle("active", val === state.settings.gameDuration);
+      (pill as HTMLButtonElement).disabled = !isStarter;
+    });
+
+    // Start / Ready Buttons
+    if (btnAshtrayStart) {
+      btnAshtrayStart.classList.toggle("hidden", !isStarter);
+    }
+    if (btnAshtrayReady) {
+      btnAshtrayReady.classList.toggle("hidden", isStarter);
+      if (me) {
+        if (me.isReady) {
+          btnAshtrayReady.classList.add("is-ready");
+          if (btnAshtrayReadyText) btnAshtrayReadyText.textContent = "✓ Ready";
+        } else {
+          btnAshtrayReady.classList.remove("is-ready");
+          if (btnAshtrayReadyText) btnAshtrayReadyText.textContent = "✓ Ready Up";
+        }
+      }
+    }
+
+    // Lobby status text
+    const activePlayers = players.filter((p) => !p.isViewer);
+    const readyPlayers = activePlayers.filter((p) => p.isReady);
+    if (ashtrayLobbyStatusText) {
+      ashtrayLobbyStatusText.textContent =
+        state.status === "starting"
+          ? `DUEL BEGINNING IN ${state.countdown || 3}...`
+          : `LOBBY • ${readyPlayers.length}/${activePlayers.length} READY • STARTER: ${starter?.name || "Waiting"}`;
+    }
+
+    if (ashtrayLobbyCount) {
+      ashtrayLobbyCount.textContent = `${players.length} ${players.length === 1 ? "Player" : "Players"}`;
+    }
+
+    // Render lobby players cards
+    if (ashtrayLobbyPlayersList) {
+      ashtrayLobbyPlayersList.innerHTML = "";
+      for (const p of players) {
+        const card = document.createElement("div");
+        card.className = `ashtray-player-card ${p.isViewer ? "is-viewer" : ""} ${p.isStarter ? "is-starter" : ""}`;
+
+        let statusBadge = "";
+        if (p.isViewer) {
+          statusBadge = `<span class="player-ready-tag viewer">👀 Spectator</span>`;
+        } else if (p.isStarter) {
+          statusBadge = `<span class="player-ready-tag starter">👑 Starter</span>`;
+        } else if (p.isReady) {
+          statusBadge = `<span class="player-ready-tag ready">✓ Ready</span>`;
+        } else {
+          statusBadge = `<span class="player-ready-tag waiting">⏳ Waiting</span>`;
+        }
+
+        const isMeTag = p.sessionId === mySessionId ? ` <span class="ashtray-you-tag">(You)</span>` : "";
+        const avatarUrl = p.avatarUrl || "/assets/sprite1.png";
+
+        card.innerHTML = `
+          <div class="lobby-player-meta">
+            <div class="lobby-avatar-wrap" style="border-color: ${p.color || '#3b82f6'};">
+              <img src="${avatarUrl}" class="lobby-avatar-img" alt="${escapeHtml(p.name)}" />
+            </div>
+            <div class="lobby-player-name-box">
+              <span class="lobby-player-name">${escapeHtml(p.name)}${isMeTag}</span>
+              <span class="lobby-player-role">${p.isStarter ? "Game Starter" : "Duelist"}</span>
+            </div>
+          </div>
+          ${statusBadge}
+        `;
+        ashtrayLobbyPlayersList.appendChild(card);
+      }
+    }
+
+  } else if (state.status === "smoking") {
+    ashtrayLobbyView?.classList.add("hidden");
+    ashtrayGameView?.classList.remove("hidden");
+    ashtrayResultsView?.classList.add("hidden");
+    ashtrayCountdownOverlay?.classList.add("hidden");
+
+    if (ashtrayRuleMashes) {
+      ashtrayRuleMashes.textContent = String(state.settings.mashesPerCigarette || 50);
+    }
+
+    // Initialize personal metrics on first frame of game
+    if (localTotalMashes === 0 && me) {
+      localCurrentMashes = me.currentMashes || 0;
+      localCigarettesFinished = me.cigarettesFinished || 0;
+      localTotalMashes = me.totalMashes || 0;
+      nextExpectedSlot = 1;
+      startSmokingGameTimers();
+    }
+
+    const mashesNeeded = state.settings.mashesPerCigarette || 50;
+
+    if (ashtrayMyFinished) ashtrayMyFinished.textContent = String(localCigarettesFinished);
+    const myCurrentPct = Math.min(100, Math.max(0, Math.round((localCurrentMashes / mashesNeeded) * 100)));
+    if (ashtrayMyCurrent) ashtrayMyCurrent.textContent = `${myCurrentPct}%`;
+
+    // Render competitor lanes matching exact prompt requirements:
+    // "modal will show players model with their name."
+    // "beside will show mini progress bar of current cigeratte. based on how much have been mashed / total needed to mashed."
+    // "under the mini progress will show total cigeratte already finished."
+    if (ashtrayPlayersLanes) {
+      ashtrayPlayersLanes.innerHTML = "";
+      const competitors = players.filter((p) => !p.isViewer);
+
+      for (const p of competitors) {
+        const isMe = p.sessionId === mySessionId;
+        const curMashes = isMe ? localCurrentMashes : (p.currentMashes || 0);
+        const finishedCount = isMe ? localCigarettesFinished : (p.cigarettesFinished || 0);
+        const pct = Math.min(100, Math.max(0, Math.round((curMashes / mashesNeeded) * 100)));
+        const avatarUrl = p.avatarUrl || "/assets/sprite1.png";
+        const isMeTag = isMe ? ` <span class="smoking-you-tag">(You)</span>` : "";
+        const starterCrown = p.isStarter ? ` <span class="smoking-crown-icon" title="Starter">👑</span>` : "";
+
+        const lane = document.createElement("div");
+        lane.className = `smoking-lane-card ${isMe ? "is-me" : ""}`;
+        lane.dataset.sessionId = p.sessionId;
+
+        lane.innerHTML = `
+          <!-- Player Model with Name -->
+          <div class="smoking-lane-player">
+            <div class="smoking-avatar-box" style="border-color: ${p.color || '#3b82f6'};">
+              <img src="${avatarUrl}" class="smoking-avatar-img" alt="${escapeHtml(p.name)}" />
+            </div>
+            <div class="smoking-name-col">
+              <span class="smoking-player-name">${escapeHtml(p.name)}${isMeTag}${starterCrown}</span>
+              <span class="smoking-player-mps">${isMe ? localMashesPerSec : (p.mashesPerSecond || 0)} mash/s</span>
+            </div>
+          </div>
+
+          <!-- Beside: Mini progress bar of current cigarette -->
+          <div class="smoking-lane-progress-col">
+            <div class="smoking-mini-bar-header">
+              <span class="mini-bar-title">Current Cigarette</span>
+              <span class="mini-bar-stats">${pct}%</span>
+            </div>
+            <div class="smoking-mini-bar-track">
+              <div class="smoking-mini-bar-fill" style="width: ${pct}%; background: ${p.color || '#f97316'};">
+                <span class="smoking-mini-ember">🔥</span>
+              </div>
+            </div>
+
+            <!-- Under the mini progress: Total cigarettes already finished -->
+            <div class="smoking-mini-finished-row">
+              <span class="smoking-finished-badge">🚬 ${finishedCount} ${finishedCount === 1 ? 'cigarette' : 'cigarettes'} finished</span>
+              <span class="smoking-total-mashes">Total: ${isMe ? localTotalMashes : (p.totalMashes || 0)} mashes</span>
+            </div>
+          </div>
+        `;
+        ashtrayPlayersLanes.appendChild(lane);
+      }
+    }
+
+  } else if (state.status === "ended") {
+    stopSmokingGameTimers();
+    ashtrayLobbyView?.classList.add("hidden");
+    ashtrayGameView?.classList.add("hidden");
+    ashtrayResultsView?.classList.remove("hidden");
+    ashtrayCountdownOverlay?.classList.add("hidden");
+
+    const results = state.results || [];
+    const winner = results[0];
+
+    if (ashtrayWinnerTitle && ashtrayWinnerSub) {
+      if (winner) {
+        const isMeWinner = winner.sessionId === mySessionId;
+        ashtrayWinnerTitle.textContent = isMeWinner
+          ? `🏆 You Won the Smoking Duel!`
+          : `🏆 ${winner.name} Won the Duel!`;
+        ashtrayWinnerSub.textContent = `Smoked ${winner.cigarettesFinished} cigarettes with ${winner.totalMashes} total mashes!`;
+      } else {
+        ashtrayWinnerTitle.textContent = "Showdown Concluded!";
+        ashtrayWinnerSub.textContent = "Final standings below:";
+      }
+    }
+
+    if (ashtrayScoreboardBody) {
+      ashtrayScoreboardBody.innerHTML = "";
+      results.forEach((res) => {
+        const row = document.createElement("tr");
+        row.className = `rank-${res.rank <= 3 ? res.rank : "other"}`;
+
+        let rankBadge = `#${res.rank}`;
+        if (res.rank === 1) rankBadge = "🥇 1st";
+        else if (res.rank === 2) rankBadge = "🥈 2nd";
+        else if (res.rank === 3) rankBadge = "🥉 3rd";
+
+        const isMeTag = res.sessionId === mySessionId ? ` <span style="font-size:10px;color:#94a3b8;">(You)</span>` : "";
+        const avatarUrl = res.avatarUrl || "/assets/sprite1.png";
+
+        row.innerHTML = `
+          <td class="col-rank"><strong>${rankBadge}</strong></td>
+          <td class="col-player">
+            <div class="scoreboard-player-meta">
+              <div class="scoreboard-avatar-wrap" style="border-color: ${res.color || '#3b82f6'};">
+                <img src="${avatarUrl}" class="scoreboard-avatar-img" alt="${escapeHtml(res.name)}" />
+              </div>
+              <span class="scoreboard-player-name">${escapeHtml(res.name)}${isMeTag}</span>
+            </div>
+          </td>
+          <td class="col-finished"><strong style="color:#f97316;font-size:15px;">🚬 ${res.cigarettesFinished}</strong></td>
+          <td class="col-last">${res.currentMashes} mashes</td>
+          <td class="col-speed">${res.mashesPerSecond || 0} mps</td>
+          <td class="col-total">${res.totalMashes || 0}</td>
+        `;
+        ashtrayScoreboardBody.appendChild(row);
+      });
+    }
+  }
+}
+
+// Remap Keybinds Logic
+function setRemappingSlot(slot: 1 | 2 | null) {
+  remappingSlot = slot;
+  if (btnRemapKey1) {
+    btnRemapKey1.classList.toggle("is-remapping", slot === 1);
+    btnRemapKey1.textContent = slot === 1 ? "Press key..." : smokeKey1;
+  }
+  if (btnRemapKey2) {
+    btnRemapKey2.classList.toggle("is-remapping", slot === 2);
+    btnRemapKey2.textContent = slot === 2 ? "Press key..." : smokeKey2;
+  }
+  if (keybindsStatusHint) {
+    if (slot === 1) keybindsStatusHint.textContent = "Press any keyboard key to set Button 1.";
+    else if (slot === 2) keybindsStatusHint.textContent = "Press any keyboard key to set Button 2.";
+    else keybindsStatusHint.textContent = `Current keys: [${smokeKey1}] and [${smokeKey2}]`;
+  }
+}
+
+if (btnAshtrayKeybinds) {
+  btnAshtrayKeybinds.addEventListener("click", () => {
+    ashtrayKeybindsDrawer?.classList.toggle("hidden");
+    setRemappingSlot(null);
+  });
+}
+
+if (btnCloseKeybinds) {
+  btnCloseKeybinds.addEventListener("click", () => {
+    ashtrayKeybindsDrawer?.classList.add("hidden");
+    setRemappingSlot(null);
+  });
+}
+
+if (btnRemapKey1) {
+  btnRemapKey1.addEventListener("click", () => {
+    setRemappingSlot(1);
+  });
+}
+
+if (btnRemapKey2) {
+  btnRemapKey2.addEventListener("click", () => {
+    setRemappingSlot(2);
+  });
+}
+
+if (btnResetKeybinds) {
+  btnResetKeybinds.addEventListener("click", () => {
+    smokeKey1 = "A";
+    smokeKey2 = "D";
+    localStorage.setItem("lepark_smoke_key1", smokeKey1);
+    localStorage.setItem("lepark_smoke_key2", smokeKey2);
+    setRemappingSlot(null);
+    updateKeybindLabels();
+  });
+}
+
+// Global keydown capture for remapping and mashing
+window.addEventListener("keydown", (e: KeyboardEvent) => {
+  // 1. Remap mode
+  if (remappingSlot !== null) {
+    if (e.key === "Escape") {
+      setRemappingSlot(null);
+      return;
+    }
+    const ignoredKeys = new Set(["Shift", "Control", "Alt", "Meta", "Tab", "CapsLock", "ContextMenu"]);
+    if (ignoredKeys.has(e.key)) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    let cleanKey = e.key.toUpperCase();
+    if (cleanKey === " ") cleanKey = "SPACE";
+    else if (cleanKey.length > 5) cleanKey = e.code.replace("Key", "").replace("Digit", "").toUpperCase();
+
+    if (remappingSlot === 1) {
+      if (cleanKey === smokeKey2) {
+        alert("Button 1 cannot be the same as Button 2!");
+        return;
+      }
+      smokeKey1 = cleanKey;
+      localStorage.setItem("lepark_smoke_key1", smokeKey1);
+    } else if (remappingSlot === 2) {
+      if (cleanKey === smokeKey1) {
+        alert("Button 2 cannot be the same as Button 1!");
+        return;
+      }
+      smokeKey2 = cleanKey;
+      localStorage.setItem("lepark_smoke_key2", smokeKey2);
+    }
+
+    setRemappingSlot(null);
+    updateKeybindLabels();
+    return;
+  }
+
+  // 2. Button spamming in game
+  if (ashtrayModal && !ashtrayModal.classList.contains("hidden")) {
+    if (currentSmokingGameState && currentSmokingGameState.status === "smoking") {
+      let keyUpper = e.key.toUpperCase();
+      if (keyUpper === " ") keyUpper = "SPACE";
+
+      if (keyUpper === smokeKey1) {
+        e.preventDefault();
+        e.stopPropagation();
+        handleMashInput(1);
+        return;
+      } else if (keyUpper === smokeKey2) {
+        e.preventDefault();
+        e.stopPropagation();
+        handleMashInput(2);
+        return;
+      }
+    }
+  }
+});
+
+// Mash buttons click handlers (for mouse or touch)
+if (mashBtn1) {
+  mashBtn1.addEventListener("click", () => {
+    handleMashInput(1);
+  });
+}
+if (mashBtn2) {
+  mashBtn2.addEventListener("click", () => {
+    handleMashInput(2);
+  });
+}
+
+// Starter settings input change handlers
+if (inputAshtrayMashes) {
+  inputAshtrayMashes.addEventListener("change", () => {
+    if (!activeAshtrayId || !multiplayer || !currentSmokingGameState) return;
+    const mySessionId = multiplayer.room?.sessionId || "";
+    if (currentSmokingGameState.starterSessionId !== mySessionId) return;
+    const val = parseInt(inputAshtrayMashes.value, 10);
+    if (!isNaN(val) && val >= 5) {
+      multiplayer.updateSmokingGameSettings(activeAshtrayId, { mashesPerCigarette: val });
+    }
+  });
+}
+
+if (inputAshtrayTimer) {
+  inputAshtrayTimer.addEventListener("change", () => {
+    if (!activeAshtrayId || !multiplayer || !currentSmokingGameState) return;
+    const mySessionId = multiplayer.room?.sessionId || "";
+    if (currentSmokingGameState.starterSessionId !== mySessionId) return;
+    const val = parseInt(inputAshtrayTimer.value, 10);
+    if (!isNaN(val) && val >= 10) {
+      multiplayer.updateSmokingGameSettings(activeAshtrayId, { gameDuration: val });
+    }
+  });
+}
+
+// Preset pills click handlers
+document.querySelectorAll("#mashes-preset-pills .preset-pill").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    if (!activeAshtrayId || !multiplayer || !currentSmokingGameState) return;
+    const mySessionId = multiplayer.room?.sessionId || "";
+    if (currentSmokingGameState.starterSessionId !== mySessionId) return;
+    const val = parseInt((btn as HTMLElement).dataset.val || "50", 10);
+    if (inputAshtrayMashes) inputAshtrayMashes.value = String(val);
+    multiplayer.updateSmokingGameSettings(activeAshtrayId, { mashesPerCigarette: val });
+  });
+});
+
+document.querySelectorAll("#timer-preset-pills .preset-pill").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    if (!activeAshtrayId || !multiplayer || !currentSmokingGameState) return;
+    const mySessionId = multiplayer.room?.sessionId || "";
+    if (currentSmokingGameState.starterSessionId !== mySessionId) return;
+    const val = parseInt((btn as HTMLElement).dataset.val || "60", 10);
+    if (inputAshtrayTimer) inputAshtrayTimer.value = String(val);
+    multiplayer.updateSmokingGameSettings(activeAshtrayId, { gameDuration: val });
+  });
+});
+
+// Start button (starter only)
+if (btnAshtrayStart) {
+  btnAshtrayStart.addEventListener("click", () => {
+    if (!activeAshtrayId || !multiplayer || !currentSmokingGameState) return;
+    const mySessionId = multiplayer.room?.sessionId || "";
+    if (currentSmokingGameState.starterSessionId !== mySessionId) return;
+    multiplayer.startSmokingGame(activeAshtrayId);
+  });
+}
+
+// Ready button (non-starters)
+if (btnAshtrayReady) {
+  btnAshtrayReady.addEventListener("click", () => {
+    if (!activeAshtrayId || !multiplayer || !currentSmokingGameState) return;
+    const mySessionId = multiplayer.room?.sessionId || "";
+    const me = currentSmokingGameState.players[mySessionId];
+    if (!me || me.isViewer) return;
+    multiplayer.setSmokingGameReady(activeAshtrayId, !me.isReady);
+  });
+}
+
+// Play again & leave buttons
+if (btnAshtrayPlayAgain) {
+  btnAshtrayPlayAgain.addEventListener("click", () => {
+    if (!activeAshtrayId || !multiplayer) return;
+    multiplayer.requestSmokingGamePlayAgain(activeAshtrayId);
+  });
+}
+
+if (btnAshtrayLeave) {
+  btnAshtrayLeave.addEventListener("click", () => {
+    closeSmokingGameModal();
+  });
+}
+
+if (btnCloseAshtrayModal) {
+  btnCloseAshtrayModal.addEventListener("click", () => {
+    closeSmokingGameModal();
+  });
+}
+
+if (ashtrayModal) {
+  ashtrayModal.addEventListener("click", (e) => {
+    if (e.target === ashtrayModal) {
+      closeSmokingGameModal();
+    }
+  });
+}
+
+function setupMultiplayerSmokingGameListeners(mgr: MultiplayerManager) {
+  mgr.onSmokingGameState((state) => {
+    updateSmokingGameUI(state);
+  });
+
+  mgr.onSmokingGameStart((state) => {
+    if (state.ashtrayId === activeAshtrayId) {
+      localCurrentMashes = 0;
+      localCigarettesFinished = 0;
+      localTotalMashes = 0;
+      localMashesThisWindow = 0;
+      localMashesPerSec = 0;
+      nextExpectedSlot = 1;
+      startSmokingGameTimers();
+      updateSmokingGameUI(state);
+    }
+  });
+
+  mgr.onSmokingGameEnded((data) => {
+    if (data.ashtrayId === activeAshtrayId && currentSmokingGameState) {
+      currentSmokingGameState.status = "ended";
+      currentSmokingGameState.results = data.results;
+      updateSmokingGameUI(currentSmokingGameState);
+    }
+  });
+
+  mgr.onAshtrayDelete((ashtrayId) => {
+    if (activeAshtrayId === ashtrayId) {
+      closeSmokingGameModal();
+    }
+  });
+}
+
 
 
 if (privateZoneNameForm) {
@@ -5312,6 +6169,8 @@ editorAssetCards.forEach((card) => {
       selectJukeboxTool();
     } else if (toolType === "typewriter") {
       selectTypewriterTool();
+    } else if (toolType === "ashtray") {
+      selectAshtrayTool();
     } else if (toolType === "spawn_point") {
       selectSpawnPointTool();
     } else if (toolType === "color_dropper") {
@@ -5390,6 +6249,14 @@ window.addEventListener(
         e.preventDefault();
         e.stopPropagation();
         e.stopImmediatePropagation();
+        return;
+      }
+      const atModal = document.getElementById("ashtray-modal");
+      if (atModal && !atModal.classList.contains("hidden")) {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        return;
       }
     }
   },
@@ -5438,6 +6305,12 @@ window.addEventListener(
 window.addEventListener("keydown", (e: KeyboardEvent) => {
   if (e.key === "Escape") {
     if (typeraceModal && !typeraceModal.classList.contains("hidden")) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+    const atModal = document.getElementById("ashtray-modal");
+    if (atModal && !atModal.classList.contains("hidden")) {
       e.preventDefault();
       e.stopPropagation();
       return;
@@ -5853,6 +6726,7 @@ async function switchSpace(
     initVoiceManager(multiplayer);
     initJukeboxManager(multiplayer);
     setupMultiplayerTypeRaceListeners(multiplayer);
+    setupMultiplayerSmokingGameListeners(multiplayer);
 
     await multiplayer.joinGame({
       name: effectiveName,
@@ -6329,6 +7203,7 @@ async function enterGameSession() {
   initVoiceManager(manager);
   initJukeboxManager(manager);
   setupMultiplayerTypeRaceListeners(manager);
+  setupMultiplayerSmokingGameListeners(manager);
 
   try {
     await manager.joinGame({
@@ -6385,6 +7260,7 @@ async function enterGameSession() {
           setupScenePrivateZoneEvents(scene);
           setupSceneJukeboxEvents(scene);
           setupSceneTypewriterEvents(scene);
+          setupSceneAshtrayEvents(scene);
           setupSceneEditorToolEvents(scene);
         }
       }
