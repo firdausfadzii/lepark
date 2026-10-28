@@ -21,6 +21,10 @@ import {
   TypeRaceRoomState,
   AshtrayState,
   SmokingGameRoomState,
+  ChessBoardState,
+  ChessLobbyState,
+  ChessGameState,
+  ChessGameSummary,
   isWallAsset,
   isOverlayWallAsset,
   isOverlayFloorAsset,
@@ -28,6 +32,7 @@ import {
 } from "shared";
 import { VoiceManager, VoiceError } from "./network/VoiceManager";
 import { JukeboxManager } from "./audio/JukeboxManager";
+import { Chess } from "chess.js";
 
 // Automatically inject skip_zrok_interstitial header on all outgoing fetch and XHR calls
 // to prevent zrok public proxies from returning an HTML interstitial page for API requests
@@ -1857,7 +1862,7 @@ function getAssetImagePath(assetId: string): string | null {
   const decoAssets = new Set([
     "table_1_left", "table_1_middle", "table_1_right",
     "table_2_left", "table_2_middle", "table_2_right",
-    "round_table_1", "typewriter_1", "ashtray_1",
+    "round_table_1", "typewriter_1", "ashtray_1", "chess_board_1",
     "office_chair_1_front", "office_chair_1_back",
     "jukebox_1"
   ]);
@@ -1916,6 +1921,7 @@ let activeEditorTool:
   | "jukebox"
   | "typewriter"
   | "ashtray"
+  | "chess_board"
   | "freeform_decoration"
   | "spawn_point"
   | "color_dropper" = "none";
@@ -1932,6 +1938,7 @@ let previousToolBeforeDropper: {
     | "jukebox"
     | "typewriter"
     | "ashtray"
+    | "chess_board"
     | "freeform_decoration"
     | "spawn_point";
   assetId: string;
@@ -2138,6 +2145,16 @@ function updateEditBannerText() {
     return;
   }
 
+  if (activeEditorTool === "ashtray") {
+    editBannerAssetText.innerHTML = `<span class="banner-private-tag" style="background: rgba(234, 88, 12, 0.2); color: #fb923c; border-color: rgba(234, 88, 12, 0.4);">🚬 Ashtray</span> Active: <strong>Smoking Game (Freeform)</strong> • <span class="banner-layer-tag">Layer ${currentPlacementLayer} (↑/↓)</span> • <em>Click anywhere to place • Use ↑/↓ arrow keys to change layer</em>`;
+    return;
+  }
+
+  if (activeEditorTool === "chess_board") {
+    editBannerAssetText.innerHTML = `<span class="banner-private-tag" style="background: rgba(168, 85, 247, 0.2); color: #e9d5ff; border-color: rgba(168, 85, 247, 0.4);">♟️ Chess Board</span> Active: <strong>Chess Arena (Freeform)</strong> • <span class="banner-layer-tag">Layer ${currentPlacementLayer} (↑/↓)</span> • <em>Click anywhere to place • Use ↑/↓ arrow keys to change layer</em>`;
+    return;
+  }
+
   if (activeEditorTool === "spawn_point") {
     editBannerAssetText.innerHTML = `<span class="banner-spawn-tag">📍 Spawn Point</span> Active: <strong>Player Spawn Point</strong> • <em>Click anywhere to place spawn point (1 per map)</em>`;
     return;
@@ -2329,6 +2346,7 @@ function enterEditMode() {
       setupSceneJukeboxEvents(scene);
       setupSceneTypewriterEvents(scene);
       setupSceneAshtrayEvents(scene);
+      setupSceneChessEvents(scene);
       setupSceneEditorToolEvents(scene);
       scene.setEditMode(true);
       scene.setActiveEditorTool(activeEditorTool);
@@ -2571,6 +2589,31 @@ function selectAshtrayTool() {
   }
 
   hideEditorUIForPlacing("Ashtray");
+}
+
+function selectChessBoardTool() {
+  activeEditorTool = "chess_board";
+
+  const cards = document.querySelectorAll(".editor-asset-card");
+  cards.forEach((card) => {
+    if ((card as HTMLElement).dataset.toolType === "chess_board") {
+      card.classList.add("selected");
+    } else {
+      card.classList.remove("selected");
+    }
+  });
+
+  updateEditBannerText();
+
+  if (gameInstance) {
+    const scene = gameInstance.scene.getScene("GameScene") as GameScene;
+    if (scene) {
+      scene.setActiveEditorTool("chess_board");
+      scene.setPlacementLayer(currentPlacementLayer);
+    }
+  }
+
+  hideEditorUIForPlacing("Chess Board");
 }
 
 function selectSpawnPointTool() {
@@ -4095,6 +4138,7 @@ async function toggleMic() {
     initJukeboxManager(multiplayer);
     setupMultiplayerTypeRaceListeners(multiplayer);
     setupMultiplayerSmokingGameListeners(multiplayer);
+    setupMultiplayerChessListeners(multiplayer);
     } else {
       showVoiceNotification({
         code: "CONNECTING",
@@ -6075,6 +6119,753 @@ function setupMultiplayerSmokingGameListeners(mgr: MultiplayerManager) {
   });
 }
 
+// ============================================================================
+// CHESS GAME CONTROLLER & UI
+// ============================================================================
+
+// DOM Elements
+const chessModal = document.getElementById("chess-modal") as HTMLDivElement | null;
+const btnCloseChessModal = document.getElementById("btn-close-chess-modal") as HTMLButtonElement | null;
+const chessLobbyView = document.getElementById("chess-lobby-view") as HTMLDivElement | null;
+const chessGameView = document.getElementById("chess-game-view") as HTMLDivElement | null;
+
+// Lobby View Elements
+const btnChessJoinMatch = document.getElementById("btn-chess-join-match") as HTMLButtonElement | null;
+const chessQueueStatus = document.getElementById("chess-queue-status") as HTMLDivElement | null;
+const chessQueueText = document.getElementById("chess-queue-text") as HTMLElement | null;
+const btnChessCancelJoin = document.getElementById("btn-chess-cancel-join") as HTMLButtonElement | null;
+const chessOngoingCountPill = document.getElementById("chess-ongoing-count-pill") as HTMLElement | null;
+const chessGamesGrid = document.getElementById("chess-games-grid") as HTMLDivElement | null;
+const chessGamesEmpty = document.getElementById("chess-games-empty") as HTMLDivElement | null;
+
+// Game View Elements
+const btnChessBackToLobby = document.getElementById("btn-chess-back-to-lobby") as HTMLButtonElement | null;
+const chessMatchStatusBadge = document.getElementById("chess-match-status-badge") as HTMLElement | null;
+const btnChessFlipBoard = document.getElementById("btn-chess-flip-board") as HTMLButtonElement | null;
+const btnChessOfferDraw = document.getElementById("btn-chess-offer-draw") as HTMLButtonElement | null;
+const btnChessResign = document.getElementById("btn-chess-resign") as HTMLButtonElement | null;
+const btnChessRematch = document.getElementById("btn-chess-rematch") as HTMLButtonElement | null;
+
+// Player Top Bar Elements
+const chessPlayerWhiteCard = document.getElementById("chess-player-white-card") as HTMLDivElement | null;
+const chessWhiteAvatar = document.getElementById("chess-white-avatar") as HTMLImageElement | null;
+const chessWhiteName = document.getElementById("chess-white-name") as HTMLElement | null;
+const chessWhiteTurnPill = document.getElementById("chess-white-turn-pill") as HTMLElement | null;
+const chessWhiteCaptured = document.getElementById("chess-white-captured") as HTMLDivElement | null;
+
+const chessMoveCounter = document.getElementById("chess-move-counter") as HTMLElement | null;
+
+const chessPlayerBlackCard = document.getElementById("chess-player-black-card") as HTMLDivElement | null;
+const chessBlackAvatar = document.getElementById("chess-black-avatar") as HTMLImageElement | null;
+const chessBlackName = document.getElementById("chess-black-name") as HTMLElement | null;
+const chessBlackTurnPill = document.getElementById("chess-black-turn-pill") as HTMLElement | null;
+const chessBlackCaptured = document.getElementById("chess-black-captured") as HTMLDivElement | null;
+
+// Board Elements
+const chessBoardGrid = document.getElementById("chess-board-grid") as HTMLDivElement | null;
+const chessPromotionDialog = document.getElementById("chess-promotion-dialog") as HTMLDivElement | null;
+const promotionChoices = document.getElementById("promotion-choices") as HTMLDivElement | null;
+
+// Sidebar Elements
+const chessSpectatorsCount = document.getElementById("chess-spectators-count") as HTMLElement | null;
+const chessSpectatorsList = document.getElementById("chess-spectators-list") as HTMLDivElement | null;
+const chessHistoryList = document.getElementById("chess-history-list") as HTMLDivElement | null;
+
+// State
+let activeChessBoardId: string | null = null;
+let currentChessLobbyState: ChessLobbyState | null = null;
+let currentChessGameState: ChessGameState | null = null;
+let localChessInstance: Chess = new Chess();
+let selectedSquare: string | null = null;
+let legalMovesForSelected: string[] = [];
+let isBoardFlipped: boolean = false;
+let pendingPromotionMove: { from: string; to: string } | null = null;
+
+function setupSceneChessEvents(scene: GameScene) {
+  if (!scene) return;
+  if ((scene as any)._chessEventsBound) return;
+  (scene as any)._chessEventsBound = true;
+
+  scene.onChessBoardClick = (cbId: string) => {
+    openChessModal(cbId);
+  };
+}
+
+function openChessModal(chessBoardId: string) {
+  if (!chessModal) return;
+  activeChessBoardId = chessBoardId;
+  chessModal.classList.remove("hidden");
+  setGameControlsActive(false);
+
+  // Always show lobby view; matches cannot be resumed once left
+  showChessLobbyView();
+
+  if (multiplayer) {
+    multiplayer.openChessLobby(chessBoardId);
+  }
+}
+
+function closeChessModal() {
+  if (!chessModal) return;
+  chessModal.classList.add("hidden");
+  setGameControlsActive(true);
+
+  if (activeChessBoardId && multiplayer) {
+    const mySid = multiplayer.room?.sessionId;
+    const isPlayer =
+      currentChessGameState &&
+      mySid &&
+      (currentChessGameState.whitePlayer?.sessionId === mySid ||
+        currentChessGameState.blackPlayer?.sessionId === mySid);
+
+    if (currentChessGameState) {
+      if (currentChessGameState.status === "playing" && isPlayer) {
+        // Leaving while playing ends the game straight up
+        multiplayer.leaveChessMatch(activeChessBoardId, currentChessGameState.matchId);
+      } else if (
+        mySid &&
+        currentChessGameState.spectators &&
+        currentChessGameState.spectators[mySid]
+      ) {
+        multiplayer.leaveChessMatch(activeChessBoardId, currentChessGameState.matchId);
+      }
+    }
+
+    multiplayer.leaveChessLobby(activeChessBoardId);
+  }
+
+  currentChessGameState = null;
+  selectedSquare = null;
+  legalMovesForSelected = [];
+  if (chessPromotionDialog) chessPromotionDialog.classList.add("hidden");
+}
+
+function showChessLobbyView() {
+  if (chessLobbyView) chessLobbyView.classList.remove("hidden");
+  if (chessGameView) chessGameView.classList.add("hidden");
+  if (activeChessBoardId && multiplayer) {
+    multiplayer.openChessLobby(activeChessBoardId);
+  }
+}
+
+function showChessGameView() {
+  if (chessLobbyView) chessLobbyView.classList.add("hidden");
+  if (chessGameView) chessGameView.classList.remove("hidden");
+}
+
+function renderChessLobby(state: ChessLobbyState) {
+  currentChessLobbyState = state;
+  const mySessionId = multiplayer?.room?.sessionId;
+
+  // 1. Check if local player is in queue (waiting match)
+  const myWaitingMatch = state.waitingMatches?.find(
+    (m) => m.whitePlayer?.sessionId === mySessionId
+  );
+
+  if (myWaitingMatch) {
+    if (btnChessJoinMatch) btnChessJoinMatch.classList.add("hidden");
+    if (chessQueueStatus) chessQueueStatus.classList.remove("hidden");
+    if (chessQueueText) chessQueueText.textContent = "Waiting for opponent to join...";
+  } else {
+    if (btnChessJoinMatch) btnChessJoinMatch.classList.remove("hidden");
+    if (chessQueueStatus) chessQueueStatus.classList.add("hidden");
+  }
+
+  // 2. Render ongoing games
+  const ongoing = state.ongoingGames || [];
+  if (chessOngoingCountPill) {
+    chessOngoingCountPill.textContent = `${ongoing.length} Active Match${ongoing.length === 1 ? "" : "es"}`;
+  }
+
+  if (!chessGamesGrid) return;
+  chessGamesGrid.innerHTML = "";
+
+  if (ongoing.length === 0) {
+    if (chessGamesEmpty) chessGamesEmpty.classList.remove("hidden");
+  } else {
+    if (chessGamesEmpty) chessGamesEmpty.classList.add("hidden");
+
+    ongoing.forEach((game) => {
+      const card = document.createElement("div");
+      card.className = "chess-game-card";
+
+      const turnLabel = game.turn === "white" ? "White's Turn" : "Black's Turn";
+      const statusClass = game.inCheck ? "chess-card-status-pill check" : "chess-card-status-pill";
+      const statusText = game.inCheck ? `⚠️ Check! (${turnLabel})` : `🟢 In Progress • ${turnLabel}`;
+
+      const whiteName = game.whitePlayer?.name || "Player 1";
+      const whiteAvatar = game.whitePlayer?.avatarUrl || "/assets/sprite1.png";
+      const blackName = game.blackPlayer?.name || "Player 2";
+      const blackAvatar = game.blackPlayer?.avatarUrl || "/assets/sprite1.png";
+
+      card.innerHTML = `
+        <div class="chess-card-top-row">
+          <span class="chess-card-match-id">Match #${game.matchId.slice(-6)}</span>
+          <span class="${statusClass}">${statusText}</span>
+        </div>
+        <div class="chess-card-players-row">
+          <div class="chess-card-player-item" title="White: ${escapeHtml(whiteName)}">
+            <img src="${whiteAvatar}" class="chess-card-player-avatar" alt="${escapeHtml(whiteName)}" />
+            <span class="chess-card-player-name">⚪ ${escapeHtml(whiteName)}</span>
+          </div>
+          <span class="chess-card-vs">VS</span>
+          <div class="chess-card-player-item" title="Black: ${escapeHtml(blackName)}">
+            <img src="${blackAvatar}" class="chess-card-player-avatar" alt="${escapeHtml(blackName)}" />
+            <span class="chess-card-player-name">⚫ ${escapeHtml(blackName)}</span>
+          </div>
+        </div>
+        <div class="chess-card-footer">
+          <div class="chess-card-meta">
+            <span>♟️ ${game.moveCount} moves</span>
+            <span>👀 ${game.spectatorCount}</span>
+          </div>
+          <button type="button" class="btn-spectate-game" data-match-id="${game.matchId}">
+            👁️ Spectate
+          </button>
+        </div>
+      `;
+
+      const btnSpectate = card.querySelector(".btn-spectate-game");
+      if (btnSpectate) {
+        btnSpectate.addEventListener("click", () => {
+          if (activeChessBoardId && multiplayer) {
+            multiplayer.spectateChessMatch(activeChessBoardId, game.matchId);
+          }
+        });
+      }
+
+      chessGamesGrid.appendChild(card);
+    });
+  }
+}
+
+function renderChessGame(state: ChessGameState) {
+  currentChessGameState = state;
+  showChessGameView();
+
+  try {
+    localChessInstance = new Chess();
+    if (state.fen) {
+      localChessInstance.load(state.fen);
+    }
+  } catch (err) {
+    console.error("Error loading chess FEN:", err);
+  }
+
+  const mySessionId = multiplayer?.room?.sessionId;
+  const isWhite = state.whitePlayer?.sessionId === mySessionId;
+  const isBlack = state.blackPlayer?.sessionId === mySessionId;
+  const isPlaying = isWhite || isBlack;
+
+  // Auto flip board for black player if not manually toggled
+  if (isBlack && !isBoardFlipped) {
+    isBoardFlipped = true;
+  } else if (isWhite && isBoardFlipped) {
+    isBoardFlipped = false;
+  }
+
+  // 1. Update status badge
+  if (chessMatchStatusBadge) {
+    if (state.status === "checkmate") {
+      const winnerName = state.winner === "white" ? state.whitePlayer?.name : state.blackPlayer?.name;
+      chessMatchStatusBadge.textContent = `🏆 Checkmate! ${winnerName || "Winner"} wins!`;
+      chessMatchStatusBadge.style.borderColor = "#eab308";
+    } else if (state.status === "resigned") {
+      chessMatchStatusBadge.textContent = `🏳️ ${state.winReason || "Game ended by resignation"}`;
+      chessMatchStatusBadge.style.borderColor = "#ef4444";
+    } else if (state.status === "draw" || state.status === "stalemate") {
+      chessMatchStatusBadge.textContent = `🤝 ${state.winReason || "Game drawn"}`;
+      chessMatchStatusBadge.style.borderColor = "#3b82f6";
+    } else if (state.inCheck) {
+      const turnName = state.turn === "white" ? state.whitePlayer?.name : state.blackPlayer?.name;
+      chessMatchStatusBadge.textContent = `⚠️ Check! (${turnName}'s turn)`;
+      chessMatchStatusBadge.style.borderColor = "#ef4444";
+    } else {
+      const turnName = state.turn === "white" ? state.whitePlayer?.name : state.blackPlayer?.name;
+      chessMatchStatusBadge.textContent = `${turnName || state.turn}'s turn (${state.turn === "white" ? "White ⚪" : "Black ⚫"})`;
+      chessMatchStatusBadge.style.borderColor = "rgba(168, 85, 247, 0.4)";
+    }
+  }
+
+  // 2. Action buttons visibility
+  if (btnChessResign) {
+    btnChessResign.classList.toggle("hidden", !isPlaying || state.status !== "playing");
+  }
+  if (btnChessOfferDraw) {
+    btnChessOfferDraw.classList.toggle("hidden", !isPlaying || state.status !== "playing");
+    if (state.drawOffer && state.drawOffer !== (isWhite ? "white" : "black")) {
+      btnChessOfferDraw.textContent = "🤝 Accept Draw";
+    } else {
+      btnChessOfferDraw.textContent = "🤝 Draw";
+    }
+  }
+  if (btnChessRematch) {
+    btnChessRematch.classList.add("hidden");
+  }
+
+  // 3. Top players bar
+  if (chessWhiteName) chessWhiteName.textContent = state.whitePlayer?.name || "Waiting...";
+  if (chessWhiteAvatar && state.whitePlayer?.avatarUrl) chessWhiteAvatar.src = state.whitePlayer.avatarUrl;
+  if (chessBlackName) chessBlackName.textContent = state.blackPlayer?.name || "Waiting...";
+  if (chessBlackAvatar && state.blackPlayer?.avatarUrl) chessBlackAvatar.src = state.blackPlayer.avatarUrl;
+
+  const isWhiteTurn = state.status === "playing" && state.turn === "white";
+  const isBlackTurn = state.status === "playing" && state.turn === "black";
+  if (chessPlayerWhiteCard) chessPlayerWhiteCard.classList.toggle("active-turn", isWhiteTurn);
+  if (chessPlayerBlackCard) chessPlayerBlackCard.classList.toggle("active-turn", isBlackTurn);
+
+  if (chessMoveCounter) {
+    const moveNum = Math.floor(state.history.length / 2) + 1;
+    chessMoveCounter.textContent = `Move ${moveNum}`;
+  }
+
+  // Update captured pieces
+  updateCapturedPieces();
+
+  // 4. Render 8x8 Board
+  renderChessBoard();
+
+  // 5. Update spectators list
+  renderSpectatorsList(state.spectators);
+
+  // 6. Update move history
+  renderMoveHistory(state.history);
+}
+
+function updateCapturedPieces() {
+  const pieces: Record<"w" | "b", Record<string, number>> = {
+    w: { p: 8, r: 2, n: 2, b: 2, q: 1 },
+    b: { p: 8, r: 2, n: 2, b: 2, q: 1 },
+  };
+
+  const board = localChessInstance.board();
+  for (const row of board) {
+    for (const sq of row) {
+      if (sq && sq.type !== "k") {
+        pieces[sq.color][sq.type]--;
+      }
+    }
+  }
+
+  const pieceNameMap: Record<string, string> = {
+    p: "pawn",
+    r: "rook",
+    n: "knight",
+    b: "bishop",
+    q: "queen",
+  };
+
+  // Pieces captured by White are black pieces
+  if (chessWhiteCaptured) {
+    chessWhiteCaptured.innerHTML = "";
+    for (const [type, count] of Object.entries(pieces.b)) {
+      for (let i = 0; i < count; i++) {
+        const img = document.createElement("img");
+        img.src = `/assets/decoration/chess/black-${pieceNameMap[type]}.png`;
+        img.className = "chess-captured-mini-piece";
+        img.alt = `Captured ${pieceNameMap[type]}`;
+        chessWhiteCaptured.appendChild(img);
+      }
+    }
+  }
+
+  // Pieces captured by Black are white pieces
+  if (chessBlackCaptured) {
+    chessBlackCaptured.innerHTML = "";
+    for (const [type, count] of Object.entries(pieces.w)) {
+      for (let i = 0; i < count; i++) {
+        const img = document.createElement("img");
+        img.src = `/assets/decoration/chess/white-${pieceNameMap[type]}.png`;
+        img.className = "chess-captured-mini-piece";
+        img.alt = `Captured ${pieceNameMap[type]}`;
+        chessBlackCaptured.appendChild(img);
+      }
+    }
+  }
+}
+
+function renderChessBoard() {
+  if (!chessBoardGrid) return;
+  chessBoardGrid.innerHTML = "";
+
+  const files = isBoardFlipped
+    ? ["h", "g", "f", "e", "d", "c", "b", "a"]
+    : ["a", "b", "c", "d", "e", "f", "g", "h"];
+  const ranks = isBoardFlipped
+    ? [1, 2, 3, 4, 5, 6, 7, 8]
+    : [8, 7, 6, 5, 4, 3, 2, 1];
+
+  for (let r = 0; r < 8; r++) {
+    const rank = ranks[r];
+    for (let f = 0; f < 8; f++) {
+      const file = files[f];
+      const square = `${file}${rank}`;
+      const isLight = (file.charCodeAt(0) + rank) % 2 !== 0;
+
+      const squareEl = document.createElement("div");
+      squareEl.className = `chess-square ${isLight ? "light-square" : "dark-square"}`;
+      squareEl.dataset.square = square;
+
+      // Selection highlight
+      if (selectedSquare === square) {
+        squareEl.classList.add("selected-square");
+      }
+
+      // Last move highlight
+      if (
+        currentChessGameState?.lastMove &&
+        (currentChessGameState.lastMove.from === square || currentChessGameState.lastMove.to === square)
+      ) {
+        squareEl.classList.add("last-move-square");
+      }
+
+      // Check highlight for King in check
+      if (currentChessGameState?.inCheck) {
+        const piece = localChessInstance.get(square as any);
+        if (
+          piece &&
+          piece.type === "k" &&
+          ((piece.color === "w" && currentChessGameState.turn === "white") ||
+            (piece.color === "b" && currentChessGameState.turn === "black"))
+        ) {
+          squareEl.classList.add("in-check-square");
+        }
+      }
+
+      // Legal moves highlight
+      if (legalMovesForSelected.includes(square)) {
+        const piece = localChessInstance.get(square as any);
+        if (piece) {
+          squareEl.classList.add("legal-capture");
+        } else {
+          squareEl.classList.add("legal-target");
+        }
+      }
+
+      // Outer rank and file coordinate labels
+      if (r === 7) {
+        const fileLabel = document.createElement("span");
+        fileLabel.className = "chess-coord-file";
+        fileLabel.textContent = file;
+        squareEl.appendChild(fileLabel);
+      }
+      if (f === 0) {
+        const rankLabel = document.createElement("span");
+        rankLabel.className = "chess-coord-rank";
+        rankLabel.textContent = String(rank);
+        squareEl.appendChild(rankLabel);
+      }
+
+      // Piece Image
+      const piece = localChessInstance.get(square as any);
+      if (piece) {
+        const color = piece.color === "w" ? "white" : "black";
+        const pieceNames: Record<string, string> = {
+          p: "pawn",
+          r: "rook",
+          n: "knight",
+          b: "bishop",
+          q: "queen",
+          k: "king",
+        };
+        const pieceImg = document.createElement("img");
+        pieceImg.src = `/assets/decoration/chess/${color}-${pieceNames[piece.type]}.png`;
+        pieceImg.className = "chess-piece-img";
+        pieceImg.alt = `${color} ${pieceNames[piece.type]}`;
+        squareEl.appendChild(pieceImg);
+      }
+
+      // Square click event
+      squareEl.addEventListener("click", () => {
+        handleSquareClick(square);
+      });
+
+      chessBoardGrid.appendChild(squareEl);
+    }
+  }
+}
+
+function handleSquareClick(square: string) {
+  if (!currentChessGameState || currentChessGameState.status !== "playing") return;
+
+  const mySessionId = multiplayer?.room?.sessionId;
+  const isWhite = currentChessGameState.whitePlayer?.sessionId === mySessionId;
+  const isBlack = currentChessGameState.blackPlayer?.sessionId === mySessionId;
+  if (!isWhite && !isBlack) return; // Spectator cannot move pieces
+
+  const isMyTurn =
+    (isWhite && currentChessGameState.turn === "white") ||
+    (isBlack && currentChessGameState.turn === "black");
+
+  if (!isMyTurn) return;
+
+  const myColor = isWhite ? "w" : "b";
+
+  // If a square is already selected and clicked square is one of legal targets:
+  if (selectedSquare && legalMovesForSelected.includes(square)) {
+    const piece = localChessInstance.get(selectedSquare as any);
+
+    // Check pawn promotion
+    if (
+      piece &&
+      piece.type === "p" &&
+      ((piece.color === "w" && square.endsWith("8")) ||
+        (piece.color === "b" && square.endsWith("1")))
+    ) {
+      pendingPromotionMove = { from: selectedSquare, to: square };
+      showPromotionDialog(piece.color);
+      return;
+    }
+
+    // Execute move
+    executeMove(selectedSquare, square);
+    selectedSquare = null;
+    legalMovesForSelected = [];
+    renderChessBoard();
+    return;
+  }
+
+  // Otherwise, select a piece of own color
+  const piece = localChessInstance.get(square as any);
+  if (piece && piece.color === myColor) {
+    selectedSquare = square;
+    const moves = localChessInstance.moves({ square: square as any, verbose: true });
+    legalMovesForSelected = moves.map((m: any) => m.to);
+    renderChessBoard();
+  } else {
+    selectedSquare = null;
+    legalMovesForSelected = [];
+    renderChessBoard();
+  }
+}
+
+function executeMove(from: string, to: string, promotion?: "q" | "r" | "b" | "n") {
+  if (!activeChessBoardId || !currentChessGameState || !multiplayer) return;
+  multiplayer.sendChessMove(activeChessBoardId, currentChessGameState.matchId, from, to, promotion);
+}
+
+function showPromotionDialog(color: "w" | "b") {
+  if (!chessPromotionDialog || !promotionChoices) return;
+  promotionChoices.innerHTML = "";
+  chessPromotionDialog.classList.remove("hidden");
+
+  const colorPrefix = color === "w" ? "white" : "black";
+  const pieces: Array<{ type: "q" | "r" | "b" | "n"; name: string }> = [
+    { type: "q", name: "queen" },
+    { type: "r", name: "rook" },
+    { type: "b", name: "bishop" },
+    { type: "n", name: "knight" },
+  ];
+
+  pieces.forEach((p) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "btn-promotion-choice";
+    btn.innerHTML = `<img src="/assets/decoration/chess/${colorPrefix}-${p.name}.png" alt="${p.name}" />`;
+    btn.addEventListener("click", () => {
+      chessPromotionDialog.classList.add("hidden");
+      if (pendingPromotionMove) {
+        executeMove(pendingPromotionMove.from, pendingPromotionMove.to, p.type);
+        pendingPromotionMove = null;
+        selectedSquare = null;
+        legalMovesForSelected = [];
+        renderChessBoard();
+      }
+    });
+    promotionChoices.appendChild(btn);
+  });
+}
+
+function renderSpectatorsList(spectators: Record<string, any>) {
+  if (!chessSpectatorsList || !chessSpectatorsCount) return;
+  const list = Object.values(spectators || {});
+  chessSpectatorsCount.textContent = String(list.length);
+  chessSpectatorsList.innerHTML = "";
+
+  if (list.length === 0) {
+    const empty = document.createElement("div");
+    empty.style.color = "#64748b";
+    empty.style.fontSize = "12px";
+    empty.style.textAlign = "center";
+    empty.style.padding = "8px 0";
+    empty.textContent = "No spectators watching yet";
+    chessSpectatorsList.appendChild(empty);
+    return;
+  }
+
+  list.forEach((spec: any) => {
+    const item = document.createElement("div");
+    item.className = "chess-spectator-item";
+    const avatarUrl = spec.avatarUrl || "/assets/sprite1.png";
+    item.innerHTML = `
+      <img src="${avatarUrl}" class="chess-spectator-avatar" alt="${escapeHtml(spec.name || "Spectator")}" />
+      <span class="chess-spectator-name">${escapeHtml(spec.name || "Spectator")}</span>
+      <span class="chess-spectator-badge">Watching</span>
+    `;
+    chessSpectatorsList.appendChild(item);
+  });
+}
+
+function renderMoveHistory(history: string[]) {
+  if (!chessHistoryList) return;
+  chessHistoryList.innerHTML = "";
+
+  for (let i = 0; i < history.length; i += 2) {
+    const moveNum = Math.floor(i / 2) + 1;
+    const whiteMove = history[i];
+    const blackMove = history[i + 1] || "";
+
+    const isWhiteLatest = i === history.length - 1;
+    const isBlackLatest = i + 1 === history.length - 1;
+
+    const row = document.createElement("div");
+    row.className = "chess-move-row";
+    row.innerHTML = `
+      <span class="chess-move-num">${moveNum}.</span>
+      <span class="chess-move-white ${isWhiteLatest ? "active" : ""}">${escapeHtml(whiteMove)}</span>
+      <span class="chess-move-black ${isBlackLatest ? "active" : ""}">${escapeHtml(blackMove)}</span>
+    `;
+    chessHistoryList.appendChild(row);
+  }
+
+  chessHistoryList.scrollTop = chessHistoryList.scrollHeight;
+}
+
+// Modal Event Listeners
+if (btnChessJoinMatch) {
+  btnChessJoinMatch.addEventListener("click", () => {
+    if (!activeChessBoardId || !multiplayer) return;
+    multiplayer.joinChessMatch(activeChessBoardId);
+  });
+}
+
+if (btnChessCancelJoin) {
+  btnChessCancelJoin.addEventListener("click", () => {
+    if (!activeChessBoardId || !multiplayer) return;
+    multiplayer.cancelChessJoin(activeChessBoardId);
+  });
+}
+
+if (btnChessBackToLobby) {
+  btnChessBackToLobby.addEventListener("click", () => {
+    const mySessionId = multiplayer?.room?.sessionId;
+    const isWhite = currentChessGameState?.whitePlayer?.sessionId === mySessionId;
+    const isBlack = currentChessGameState?.blackPlayer?.sessionId === mySessionId;
+
+    if ((isWhite || isBlack) && currentChessGameState?.status === "playing") {
+      if (confirm("Leave match? Leaving will forfeit the game.")) {
+        if (activeChessBoardId && currentChessGameState) {
+          multiplayer?.leaveChessMatch(activeChessBoardId, currentChessGameState.matchId);
+        }
+        currentChessGameState = null;
+        selectedSquare = null;
+        legalMovesForSelected = [];
+        showChessLobbyView();
+      }
+    } else {
+      if (activeChessBoardId && currentChessGameState) {
+        multiplayer?.leaveChessMatch(activeChessBoardId, currentChessGameState.matchId);
+      }
+      currentChessGameState = null;
+      selectedSquare = null;
+      legalMovesForSelected = [];
+      showChessLobbyView();
+    }
+  });
+}
+
+if (btnChessFlipBoard) {
+  btnChessFlipBoard.addEventListener("click", () => {
+    isBoardFlipped = !isBoardFlipped;
+    renderChessBoard();
+  });
+}
+
+if (btnChessOfferDraw) {
+  btnChessOfferDraw.addEventListener("click", () => {
+    if (!activeChessBoardId || !currentChessGameState || !multiplayer) return;
+    multiplayer.sendChessOfferDraw(activeChessBoardId, currentChessGameState.matchId);
+  });
+}
+
+if (btnChessResign) {
+  btnChessResign.addEventListener("click", () => {
+    if (!activeChessBoardId || !currentChessGameState || !multiplayer) return;
+    if (confirm("Are you sure you want to resign this match?")) {
+      multiplayer.sendChessResign(activeChessBoardId, currentChessGameState.matchId);
+    }
+  });
+}
+
+if (btnChessRematch) {
+  btnChessRematch.addEventListener("click", () => {
+    if (!activeChessBoardId || !currentChessGameState || !multiplayer) return;
+    multiplayer.sendChessRematch(activeChessBoardId, currentChessGameState.matchId);
+  });
+}
+
+if (btnCloseChessModal) {
+  btnCloseChessModal.addEventListener("click", () => {
+    closeChessModal();
+  });
+}
+
+if (chessModal) {
+  chessModal.addEventListener("click", (e) => {
+    if (e.target === chessModal) {
+      closeChessModal();
+    }
+  });
+}
+
+window.addEventListener("beforeunload", () => {
+  if (activeChessBoardId && currentChessGameState && multiplayer) {
+    const mySid = multiplayer.room?.sessionId;
+    const isPlayer =
+      mySid &&
+      (currentChessGameState.whitePlayer?.sessionId === mySid ||
+        currentChessGameState.blackPlayer?.sessionId === mySid);
+    if (currentChessGameState.status === "playing" && isPlayer) {
+      multiplayer.leaveChessMatch(activeChessBoardId, currentChessGameState.matchId);
+    }
+  }
+});
+
+function setupMultiplayerChessListeners(mgr: MultiplayerManager) {
+  mgr.onChessLobbyState((state) => {
+    if (activeChessBoardId === state.chessBoardId) {
+      renderChessLobby(state);
+    }
+  });
+
+  mgr.onChessGameState((state) => {
+    if (
+      currentChessGameState?.matchId === state.matchId ||
+      (!currentChessGameState && state.chessBoardId === activeChessBoardId)
+    ) {
+      renderChessGame(state);
+    }
+  });
+
+  mgr.onChessGameStart((state) => {
+    if (activeChessBoardId === state.chessBoardId) {
+      renderChessGame(state);
+    }
+  });
+
+  mgr.onChessGameEnded((state) => {
+    if (activeChessBoardId === state.chessBoardId) {
+      renderChessGame(state);
+    }
+  });
+
+  mgr.onChessBoardDelete((chessBoardId) => {
+    if (activeChessBoardId === chessBoardId) {
+      closeChessModal();
+    }
+  });
+}
+
 
 
 if (privateZoneNameForm) {
@@ -6171,6 +6962,8 @@ editorAssetCards.forEach((card) => {
       selectTypewriterTool();
     } else if (toolType === "ashtray") {
       selectAshtrayTool();
+    } else if (toolType === "chess_board") {
+      selectChessBoardTool();
     } else if (toolType === "spawn_point") {
       selectSpawnPointTool();
     } else if (toolType === "color_dropper") {
@@ -6317,6 +7110,10 @@ window.addEventListener("keydown", (e: KeyboardEvent) => {
     }
     if (jukeboxModal && !jukeboxModal.classList.contains("hidden")) {
       closeJukeboxModal();
+      return;
+    }
+    if (chessModal && !chessModal.classList.contains("hidden")) {
+      closeChessModal();
       return;
     }
     if (
@@ -6727,6 +7524,7 @@ async function switchSpace(
     initJukeboxManager(multiplayer);
     setupMultiplayerTypeRaceListeners(multiplayer);
     setupMultiplayerSmokingGameListeners(multiplayer);
+    setupMultiplayerChessListeners(multiplayer);
 
     await multiplayer.joinGame({
       name: effectiveName,
@@ -7204,6 +8002,7 @@ async function enterGameSession() {
   initJukeboxManager(manager);
   setupMultiplayerTypeRaceListeners(manager);
   setupMultiplayerSmokingGameListeners(manager);
+  setupMultiplayerChessListeners(manager);
 
   try {
     await manager.joinGame({
@@ -7261,6 +8060,7 @@ async function enterGameSession() {
           setupSceneJukeboxEvents(scene);
           setupSceneTypewriterEvents(scene);
           setupSceneAshtrayEvents(scene);
+          setupSceneChessEvents(scene);
           setupSceneEditorToolEvents(scene);
         }
       }

@@ -12,6 +12,7 @@
     "@geckos.io/snapshot-interpolation": "^1.1.1",
     "colyseus.js": "^0.15.28",
     "phaser": "^3.90.0",
+    "chess.js": "^1.4.0",
     "shared": "*"
   },
   "devDependencies": {

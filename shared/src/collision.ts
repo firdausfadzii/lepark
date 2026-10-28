@@ -153,6 +153,7 @@ export interface PixelCollisionWorldInput {
   jukeboxes?: Iterable<PixelCollisionEntity>;
   typewriters?: Iterable<PixelCollisionEntity>;
   ashtrays?: Iterable<PixelCollisionEntity>;
+  chessBoards?: Iterable<PixelCollisionEntity>;
   freeformDecorations?: Iterable<{ x: number; y: number; assetKey: string; passable?: boolean }>;
 }
 
@@ -221,6 +222,22 @@ export function createPixelCollisionChecker(world: PixelCollisionWorldInput): Pi
           originX: at.x - 24,
           originY: at.y - 24,
           rects: getAssetRects("ashtray_1"),
+        });
+      }
+    }
+  }
+
+  if (world.chessBoards) {
+    for (const cb of world.chessBoards) {
+      if (cb.passable === false) {
+        solidProps.push({
+          minX: cb.x - 25,
+          maxX: cb.x + 25 - 1,
+          minY: cb.y - 25,
+          maxY: cb.y + 25 - 1,
+          originX: cb.x - 25,
+          originY: cb.y - 25,
+          rects: getAssetRects("chess_board_1"),
         });
       }
     }

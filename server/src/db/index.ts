@@ -6,6 +6,7 @@ import {
   JukeboxState,
   TypewriterState,
   AshtrayState,
+  ChessBoardState,
   ChatMessage,
   ChatRoomType,
 } from "shared";
@@ -59,6 +60,7 @@ export interface SpaceRecord {
   jukeboxes?: JukeboxState[];
   typewriters?: TypewriterState[];
   ashtrays?: AshtrayState[];
+  chess_boards?: ChessBoardState[];
   created_at: Date;
   updated_at: Date;
 }
@@ -219,6 +221,7 @@ async function setupDatabaseSchema(client: PoolClient) {
       jukeboxes JSONB DEFAULT '[]'::jsonb,
       typewriters JSONB DEFAULT '[]'::jsonb,
       ashtrays JSONB DEFAULT '[]'::jsonb,
+      chess_boards JSONB DEFAULT '[]'::jsonb,
       created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     );
@@ -227,6 +230,7 @@ async function setupDatabaseSchema(client: PoolClient) {
     ALTER TABLE spaces ADD COLUMN IF NOT EXISTS jukeboxes JSONB DEFAULT '[]'::jsonb;
     ALTER TABLE spaces ADD COLUMN IF NOT EXISTS typewriters JSONB DEFAULT '[]'::jsonb;
     ALTER TABLE spaces ADD COLUMN IF NOT EXISTS ashtrays JSONB DEFAULT '[]'::jsonb;
+    ALTER TABLE spaces ADD COLUMN IF NOT EXISTS chess_boards JSONB DEFAULT '[]'::jsonb;
     CREATE INDEX IF NOT EXISTS idx_spaces_superadmin ON spaces (is_superadmin_space, category);
 
     -- Auto-migrate legacy tile assets in all spaces
@@ -311,6 +315,7 @@ async function syncInMemoryToPostgres(client: PoolClient) {
         jukeboxes: parseJukeboxes(row.jukeboxes),
         typewriters: parseTypewriters(row.typewriters),
         ashtrays: parseAshtrays(row.ashtrays),
+        chess_boards: parseChessBoards(row.chess_boards),
         created_at: row.created_at,
         updated_at: row.updated_at,
       });
@@ -657,6 +662,17 @@ export function parseAshtrays(raw: any): AshtrayState[] {
   return [];
 }
 
+export function parseChessBoards(raw: any): ChessBoardState[] {
+  if (Array.isArray(raw)) return raw;
+  if (typeof raw === "string") {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    } catch {}
+  }
+  return [];
+}
+
 export async function getSuperadminSpaces(): Promise<SpaceRecord[]> {
   if (isDbConnected) {
     try {
@@ -699,7 +715,7 @@ export async function getSpaceById(id: string): Promise<SpaceRecord | null> {
   if (isDbConnected) {
     try {
       const res = await pool.query(
-        `SELECT s.id, s.name, s.category, s.owner_id, s.is_public, s.is_superadmin_space, s.whitelist, s.private_zones, s.jukeboxes, s.typewriters, s.ashtrays, s.created_at, s.updated_at,
+        `SELECT s.id, s.name, s.category, s.owner_id, s.is_public, s.is_superadmin_space, s.whitelist, s.private_zones, s.jukeboxes, s.typewriters, s.ashtrays, s.chess_boards, s.created_at, s.updated_at,
                 u.username as owner_username
          FROM spaces s
          LEFT JOIN users u ON s.owner_id = u.id
@@ -721,6 +737,7 @@ export async function getSpaceById(id: string): Promise<SpaceRecord | null> {
           jukeboxes: parseJukeboxes(row.jukeboxes),
           typewriters: parseTypewriters(row.typewriters),
           ashtrays: parseAshtrays(row.ashtrays),
+          chess_boards: parseChessBoards(row.chess_boards),
           created_at: row.created_at,
           updated_at: row.updated_at,
         };
@@ -740,6 +757,7 @@ export async function getSpaceById(id: string): Promise<SpaceRecord | null> {
         jukeboxes: space.jukeboxes ? [...space.jukeboxes] : [],
         typewriters: space.typewriters ? [...space.typewriters] : [],
         ashtrays: space.ashtrays ? [...space.ashtrays] : [],
+        chess_boards: space.chess_boards ? [...space.chess_boards] : [],
       }
     : null;
 }
@@ -1307,6 +1325,63 @@ export async function updateSpaceAshtrays(
   let inMem = inMemorySpaces.get(spaceId);
   if (inMem) {
     inMem.ashtrays = [...ashtrays];
+    inMem.updated_at = new Date();
+  }
+  return true;
+}
+
+/**
+ * Get chess boards for a space
+ */
+export async function getSpaceChessBoards(spaceId: string): Promise<ChessBoardState[]> {
+  if (isDbConnected) {
+    try {
+      const res = await pool.query("SELECT chess_boards FROM spaces WHERE id = $1", [spaceId]);
+      if (res.rows[0]?.chess_boards) {
+        return parseChessBoards(res.rows[0].chess_boards);
+      }
+    } catch (err) {
+      handleDbQueryError("Error fetching space chess boards from DB", err);
+    }
+  }
+
+  const inMem = inMemorySpaces.get(spaceId);
+  return inMem?.chess_boards ? [...inMem.chess_boards] : [];
+}
+
+/**
+ * Update and persist chess boards for a space
+ */
+export async function updateSpaceChessBoards(
+  spaceId: string,
+  chessBoards: ChessBoardState[]
+): Promise<boolean> {
+  if (isDbConnected) {
+    try {
+      const res = await pool.query(
+        "UPDATE spaces SET chess_boards = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1",
+        [spaceId, JSON.stringify(chessBoards)]
+      );
+      if (res.rowCount === 0) {
+        await pool.query(
+          `INSERT INTO spaces (id, name, category, is_public, chess_boards)
+           VALUES ($1, $2, 'General', true, $3)
+           ON CONFLICT (id) DO UPDATE SET chess_boards = EXCLUDED.chess_boards, updated_at = CURRENT_TIMESTAMP`,
+          [
+            spaceId,
+            spaceId.startsWith("user_space_") ? "Personal Space" : spaceId,
+            JSON.stringify(chessBoards),
+          ]
+        );
+      }
+    } catch (err) {
+      handleDbQueryError("Error updating space chess boards in DB", err);
+    }
+  }
+
+  let inMem = inMemorySpaces.get(spaceId);
+  if (inMem) {
+    inMem.chess_boards = [...chessBoards];
     inMem.updated_at = new Date();
   }
   return true;

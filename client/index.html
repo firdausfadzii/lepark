@@ -1409,6 +1409,28 @@
               </div>
             </button>
 
+            <!-- Asset: Chess Board (chess_board_1) -->
+            <button
+              type="button"
+              class="editor-asset-card"
+              id="tool-chess-board"
+              data-tool-type="chess_board"
+              data-asset-id="chess_board_1"
+              data-asset-name="Chess Board"
+              data-tile-type="decoration"
+              title="Chess Board (chess_board_1) - Live Multiplayer Chess, freeform placement"
+            >
+              <div class="asset-card-thumb chess-tool-thumb">
+                <img src="/assets/decoration/chess_board_1.png" alt="Chess Board" class="chess-card-img" />
+                <span class="asset-card-badge chess-badge">Game</span>
+                <span class="asset-card-check">✓</span>
+              </div>
+              <div class="asset-card-info">
+                <span class="asset-card-name">Chess Board 1</span>
+                <span class="asset-card-code">chess_board_1</span>
+              </div>
+            </button>
+
             <!-- Tool: Remove Decoration -->
             <button
               type="button"
@@ -3537,6 +3559,182 @@
           </div>
         </div>
 
+      </div>
+    </div>
+
+    <!-- CHESS MODAL: Chess Lounge & Duel Arena -->
+    <div id="chess-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="chess-modal-title">
+      <div class="modal-card chess-modal-card">
+        <!-- Header -->
+        <div class="modal-header chess-modal-header">
+          <div class="modal-header-row">
+            <div class="chess-header-title-box">
+              <span class="chess-header-icon">♟️</span>
+              <div>
+                <h2 id="chess-modal-title" class="modal-title">Chess Arena</h2>
+                <span class="modal-subtitle">Live multiplayer chess & spectator lounge</span>
+              </div>
+            </div>
+            <div class="chess-header-actions">
+              <button type="button" id="btn-close-chess-modal" class="btn-modal-close" title="Close">✕</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- VIEW 1: LOBBY & ONGOING GAMES VIEW -->
+        <div id="chess-lobby-view" class="chess-view-section">
+          <!-- Top Hero: Join Match -->
+          <div class="chess-join-hero">
+            <div class="chess-join-badge-row">
+              <div class="chess-pulse-pill">
+                <span class="lobby-pulse-dot"></span>
+                <span id="chess-lobby-status-pill">CHESS LOUNGE</span>
+              </div>
+            </div>
+            <h3 class="chess-join-headline">Ready for a Match?</h3>
+            <p class="chess-join-subtext">Click Join Match to pair up with another player. When two players join, a game is created instantly!</p>
+
+            <!-- Actions row -->
+            <div class="chess-join-actions">
+              <button type="button" id="btn-chess-join-match" class="btn-primary btn-chess-join">
+                <span>⚔️ Join Match</span>
+              </button>
+              <div id="chess-queue-status" class="chess-queue-status hidden">
+                <span class="chess-queue-spinner"></span>
+                <span id="chess-queue-text">Waiting for opponent to join...</span>
+                <button type="button" id="btn-chess-cancel-join" class="btn-tertiary btn-chess-cancel">Cancel</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Ongoing Games Section -->
+          <div class="chess-ongoing-section">
+            <div class="chess-section-header">
+              <div class="chess-section-title-wrap">
+                <span class="chess-section-icon">⚔️</span>
+                <h4 class="chess-section-title">Ongoing Games</h4>
+              </div>
+              <span class="chess-count-pill" id="chess-ongoing-count-pill">0 Active Matches</span>
+            </div>
+
+            <div class="chess-games-grid" id="chess-games-grid">
+              <!-- Dynamically populated ongoing game cards -->
+            </div>
+
+            <!-- Empty state when no ongoing games -->
+            <div class="chess-games-empty" id="chess-games-empty">
+              <div class="chess-empty-icon">♟️</div>
+              <h5>No games in progress</h5>
+              <p>Be the first to join a match above, or invite a friend over to play!</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- VIEW 2: GAME VIEW (Full Chess Board + Players on top + Spectators on right) -->
+        <div id="chess-game-view" class="chess-view-section hidden">
+          <!-- Game Navigation & Status Bar -->
+          <div class="chess-game-topbar">
+            <button type="button" id="btn-chess-back-to-lobby" class="btn-secondary btn-chess-back" title="Back to Games List">
+              <span>← Back to Games</span>
+            </button>
+            <div class="chess-match-status-wrap">
+              <div id="chess-match-status-badge" class="chess-status-badge">White to move</div>
+            </div>
+            <div class="chess-game-top-actions">
+              <button type="button" id="btn-chess-flip-board" class="btn-icon-action" title="Flip Board Perspective">🔃 Flip</button>
+              <button type="button" id="btn-chess-offer-draw" class="btn-secondary btn-chess-draw hidden" title="Offer a Draw">🤝 Draw</button>
+              <button type="button" id="btn-chess-resign" class="btn-danger btn-chess-resign hidden" title="Resign Match">🏳️ Resign</button>
+              <button type="button" id="btn-chess-rematch" class="btn-primary btn-chess-rematch hidden" title="Play Rematch">🔄 Rematch</button>
+            </div>
+          </div>
+
+          <!-- Main Split Arena: Left side = Board + Players Top; Right side = Spectators -->
+          <div class="chess-arena-split">
+            <!-- Left Side: Players on Top + Full Chess Board -->
+            <div class="chess-arena-left">
+              <!-- Top of the Chess Board: The Two Players Playing -->
+              <div class="chess-players-top-bar" id="chess-players-top-bar">
+                <!-- White Player Card -->
+                <div class="chess-player-card" id="chess-player-white-card">
+                  <div class="chess-player-avatar-wrap">
+                    <img id="chess-white-avatar" src="/assets/sprite1.png" alt="White Player" class="chess-player-avatar" />
+                    <span class="chess-color-dot white-dot" title="White"></span>
+                  </div>
+                  <div class="chess-player-info">
+                    <div class="chess-player-name-row">
+                      <strong id="chess-white-name">White Player</strong>
+                      <span class="chess-turn-pill" id="chess-white-turn-pill">Turn</span>
+                    </div>
+                    <div class="chess-captured-box" id="chess-white-captured"></div>
+                  </div>
+                </div>
+
+                <div class="chess-vs-divider">
+                  <span class="chess-vs-badge">VS</span>
+                  <span class="chess-move-counter" id="chess-move-counter">Move 1</span>
+                </div>
+
+                <!-- Black Player Card -->
+                <div class="chess-player-card" id="chess-player-black-card">
+                  <div class="chess-player-avatar-wrap">
+                    <img id="chess-black-avatar" src="/assets/sprite1.png" alt="Black Player" class="chess-player-avatar" />
+                    <span class="chess-color-dot black-dot" title="Black"></span>
+                  </div>
+                  <div class="chess-player-info">
+                    <div class="chess-player-name-row">
+                      <strong id="chess-black-name">Black Player</strong>
+                      <span class="chess-turn-pill" id="chess-black-turn-pill">Turn</span>
+                    </div>
+                    <div class="chess-captured-box" id="chess-black-captured"></div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Full Chess Board Container -->
+              <div class="chess-board-wrapper" id="chess-board-wrapper">
+                <div class="chess-board-grid" id="chess-board-grid">
+                  <!-- 64 squares dynamically populated -->
+                </div>
+
+                <!-- Pawn Promotion Modal Overlay -->
+                <div id="chess-promotion-dialog" class="chess-promotion-dialog hidden">
+                  <div class="promotion-box">
+                    <h5>Choose Promotion</h5>
+                    <div class="promotion-choices" id="promotion-choices">
+                      <!-- Choice buttons for Queen, Rook, Bishop, Knight -->
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Right Side: List of Spectators & Move Log -->
+            <div class="chess-arena-right">
+              <!-- Spectators Panel -->
+              <div class="chess-sidebar-panel chess-spectators-panel">
+                <div class="chess-sidebar-header">
+                  <span class="chess-sidebar-icon">👀</span>
+                  <span class="chess-sidebar-title">Spectators</span>
+                  <span class="chess-spectators-count" id="chess-spectators-count">0</span>
+                </div>
+                <div class="chess-spectators-list" id="chess-spectators-list">
+                  <!-- Dynamically populated spectator cards -->
+                </div>
+              </div>
+
+              <!-- Move History Panel -->
+              <div class="chess-sidebar-panel chess-history-panel">
+                <div class="chess-sidebar-header">
+                  <span class="chess-sidebar-icon">📜</span>
+                  <span class="chess-sidebar-title">Move History</span>
+                </div>
+                <div class="chess-history-list" id="chess-history-list">
+                  <!-- Dynamically populated moves e.g. 1. e4 e5 -->
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 

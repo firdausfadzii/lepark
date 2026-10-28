@@ -118,6 +118,7 @@ export interface Space {
   jukeboxes?: JukeboxState[];
   typewriters?: TypewriterState[];
   ashtrays?: AshtrayState[];
+  chessBoards?: ChessBoardState[];
   playerCount?: number;
   createdAt?: string;
   updatedAt?: string;
@@ -446,11 +447,153 @@ export interface SmokingGamePlayAgainPayload {
   ashtrayId: string;
 }
 
+// ==========================================
+// Chess Board & Chess Game Types
+// ==========================================
+
+export interface ChessBoardState {
+  id: string; // Chess board entity ID (e.g. chess_board_xxxx)
+  spaceId: string; // Space ID where chess board is located
+  x: number; // Freeform world X coordinate (pixels)
+  y: number; // Freeform world Y coordinate (pixels)
+  passable?: boolean; // Whether players can walk through it (default false = solid obstacle)
+  ontop?: boolean; // Render on top of character (true) or behind character (false)
+  layer?: number; // Layer placement level (integer, default 0)
+}
+
+export interface ChessBoardPlacePayload {
+  x: number; // Freeform world X (pixels)
+  y: number; // Freeform world Y (pixels)
+  passable?: boolean;
+  ontop?: boolean;
+  layer?: number;
+}
+
+export interface ChessBoardMovePayload {
+  chessBoardId: string;
+  x: number;
+  y: number;
+}
+
+export interface ChessBoardDeletePayload {
+  chessBoardId: string;
+}
+
+export type ChessGameStatus =
+  | "waiting"
+  | "playing"
+  | "checkmate"
+  | "stalemate"
+  | "draw"
+  | "resigned"
+  | "abandoned";
+
+export type ChessPieceColor = "white" | "black";
+
+export interface ChessGamePlayer {
+  sessionId: string;
+  userId?: number;
+  name: string;
+  avatarUrl?: string;
+  color: ChessPieceColor;
+  isReady?: boolean;
+}
+
+export interface ChessGameSpectator {
+  sessionId: string;
+  userId?: number;
+  name: string;
+  avatarUrl?: string;
+  joinedAt: number;
+}
+
+export interface ChessGameSummary {
+  matchId: string;
+  chessBoardId: string;
+  whitePlayer: ChessGamePlayer;
+  blackPlayer?: ChessGamePlayer;
+  status: ChessGameStatus;
+  spectatorCount: number;
+  turn: ChessPieceColor;
+  moveCount: number;
+  winner?: ChessPieceColor | "draw";
+  winReason?: string;
+  inCheck?: boolean;
+  createdAt: number;
+}
+
+export interface ChessGameState {
+  matchId: string;
+  chessBoardId: string;
+  status: ChessGameStatus;
+  whitePlayer?: ChessGamePlayer;
+  blackPlayer?: ChessGamePlayer;
+  spectators: Record<string, ChessGameSpectator>;
+  fen: string;
+  history: string[]; // List of SAN moves e.g. ["e4", "e5", "Nf3"]
+  turn: ChessPieceColor;
+  inCheck: boolean;
+  lastMove?: { from: string; to: string; san?: string };
+  winner?: ChessPieceColor | "draw";
+  winReason?: string;
+  drawOffer?: ChessPieceColor | null;
+  createdAt: number;
+}
+
+export interface ChessLobbyState {
+  chessBoardId: string;
+  waitingMatches: ChessGameSummary[];
+  ongoingGames: ChessGameSummary[];
+}
+
+export interface ChessJoinMatchPayload {
+  chessBoardId: string;
+  matchId?: string;
+}
+
+export interface ChessCancelJoinPayload {
+  chessBoardId: string;
+}
+
+export interface ChessSpectateMatchPayload {
+  chessBoardId: string;
+  matchId: string;
+}
+
+export interface ChessLeaveMatchPayload {
+  chessBoardId: string;
+  matchId: string;
+}
+
+export interface ChessMovePayload {
+  chessBoardId: string;
+  matchId: string;
+  from: string;
+  to: string;
+  promotion?: "q" | "r" | "b" | "n";
+}
+
+export interface ChessResignPayload {
+  chessBoardId: string;
+  matchId: string;
+}
+
+export interface ChessOfferDrawPayload {
+  chessBoardId: string;
+  matchId: string;
+}
+
+export interface ChessRematchPayload {
+  chessBoardId: string;
+  matchId: string;
+}
+
 export const FREEFORM_ASSET_KEYS = [
   "office_chair_1_front",
   "office_chair_1_back",
   "office_chair_150",
   "office_chair_back_150",
+  "chess_board_1",
 ] as const;
 export type FreeformAssetKey = (typeof FREEFORM_ASSET_KEYS)[number];
 
@@ -461,7 +604,8 @@ export function isFreeformAsset(assetKey: string | undefined | null): boolean {
     baseKey === "office_chair_1_front" ||
     baseKey === "office_chair_1_back" ||
     baseKey === "office_chair_150" ||
-    baseKey === "office_chair_back_150"
+    baseKey === "office_chair_back_150" ||
+    baseKey === "chess_board_1"
   );
 }
 

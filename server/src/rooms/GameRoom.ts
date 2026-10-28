@@ -53,7 +53,27 @@ import {
   SmokingGameStartPayload,
   SmokingGameMashPayload,
   SmokingGamePlayAgainPayload,
+  ChessBoardState,
+  ChessBoardPlacePayload,
+  ChessBoardMovePayload,
+  ChessBoardDeletePayload,
+  ChessGameStatus,
+  ChessPieceColor,
+  ChessGamePlayer,
+  ChessGameSpectator,
+  ChessGameSummary,
+  ChessGameState,
+  ChessLobbyState,
+  ChessJoinMatchPayload,
+  ChessCancelJoinPayload,
+  ChessSpectateMatchPayload,
+  ChessLeaveMatchPayload,
+  ChessMovePayload,
+  ChessResignPayload,
+  ChessOfferDrawPayload,
+  ChessRematchPayload,
 } from "shared";
+import { Chess } from "chess.js";
 import {
   upsertPlayer,
   updatePlayerPosition,
@@ -68,6 +88,8 @@ import {
   updateSpaceTypewriters,
   getSpaceAshtrays,
   updateSpaceAshtrays,
+  getSpaceChessBoards,
+  updateSpaceChessBoards,
   findUserById,
   ensureUserPersonalSpace,
   saveChatMessage,
@@ -129,6 +151,26 @@ export class GameRoom extends Room<GameState> {
     }
   > = new Map();
   private clientAshtrayGameMap: Map<string, string> = new Map();
+  private chessBoards: Map<string, ChessBoardState> = new Map();
+  private chessMatches: Map<
+    string,
+    {
+      matchId: string;
+      chessBoardId: string;
+      chess: Chess;
+      whitePlayer?: ChessGamePlayer;
+      blackPlayer?: ChessGamePlayer;
+      spectators: Map<string, ChessGameSpectator>;
+      status: ChessGameStatus;
+      winner?: ChessPieceColor | "draw";
+      winReason?: string;
+      drawOffer?: ChessPieceColor | null;
+      lastMove?: { from: string; to: string; san?: string };
+      createdAt: number;
+    }
+  > = new Map();
+  private clientChessMatchMap: Map<string, string> = new Map(); // sessionId -> matchId
+  private chessLobbyViewers: Map<string, Set<string>> = new Map(); // chessBoardId -> Set of sessionIds
   private voiceParticipants: Set<string> = new Set();
   private spaceOwnerId: number | null = null;
   private clientAuthMap: Map<string, any> = new Map();
@@ -143,6 +185,7 @@ export class GameRoom extends Room<GameState> {
         jukeboxes: this.jukeboxes.values(),
         typewriters: this.typewriters.values(),
         ashtrays: this.ashtrays.values(),
+        chessBoards: this.chessBoards.values(),
       });
     }
     return this.cachedPixelCollisionChecker;
@@ -321,7 +364,7 @@ export class GameRoom extends Room<GameState> {
 
     // Load initial tiles, space metadata, zones, jukeboxes, typewriters, ashtrays, and recent chat history
     try {
-      const [loadedTiles, space, loadedZones, loadedJukeboxes, loadedTypewriters, loadedAshtrays, loadedChats] =
+      const [loadedTiles, space, loadedZones, loadedJukeboxes, loadedTypewriters, loadedAshtrays, loadedChessBoards, loadedChats] =
         await Promise.all([
           getSpaceTiles(this.spaceId),
           getSpaceById(this.spaceId),
@@ -329,6 +372,7 @@ export class GameRoom extends Room<GameState> {
           getSpaceJukeboxes(this.spaceId),
           getSpaceTypewriters(this.spaceId),
           getSpaceAshtrays(this.spaceId),
+          getSpaceChessBoards(this.spaceId),
           getRecentChatMessages(this.spaceId, "map", 50),
         ]);
 
@@ -350,6 +394,11 @@ export class GameRoom extends Room<GameState> {
       if (loadedAshtrays && Array.isArray(loadedAshtrays)) {
         for (const at of loadedAshtrays) {
           this.ashtrays.set(at.id, at);
+        }
+      }
+      if (loadedChessBoards && Array.isArray(loadedChessBoards)) {
+        for (const cb of loadedChessBoards) {
+          this.chessBoards.set(cb.id, cb);
         }
       }
       this.recentChatMessages = loadedChats || [];
@@ -1523,6 +1572,549 @@ export class GameRoom extends Room<GameState> {
       }
     );
 
+    // ==========================================
+    // Chess Board & Game Message Handlers
+    // ==========================================
+
+    // 1. Place Chess Board (owner/superadmin)
+    this.onMessage(
+      "CHESS_BOARD_PLACE",
+      async (client: Client, data: ChessBoardPlacePayload) => {
+        const auth = this.clientAuthMap.get(client.sessionId);
+        const user = auth?.user;
+        const isSuperadmin = user?.role === "superadmin";
+        const isOwner =
+          user && this.spaceOwnerId !== null && user.id === this.spaceOwnerId;
+
+        if (!isSuperadmin && !isOwner) {
+          client.send("ERROR", {
+            message:
+              "Permission denied: Only space owner or superadmin can place a chess board.",
+          });
+          return;
+        }
+
+        const newCb: ChessBoardState = {
+          id:
+            "chess_board_" +
+            Date.now() +
+            "_" +
+            Math.floor(Math.random() * 10000),
+          spaceId: this.spaceId,
+          x: Math.round(data.x),
+          y: Math.round(data.y),
+          passable: data.passable !== undefined ? Boolean(data.passable) : false,
+          ontop: data.ontop !== undefined ? Boolean(data.ontop) : false,
+          layer: typeof data.layer === "number" ? data.layer : 0,
+        };
+
+        this.chessBoards.set(newCb.id, newCb);
+        this.invalidatePixelCollisionChecker();
+        this.broadcast("CHESS_BOARD_UPDATED", newCb);
+        await this.persistChessBoards();
+      }
+    );
+
+    // 2. Move Chess Board (owner/superadmin)
+    this.onMessage(
+      "CHESS_BOARD_MOVE",
+      async (client: Client, data: ChessBoardMovePayload) => {
+        const auth = this.clientAuthMap.get(client.sessionId);
+        const user = auth?.user;
+        const isSuperadmin = user?.role === "superadmin";
+        const isOwner =
+          user && this.spaceOwnerId !== null && user.id === this.spaceOwnerId;
+
+        if (!isSuperadmin && !isOwner) {
+          client.send("ERROR", {
+            message:
+              "Permission denied: Only space owner or superadmin can move a chess board.",
+          });
+          return;
+        }
+
+        const cb = this.chessBoards.get(data.chessBoardId);
+        if (cb) {
+          cb.x = Math.round(data.x);
+          cb.y = Math.round(data.y);
+          this.invalidatePixelCollisionChecker();
+          this.broadcast("CHESS_BOARD_UPDATED", cb);
+          await this.persistChessBoards();
+        }
+      }
+    );
+
+    // 3. Delete Chess Board (owner/superadmin)
+    this.onMessage(
+      "CHESS_BOARD_DELETE",
+      async (client: Client, data: ChessBoardDeletePayload) => {
+        const auth = this.clientAuthMap.get(client.sessionId);
+        const user = auth?.user;
+        const isSuperadmin = user?.role === "superadmin";
+        const isOwner =
+          user && this.spaceOwnerId !== null && user.id === this.spaceOwnerId;
+
+        if (!isSuperadmin && !isOwner) {
+          client.send("ERROR", {
+            message:
+              "Permission denied: Only space owner or superadmin can delete a chess board.",
+          });
+          return;
+        }
+
+        if (this.chessBoards.delete(data.chessBoardId)) {
+          this.invalidatePixelCollisionChecker();
+          this.broadcast("CHESS_BOARD_DELETED", {
+            chessBoardId: data.chessBoardId,
+          });
+
+          // Clean up matches on this board
+          for (const [matchId, match] of this.chessMatches.entries()) {
+            if (match.chessBoardId === data.chessBoardId) {
+              this.chessMatches.delete(matchId);
+            }
+          }
+          this.chessLobbyViewers.delete(data.chessBoardId);
+          await this.persistChessBoards();
+        }
+      }
+    );
+
+    // 4. Set Chess Board Passable (owner/superadmin)
+    this.onMessage(
+      "CHESS_BOARD_PASSABLE",
+      async (client: Client, data: { chessBoardId: string; passable: boolean }) => {
+        const auth = this.clientAuthMap.get(client.sessionId);
+        const user = auth?.user;
+        const isSuperadmin = user?.role === "superadmin";
+        const isOwner =
+          user && this.spaceOwnerId !== null && user.id === this.spaceOwnerId;
+
+        if (!isSuperadmin && !isOwner) {
+          client.send("ERROR", {
+            message:
+              "Permission denied: Only space owner or superadmin can update a chess board.",
+          });
+          return;
+        }
+
+        const cb = this.chessBoards.get(data.chessBoardId);
+        if (cb) {
+          cb.passable = Boolean(data.passable);
+          this.invalidatePixelCollisionChecker();
+          this.broadcast("CHESS_BOARD_UPDATED", cb);
+          await this.persistChessBoards();
+        }
+      }
+    );
+
+    // 5. Open Chess Lobby / View Games List
+    this.onMessage(
+      "CHESS_OPEN_LOBBY",
+      (client: Client, data: { chessBoardId: string }) => {
+        if (!data?.chessBoardId) return;
+        let viewers = this.chessLobbyViewers.get(data.chessBoardId);
+        if (!viewers) {
+          viewers = new Set();
+          this.chessLobbyViewers.set(data.chessBoardId, viewers);
+        }
+        viewers.add(client.sessionId);
+        client.send("CHESS_LOBBY_STATE", this.getChessLobbyState(data.chessBoardId));
+      }
+    );
+
+    // 6. Leave Chess Lobby
+    this.onMessage(
+      "CHESS_LEAVE_LOBBY",
+      (client: Client, data: { chessBoardId: string }) => {
+        if (!data?.chessBoardId) return;
+        const viewers = this.chessLobbyViewers.get(data.chessBoardId);
+        if (viewers) {
+          viewers.delete(client.sessionId);
+        }
+      }
+    );
+
+    // 7. Join Match (Queue / Matchmaking / Create Game)
+    this.onMessage(
+      "CHESS_JOIN_MATCH",
+      (client: Client, data: ChessJoinMatchPayload) => {
+        if (!data?.chessBoardId) return;
+        const cbId = data.chessBoardId;
+        const auth = this.clientAuthMap.get(client.sessionId);
+        const name = auth?.user?.displayName || auth?.user?.username || "Player";
+        const userId = auth?.user?.id;
+        const avatarUrl = this.getPlayerAvatarUrl(client.sessionId);
+
+        // If player had a stale or waiting queue match, clean it up
+        const existingMatchId = this.clientChessMatchMap.get(client.sessionId);
+        if (existingMatchId) {
+          const existingMatch = this.chessMatches.get(existingMatchId);
+          if (existingMatch && existingMatch.status === "waiting") {
+            if (existingMatch.chessBoardId === cbId) {
+              return;
+            } else {
+              this.chessMatches.delete(existingMatchId);
+              this.broadcastChessLobbyState(existingMatch.chessBoardId);
+            }
+          }
+          this.clientChessMatchMap.delete(client.sessionId);
+        }
+
+        // Look for waiting match on this board where player != client
+        let targetMatch: any = null;
+        if (data.matchId) {
+          const m = this.chessMatches.get(data.matchId);
+          if (m && m.status === "waiting" && m.whitePlayer?.sessionId !== client.sessionId) {
+            targetMatch = m;
+          }
+        }
+
+        if (!targetMatch) {
+          for (const match of this.chessMatches.values()) {
+            if (
+              match.chessBoardId === cbId &&
+              match.status === "waiting" &&
+              match.whitePlayer?.sessionId !== client.sessionId
+            ) {
+              targetMatch = match;
+              break;
+            }
+          }
+        }
+
+        if (targetMatch) {
+          // Second player joins -> create & start game!
+          targetMatch.blackPlayer = {
+            sessionId: client.sessionId,
+            userId,
+            name,
+            avatarUrl,
+            color: "black",
+            isReady: true,
+          };
+          targetMatch.status = "playing";
+          this.clientChessMatchMap.set(client.sessionId, targetMatch.matchId);
+
+          const gameState = this.buildChessGameState(targetMatch);
+          this.broadcastChessGameState(targetMatch.matchId, "CHESS_GAME_START", gameState);
+          this.broadcastChessLobbyState(cbId);
+        } else {
+          // Create new match in waiting state
+          const matchId =
+            "match_" + Date.now() + "_" + Math.floor(Math.random() * 1000);
+          const chess = new Chess();
+          const newMatch = {
+            matchId,
+            chessBoardId: cbId,
+            chess,
+            whitePlayer: {
+              sessionId: client.sessionId,
+              userId,
+              name,
+              avatarUrl,
+              color: "white" as const,
+              isReady: true,
+            },
+            spectators: new Map<string, ChessGameSpectator>(),
+            status: "waiting" as const,
+            createdAt: Date.now(),
+          };
+          this.chessMatches.set(matchId, newMatch);
+          this.clientChessMatchMap.set(client.sessionId, matchId);
+          this.broadcastChessLobbyState(cbId);
+        }
+      }
+    );
+
+    // 8. Cancel Queue / Join
+    this.onMessage(
+      "CHESS_CANCEL_JOIN",
+      (client: Client, data: ChessCancelJoinPayload) => {
+        const matchId = this.clientChessMatchMap.get(client.sessionId);
+        if (matchId) {
+          const match = this.chessMatches.get(matchId);
+          if (
+            match &&
+            match.status === "waiting" &&
+            match.whitePlayer?.sessionId === client.sessionId
+          ) {
+            this.chessMatches.delete(matchId);
+            this.clientChessMatchMap.delete(client.sessionId);
+            this.broadcastChessLobbyState(data.chessBoardId);
+          }
+        }
+      }
+    );
+
+    // 9. Spectate Match
+    this.onMessage(
+      "CHESS_SPECTATE_MATCH",
+      (client: Client, data: ChessSpectateMatchPayload) => {
+        if (!data?.matchId) return;
+        const match = this.chessMatches.get(data.matchId);
+        if (!match || match.status !== "playing") return;
+
+        const auth = this.clientAuthMap.get(client.sessionId);
+        const name = auth?.user?.displayName || auth?.user?.username || "Spectator";
+        const userId = auth?.user?.id;
+        const avatarUrl = this.getPlayerAvatarUrl(client.sessionId);
+
+        match.spectators.set(client.sessionId, {
+          sessionId: client.sessionId,
+          userId,
+          name,
+          avatarUrl,
+          joinedAt: Date.now(),
+        });
+        this.clientChessMatchMap.set(client.sessionId, match.matchId);
+
+        const gameState = this.buildChessGameState(match);
+        client.send("CHESS_GAME_START", gameState);
+        this.broadcastChessGameState(match.matchId, "CHESS_GAME_STATE", gameState);
+        this.broadcastChessLobbyState(data.chessBoardId);
+      }
+    );
+
+    // 10. Leave Match
+    this.onMessage(
+      "CHESS_LEAVE_MATCH",
+      (client: Client, data: ChessLeaveMatchPayload) => {
+        const match = this.chessMatches.get(data?.matchId);
+        if (!match) return;
+
+        if (match.spectators.has(client.sessionId)) {
+          match.spectators.delete(client.sessionId);
+          this.clientChessMatchMap.delete(client.sessionId);
+          const gameState = this.buildChessGameState(match);
+          this.broadcastChessGameState(match.matchId, "CHESS_GAME_STATE", gameState);
+          this.broadcastChessLobbyState(data.chessBoardId);
+          return;
+        }
+
+        if (
+          match.whitePlayer?.sessionId === client.sessionId ||
+          match.blackPlayer?.sessionId === client.sessionId
+        ) {
+          if (match.status === "waiting") {
+            this.chessMatches.delete(match.matchId);
+            this.clientChessMatchMap.delete(client.sessionId);
+            this.broadcastChessLobbyState(data.chessBoardId);
+          } else if (match.status === "playing") {
+            const isWhite = match.whitePlayer?.sessionId === client.sessionId;
+            const leaverName = isWhite
+              ? (match.whitePlayer?.name || "White")
+              : (match.blackPlayer?.name || "Black");
+            const winnerColor: ChessPieceColor = isWhite ? "black" : "white";
+            const winnerPlayer = isWhite ? match.blackPlayer : match.whitePlayer;
+            const winnerName = winnerPlayer?.name || (winnerColor === "white" ? "White" : "Black");
+
+            match.status = "resigned";
+            match.winner = winnerColor;
+            match.winReason = `${leaverName} left the game. ${winnerName} wins by forfeit!`;
+
+            if (match.whitePlayer?.sessionId) {
+              this.clientChessMatchMap.delete(match.whitePlayer.sessionId);
+            }
+            if (match.blackPlayer?.sessionId) {
+              this.clientChessMatchMap.delete(match.blackPlayer.sessionId);
+            }
+
+            const gameState = this.buildChessGameState(match);
+            this.broadcastChessGameState(match.matchId, "CHESS_GAME_ENDED", gameState);
+            this.broadcastChessLobbyState(data.chessBoardId);
+
+            setTimeout(() => {
+              this.chessMatches.delete(match.matchId);
+            }, 10000);
+          } else {
+            this.clientChessMatchMap.delete(client.sessionId);
+          }
+        }
+      }
+    );
+
+    // 11. Chess Move
+    this.onMessage(
+      "CHESS_MOVE",
+      (client: Client, data: ChessMovePayload) => {
+        if (!data?.matchId) return;
+        const match = this.chessMatches.get(data.matchId);
+        if (!match || match.status !== "playing") return;
+
+        const isWhite = match.whitePlayer?.sessionId === client.sessionId;
+        const isBlack = match.blackPlayer?.sessionId === client.sessionId;
+        if (!isWhite && !isBlack) return;
+
+        const currentTurn = match.chess.turn() === "w" ? "white" : "black";
+        if ((isWhite && currentTurn !== "white") || (isBlack && currentTurn !== "black")) {
+          return;
+        }
+
+        try {
+          const move = match.chess.move({
+            from: data.from,
+            to: data.to,
+            promotion: data.promotion || "q",
+          });
+
+          if (!move) return;
+
+          match.lastMove = {
+            from: move.from,
+            to: move.to,
+            san: move.san,
+          };
+
+          if (match.chess.isGameOver()) {
+            if (match.chess.isCheckmate()) {
+              match.status = "checkmate";
+              match.winner = currentTurn;
+              match.winReason = `Checkmate! ${
+                currentTurn === "white" ? match.whitePlayer?.name : match.blackPlayer?.name
+              } wins!`;
+            } else if (match.chess.isDraw()) {
+              match.status = "draw";
+              match.winner = "draw";
+              if (match.chess.isStalemate()) {
+                match.winReason = "Draw by Stalemate";
+              } else if (match.chess.isThreefoldRepetition()) {
+                match.winReason = "Draw by Threefold Repetition";
+              } else if (match.chess.isInsufficientMaterial()) {
+                match.winReason = "Draw by Insufficient Material";
+              } else {
+                match.winReason = "Draw by 50-move rule";
+              }
+            }
+
+            if (match.whitePlayer?.sessionId) {
+              this.clientChessMatchMap.delete(match.whitePlayer.sessionId);
+            }
+            if (match.blackPlayer?.sessionId) {
+              this.clientChessMatchMap.delete(match.blackPlayer.sessionId);
+            }
+            setTimeout(() => {
+              this.chessMatches.delete(match.matchId);
+            }, 10000);
+          }
+
+          const gameState = this.buildChessGameState(match);
+          this.broadcastChessGameState(
+            match.matchId,
+            match.chess.isGameOver() ? "CHESS_GAME_ENDED" : "CHESS_GAME_STATE",
+            gameState
+          );
+          this.broadcastChessLobbyState(match.chessBoardId);
+        } catch (err) {
+          console.warn("[GameRoom] Invalid chess move:", err);
+        }
+      }
+    );
+
+    // 12. Resign
+    this.onMessage(
+      "CHESS_RESIGN",
+      (client: Client, data: ChessResignPayload) => {
+        if (!data?.matchId) return;
+        const match = this.chessMatches.get(data.matchId);
+        if (!match || match.status !== "playing") return;
+
+        const isWhite = match.whitePlayer?.sessionId === client.sessionId;
+        const isBlack = match.blackPlayer?.sessionId === client.sessionId;
+        if (!isWhite && !isBlack) return;
+
+        match.status = "resigned";
+        match.winner = isWhite ? "black" : "white";
+        match.winReason = `${
+          isWhite ? match.whitePlayer?.name : match.blackPlayer?.name
+        } resigned`;
+
+        if (match.whitePlayer?.sessionId) {
+          this.clientChessMatchMap.delete(match.whitePlayer.sessionId);
+        }
+        if (match.blackPlayer?.sessionId) {
+          this.clientChessMatchMap.delete(match.blackPlayer.sessionId);
+        }
+
+        const gameState = this.buildChessGameState(match);
+        this.broadcastChessGameState(match.matchId, "CHESS_GAME_ENDED", gameState);
+        this.broadcastChessLobbyState(match.chessBoardId);
+
+        setTimeout(() => {
+          this.chessMatches.delete(match.matchId);
+        }, 10000);
+      }
+    );
+
+    // 13. Offer Draw
+    this.onMessage(
+      "CHESS_OFFER_DRAW",
+      (client: Client, data: ChessOfferDrawPayload) => {
+        if (!data?.matchId) return;
+        const match = this.chessMatches.get(data.matchId);
+        if (!match || match.status !== "playing") return;
+
+        const isWhite = match.whitePlayer?.sessionId === client.sessionId;
+        const isBlack = match.blackPlayer?.sessionId === client.sessionId;
+        if (!isWhite && !isBlack) return;
+
+        const color = isWhite ? "white" : "black";
+        if (!match.drawOffer) {
+          match.drawOffer = color;
+          const gameState = this.buildChessGameState(match);
+          this.broadcastChessGameState(match.matchId, "CHESS_GAME_STATE", gameState);
+        } else if (match.drawOffer !== color) {
+          match.status = "draw";
+          match.winner = "draw";
+          match.winReason = "Draw agreed";
+          match.drawOffer = null;
+
+          if (match.whitePlayer?.sessionId) {
+            this.clientChessMatchMap.delete(match.whitePlayer.sessionId);
+          }
+          if (match.blackPlayer?.sessionId) {
+            this.clientChessMatchMap.delete(match.blackPlayer.sessionId);
+          }
+
+          const gameState = this.buildChessGameState(match);
+          this.broadcastChessGameState(match.matchId, "CHESS_GAME_ENDED", gameState);
+          this.broadcastChessLobbyState(match.chessBoardId);
+
+          setTimeout(() => {
+            this.chessMatches.delete(match.matchId);
+          }, 10000);
+        }
+      }
+    );
+
+    // 14. Rematch
+    this.onMessage(
+      "CHESS_REMATCH",
+      (client: Client, data: ChessRematchPayload) => {
+        if (!data?.matchId) return;
+        const match = this.chessMatches.get(data.matchId);
+        if (!match || match.status === "waiting" || match.status === "playing") return;
+        if (!match.whitePlayer || !match.blackPlayer) return;
+
+        const oldWhite = match.whitePlayer;
+        const oldBlack = match.blackPlayer;
+
+        match.chess = new Chess();
+        match.whitePlayer = { ...oldBlack, color: "white" };
+        match.blackPlayer = { ...oldWhite, color: "black" };
+        match.status = "playing";
+        match.winner = undefined;
+        match.winReason = undefined;
+        match.drawOffer = null;
+        match.lastMove = undefined;
+        match.createdAt = Date.now();
+
+        const gameState = this.buildChessGameState(match);
+        this.broadcastChessGameState(match.matchId, "CHESS_GAME_START", gameState);
+        this.broadcastChessLobbyState(match.chessBoardId);
+      }
+    );
+
     // Handle chat messages from clients
     this.onMessage(
       "SEND_CHAT_MESSAGE",
@@ -1889,6 +2481,9 @@ export class GameRoom extends Room<GameState> {
     // Send current space ashtrays to joining client
     client.send("CURRENT_ASHTRAYS", Array.from(this.ashtrays.values()));
 
+    // Send current space chess boards to joining client
+    client.send("CURRENT_CHESS_BOARDS", Array.from(this.chessBoards.values()));
+
     // Send recent chat messages from DB to joining client
     if (this.recentChatMessages && this.recentChatMessages.length > 0) {
       client.send("CHAT_HISTORY", this.recentChatMessages);
@@ -1913,6 +2508,9 @@ export class GameRoom extends Room<GameState> {
       const atId = this.clientAshtrayGameMap.get(client.sessionId)!;
       this.handleSmokingGameLeave(client.sessionId, atId);
     }
+
+    // Cleanup chess match or spectator if user was in chess
+    this.handleChessLeave(client.sessionId);
 
     const player = this.state.players.get(client.sessionId);
     if (player) {
@@ -2409,6 +3007,16 @@ export class GameRoom extends Room<GameState> {
         });
       }
     }
+    for (const cb of this.chessBoards.values()) {
+      if (cb.passable === false) {
+        boxes.push({
+          minX: cb.x - 22,
+          maxX: cb.x + 22,
+          minY: cb.y - 22,
+          maxY: cb.y + 22,
+        });
+      }
+    }
     for (const [k, val] of Object.entries(this.tiles)) {
       if (k.startsWith("freeform:") && val) {
         const parts = val.split("::");
@@ -2450,6 +3058,187 @@ export class GameRoom extends Room<GameState> {
     }
   }
 
+  private async persistChessBoards() {
+    try {
+      await updateSpaceChessBoards(
+        this.spaceId,
+        Array.from(this.chessBoards.values())
+      );
+    } catch (err) {
+      console.error("[GameRoom] Error persisting space chess boards:", err);
+    }
+  }
+
+  private getPlayerAvatarUrl(sessionId: string): string {
+    const avatars = this.playerAvatars.get(sessionId);
+    if (avatars?.idle) {
+      if (Array.isArray(avatars.idle) && avatars.idle.length > 0) {
+        return avatars.idle[0];
+      } else if (typeof avatars.idle === "string") {
+        return avatars.idle;
+      }
+    }
+    return "/assets/sprite1.png";
+  }
+
+  private getChessLobbyState(chessBoardId: string): ChessLobbyState {
+    const waitingMatches: ChessGameSummary[] = [];
+    const ongoingGames: ChessGameSummary[] = [];
+
+    for (const match of this.chessMatches.values()) {
+      if (match.chessBoardId !== chessBoardId) continue;
+      const summary = this.buildChessGameSummary(match);
+      if (match.status === "waiting") {
+        waitingMatches.push(summary);
+      } else if (match.status === "playing") {
+        ongoingGames.push(summary);
+      }
+    }
+
+    return {
+      chessBoardId,
+      waitingMatches,
+      ongoingGames,
+    };
+  }
+
+  private buildChessGameSummary(match: any): ChessGameSummary {
+    const turn = match.chess?.turn() === "b" ? "black" : "white";
+    return {
+      matchId: match.matchId,
+      chessBoardId: match.chessBoardId,
+      whitePlayer: match.whitePlayer,
+      blackPlayer: match.blackPlayer,
+      status: match.status,
+      spectatorCount: match.spectators.size,
+      turn,
+      moveCount: match.chess ? match.chess.history().length : 0,
+      winner: match.winner,
+      winReason: match.winReason,
+      inCheck: match.chess ? match.chess.inCheck() : false,
+      createdAt: match.createdAt,
+    };
+  }
+
+  private buildChessGameState(match: any): ChessGameState {
+    const turn = match.chess?.turn() === "b" ? "black" : "white";
+    const specs: Record<string, ChessGameSpectator> = {};
+    for (const [sid, spec] of match.spectators.entries()) {
+      specs[sid] = spec;
+    }
+
+    return {
+      matchId: match.matchId,
+      chessBoardId: match.chessBoardId,
+      status: match.status,
+      whitePlayer: match.whitePlayer,
+      blackPlayer: match.blackPlayer,
+      spectators: specs,
+      fen: match.chess
+        ? match.chess.fen()
+        : "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+      history: match.chess ? match.chess.history() : [],
+      turn,
+      inCheck: match.chess ? match.chess.inCheck() : false,
+      lastMove: match.lastMove,
+      winner: match.winner,
+      winReason: match.winReason,
+      drawOffer: match.drawOffer,
+      createdAt: match.createdAt,
+    };
+  }
+
+  private broadcastChessLobbyState(chessBoardId: string) {
+    const viewers = this.chessLobbyViewers.get(chessBoardId);
+    if (!viewers || viewers.size === 0) return;
+    const state = this.getChessLobbyState(chessBoardId);
+    for (const sid of viewers) {
+      const client = this.clients.find((c) => c.sessionId === sid);
+      if (client) {
+        client.send("CHESS_LOBBY_STATE", state);
+      }
+    }
+  }
+
+  private broadcastChessGameState(
+    matchId: string,
+    event: string,
+    state: ChessGameState
+  ) {
+    const match = this.chessMatches.get(matchId);
+    if (!match) return;
+
+    const recipientSessionIds = new Set<string>();
+    if (match.whitePlayer) recipientSessionIds.add(match.whitePlayer.sessionId);
+    if (match.blackPlayer) recipientSessionIds.add(match.blackPlayer.sessionId);
+    for (const sid of match.spectators.keys()) {
+      recipientSessionIds.add(sid);
+    }
+
+    for (const sid of recipientSessionIds) {
+      const client = this.clients.find((c) => c.sessionId === sid);
+      if (client) {
+        client.send(event, state);
+      }
+    }
+  }
+
+  private handleChessLeave(sessionId: string) {
+    // 1. Remove from all lobby viewers
+    for (const [cbId, viewers] of this.chessLobbyViewers.entries()) {
+      viewers.delete(sessionId);
+    }
+
+    // 2. Scan all chess matches where this session was involved
+    for (const [matchId, match] of this.chessMatches.entries()) {
+      if (match.spectators.has(sessionId)) {
+        match.spectators.delete(sessionId);
+        this.clientChessMatchMap.delete(sessionId);
+        const gameState = this.buildChessGameState(match);
+        this.broadcastChessGameState(match.matchId, "CHESS_GAME_STATE", gameState);
+        this.broadcastChessLobbyState(match.chessBoardId);
+      }
+
+      if (match.whitePlayer?.sessionId === sessionId || match.blackPlayer?.sessionId === sessionId) {
+        this.clientChessMatchMap.delete(sessionId);
+
+        if (match.status === "waiting") {
+          this.chessMatches.delete(match.matchId);
+          this.broadcastChessLobbyState(match.chessBoardId);
+        } else if (match.status === "playing") {
+          const isWhite = match.whitePlayer?.sessionId === sessionId;
+          const leaverName = isWhite
+            ? (match.whitePlayer?.name || "White")
+            : (match.blackPlayer?.name || "Black");
+          const winnerColor: ChessPieceColor = isWhite ? "black" : "white";
+          const winnerPlayer = isWhite ? match.blackPlayer : match.whitePlayer;
+          const winnerName = winnerPlayer?.name || (winnerColor === "white" ? "White" : "Black");
+
+          match.status = "resigned";
+          match.winner = winnerColor;
+          match.winReason = `${leaverName} left the game. ${winnerName} wins by forfeit!`;
+
+          if (match.whitePlayer?.sessionId) {
+            this.clientChessMatchMap.delete(match.whitePlayer.sessionId);
+          }
+          if (match.blackPlayer?.sessionId) {
+            this.clientChessMatchMap.delete(match.blackPlayer.sessionId);
+          }
+
+          const gameState = this.buildChessGameState(match);
+          this.broadcastChessGameState(match.matchId, "CHESS_GAME_ENDED", gameState);
+          this.broadcastChessLobbyState(match.chessBoardId);
+
+          setTimeout(() => {
+            this.chessMatches.delete(match.matchId);
+          }, 10000);
+        }
+      }
+    }
+
+    this.clientChessMatchMap.delete(sessionId);
+  }
+
   onDispose() {
     if (this.jukeboxTimer) {
       clearInterval(this.jukeboxTimer);
@@ -2465,5 +3254,8 @@ export class GameRoom extends Room<GameState> {
       if (session.matchTimer) clearTimeout(session.matchTimer);
     }
     this.smokingSessions.clear();
+    this.chessMatches.clear();
+    this.chessLobbyViewers.clear();
+    this.clientChessMatchMap.clear();
   }
 }

@@ -15,6 +15,9 @@ import {
   AshtrayState,
   SmokingGameRoomState,
   SmokingGameResult,
+  ChessBoardState,
+  ChessLobbyState,
+  ChessGameState,
 } from "shared";
 
 export interface NetworkStats {
@@ -43,6 +46,13 @@ export type AshtrayDeleteCallback = (ashtrayId: string) => void;
 export type SmokingGameStateCallback = (state: SmokingGameRoomState) => void;
 export type SmokingGameStartCallback = (state: SmokingGameRoomState) => void;
 export type SmokingGameEndedCallback = (data: { ashtrayId: string; results: SmokingGameResult[] }) => void;
+export type ChessBoardsSyncCallback = (chessBoards: ChessBoardState[]) => void;
+export type ChessBoardUpdateCallback = (chessBoard: ChessBoardState) => void;
+export type ChessBoardDeleteCallback = (chessBoardId: string) => void;
+export type ChessLobbyStateCallback = (state: ChessLobbyState) => void;
+export type ChessGameStateCallback = (state: ChessGameState) => void;
+export type ChessGameStartCallback = (state: ChessGameState) => void;
+export type ChessGameEndedCallback = (state: ChessGameState) => void;
 
 export class MultiplayerManager {
   private client!: Client;
@@ -78,11 +88,19 @@ export class MultiplayerManager {
   private onSmokingGameStateCallbacks: SmokingGameStateCallback[] = [];
   private onSmokingGameStartCallbacks: SmokingGameStartCallback[] = [];
   private onSmokingGameEndedCallbacks: SmokingGameEndedCallback[] = [];
+  private onChessBoardsSyncCallbacks: ChessBoardsSyncCallback[] = [];
+  private onChessBoardUpdateCallbacks: ChessBoardUpdateCallback[] = [];
+  private onChessBoardDeleteCallbacks: ChessBoardDeleteCallback[] = [];
+  private onChessLobbyStateCallbacks: ChessLobbyStateCallback[] = [];
+  private onChessGameStateCallbacks: ChessGameStateCallback[] = [];
+  private onChessGameStartCallbacks: ChessGameStartCallback[] = [];
+  private onChessGameEndedCallbacks: ChessGameEndedCallback[] = [];
   public currentTiles: Record<string, string> = {};
   public currentPrivateZones: PrivateZone[] = [];
   public currentJukeboxes: Map<string, JukeboxState> = new Map();
   public currentTypewriters: Map<string, TypewriterState> = new Map();
   public currentAshtrays: Map<string, AshtrayState> = new Map();
+  public currentChessBoards: Map<string, ChessBoardState> = new Map();
   public playerAvatarsMap = new Map<string, PlayerAvatars>();
 
   private pingTimer: number | null = null;
@@ -399,6 +417,54 @@ export class MultiplayerManager {
         }
       }
     );
+
+    this.room.onMessage("CURRENT_CHESS_BOARDS", (chessBoards: ChessBoardState[]) => {
+      this.currentChessBoards.clear();
+      if (Array.isArray(chessBoards)) {
+        for (const cb of chessBoards) {
+          this.currentChessBoards.set(cb.id, cb);
+        }
+      }
+      this.notifyChessBoardsSync(Array.from(this.currentChessBoards.values()));
+    });
+
+    this.room.onMessage("CHESS_BOARD_UPDATED", (chessBoard: ChessBoardState) => {
+      if (chessBoard && chessBoard.id) {
+        this.currentChessBoards.set(chessBoard.id, chessBoard);
+        this.notifyChessBoardUpdate(chessBoard);
+      }
+    });
+
+    this.room.onMessage("CHESS_BOARD_DELETED", (data: { chessBoardId: string }) => {
+      if (data && data.chessBoardId) {
+        this.currentChessBoards.delete(data.chessBoardId);
+        this.notifyChessBoardDelete(data.chessBoardId);
+      }
+    });
+
+    this.room.onMessage("CHESS_LOBBY_STATE", (state: ChessLobbyState) => {
+      if (state) {
+        this.notifyChessLobbyState(state);
+      }
+    });
+
+    this.room.onMessage("CHESS_GAME_STATE", (state: ChessGameState) => {
+      if (state) {
+        this.notifyChessGameState(state);
+      }
+    });
+
+    this.room.onMessage("CHESS_GAME_START", (state: ChessGameState) => {
+      if (state) {
+        this.notifyChessGameStart(state);
+      }
+    });
+
+    this.room.onMessage("CHESS_GAME_ENDED", (state: ChessGameState) => {
+      if (state) {
+        this.notifyChessGameEnded(state);
+      }
+    });
 
     this.startPingLoop();
 
@@ -1150,6 +1216,202 @@ export class MultiplayerManager {
   public requestSmokingGamePlayAgain(ashtrayId: string) {
     if (this.room) {
       this.room.send("SMOKING_GAME_PLAY_AGAIN", { ashtrayId });
+    }
+  }
+
+  // --- Chess Board & Chess Game Methods ---
+
+  private notifyChessBoardsSync(chessBoards: ChessBoardState[]) {
+    this.onChessBoardsSyncCallbacks.forEach((cb) => {
+      try {
+        cb(chessBoards);
+      } catch (err) {
+        console.error("Error in onChessBoardsSync callback:", err);
+      }
+    });
+  }
+
+  private notifyChessBoardUpdate(chessBoard: ChessBoardState) {
+    this.onChessBoardUpdateCallbacks.forEach((cb) => {
+      try {
+        cb(chessBoard);
+      } catch (err) {
+        console.error("Error in onChessBoardUpdate callback:", err);
+      }
+    });
+  }
+
+  private notifyChessBoardDelete(chessBoardId: string) {
+    this.onChessBoardDeleteCallbacks.forEach((cb) => {
+      try {
+        cb(chessBoardId);
+      } catch (err) {
+        console.error("Error in onChessBoardDelete callback:", err);
+      }
+    });
+  }
+
+  private notifyChessLobbyState(state: ChessLobbyState) {
+    this.onChessLobbyStateCallbacks.forEach((cb) => {
+      try {
+        cb(state);
+      } catch (err) {
+        console.error("Error in onChessLobbyState callback:", err);
+      }
+    });
+  }
+
+  private notifyChessGameState(state: ChessGameState) {
+    this.onChessGameStateCallbacks.forEach((cb) => {
+      try {
+        cb(state);
+      } catch (err) {
+        console.error("Error in onChessGameState callback:", err);
+      }
+    });
+  }
+
+  private notifyChessGameStart(state: ChessGameState) {
+    this.onChessGameStartCallbacks.forEach((cb) => {
+      try {
+        cb(state);
+      } catch (err) {
+        console.error("Error in onChessGameStart callback:", err);
+      }
+    });
+  }
+
+  private notifyChessGameEnded(state: ChessGameState) {
+    this.onChessGameEndedCallbacks.forEach((cb) => {
+      try {
+        cb(state);
+      } catch (err) {
+        console.error("Error in onChessGameEnded callback:", err);
+      }
+    });
+  }
+
+  public onChessBoardsSync(cb: ChessBoardsSyncCallback) {
+    this.onChessBoardsSyncCallbacks.push(cb);
+  }
+
+  public onChessBoardUpdate(cb: ChessBoardUpdateCallback) {
+    this.onChessBoardUpdateCallbacks.push(cb);
+  }
+
+  public onChessBoardDelete(cb: ChessBoardDeleteCallback) {
+    this.onChessBoardDeleteCallbacks.push(cb);
+  }
+
+  public onChessLobbyState(cb: ChessLobbyStateCallback) {
+    this.onChessLobbyStateCallbacks.push(cb);
+  }
+
+  public onChessGameState(cb: ChessGameStateCallback) {
+    this.onChessGameStateCallbacks.push(cb);
+  }
+
+  public onChessGameStart(cb: ChessGameStartCallback) {
+    this.onChessGameStartCallbacks.push(cb);
+  }
+
+  public onChessGameEnded(cb: ChessGameEndedCallback) {
+    this.onChessGameEndedCallbacks.push(cb);
+  }
+
+  public placeChessBoard(
+    x: number,
+    y: number,
+    passable: boolean = false,
+    ontop: boolean = false,
+    layer: number = 0
+  ) {
+    if (this.room) {
+      this.room.send("CHESS_BOARD_PLACE", { x, y, passable, ontop, layer });
+    }
+  }
+
+  public moveChessBoard(chessBoardId: string, x: number, y: number) {
+    if (this.room) {
+      this.room.send("CHESS_BOARD_MOVE", { chessBoardId, x, y });
+    }
+  }
+
+  public deleteChessBoard(chessBoardId: string) {
+    if (this.room) {
+      this.room.send("CHESS_BOARD_DELETE", { chessBoardId });
+    }
+  }
+
+  public setChessBoardPassable(chessBoardId: string, passable: boolean) {
+    if (this.room) {
+      this.room.send("CHESS_BOARD_PASSABLE", { chessBoardId, passable });
+    }
+  }
+
+  public openChessLobby(chessBoardId: string) {
+    if (this.room) {
+      this.room.send("CHESS_OPEN_LOBBY", { chessBoardId });
+    }
+  }
+
+  public leaveChessLobby(chessBoardId: string) {
+    if (this.room) {
+      this.room.send("CHESS_LEAVE_LOBBY", { chessBoardId });
+    }
+  }
+
+  public joinChessMatch(chessBoardId: string, matchId?: string) {
+    if (this.room) {
+      this.room.send("CHESS_JOIN_MATCH", { chessBoardId, matchId });
+    }
+  }
+
+  public cancelChessJoin(chessBoardId: string) {
+    if (this.room) {
+      this.room.send("CHESS_CANCEL_JOIN", { chessBoardId });
+    }
+  }
+
+  public spectateChessMatch(chessBoardId: string, matchId: string) {
+    if (this.room) {
+      this.room.send("CHESS_SPECTATE_MATCH", { chessBoardId, matchId });
+    }
+  }
+
+  public leaveChessMatch(chessBoardId: string, matchId: string) {
+    if (this.room) {
+      this.room.send("CHESS_LEAVE_MATCH", { chessBoardId, matchId });
+    }
+  }
+
+  public sendChessMove(
+    chessBoardId: string,
+    matchId: string,
+    from: string,
+    to: string,
+    promotion?: "q" | "r" | "b" | "n"
+  ) {
+    if (this.room) {
+      this.room.send("CHESS_MOVE", { chessBoardId, matchId, from, to, promotion });
+    }
+  }
+
+  public sendChessResign(chessBoardId: string, matchId: string) {
+    if (this.room) {
+      this.room.send("CHESS_RESIGN", { chessBoardId, matchId });
+    }
+  }
+
+  public sendChessOfferDraw(chessBoardId: string, matchId: string) {
+    if (this.room) {
+      this.room.send("CHESS_OFFER_DRAW", { chessBoardId, matchId });
+    }
+  }
+
+  public sendChessRematch(chessBoardId: string, matchId: string) {
+    if (this.room) {
+      this.room.send("CHESS_REMATCH", { chessBoardId, matchId });
     }
   }
 }

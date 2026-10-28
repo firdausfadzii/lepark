@@ -28,6 +28,7 @@ import {
   JukeboxState,
   TypewriterState,
   AshtrayState,
+  ChessBoardState,
   isFreeformAsset,
   FreeformDecorationData,
   parseFreeformTile,
@@ -63,6 +64,14 @@ interface AshtrayVisual {
   hitZone: Phaser.GameObjects.Rectangle;
   promptText: Phaser.GameObjects.Text;
   state: AshtrayState;
+}
+
+interface ChessBoardVisual {
+  container: Phaser.GameObjects.Container;
+  sprite: Phaser.GameObjects.Image;
+  hitZone: Phaser.GameObjects.Rectangle;
+  promptText: Phaser.GameObjects.Text;
+  state: ChessBoardState;
 }
 
 interface PlayerVisual {
@@ -102,6 +111,7 @@ export function normalizeDecorationAssetKey(key: string): string {
 
 export interface InspectableMapItem {
   kind:
+    | "chess_board"
     | "ashtray"
     | "typewriter"
     | "jukebox"
@@ -182,6 +192,7 @@ export class GameScene extends Phaser.Scene {
     | "jukebox"
     | "typewriter"
     | "ashtray"
+    | "chess_board"
     | "freeform_decoration"
     | "spawn_point"
     | "color_dropper" = "none";
@@ -233,6 +244,12 @@ export class GameScene extends Phaser.Scene {
   private nearbyAshtrayId: string | null = null;
   private editorAshtrayGhost: Phaser.GameObjects.Image | null = null;
 
+  // Chess Board State & Game Objects
+  private chessBoardVisuals: Map<string, ChessBoardVisual> = new Map();
+  public onChessBoardClick?: (chessBoardId: string) => void;
+  private nearbyChessBoardId: string | null = null;
+  private editorChessBoardGhost: Phaser.GameObjects.Image | null = null;
+
   // Freeform Decorations State (e.g. Chairs, not bounded by grid)
   private freeformVisuals: Map<
     string,
@@ -273,6 +290,7 @@ export class GameScene extends Phaser.Scene {
         jukeboxes: Array.from(this.jukeboxVisuals.values()).map((v) => v.state),
         typewriters: Array.from(this.typewriterVisuals.values()).map((v) => v.state),
         ashtrays: Array.from(this.ashtrayVisuals.values()).map((v) => v.state),
+        chessBoards: Array.from(this.chessBoardVisuals.values()).map((v) => v.state),
         freeformDecorations: Array.from(this.freeformVisuals.values()).map((v) => v.data),
       });
     }
@@ -351,11 +369,13 @@ export class GameScene extends Phaser.Scene {
       "jukebox_1",
       "typewriter_1",
       "ashtray_1",
+      "chess_board_1",
     ];
     for (const da of decoAssets) {
       this.load.image(da, `/assets/decoration/${da}.png`);
     }
     // Backward-compatible aliases for legacy decoration keys
+    this.load.image("chess_board", "/assets/decoration/chess_board_1.png");
     this.load.image("table_left_150", "/assets/decoration/table_2_left.png");
     this.load.image("table_middle_150", "/assets/decoration/table_2_middle.png");
     this.load.image("table_right_150", "/assets/decoration/table_2_right.png");
@@ -639,6 +659,13 @@ export class GameScene extends Phaser.Scene {
     this.editorAshtrayGhost.setDepth(136);
     this.editorAshtrayGhost.setVisible(false);
 
+    // Ghost preview for freeform chess board placement
+    this.editorChessBoardGhost = this.add.image(0, 0, "chess_board_1");
+    this.editorChessBoardGhost.setDisplaySize(50, 50);
+    this.editorChessBoardGhost.setAlpha(0.65);
+    this.editorChessBoardGhost.setDepth(136);
+    this.editorChessBoardGhost.setVisible(false);
+
     // Ghost preview for freeform decoration placement (e.g. chairs, not bounded by grid)
     this.editorFreeformGhost = this.add.image(0, 0, "office_chair_1_front");
     this.editorFreeformGhost.setDisplaySize(50, 50);
@@ -646,12 +673,14 @@ export class GameScene extends Phaser.Scene {
     this.editorFreeformGhost.setDepth(136);
     this.editorFreeformGhost.setVisible(false);
 
-    // E key for interacting with nearby typewriter or jukebox
+    // E key for interacting with nearby typewriter, jukebox, ashtray, or chess board
     if (this.input.keyboard) {
       this.keyE = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.E);
       this.keyE.on("down", () => {
-        if (this.isTyperaceModalOpen() || this.isSmokingGameModalOpen()) return;
-        if (this.nearbyAshtrayId && !this.isEditMode && this.onAshtrayClick) {
+        if (this.isTyperaceModalOpen() || this.isSmokingGameModalOpen() || this.isChessModalOpen()) return;
+        if (this.nearbyChessBoardId && !this.isEditMode && this.onChessBoardClick) {
+          this.onChessBoardClick(this.nearbyChessBoardId);
+        } else if (this.nearbyAshtrayId && !this.isEditMode && this.onAshtrayClick) {
           this.onAshtrayClick(this.nearbyAshtrayId);
         } else if (this.nearbyTypewriterId && !this.isEditMode && this.onTypewriterClick) {
           this.onTypewriterClick(this.nearbyTypewriterId);
@@ -701,6 +730,20 @@ export class GameScene extends Phaser.Scene {
     });
     if (this.multiplayer.currentAshtrays && this.multiplayer.currentAshtrays.size > 0) {
       this.setAshtrays(Array.from(this.multiplayer.currentAshtrays.values()));
+    }
+
+    // Hook up chess boards updates from multiplayer
+    this.multiplayer.onChessBoardsSync((chessBoards) => {
+      this.setChessBoards(chessBoards);
+    });
+    this.multiplayer.onChessBoardUpdate((chessBoard) => {
+      this.updateChessBoard(chessBoard);
+    });
+    this.multiplayer.onChessBoardDelete((chessBoardId) => {
+      this.removeChessBoard(chessBoardId);
+    });
+    if (this.multiplayer.currentChessBoards && this.multiplayer.currentChessBoards.size > 0) {
+      this.setChessBoards(Array.from(this.multiplayer.currentChessBoards.values()));
     }
 
     // Pointer events for Map Editor (click and drag to select area)
@@ -1595,8 +1638,13 @@ export class GameScene extends Phaser.Scene {
     return !!(el && !el.classList.contains("hidden"));
   }
 
+  public isChessModalOpen(): boolean {
+    const el = document.getElementById("chess-modal");
+    return !!(el && !el.classList.contains("hidden"));
+  }
+
   public setControlsActive(active: boolean) {
-    if (active && (this.isTyperaceModalOpen() || this.isSmokingGameModalOpen())) {
+    if (active && (this.isTyperaceModalOpen() || this.isSmokingGameModalOpen() || this.isChessModalOpen())) {
       active = false;
     }
     this.controlsActive = active;
@@ -1696,7 +1744,7 @@ export class GameScene extends Phaser.Scene {
     let up = false;
     let down = false;
 
-    if (this.isTyperaceModalOpen() || this.isSmokingGameModalOpen()) {
+    if (this.isTyperaceModalOpen() || this.isSmokingGameModalOpen() || this.isChessModalOpen()) {
       if (this.controlsActive) {
         this.setControlsActive(false);
       }
@@ -2104,6 +2152,24 @@ export class GameScene extends Phaser.Scene {
         const nearbyAt = closestAshtrayDist <= 1.5 * TILE_SIZE ? closestAshtray : null;
         this.nearbyAshtrayId = nearbyAt ? (nearbyAt as AshtrayState).id : null;
 
+        // Update nearby chess board state for interaction
+        let closestChessBoard: ChessBoardState | null = null;
+        let closestChessBoardDist = Infinity;
+        this.chessBoardVisuals.forEach((cbVisual) => {
+          const cb = cbVisual.state;
+          const dist = Phaser.Math.Distance.Between(lx, ly, cb.x, cb.y);
+          if (dist < closestChessBoardDist) {
+            closestChessBoardDist = dist;
+            closestChessBoard = cb;
+          }
+          const isNearby = dist <= 1.5 * TILE_SIZE;
+          if (cbVisual.promptText) {
+            cbVisual.promptText.setVisible(isNearby && !this.isEditMode && !this.isChessModalOpen());
+          }
+        });
+        const nearbyCb = closestChessBoardDist <= 1.5 * TILE_SIZE ? closestChessBoard : null;
+        this.nearbyChessBoardId = nearbyCb ? (nearbyCb as ChessBoardState).id : null;
+
         // Apply audio attenuation to JukeboxManager
         if (this.jukeboxManager) {
           if (bestJukebox && highestVolume > 0) {
@@ -2195,7 +2261,7 @@ export class GameScene extends Phaser.Scene {
         }
       }
       const anyModalOpen = document.querySelector(".modal-overlay:not(.hidden)");
-      if (!anyModalOpen && !this.controlsActive && !this.isTyperaceModalOpen() && !this.isSmokingGameModalOpen()) {
+      if (!anyModalOpen && !this.controlsActive && !this.isTyperaceModalOpen() && !this.isSmokingGameModalOpen() && !this.isChessModalOpen()) {
         this.setControlsActive(true);
       }
 
@@ -2256,6 +2322,20 @@ export class GameScene extends Phaser.Scene {
           this.multiplayer.placeAshtray(
             ax,
             ay,
+            this.decorationPassable,
+            this.decorationOntop,
+            this.placementLayer
+          );
+          return;
+        }
+
+        if (this.activeEditorTool === "chess_board") {
+          // Unbounded free-placement (not snapped to grid):
+          const cx = Math.round(pointer.worldX);
+          const cy = Math.round(pointer.worldY);
+          this.multiplayer.placeChessBoard(
+            cx,
+            cy,
             this.decorationPassable,
             this.decorationOntop,
             this.placementLayer
@@ -2390,6 +2470,7 @@ export class GameScene extends Phaser.Scene {
         if (this.editorFreeformGhost) this.editorFreeformGhost.setVisible(false);
         if (this.editorJukeboxGhost) this.editorJukeboxGhost.setVisible(false);
         if (this.editorTypewriterGhost) this.editorTypewriterGhost.setVisible(false);
+        if (this.editorChessBoardGhost) this.editorChessBoardGhost.setVisible(false);
         if (this.editorAshtrayGhost) {
           this.editorAshtrayGhost.setDepth(
             this.computeLayerDepth(this.placementLayer, this.decorationOntop)
@@ -2406,6 +2487,31 @@ export class GameScene extends Phaser.Scene {
       } else {
         if (this.editorAshtrayGhost) {
           this.editorAshtrayGhost.setVisible(false);
+        }
+      }
+
+      if (this.activeEditorTool === "chess_board") {
+        this.editorHoverGraphics.clear();
+        if (this.editorFreeformGhost) this.editorFreeformGhost.setVisible(false);
+        if (this.editorJukeboxGhost) this.editorJukeboxGhost.setVisible(false);
+        if (this.editorTypewriterGhost) this.editorTypewriterGhost.setVisible(false);
+        if (this.editorAshtrayGhost) this.editorAshtrayGhost.setVisible(false);
+        if (this.editorChessBoardGhost) {
+          this.editorChessBoardGhost.setDepth(
+            this.computeLayerDepth(this.placementLayer, this.decorationOntop)
+          );
+          this.editorChessBoardGhost.setPosition(pointer.worldX, pointer.worldY);
+          this.editorChessBoardGhost.setVisible(true);
+        }
+        this.editorOverlayText.setText(
+          `♟️ Chess Board • Layer ${this.placementLayer} (↑/↓) • Click to place`
+        );
+        this.editorOverlayText.setPosition(pointer.worldX + 28, Math.max(8, pointer.worldY - 28));
+        this.editorOverlayText.setVisible(true);
+        return;
+      } else {
+        if (this.editorChessBoardGhost) {
+          this.editorChessBoardGhost.setVisible(false);
         }
       }
 
@@ -3277,6 +3383,17 @@ export class GameScene extends Phaser.Scene {
         });
       }
     }
+    for (const visual of this.chessBoardVisuals.values()) {
+      const cb = visual.state;
+      if (cb.passable === false) {
+        boxes.push({
+          minX: cb.x - 22,
+          maxX: cb.x + 22,
+          minY: cb.y - 22,
+          maxY: cb.y + 22,
+        });
+      }
+    }
     for (const visual of this.freeformVisuals.values()) {
       if (!visual.data.passable) {
         boxes.push({
@@ -3750,6 +3867,18 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
+    // Highlight solid chess boards in edit mode
+    for (const visual of this.chessBoardVisuals.values()) {
+      if (visual.state.passable === false) {
+        const bx = visual.state.x - 24;
+        const by = visual.state.y - 24;
+        const rects = getAssetRects("chess_board_1");
+        for (const [rx, ry, rw, rh] of rects) {
+          this.obstaclesGraphics.fillRect(bx + rx, by + ry, rw, rh);
+        }
+      }
+    }
+
     // Highlight solid freeform decorations in edit mode
     for (const visual of this.freeformVisuals.values()) {
       if (!visual.data.passable) {
@@ -3937,6 +4066,7 @@ export class GameScene extends Phaser.Scene {
       | "jukebox"
       | "typewriter"
       | "ashtray"
+      | "chess_board"
       | "freeform_decoration"
       | "spawn_point"
       | "color_dropper"
@@ -3968,6 +4098,9 @@ export class GameScene extends Phaser.Scene {
     if (tool !== "ashtray" && this.editorAshtrayGhost) {
       this.editorAshtrayGhost.setVisible(false);
     }
+    if (tool !== "chess_board" && this.editorChessBoardGhost) {
+      this.editorChessBoardGhost.setVisible(false);
+    }
     if (tool !== "freeform_decoration" && this.editorFreeformGhost) {
       this.editorFreeformGhost.setVisible(false);
     }
@@ -3977,6 +4110,7 @@ export class GameScene extends Phaser.Scene {
     const clean = rawKey.includes("|") ? rawKey.split("|")[0] : rawKey;
     const norm = normalizeDecorationAssetKey(normalizeFloorAssetKey(clean));
     if (norm === "ashtray_1") return "Ashtray";
+    if (norm === "chess_board_1" || norm === "chess_board") return "Chess Board";
     if (norm === "typewriter_1") return "Typewriter";
     if (norm === "jukebox_1") return "YouTube Jukebox";
     if (norm === "office_chair_1_front") return "Office Chair 1 Front";
@@ -4002,6 +4136,22 @@ export class GameScene extends Phaser.Scene {
   }
 
   public getInspectableItemAt(worldX: number, worldY: number): InspectableMapItem | null {
+    // Check Chess Boards (freeform)
+    for (const vis of this.chessBoardVisuals.values()) {
+      const cb = vis.state;
+      if (Math.abs(worldX - cb.x) <= 26 && Math.abs(worldY - cb.y) <= 26) {
+        return {
+          kind: "chess_board",
+          id: cb.id,
+          label: "Chess Board",
+          categoryLabel: "Game",
+          worldX: cb.x,
+          worldY: cb.y - 25,
+          bounds: { x: cb.x - 25, y: cb.y - 25, width: 50, height: 50 },
+        };
+      }
+    }
+
     // 0. Check Ashtrays (freeform)
     for (const vis of this.ashtrayVisuals.values()) {
       const at = vis.state;
@@ -4257,7 +4407,12 @@ export class GameScene extends Phaser.Scene {
   public deleteInspectableItem(item: InspectableMapItem) {
     if (!item) return;
 
-    if (item.kind === "ashtray") {
+    if (item.kind === "chess_board") {
+      this.removeChessBoard(item.id);
+      if (this.multiplayer) {
+        this.multiplayer.deleteChessBoard(item.id);
+      }
+    } else if (item.kind === "ashtray") {
       this.removeAshtray(item.id);
       if (this.multiplayer) {
         this.multiplayer.deleteAshtray(item.id);
@@ -4379,6 +4534,10 @@ export class GameScene extends Phaser.Scene {
       const at = this.ashtrayVisuals.get(item.id)?.state;
       return at ? at.passable === false : false;
     }
+    if (item.kind === "chess_board") {
+      const cb = this.chessBoardVisuals.get(item.id)?.state;
+      return cb ? cb.passable === false : false;
+    }
     if (item.kind === "obstacle") {
       return true;
     }
@@ -4457,6 +4616,17 @@ export class GameScene extends Phaser.Scene {
       at.passable = !newState;
       if (this.multiplayer) {
         this.multiplayer.setAshtrayPassable(item.id, at.passable);
+      }
+      this.drawObstacles();
+      return newState;
+    }
+    if (item.kind === "chess_board") {
+      const cb = this.chessBoardVisuals.get(item.id)?.state;
+      if (!cb) return false;
+      const newState = cb.passable !== false; // if previously passable, newState is true (obstacle ON)
+      cb.passable = !newState;
+      if (this.multiplayer) {
+        this.multiplayer.setChessBoardPassable(item.id, cb.passable);
       }
       this.drawObstacles();
       return newState;
@@ -5219,5 +5389,186 @@ export class GameScene extends Phaser.Scene {
       state: at,
     };
     this.ashtrayVisuals.set(at.id, visual);
+  }
+
+  // --- Chess Board World Visuals & Chess Game Interaction ---
+
+  public setChessBoards(chessBoards: ChessBoardState[]) {
+    if (!Array.isArray(chessBoards)) return;
+    const activeIds = new Set<string>();
+
+    for (const cb of chessBoards) {
+      activeIds.add(cb.id);
+      this.updateChessBoard(cb);
+    }
+
+    this.chessBoardVisuals.forEach((_vis, id) => {
+      if (!activeIds.has(id)) {
+        this.removeChessBoard(id);
+      }
+    });
+  }
+
+  public updateChessBoard(cb: ChessBoardState) {
+    if (!cb || !cb.id) return;
+    const existing = this.chessBoardVisuals.get(cb.id);
+    if (existing) {
+      existing.state = cb;
+      existing.container.setPosition(cb.x, cb.y);
+      existing.container.setDepth(this.computeLayerDepth(cb.layer ?? 0, !!cb.ontop));
+    } else {
+      this.createChessBoardVisual(cb);
+    }
+    this.drawObstacles();
+  }
+
+  public removeChessBoard(cbId: string) {
+    const existing = this.chessBoardVisuals.get(cbId);
+    if (existing) {
+      existing.container.destroy();
+      this.chessBoardVisuals.delete(cbId);
+      if (this.nearbyChessBoardId === cbId) {
+        this.nearbyChessBoardId = null;
+      }
+      this.drawObstacles();
+    }
+  }
+
+  private createChessBoardVisual(cb: ChessBoardState) {
+    const sprite = this.add.image(0, 0, "chess_board_1");
+    sprite.setDisplaySize(50, 50);
+
+    const hitZone = this.add.rectangle(0, 0, 54, 54, 0x000000, 0);
+    hitZone.setInteractive({ useHandCursor: true });
+    hitZone.on(
+      "pointerdown",
+      (
+        pointer: Phaser.Input.Pointer,
+        _lx: number,
+        _ly: number,
+        event: Phaser.Types.Input.EventData
+      ) => {
+        if (!pointer.leftButtonDown()) return;
+        event.stopPropagation();
+
+        if (this.isEditMode) {
+          if (this.activeEditorTool === "cursor") {
+            this.openEditorItemMenu({
+              kind: "chess_board",
+              id: cb.id,
+              label: "Chess Board",
+              categoryLabel: "Game",
+              worldX: cb.x,
+              worldY: cb.y - 25,
+              bounds: { x: cb.x - 25, y: cb.y - 25, width: 50, height: 50 },
+            });
+            return;
+          }
+          if (this.activeEditorTool === "clear_decoration") {
+            this.multiplayer.deleteChessBoard(cb.id);
+            return;
+          }
+          if (this.activeEditorTool === "chess_board") {
+            if ((cb.layer ?? 0) === this.placementLayer) {
+              this.multiplayer.deleteChessBoard(cb.id);
+            } else {
+              const tx = Math.round(pointer.worldX);
+              const ty = Math.round(pointer.worldY);
+              this.multiplayer.placeChessBoard(
+                tx,
+                ty,
+                this.decorationPassable,
+                this.decorationOntop,
+                this.placementLayer
+              );
+            }
+            return;
+          }
+          if (this.activeEditorTool === "ashtray") {
+            const ax = Math.round(pointer.worldX);
+            const ay = Math.round(pointer.worldY);
+            this.multiplayer.placeAshtray(
+              ax,
+              ay,
+              this.decorationPassable,
+              this.decorationOntop,
+              this.placementLayer
+            );
+            return;
+          }
+          if (this.activeEditorTool === "typewriter") {
+            const tx = Math.round(pointer.worldX);
+            const ty = Math.round(pointer.worldY);
+            this.multiplayer.placeTypewriter(
+              tx,
+              ty,
+              this.decorationPassable,
+              this.decorationOntop,
+              this.placementLayer
+            );
+            return;
+          }
+          if (this.activeEditorTool === "jukebox") {
+            const jx = Math.round(pointer.worldX);
+            const jy = Math.round(pointer.worldY);
+            this.multiplayer.placeJukebox(
+              jx,
+              jy,
+              this.decorationPassable,
+              this.decorationOntop,
+              this.placementLayer
+            );
+            return;
+          }
+          if (this.activeEditorTool === "freeform_decoration") {
+            const fx = Math.round(pointer.worldX);
+            const fy = Math.round(pointer.worldY);
+            this.placeFreeformDecoration(
+              this.selectedAssetKey,
+              fx,
+              fy,
+              this.selectedTileColor,
+              this.decorationPassable,
+              this.decorationOntop,
+              this.placementLayer
+            );
+            return;
+          }
+          const col = Math.max(0, Math.min(GRID_COLS - 1, Math.floor(pointer.worldX / TILE_SIZE)));
+          const row = Math.max(0, Math.min(GRID_ROWS - 1, Math.floor(pointer.worldY / TILE_SIZE)));
+          this.isSelectingArea = true;
+          this.selectionStartTile = { x: col, y: row };
+          this.selectionCurrentTile = { x: col, y: row };
+          this.updateSelectionVisuals();
+        } else {
+          if (this.onChessBoardClick) {
+            this.onChessBoardClick(cb.id);
+          }
+        }
+      }
+    );
+
+    const promptText = this.add.text(0, -32, "Press E to Play Chess", {
+      fontFamily: "Outfit, sans-serif",
+      fontSize: "11px",
+      fontStyle: "bold",
+      color: "#ffffff",
+      backgroundColor: "rgba(15, 23, 42, 0.88)",
+      padding: { x: 6, y: 2.5 },
+    });
+    promptText.setOrigin(0.5, 0.5);
+    promptText.setVisible(false);
+
+    const container = this.add.container(cb.x, cb.y, [sprite, hitZone, promptText]);
+    container.setDepth(this.computeLayerDepth(cb.layer ?? 0, !!cb.ontop));
+
+    const visual: ChessBoardVisual = {
+      container,
+      sprite,
+      hitZone,
+      promptText,
+      state: cb,
+    };
+    this.chessBoardVisuals.set(cb.id, visual);
   }
 }
