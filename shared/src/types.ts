@@ -81,6 +81,8 @@ export interface AuthUser {
   username: string;
   displayName?: string | null;
   role: "user" | "superadmin";
+  parkingPoints?: number;
+  unlockedSkins?: string[];
 }
 
 export interface AuthResponse {
@@ -119,6 +121,7 @@ export interface Space {
   typewriters?: TypewriterState[];
   ashtrays?: AshtrayState[];
   chessBoards?: ChessBoardState[];
+  aquariums?: AquariumState[];
   playerCount?: number;
   createdAt?: string;
   updatedAt?: string;
@@ -197,6 +200,7 @@ export interface JukeboxState {
   isPlaying: boolean; // Playback active
   currentTrackIndex: number; // Current index in playlist
   trackStartedAt: number; // Server timestamp (ms) when current track started
+  pausedAt?: number; // Server timestamp (ms) when playback was paused
   playlist: JukeboxTrack[]; // Collaborative queue
   passable?: boolean; // Whether players can walk through it (default false = solid obstacle)
   ontop?: boolean; // Render on top of character (true) or behind character (false)
@@ -216,6 +220,17 @@ export interface JukeboxAddPlaylistPayload {
 export interface JukeboxRemoveTrackPayload {
   jukeboxId: string;
   trackId: string;
+}
+
+export interface JukeboxMoveTrackPayload {
+  jukeboxId: string;
+  trackId: string;
+  direction: "up" | "down";
+}
+
+export interface JukeboxTogglePausePayload {
+  jukeboxId: string;
+  paused?: boolean;
 }
 
 export interface JukeboxSkipPayload {
@@ -362,6 +377,38 @@ export interface AshtrayMovePayload {
 
 export interface AshtrayDeletePayload {
   ashtrayId: string;
+}
+
+// ==========================================
+// Aquarium & Fishing Game Types
+// ==========================================
+
+export interface AquariumState {
+  id: string; // Aquarium entity ID
+  spaceId: string; // Space ID where aquarium is located
+  x: number; // Freeform world X coordinate (pixels, NOT snapped to grid)
+  y: number; // Freeform world Y coordinate (pixels, NOT snapped to grid)
+  passable?: boolean; // Whether players can walk through it (default false = solid obstacle)
+  ontop?: boolean; // Render on top of character (true) or behind character (false)
+  layer?: number; // Layer placement level (integer, default 0)
+}
+
+export interface AquariumPlacePayload {
+  x: number; // Freeform world X (pixels)
+  y: number; // Freeform world Y (pixels)
+  passable?: boolean;
+  ontop?: boolean;
+  layer?: number;
+}
+
+export interface AquariumMovePayload {
+  aquariumId: string;
+  x: number;
+  y: number;
+}
+
+export interface AquariumDeletePayload {
+  aquariumId: string;
 }
 
 export type SmokingGameStatus = "waiting" | "starting" | "smoking" | "ended";
@@ -549,6 +596,11 @@ export interface ChessLobbyState {
 export interface ChessJoinMatchPayload {
   chessBoardId: string;
   matchId?: string;
+  createOnly?: boolean;
+}
+
+export interface ChessCreateMatchPayload {
+  chessBoardId: string;
 }
 
 export interface ChessCancelJoinPayload {
@@ -594,6 +646,7 @@ export const FREEFORM_ASSET_KEYS = [
   "office_chair_150",
   "office_chair_back_150",
   "chess_board_1",
+  "aquarium_1",
 ] as const;
 export type FreeformAssetKey = (typeof FREEFORM_ASSET_KEYS)[number];
 
@@ -605,7 +658,8 @@ export function isFreeformAsset(assetKey: string | undefined | null): boolean {
     baseKey === "office_chair_1_back" ||
     baseKey === "office_chair_150" ||
     baseKey === "office_chair_back_150" ||
-    baseKey === "chess_board_1"
+    baseKey === "chess_board_1" ||
+    baseKey === "aquarium_1"
   );
 }
 
@@ -670,3 +724,86 @@ export function serializeFreeformTile(
   const levelPart = `layer:${Math.round(layer)}`;
   return `${assetKey}|${colPart}::${Math.round(x)},${Math.round(y)}::${passPart}::${layerPart}::${levelPart}`;
 }
+
+// ==========================================
+// Throw Battle (Fleabag vs Mutt / Cat vs Dog) Types
+// ==========================================
+export type ThrowBattleTurnPhase = "move" | "angle" | "power" | "throw";
+
+export interface ThrowBattlePlayer {
+  sessionId: string;
+  name: string;
+  color: string;
+  avatarUrl?: string;
+  side: "left" | "right";
+  x: number; // horizontal position within arena (0 - 800)
+  hp: number; // 0 - 20 (got hit 20 times = lose)
+  maxHp: number; // 20
+}
+
+export interface ThrowBattleState {
+  matchId: string;
+  status: "playing" | "ended";
+  player1: ThrowBattlePlayer; // Challenged player (Left side, starts first)
+  player2: ThrowBattlePlayer; // Challenger (Right side, starts second)
+  currentTurn: string; // sessionId of player whose turn it is
+  turnPhase: ThrowBattleTurnPhase;
+  wind: number; // -8 to +8 mph (negative = left, positive = right)
+  round: number;
+  winnerSessionId?: string | null;
+  lockedAngle?: number;
+  lockedPower?: number;
+}
+
+export interface ThrowBattleChallengePayload {
+  targetSessionId: string;
+}
+
+export interface ThrowBattleInviteData {
+  challengerSessionId: string;
+  challengerName: string;
+  challengerColor: string;
+  challengerAvatar?: string;
+}
+
+export interface ThrowBattleMovePayload {
+  matchId: string;
+  x: number;
+}
+
+export interface ThrowBattleEnterAnglePayload {
+  matchId: string;
+  x: number;
+}
+
+export interface ThrowBattleLockAnglePayload {
+  matchId: string;
+  angle: number;
+}
+
+export interface ThrowBattleThrowPayload {
+  matchId: string;
+  angle: number;
+  power: number;
+  wind: number;
+  projectileType?: string;
+}
+
+export interface ThrowBattleTurnResultPayload {
+  matchId: string;
+  hitOpponent: boolean;
+  damage: number;
+  p1Hp: number;
+  p2Hp: number;
+  winnerSessionId?: string | null;
+}
+
+export interface ThrowBattleRematchPayload {
+  matchId: string;
+}
+
+export interface ThrowBattleLeavePayload {
+  matchId: string;
+}
+
+

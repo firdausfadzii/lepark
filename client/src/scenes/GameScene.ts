@@ -29,6 +29,7 @@ import {
   TypewriterState,
   AshtrayState,
   ChessBoardState,
+  AquariumState,
   isFreeformAsset,
   FreeformDecorationData,
   parseFreeformTile,
@@ -74,10 +75,21 @@ interface ChessBoardVisual {
   state: ChessBoardState;
 }
 
+interface AquariumVisual {
+  container: Phaser.GameObjects.Container;
+  sprite: Phaser.GameObjects.Image;
+  hitZone: Phaser.GameObjects.Rectangle;
+  promptText: Phaser.GameObjects.Text;
+  state: AquariumState;
+}
+
 interface PlayerVisual {
   container: Phaser.GameObjects.Container;
   sprite: Phaser.GameObjects.Image;
-  nameTag: Phaser.GameObjects.Text;
+  nameTagContainer: Phaser.GameObjects.Container;
+  nameTagBg: Phaser.GameObjects.Graphics;
+  nameTagText: Phaser.GameObjects.Text;
+  hitZone?: Phaser.GameObjects.Rectangle;
   currentDirection: "idle" | "left" | "right" | "up" | "down";
   facingDirection: "left" | "right" | "up" | "down";
   avatars?: PlayerAvatars;
@@ -111,6 +123,7 @@ export function normalizeDecorationAssetKey(key: string): string {
 
 export interface InspectableMapItem {
   kind:
+    | "aquarium"
     | "chess_board"
     | "ashtray"
     | "typewriter"
@@ -178,6 +191,7 @@ export class GameScene extends Phaser.Scene {
     visible: boolean;
   }) => void;
   public activeMenuSessionId: string | null = null;
+  private lastPlayerClickTime: number = 0;
 
   // Map Editor State
   public isEditMode: boolean = false;
@@ -193,6 +207,7 @@ export class GameScene extends Phaser.Scene {
     | "typewriter"
     | "ashtray"
     | "chess_board"
+    | "aquarium"
     | "freeform_decoration"
     | "spawn_point"
     | "color_dropper" = "none";
@@ -250,6 +265,12 @@ export class GameScene extends Phaser.Scene {
   private nearbyChessBoardId: string | null = null;
   private editorChessBoardGhost: Phaser.GameObjects.Image | null = null;
 
+  // Aquarium State & Fishing Game Objects
+  private aquariumVisuals: Map<string, AquariumVisual> = new Map();
+  public onAquariumClick?: (aquariumId: string) => void;
+  private nearbyAquariumId: string | null = null;
+  private editorAquariumGhost: Phaser.GameObjects.Image | null = null;
+
   // Freeform Decorations State (e.g. Chairs, not bounded by grid)
   private freeformVisuals: Map<
     string,
@@ -291,6 +312,7 @@ export class GameScene extends Phaser.Scene {
         typewriters: Array.from(this.typewriterVisuals.values()).map((v) => v.state),
         ashtrays: Array.from(this.ashtrayVisuals.values()).map((v) => v.state),
         chessBoards: Array.from(this.chessBoardVisuals.values()).map((v) => v.state),
+        aquariums: Array.from(this.aquariumVisuals.values()).map((v) => v.state),
         freeformDecorations: Array.from(this.freeformVisuals.values()).map((v) => v.data),
       });
     }
@@ -370,11 +392,13 @@ export class GameScene extends Phaser.Scene {
       "typewriter_1",
       "ashtray_1",
       "chess_board_1",
+      "aquarium_1",
     ];
     for (const da of decoAssets) {
       this.load.image(da, `/assets/decoration/${da}.png`);
     }
     // Backward-compatible aliases for legacy decoration keys
+    this.load.image("aquarium", "/assets/decoration/aquarium_1.png");
     this.load.image("chess_board", "/assets/decoration/chess_board_1.png");
     this.load.image("table_left_150", "/assets/decoration/table_2_left.png");
     this.load.image("table_middle_150", "/assets/decoration/table_2_middle.png");
@@ -412,6 +436,18 @@ export class GameScene extends Phaser.Scene {
       "/assets/sprites/slime/slime_spritesheet.png",
       "/assets/sprites/slime/slime_sprites.json"
     );
+
+    // Ghost Slime avatar atlas & frames
+    this.load.atlas(
+      "ghost_slime_sheet",
+      "/assets/sprites/ghost_slime/ghost_slime_spritesheet.png",
+      "/assets/sprites/ghost_slime/ghost_slime_sprites.json"
+    );
+    this.load.atlas(
+      "ghost_slime_walk_sheet",
+      "/assets/sprites/ghost_slime/ghost_slime_walk_spritesheet.png",
+      "/assets/sprites/ghost_slime/ghost_slime_walk_sprites.json"
+    );
   }
 
   create() {
@@ -429,6 +465,7 @@ export class GameScene extends Phaser.Scene {
     // Center camera on world center immediately
     this.cameras.main.centerOn(WORLD_WIDTH / 2, WORLD_HEIGHT / 2);
     this.cameras.main.setZoom(1.0);
+    this.input.setPollAlways();
 
     // Keep camera viewport aligned on browser resize
     this.scale.on("resize", (gameSize: Phaser.Structs.Size) => {
@@ -673,6 +710,13 @@ export class GameScene extends Phaser.Scene {
     this.editorChessBoardGhost.setDepth(136);
     this.editorChessBoardGhost.setVisible(false);
 
+    // Ghost preview for freeform aquarium placement
+    this.editorAquariumGhost = this.add.image(0, 0, "aquarium_1");
+    this.editorAquariumGhost.setDisplaySize(50, 50);
+    this.editorAquariumGhost.setAlpha(0.65);
+    this.editorAquariumGhost.setDepth(136);
+    this.editorAquariumGhost.setVisible(false);
+
     // Ghost preview for freeform decoration placement (e.g. chairs, not bounded by grid)
     this.editorFreeformGhost = this.add.image(0, 0, "office_chair_1_front");
     this.editorFreeformGhost.setDisplaySize(50, 50);
@@ -684,8 +728,10 @@ export class GameScene extends Phaser.Scene {
     if (this.input.keyboard) {
       this.keyE = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.E);
       this.keyE.on("down", () => {
-        if (this.isTyperaceModalOpen() || this.isSmokingGameModalOpen() || this.isChessModalOpen()) return;
-        if (this.nearbyChessBoardId && !this.isEditMode && this.onChessBoardClick) {
+        if (this.isTyperaceModalOpen() || this.isSmokingGameModalOpen() || this.isChessModalOpen() || this.isFishingModalOpen()) return;
+        if (this.nearbyAquariumId && !this.isEditMode && this.onAquariumClick) {
+          this.onAquariumClick(this.nearbyAquariumId);
+        } else if (this.nearbyChessBoardId && !this.isEditMode && this.onChessBoardClick) {
           this.onChessBoardClick(this.nearbyChessBoardId);
         } else if (this.nearbyAshtrayId && !this.isEditMode && this.onAshtrayClick) {
           this.onAshtrayClick(this.nearbyAshtrayId);
@@ -751,6 +797,20 @@ export class GameScene extends Phaser.Scene {
     });
     if (this.multiplayer.currentChessBoards && this.multiplayer.currentChessBoards.size > 0) {
       this.setChessBoards(Array.from(this.multiplayer.currentChessBoards.values()));
+    }
+
+    // Hook up aquariums updates from multiplayer
+    this.multiplayer.onAquariumsSync((aquariums) => {
+      this.setAquariums(aquariums);
+    });
+    this.multiplayer.onAquariumUpdate((aquarium) => {
+      this.updateAquarium(aquarium);
+    });
+    this.multiplayer.onAquariumDelete((aquariumId) => {
+      this.removeAquarium(aquariumId);
+    });
+    if (this.multiplayer.currentAquariums && this.multiplayer.currentAquariums.size > 0) {
+      this.setAquariums(Array.from(this.multiplayer.currentAquariums.values()));
     }
 
     // Pointer events for Map Editor (click and drag to select area)
@@ -894,6 +954,12 @@ export class GameScene extends Phaser.Scene {
     }
     if (this.editorAshtrayGhost) {
       this.editorAshtrayGhost.setDepth(ghostDepth);
+    }
+    if (this.editorChessBoardGhost) {
+      this.editorChessBoardGhost.setDepth(ghostDepth);
+    }
+    if (this.editorAquariumGhost) {
+      this.editorAquariumGhost.setDepth(ghostDepth);
     }
   }
 
@@ -1089,68 +1155,92 @@ export class GameScene extends Phaser.Scene {
     const scale = CHARACTER_MAX_SIZE / 25;
     sprite.setDisplaySize(16 * scale, 25 * scale);
 
-    // Name text floating above sprite with native background pill
+    // Name container floating above sprite with 4px border-radius background pill
     const crownPrefix = player.isSuperadmin ? "👑 " : "";
     const displayName = `${crownPrefix}${player.name || "Player"}`;
-    const nameTag = this.add.text(0, -CHARACTER_MAX_SIZE / 2 - 12, displayName, {
+
+    const nameTagBg = this.add.graphics();
+    const nameTagText = this.add.text(0, 0, displayName, {
       fontFamily: "Outfit, sans-serif",
       fontSize: "11px",
       fontStyle: "bold",
       color: "#0f172a",
-      backgroundColor: "rgba(255, 255, 255, 0.95)",
-      padding: { x: 7, y: 2.5 },
       align: "center",
     });
-    nameTag.setOrigin(0.5, 0.5);
+    nameTagText.setOrigin(0.5, 0.5);
+
+    const nameTagContainer = this.add.container(0, -CHARACTER_MAX_SIZE / 2 - 12, [
+      nameTagBg,
+      nameTagText,
+    ]);
+    nameTagContainer.setDepth(10);
+    // Hidden by default (removed from always displaying on top of player; shown on hover)
+    nameTagContainer.setVisible(false);
 
     const spawnX = typeof player.x === "number" ? player.x : WORLD_WIDTH / 2;
     const spawnY = typeof player.y === "number" ? player.y : WORLD_HEIGHT / 2;
     const coords = getTileCoords(spawnX, spawnY);
-    const container = this.add.container(spawnX, spawnY, [sprite, nameTag]);
+    const container = this.add.container(spawnX, spawnY, [sprite, nameTagContainer]);
     container.setDepth(100);
 
-    // If another player, add clickable hit zone to container to show player interaction menu (e.g. Whisper)
-    if (sessionId !== this.multiplayer.sessionId) {
-      const hitZone = this.add.rectangle(0, -5, 54, 66, 0x000000, 0);
-      hitZone.setInteractive({ useHandCursor: true });
-      hitZone.on(
-        "pointerdown",
-        (
-          pointer: Phaser.Input.Pointer,
-          _localX: number,
-          _localY: number,
-          event: Phaser.Types.Input.EventData,
-        ) => {
-          if (!pointer.leftButtonDown()) return;
-          if (this.isEditMode) return;
-          event.stopPropagation();
+    // Hit zone for player hover (shows name) and click/press (opens player context menu)
+    const hitZone = this.add.rectangle(0, -10, 54, 76, 0x000000, 0);
+    hitZone.setInteractive({ useHandCursor: true });
 
-          const vis = this.playerVisuals.get(sessionId);
-          if (!vis) return;
+    hitZone.on("pointerover", () => {
+      if (this.isEditMode) return;
+      if (this.activeMenuSessionId === sessionId) return;
+      nameTagContainer.setVisible(true);
+    });
 
-          this.activeMenuSessionId = sessionId;
-          const p = vis.player || player;
-          if (this.onPlayerClick) {
-            this.onPlayerClick({
-              sessionId,
-              name: p.name || "Player",
-              color: p.color || "#3b82f6",
-              isSuperadmin: !!p.isSuperadmin,
-              userId: p.userId || 0,
-              userSpaceId: p.userSpaceId || (p.userId ? `user_space_${p.userId}` : ""),
-              worldX: vis.container.x,
-              worldY: vis.container.y,
-            });
-          }
-        },
-      );
-      container.add(hitZone);
-    }
+    hitZone.on("pointerout", () => {
+      nameTagContainer.setVisible(false);
+    });
+
+    hitZone.on(
+      "pointerdown",
+      (
+        pointer: Phaser.Input.Pointer,
+        _localX: number,
+        _localY: number,
+        event: Phaser.Types.Input.EventData,
+      ) => {
+        if (!pointer.leftButtonDown()) return;
+        if (this.isEditMode) return;
+        event.stopPropagation();
+        this.lastPlayerClickTime = Date.now();
+
+        const vis = this.playerVisuals.get(sessionId);
+        if (!vis) return;
+
+        // Hide hover name tag when opening menu
+        vis.nameTagContainer.setVisible(false);
+
+        this.activeMenuSessionId = sessionId;
+        const p = vis.player || player;
+        if (this.onPlayerClick) {
+          this.onPlayerClick({
+            sessionId,
+            name: p.name || "Player",
+            color: p.color || "#3b82f6",
+            isSuperadmin: !!p.isSuperadmin,
+            userId: p.userId || 0,
+            userSpaceId: p.userSpaceId || (p.userId ? `user_space_${p.userId}` : ""),
+            worldX: vis.container.x,
+            worldY: vis.container.y,
+          });
+        }
+      },
+    );
+    container.add(hitZone);
 
     const visual: PlayerVisual = {
       container,
       sprite,
-      nameTag,
+      nameTagContainer,
+      nameTagBg,
+      nameTagText,
+      hitZone,
       player,
       currentDirection: (player.direction as any) || "idle",
       facingDirection: initialDir,
@@ -1158,6 +1248,7 @@ export class GameScene extends Phaser.Scene {
       currentFrameIdx: 0,
       lastMoveTime: 0,
     };
+    this.updateNameTag(visual, displayName);
     this.playerVisuals.set(sessionId, visual);
 
     console.log(`🎮 Spawned player for ${player.name} (${sessionId}) at tile (${coords.tileX}, ${coords.tileY})`);
@@ -1174,20 +1265,39 @@ export class GameScene extends Phaser.Scene {
     this.setPlayerAvatars(sessionId, existingAvatars || null);
   }
 
+  private updateNameTag(visual: PlayerVisual, displayName: string) {
+    visual.nameTagText.setText(displayName);
+    const padX = 7;
+    const padY = 3;
+    const bw = Math.max(28, Math.round(visual.nameTagText.width + padX * 2));
+    const bh = Math.round(visual.nameTagText.height + padY * 2);
+
+    visual.nameTagBg.clear();
+    // Drop shadow
+    visual.nameTagBg.fillStyle(0x000000, 0.2);
+    visual.nameTagBg.fillRoundedRect(-bw / 2, -bh / 2 + 1, bw, bh, 4);
+    // Background pill with 4px border radius
+    visual.nameTagBg.fillStyle(0xffffff, 0.95);
+    visual.nameTagBg.fillRoundedRect(-bw / 2, -bh / 2, bw, bh, 4);
+    // Subtle border
+    visual.nameTagBg.lineStyle(1, 0x0f172a, 0.15);
+    visual.nameTagBg.strokeRoundedRect(-bw / 2, -bh / 2, bw, bh, 4);
+  }
+
   private getVisualFrames(sessionId: string, dir: "idle" | "left" | "right" | "up" | "down"): string[] {
     const visual = this.playerVisuals.get(sessionId);
     if (!visual) return ["sprite1"];
 
     if (visual.avatars) {
       const customForDir: string[] = [];
-      for (let i = 0; i < 6; i++) {
+      for (let i = 0; i < 12; i++) {
         const k = `avatar_${sessionId}_${dir}_${i}`;
         if (this.textures.exists(k)) customForDir.push(k);
       }
       if (customForDir.length > 0) return customForDir;
 
       const customIdle: string[] = [];
-      for (let i = 0; i < 6; i++) {
+      for (let i = 0; i < 12; i++) {
         const k = `avatar_${sessionId}_idle_${i}`;
         if (this.textures.exists(k)) customIdle.push(k);
       }
@@ -1239,7 +1349,7 @@ export class GameScene extends Phaser.Scene {
       "down",
     ];
     dirs.forEach((dir) => {
-      for (let i = 0; i < 6; i++) {
+      for (let i = 0; i < 12; i++) {
         const texKey = `avatar_${sessionId}_${dir}_${i}`;
         if (this.textures.exists(texKey)) {
           this.textures.remove(texKey);
@@ -1287,7 +1397,7 @@ export class GameScene extends Phaser.Scene {
       }
       if (frames.length === 0) return;
 
-      frames.slice(0, 6).forEach((frameSrc, idx) => {
+      frames.slice(0, 12).forEach((frameSrc, idx) => {
         if (!frameSrc || (!frameSrc.startsWith("data:image/") && !frameSrc.startsWith("/") && !frameSrc.startsWith("http"))) return;
 
         const texKey = `avatar_${sessionId}_${dir}_${idx}`;
@@ -1351,7 +1461,7 @@ export class GameScene extends Phaser.Scene {
           } else {
             visual.sprite.setDisplaySize(MAX_DIM, MAX_DIM);
           }
-          visual.nameTag.setPosition(0, -CHARACTER_MAX_SIZE / 2 - 12);
+          visual.nameTagContainer.setPosition(0, -CHARACTER_MAX_SIZE / 2 - 12);
           return;
         }
       }
@@ -1408,7 +1518,7 @@ export class GameScene extends Phaser.Scene {
         visual.sprite.setDisplaySize(16 * scale, 25 * scale);
       }
 
-      visual.nameTag.setPosition(0, -CHARACTER_MAX_SIZE / 2 - 12);
+      visual.nameTagContainer.setPosition(0, -CHARACTER_MAX_SIZE / 2 - 12);
     } catch (e) {
       console.warn("Visual update error:", e);
     }
@@ -1423,8 +1533,8 @@ export class GameScene extends Phaser.Scene {
     // Update name
     const crownPrefix = player.isSuperadmin ? "👑 " : "";
     const expectedName = `${crownPrefix}${player.name || "Player"}`;
-    if (visual.nameTag.text !== expectedName) {
-      visual.nameTag.setText(expectedName);
+    if (visual.nameTagText.text !== expectedName) {
+      this.updateNameTag(visual, expectedName);
     }
 
     // For remote player, if server says idle, immediately ensure direction and animation stop
@@ -1654,8 +1764,13 @@ export class GameScene extends Phaser.Scene {
     return !!(el && !el.classList.contains("hidden"));
   }
 
+  public isFishingModalOpen(): boolean {
+    const el = document.getElementById("aquarium-modal");
+    return !!(el && !el.classList.contains("hidden"));
+  }
+
   public setControlsActive(active: boolean) {
-    if (active && (this.isTyperaceModalOpen() || this.isSmokingGameModalOpen() || this.isChessModalOpen())) {
+    if (active && (this.isTyperaceModalOpen() || this.isSmokingGameModalOpen() || this.isChessModalOpen() || this.isFishingModalOpen())) {
       active = false;
     }
     this.controlsActive = active;
@@ -2181,6 +2296,24 @@ export class GameScene extends Phaser.Scene {
         const nearbyCb = closestChessBoardDist <= 1.5 * TILE_SIZE ? closestChessBoard : null;
         this.nearbyChessBoardId = nearbyCb ? (nearbyCb as ChessBoardState).id : null;
 
+        // Update nearby aquarium state for interaction
+        let closestAquarium: AquariumState | null = null;
+        let closestAquariumDist = Infinity;
+        this.aquariumVisuals.forEach((aqVisual) => {
+          const aq = aqVisual.state;
+          const dist = Phaser.Math.Distance.Between(lx, ly, aq.x, aq.y);
+          if (dist < closestAquariumDist) {
+            closestAquariumDist = dist;
+            closestAquarium = aq;
+          }
+          const isNearby = dist <= 1.5 * TILE_SIZE;
+          if (aqVisual.promptText) {
+            aqVisual.promptText.setVisible(isNearby && !this.isEditMode && !this.isFishingModalOpen());
+          }
+        });
+        const nearbyAq = closestAquariumDist <= 1.5 * TILE_SIZE ? closestAquarium : null;
+        this.nearbyAquariumId = nearbyAq ? (nearbyAq as AquariumState).id : null;
+
         // Apply audio attenuation to JukeboxManager
         if (this.jukeboxManager) {
           if (bestJukebox && highestVolume > 0) {
@@ -2204,8 +2337,10 @@ export class GameScene extends Phaser.Scene {
         const cam = this.cameras.main;
         const worldX = vis.container.x;
         const worldY = vis.container.y - CHARACTER_MAX_SIZE / 2 - 20;
-        const screenX = (worldX - cam.scrollX) * cam.zoom;
-        const screenY = (worldY - cam.scrollY) * cam.zoom;
+        const screenX =
+          (worldX - cam.scrollX - cam.width * 0.5) * cam.zoom + cam.width * 0.5;
+        const screenY =
+          (worldY - cam.scrollY - cam.height * 0.5) * cam.zoom + cam.height * 0.5;
         if (this.onPlayerMenuPositionUpdate) {
           this.onPlayerMenuPositionUpdate({
             sessionId: this.activeMenuSessionId,
@@ -2260,9 +2395,18 @@ export class GameScene extends Phaser.Scene {
   }
 
   private setupEditorPointerEvents() {
-    this.input.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
-      // Whenever user clicks on empty canvas, close any active player menu
-      this.closePlayerMenu();
+    this.input.on(
+      "pointerdown",
+      (pointer: Phaser.Input.Pointer, currentlyOver: Phaser.GameObjects.GameObject[]) => {
+        // If a player or interactive object was just clicked, do not close the menu
+        if (Date.now() - this.lastPlayerClickTime < 200) {
+          return;
+        }
+        if (currentlyOver && currentlyOver.length > 0) {
+          return;
+        }
+        // Whenever user clicks on empty canvas, close any active player menu
+        this.closePlayerMenu();
 
       // Whenever user clicks on canvas, blur any active input element so WASD works immediately
       if (document.activeElement && document.activeElement !== document.body) {
@@ -2347,6 +2491,20 @@ export class GameScene extends Phaser.Scene {
           this.multiplayer.placeChessBoard(
             cx,
             cy,
+            this.decorationPassable,
+            this.decorationOntop,
+            this.placementLayer
+          );
+          return;
+        }
+
+        if (this.activeEditorTool === "aquarium") {
+          // Unbounded free-placement (not snapped to grid):
+          const aqx = Math.round(pointer.worldX);
+          const aqy = Math.round(pointer.worldY);
+          this.multiplayer.placeAquarium(
+            aqx,
+            aqy,
             this.decorationPassable,
             this.decorationOntop,
             this.placementLayer
@@ -2523,6 +2681,32 @@ export class GameScene extends Phaser.Scene {
       } else {
         if (this.editorChessBoardGhost) {
           this.editorChessBoardGhost.setVisible(false);
+        }
+      }
+
+      if (this.activeEditorTool === "aquarium") {
+        this.editorHoverGraphics.clear();
+        if (this.editorFreeformGhost) this.editorFreeformGhost.setVisible(false);
+        if (this.editorJukeboxGhost) this.editorJukeboxGhost.setVisible(false);
+        if (this.editorTypewriterGhost) this.editorTypewriterGhost.setVisible(false);
+        if (this.editorAshtrayGhost) this.editorAshtrayGhost.setVisible(false);
+        if (this.editorChessBoardGhost) this.editorChessBoardGhost.setVisible(false);
+        if (this.editorAquariumGhost) {
+          this.editorAquariumGhost.setDepth(
+            this.computeLayerDepth(this.placementLayer, this.decorationOntop)
+          );
+          this.editorAquariumGhost.setPosition(pointer.worldX, pointer.worldY);
+          this.editorAquariumGhost.setVisible(true);
+        }
+        this.editorOverlayText.setText(
+          `🐟 Aquarium • Layer ${this.placementLayer} (↑/↓) • Click to place`
+        );
+        this.editorOverlayText.setPosition(pointer.worldX + 28, Math.max(8, pointer.worldY - 28));
+        this.editorOverlayText.setVisible(true);
+        return;
+      } else {
+        if (this.editorAquariumGhost) {
+          this.editorAquariumGhost.setVisible(false);
         }
       }
 
@@ -4078,6 +4262,7 @@ export class GameScene extends Phaser.Scene {
       | "typewriter"
       | "ashtray"
       | "chess_board"
+      | "aquarium"
       | "freeform_decoration"
       | "spawn_point"
       | "color_dropper"
@@ -4112,6 +4297,9 @@ export class GameScene extends Phaser.Scene {
     if (tool !== "chess_board" && this.editorChessBoardGhost) {
       this.editorChessBoardGhost.setVisible(false);
     }
+    if (tool !== "aquarium" && this.editorAquariumGhost) {
+      this.editorAquariumGhost.setVisible(false);
+    }
     if (tool !== "freeform_decoration" && this.editorFreeformGhost) {
       this.editorFreeformGhost.setVisible(false);
     }
@@ -4121,6 +4309,7 @@ export class GameScene extends Phaser.Scene {
     const clean = rawKey.includes("|") ? rawKey.split("|")[0] : rawKey;
     const norm = normalizeDecorationAssetKey(normalizeFloorAssetKey(clean));
     if (norm === "ashtray_1") return "Ashtray";
+    if (norm === "aquarium_1" || norm === "aquarium") return "Aquarium";
     if (norm === "chess_board_1" || norm === "chess_board") return "Chess Board";
     if (norm === "typewriter_1") return "Typewriter";
     if (norm === "jukebox_1") return "YouTube Jukebox";
@@ -4147,6 +4336,22 @@ export class GameScene extends Phaser.Scene {
   }
 
   public getInspectableItemAt(worldX: number, worldY: number): InspectableMapItem | null {
+    // Check Aquariums (freeform)
+    for (const vis of this.aquariumVisuals.values()) {
+      const aq = vis.state;
+      if (Math.abs(worldX - aq.x) <= 26 && Math.abs(worldY - aq.y) <= 26) {
+        return {
+          kind: "aquarium",
+          id: aq.id,
+          label: "Aquarium",
+          categoryLabel: "Fishing",
+          worldX: aq.x,
+          worldY: aq.y - 25,
+          bounds: { x: aq.x - 25, y: aq.y - 25, width: 50, height: 50 },
+        };
+      }
+    }
+
     // Check Chess Boards (freeform)
     for (const vis of this.chessBoardVisuals.values()) {
       const cb = vis.state;
@@ -4418,7 +4623,12 @@ export class GameScene extends Phaser.Scene {
   public deleteInspectableItem(item: InspectableMapItem) {
     if (!item) return;
 
-    if (item.kind === "chess_board") {
+    if (item.kind === "aquarium") {
+      this.removeAquarium(item.id);
+      if (this.multiplayer) {
+        this.multiplayer.deleteAquarium(item.id);
+      }
+    } else if (item.kind === "chess_board") {
       this.removeChessBoard(item.id);
       if (this.multiplayer) {
         this.multiplayer.deleteChessBoard(item.id);
@@ -4545,6 +4755,10 @@ export class GameScene extends Phaser.Scene {
       const at = this.ashtrayVisuals.get(item.id)?.state;
       return at ? at.passable === false : false;
     }
+    if (item.kind === "aquarium") {
+      const aq = this.aquariumVisuals.get(item.id)?.state;
+      return aq ? aq.passable === false : false;
+    }
     if (item.kind === "chess_board") {
       const cb = this.chessBoardVisuals.get(item.id)?.state;
       return cb ? cb.passable === false : false;
@@ -4627,6 +4841,17 @@ export class GameScene extends Phaser.Scene {
       at.passable = !newState;
       if (this.multiplayer) {
         this.multiplayer.setAshtrayPassable(item.id, at.passable);
+      }
+      this.drawObstacles();
+      return newState;
+    }
+    if (item.kind === "aquarium") {
+      const aq = this.aquariumVisuals.get(item.id)?.state;
+      if (!aq) return false;
+      const newState = aq.passable !== false; // if previously passable, newState is true (obstacle ON)
+      aq.passable = !newState;
+      if (this.multiplayer) {
+        this.multiplayer.setAquariumPassable(item.id, aq.passable);
       }
       this.drawObstacles();
       return newState;
@@ -5581,5 +5806,196 @@ export class GameScene extends Phaser.Scene {
       state: cb,
     };
     this.chessBoardVisuals.set(cb.id, visual);
+  }
+
+  // --- Aquarium World Visuals & Fishing Minigame Interaction ---
+
+  public setAquariums(aquariums: AquariumState[]) {
+    if (!Array.isArray(aquariums)) return;
+    const currentIds = new Set(aquariums.map((a) => a.id));
+
+    for (const aq of aquariums) {
+      this.updateAquarium(aq);
+    }
+
+    this.aquariumVisuals.forEach((_vis, id) => {
+      if (!currentIds.has(id)) {
+        this.removeAquarium(id);
+      }
+    });
+  }
+
+  public updateAquarium(aq: AquariumState) {
+    const existing = this.aquariumVisuals.get(aq.id);
+    if (existing) {
+      existing.state = aq;
+      existing.container.setPosition(aq.x, aq.y);
+      existing.container.setDepth(this.computeLayerDepth(aq.layer ?? 0, !!aq.ontop));
+    } else {
+      this.createAquariumVisual(aq);
+    }
+    this.drawObstacles();
+  }
+
+  public removeAquarium(aqId: string) {
+    const existing = this.aquariumVisuals.get(aqId);
+    if (existing) {
+      existing.container.destroy();
+      this.aquariumVisuals.delete(aqId);
+      if (this.nearbyAquariumId === aqId) {
+        this.nearbyAquariumId = null;
+      }
+      this.drawObstacles();
+    }
+  }
+
+  private createAquariumVisual(aq: AquariumState) {
+    const sprite = this.add.image(0, 0, "aquarium_1");
+    sprite.setDisplaySize(50, 50);
+
+    const hitZone = this.add.rectangle(0, 0, 54, 54, 0x000000, 0);
+    hitZone.setInteractive({ useHandCursor: true });
+    hitZone.on(
+      "pointerdown",
+      (
+        pointer: Phaser.Input.Pointer,
+        _lx: number,
+        _ly: number,
+        event: Phaser.Types.Input.EventData
+      ) => {
+        if (!pointer.leftButtonDown()) return;
+        event.stopPropagation();
+
+        if (this.isEditMode) {
+          if (this.activeEditorTool === "cursor") {
+            this.openEditorItemMenu({
+              kind: "aquarium",
+              id: aq.id,
+              label: "Aquarium",
+              categoryLabel: "Fishing",
+              worldX: aq.x,
+              worldY: aq.y - 25,
+              bounds: { x: aq.x - 25, y: aq.y - 25, width: 50, height: 50 },
+            });
+            return;
+          }
+          if (this.activeEditorTool === "clear_decoration") {
+            this.multiplayer.deleteAquarium(aq.id);
+            return;
+          }
+          if (this.activeEditorTool === "aquarium") {
+            if ((aq.layer ?? 0) === this.placementLayer) {
+              this.multiplayer.deleteAquarium(aq.id);
+            } else {
+              const tx = Math.round(pointer.worldX);
+              const ty = Math.round(pointer.worldY);
+              this.multiplayer.placeAquarium(
+                tx,
+                ty,
+                this.decorationPassable,
+                this.decorationOntop,
+                this.placementLayer
+              );
+            }
+            return;
+          }
+          if (this.activeEditorTool === "chess_board") {
+            const cx = Math.round(pointer.worldX);
+            const cy = Math.round(pointer.worldY);
+            this.multiplayer.placeChessBoard(
+              cx,
+              cy,
+              this.decorationPassable,
+              this.decorationOntop,
+              this.placementLayer
+            );
+            return;
+          }
+          if (this.activeEditorTool === "ashtray") {
+            const ax = Math.round(pointer.worldX);
+            const ay = Math.round(pointer.worldY);
+            this.multiplayer.placeAshtray(
+              ax,
+              ay,
+              this.decorationPassable,
+              this.decorationOntop,
+              this.placementLayer
+            );
+            return;
+          }
+          if (this.activeEditorTool === "typewriter") {
+            const tx = Math.round(pointer.worldX);
+            const ty = Math.round(pointer.worldY);
+            this.multiplayer.placeTypewriter(
+              tx,
+              ty,
+              this.decorationPassable,
+              this.decorationOntop,
+              this.placementLayer
+            );
+            return;
+          }
+          if (this.activeEditorTool === "jukebox") {
+            const jx = Math.round(pointer.worldX);
+            const jy = Math.round(pointer.worldY);
+            this.multiplayer.placeJukebox(
+              jx,
+              jy,
+              this.decorationPassable,
+              this.decorationOntop,
+              this.placementLayer
+            );
+            return;
+          }
+          if (this.activeEditorTool === "freeform_decoration") {
+            const fx = Math.round(pointer.worldX);
+            const fy = Math.round(pointer.worldY);
+            this.placeFreeformDecoration(
+              this.selectedAssetKey,
+              fx,
+              fy,
+              this.selectedTileColor,
+              this.decorationPassable,
+              this.decorationOntop,
+              this.placementLayer
+            );
+            return;
+          }
+          const col = Math.max(0, Math.min(GRID_COLS - 1, Math.floor(pointer.worldX / TILE_SIZE)));
+          const row = Math.max(0, Math.min(GRID_ROWS - 1, Math.floor(pointer.worldY / TILE_SIZE)));
+          this.isSelectingArea = true;
+          this.selectionStartTile = { x: col, y: row };
+          this.selectionCurrentTile = { x: col, y: row };
+          this.updateSelectionVisuals();
+        } else {
+          if (this.onAquariumClick) {
+            this.onAquariumClick(aq.id);
+          }
+        }
+      }
+    );
+
+    const promptText = this.add.text(0, -32, "Press E to Fish", {
+      fontFamily: "Outfit, sans-serif",
+      fontSize: "11px",
+      fontStyle: "bold",
+      color: "#38bdf8",
+      backgroundColor: "rgba(15, 23, 42, 0.88)",
+      padding: { x: 6, y: 2.5 },
+    });
+    promptText.setOrigin(0.5, 0.5);
+    promptText.setVisible(false);
+
+    const container = this.add.container(aq.x, aq.y, [sprite, hitZone, promptText]);
+    container.setDepth(this.computeLayerDepth(aq.layer ?? 0, !!aq.ontop));
+
+    const visual: AquariumVisual = {
+      container,
+      sprite,
+      hitZone,
+      promptText,
+      state: aq,
+    };
+    this.aquariumVisuals.set(aq.id, visual);
   }
 }

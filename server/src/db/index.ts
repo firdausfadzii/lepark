@@ -7,6 +7,7 @@ import {
   TypewriterState,
   AshtrayState,
   ChessBoardState,
+  AquariumState,
   ChatMessage,
   ChatRoomType,
 } from "shared";
@@ -42,6 +43,8 @@ export interface UserRecord {
   display_name: string | null;
   password_hash: string;
   role: "user" | "superadmin";
+  parking_points: number;
+  unlocked_skins?: string[];
   created_at: Date;
   updated_at: Date;
 }
@@ -61,6 +64,7 @@ export interface SpaceRecord {
   typewriters?: TypewriterState[];
   ashtrays?: AshtrayState[];
   chess_boards?: ChessBoardState[];
+  aquariums?: AquariumState[];
   created_at: Date;
   updated_at: Date;
 }
@@ -76,8 +80,7 @@ let inMemoryIdCounter = 1;
  */
 async function seedDefaultData(isPostgres: boolean, client?: PoolClient) {
   const defaultSuperadmins = [
-    { username: "admin", password: "adminpassword123", displayName: "Server Admin" },
-    { username: "superadmin", password: "adminpassword123", displayName: "Super Administrator" },
+    { username: "superadmin", password: "JomLepark123!", displayName: "Super Administrator" },
   ];
 
   for (const adminData of defaultSuperadmins) {
@@ -107,6 +110,8 @@ async function seedDefaultData(isPostgres: boolean, client?: PoolClient) {
           display_name: adminData.displayName,
           password_hash: passwordHash,
           role: "superadmin",
+          parking_points: 0,
+          unlocked_skins: [],
           created_at: new Date(),
           updated_at: new Date(),
         };
@@ -119,13 +124,13 @@ async function seedDefaultData(isPostgres: boolean, client?: PoolClient) {
   let adminId = 1;
   if (isPostgres && client) {
     const adminUser = await client.query(
-      "SELECT id FROM users WHERE LOWER(username) = 'admin' LIMIT 1"
+      "SELECT id FROM users WHERE LOWER(username) = 'superadmin' LIMIT 1"
     );
     if (adminUser.rows.length > 0) {
       adminId = adminUser.rows[0].id;
     }
   } else {
-    const adminUser = inMemoryUsers.get("admin");
+    const adminUser = inMemoryUsers.get("superadmin");
     if (adminUser) adminId = adminUser.id;
   }
 
@@ -161,7 +166,7 @@ async function seedDefaultData(isPostgres: boolean, client?: PoolClient) {
           name: s.name,
           category: s.category,
           owner_id: adminId,
-          owner_username: "admin",
+          owner_username: "superadmin",
           is_public: s.is_public,
           is_superadmin_space: s.is_superadmin_space,
           whitelist: s.whitelist,
@@ -190,6 +195,8 @@ async function setupDatabaseSchema(client: PoolClient) {
     );
     CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username_lower ON users (LOWER(username));
     ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(20) DEFAULT 'user';
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS parking_points INT DEFAULT 0 NOT NULL;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS unlocked_skins JSONB DEFAULT '[]'::jsonb;
   `);
 
   // 2. Players table
@@ -222,6 +229,7 @@ async function setupDatabaseSchema(client: PoolClient) {
       typewriters JSONB DEFAULT '[]'::jsonb,
       ashtrays JSONB DEFAULT '[]'::jsonb,
       chess_boards JSONB DEFAULT '[]'::jsonb,
+      aquariums JSONB DEFAULT '[]'::jsonb,
       created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     );
@@ -231,6 +239,7 @@ async function setupDatabaseSchema(client: PoolClient) {
     ALTER TABLE spaces ADD COLUMN IF NOT EXISTS typewriters JSONB DEFAULT '[]'::jsonb;
     ALTER TABLE spaces ADD COLUMN IF NOT EXISTS ashtrays JSONB DEFAULT '[]'::jsonb;
     ALTER TABLE spaces ADD COLUMN IF NOT EXISTS chess_boards JSONB DEFAULT '[]'::jsonb;
+    ALTER TABLE spaces ADD COLUMN IF NOT EXISTS aquariums JSONB DEFAULT '[]'::jsonb;
     CREATE INDEX IF NOT EXISTS idx_spaces_superadmin ON spaces (is_superadmin_space, category);
 
     -- Auto-migrate legacy tile assets in all spaces
@@ -286,10 +295,10 @@ async function syncInMemoryToPostgres(client: PoolClient) {
       );
       if (existing.rows.length === 0) {
         await client.query(
-          `INSERT INTO users (username, display_name, password_hash, role)
-           VALUES ($1, $2, $3, $4)
+          `INSERT INTO users (username, display_name, password_hash, role, parking_points, unlocked_skins)
+           VALUES ($1, $2, $3, $4, $5, $6)
            ON CONFLICT (username) DO NOTHING`,
-          [user.username, user.display_name, user.password_hash, user.role]
+          [user.username, user.display_name, user.password_hash, user.role, user.parking_points || 0, JSON.stringify(user.unlocked_skins || [])]
         );
       }
     } catch (err) {
@@ -316,6 +325,7 @@ async function syncInMemoryToPostgres(client: PoolClient) {
         typewriters: parseTypewriters(row.typewriters),
         ashtrays: parseAshtrays(row.ashtrays),
         chess_boards: parseChessBoards(row.chess_boards),
+        aquariums: parseAquariums(row.aquariums),
         created_at: row.created_at,
         updated_at: row.updated_at,
       });
@@ -450,7 +460,7 @@ export async function findUserByUsername(username: string): Promise<UserRecord |
   if (isDbConnected) {
     try {
       const res = await pool.query(
-        "SELECT id, username, display_name, password_hash, role, created_at, updated_at FROM users WHERE LOWER(username) = LOWER($1) LIMIT 1",
+        "SELECT id, username, display_name, password_hash, role, COALESCE(parking_points, 0) as parking_points, COALESCE(unlocked_skins, '[]'::jsonb) as unlocked_skins, created_at, updated_at FROM users WHERE LOWER(username) = LOWER($1) LIMIT 1",
         [cleanUsername]
       );
       if (res.rows[0]) {
@@ -479,7 +489,7 @@ export async function findUserById(id: number): Promise<UserRecord | null> {
   if (isDbConnected) {
     try {
       const res = await pool.query(
-        "SELECT id, username, display_name, password_hash, role, created_at, updated_at FROM users WHERE id = $1 LIMIT 1",
+        "SELECT id, username, display_name, password_hash, role, COALESCE(parking_points, 0) as parking_points, COALESCE(unlocked_skins, '[]'::jsonb) as unlocked_skins, created_at, updated_at FROM users WHERE id = $1 LIMIT 1",
         [id]
       );
       if (res.rows[0]) {
@@ -516,9 +526,9 @@ export async function createUser(
   if (isDbConnected) {
     try {
       const res = await pool.query(
-        `INSERT INTO users (username, display_name, password_hash, role)
-         VALUES ($1, $2, $3, $4)
-         RETURNING id, username, display_name, password_hash, role, created_at, updated_at`,
+        `INSERT INTO users (username, display_name, password_hash, role, parking_points, unlocked_skins)
+         VALUES ($1, $2, $3, $4, 0, '[]'::jsonb)
+         RETURNING id, username, display_name, password_hash, role, COALESCE(parking_points, 0) as parking_points, COALESCE(unlocked_skins, '[]'::jsonb) as unlocked_skins, created_at, updated_at`,
         [cleanUsername, cleanDisplayName, passwordHash, role]
       );
       createdUser = {
@@ -538,6 +548,8 @@ export async function createUser(
         display_name: cleanDisplayName,
         password_hash: passwordHash,
         role,
+        parking_points: 0,
+        unlocked_skins: [],
         created_at: new Date(),
         updated_at: new Date(),
       };
@@ -551,6 +563,7 @@ export async function createUser(
       display_name: cleanDisplayName,
       password_hash: passwordHash,
       role,
+      parking_points: 0,
       created_at: new Date(),
       updated_at: new Date(),
     };
@@ -576,7 +589,7 @@ export async function updateUserDisplayName(
         `UPDATE users
          SET display_name = $2, updated_at = CURRENT_TIMESTAMP
          WHERE id = $1
-         RETURNING id, username, display_name, password_hash, role, created_at, updated_at`,
+         RETURNING id, username, display_name, password_hash, role, COALESCE(parking_points, 0) as parking_points, COALESCE(unlocked_skins, '[]'::jsonb) as unlocked_skins, created_at, updated_at`,
         [id, cleanDisplayName]
       );
       if (res.rows[0]) {
@@ -601,6 +614,150 @@ export async function updateUserDisplayName(
     }
   }
   return null;
+}
+
+export async function getUserParkingPoints(userId: number): Promise<number> {
+  if (isDbConnected) {
+    try {
+      const res = await pool.query(
+        "SELECT COALESCE(parking_points, 0) as parking_points FROM users WHERE id = $1 LIMIT 1",
+        [userId]
+      );
+      if (res.rows[0]) {
+        return Number(res.rows[0].parking_points) || 0;
+      }
+    } catch (err) {
+      handleDbQueryError("Error getting user parking points", err);
+    }
+  }
+  for (const user of inMemoryUsers.values()) {
+    if (user.id === userId) {
+      return user.parking_points || 0;
+    }
+  }
+  return 0;
+}
+
+
+export async function unlockSkinForUser(
+  userId: number,
+  skinId: string,
+  cost: number
+): Promise<{ success: boolean; newPoints: number; unlockedSkins: string[]; error?: string }> {
+  const user = await findUserById(userId);
+  if (!user) {
+    return { success: false, newPoints: 0, unlockedSkins: [], error: "User not found." };
+  }
+
+  const currentSkins: string[] = Array.isArray(user.unlocked_skins) ? user.unlocked_skins : [];
+
+  if (currentSkins.includes(skinId)) {
+    return {
+      success: true,
+      newPoints: user.parking_points || 0,
+      unlockedSkins: currentSkins,
+    };
+  }
+
+  const currentPoints = user.parking_points || 0;
+  if (currentPoints < cost) {
+    return {
+      success: false,
+      newPoints: currentPoints,
+      unlockedSkins: currentSkins,
+      error: `Requires ${cost} parking points (you have ${currentPoints}).`,
+    };
+  }
+
+  const newSkins = [...currentSkins, skinId];
+
+  if (isDbConnected) {
+    try {
+      const res = await pool.query(
+        `UPDATE users
+         SET parking_points = parking_points - $2,
+             unlocked_skins = $3::jsonb,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = $1 AND parking_points >= $2
+         RETURNING COALESCE(parking_points, 0) as parking_points, COALESCE(unlocked_skins, '[]'::jsonb) as unlocked_skins`,
+        [userId, cost, JSON.stringify(newSkins)]
+      );
+
+      if (res.rows.length === 0) {
+        return {
+          success: false,
+          newPoints: currentPoints,
+          unlockedSkins: currentSkins,
+          error: "Insufficient parking points.",
+        };
+      }
+
+      const updatedPoints = Number(res.rows[0].parking_points) || 0;
+      const updatedSkins = Array.isArray(res.rows[0].unlocked_skins) ? res.rows[0].unlocked_skins : newSkins;
+
+      for (const u of inMemoryUsers.values()) {
+        if (u.id === userId) {
+          u.parking_points = updatedPoints;
+          u.unlocked_skins = updatedSkins;
+        }
+      }
+
+      return {
+        success: true,
+        newPoints: updatedPoints,
+        unlockedSkins: updatedSkins,
+      };
+    } catch (err) {
+      handleDbQueryError("Error unlocking skin", err);
+    }
+  }
+
+  // In-memory fallback
+  user.parking_points = (user.parking_points || 0) - cost;
+  user.unlocked_skins = newSkins;
+  for (const u of inMemoryUsers.values()) {
+    if (u.id === userId) {
+      u.parking_points = user.parking_points;
+      u.unlocked_skins = newSkins;
+    }
+  }
+
+  return {
+    success: true,
+    newPoints: user.parking_points,
+    unlockedSkins: newSkins,
+  };
+}
+
+export async function addParkingPoints(userId: number, amount: number = 1): Promise<number> {
+  let newPoints = 0;
+  if (isDbConnected) {
+    try {
+      const res = await pool.query(
+        `UPDATE users
+         SET parking_points = COALESCE(parking_points, 0) + $2, updated_at = CURRENT_TIMESTAMP
+         WHERE id = $1
+         RETURNING COALESCE(parking_points, 0) as parking_points`,
+        [userId, amount]
+      );
+      if (res.rows[0]) {
+        newPoints = Number(res.rows[0].parking_points) || 0;
+      }
+    } catch (err) {
+      handleDbQueryError("Error adding parking points", err);
+    }
+  }
+
+  for (const user of inMemoryUsers.values()) {
+    if (user.id === userId) {
+      user.parking_points = (user.parking_points || 0) + amount;
+      if (!isDbConnected || newPoints === 0) {
+        newPoints = user.parking_points;
+      }
+      break;
+    }
+  }
+  return newPoints;
 }
 
 // ==========================================
@@ -673,6 +830,17 @@ export function parseChessBoards(raw: any): ChessBoardState[] {
   return [];
 }
 
+export function parseAquariums(raw: any): AquariumState[] {
+  if (Array.isArray(raw)) return raw;
+  if (typeof raw === "string") {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    } catch {}
+  }
+  return [];
+}
+
 export async function getSuperadminSpaces(): Promise<SpaceRecord[]> {
   if (isDbConnected) {
     try {
@@ -689,7 +857,7 @@ export async function getSuperadminSpaces(): Promise<SpaceRecord[]> {
         name: row.name,
         category: row.category || "General",
         owner_id: row.owner_id,
-        owner_username: row.owner_username || "admin",
+        owner_username: row.owner_username || "superadmin",
         is_public: row.is_public,
         is_superadmin_space: true,
         whitelist: parseWhitelist(row.whitelist),
@@ -715,7 +883,7 @@ export async function getSpaceById(id: string): Promise<SpaceRecord | null> {
   if (isDbConnected) {
     try {
       const res = await pool.query(
-        `SELECT s.id, s.name, s.category, s.owner_id, s.is_public, s.is_superadmin_space, s.whitelist, s.private_zones, s.jukeboxes, s.typewriters, s.ashtrays, s.chess_boards, s.created_at, s.updated_at,
+        `SELECT s.id, s.name, s.category, s.owner_id, s.is_public, s.is_superadmin_space, s.whitelist, s.private_zones, s.jukeboxes, s.typewriters, s.ashtrays, s.chess_boards, s.aquariums, s.created_at, s.updated_at,
                 u.username as owner_username
          FROM spaces s
          LEFT JOIN users u ON s.owner_id = u.id
@@ -738,6 +906,7 @@ export async function getSpaceById(id: string): Promise<SpaceRecord | null> {
           typewriters: parseTypewriters(row.typewriters),
           ashtrays: parseAshtrays(row.ashtrays),
           chess_boards: parseChessBoards(row.chess_boards),
+        aquariums: parseAquariums(row.aquariums),
           created_at: row.created_at,
           updated_at: row.updated_at,
         };
@@ -758,6 +927,7 @@ export async function getSpaceById(id: string): Promise<SpaceRecord | null> {
         typewriters: space.typewriters ? [...space.typewriters] : [],
         ashtrays: space.ashtrays ? [...space.ashtrays] : [],
         chess_boards: space.chess_boards ? [...space.chess_boards] : [],
+        aquariums: space.aquariums ? [...space.aquariums] : [],
       }
     : null;
 }
@@ -1388,6 +1558,63 @@ export async function updateSpaceChessBoards(
 }
 
 // ==========================================
+/**
+ * Get aquariums for a space
+ */
+export async function getSpaceAquariums(spaceId: string): Promise<AquariumState[]> {
+  if (isDbConnected) {
+    try {
+      const res = await pool.query("SELECT aquariums FROM spaces WHERE id = $1", [spaceId]);
+      if (res.rows[0]?.aquariums) {
+        return parseAquariums(res.rows[0].aquariums);
+      }
+      return [];
+    } catch (err) {
+      handleDbQueryError("Error fetching space aquariums from DB", err);
+    }
+  }
+  const inMem = inMemorySpaces.get(spaceId);
+  return inMem?.aquariums ? [...inMem.aquariums] : [];
+}
+
+/**
+ * Update and persist aquariums for a space
+ */
+export async function updateSpaceAquariums(
+  spaceId: string,
+  aquariums: AquariumState[]
+): Promise<boolean> {
+  if (isDbConnected) {
+    try {
+      const res = await pool.query(
+        "UPDATE spaces SET aquariums = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1",
+        [spaceId, JSON.stringify(aquariums)]
+      );
+      if (res.rowCount === 0) {
+        await pool.query(
+          `INSERT INTO spaces (id, name, category, is_public, aquariums)
+           VALUES ($1, $2, 'General', true, $3)
+           ON CONFLICT (id) DO UPDATE SET aquariums = EXCLUDED.aquariums, updated_at = CURRENT_TIMESTAMP`,
+          [
+            spaceId,
+            spaceId.startsWith("user_space_") ? "Personal Space" : spaceId,
+            JSON.stringify(aquariums),
+          ]
+        );
+      }
+    } catch (err) {
+      handleDbQueryError("Error updating space aquariums in DB", err);
+    }
+  }
+
+  let inMem = inMemorySpaces.get(spaceId);
+  if (inMem) {
+    inMem.aquariums = [...aquariums];
+    inMem.updated_at = new Date();
+  }
+  return true;
+}
+
 // Chat Messages Database Operations
 // ==========================================
 

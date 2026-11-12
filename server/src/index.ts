@@ -1,3 +1,4 @@
+import { parkingPointsService } from "./services/ParkingPointsService";
 import http from "http";
 import https from "https";
 import fs from "fs";
@@ -24,6 +25,7 @@ import {
   createSuperadminSpace,
   updateSpace,
   deleteSpace,
+  unlockSkinForUser,
 } from "./db";
 import { hashPassword, verifyPassword, generateToken, verifyToken } from "./auth";
 import { AuthUser, Space, SpacesListResponse, SpaceResponse } from "shared";
@@ -196,6 +198,8 @@ app.post("/api/auth/register", async (req, res) => {
       username: createdUser.username,
       displayName: createdUser.display_name,
       role: createdUser.role,
+      parkingPoints: createdUser.parking_points || 0,
+      unlockedSkins: createdUser.unlocked_skins || [],
     };
 
     const token = generateToken(user);
@@ -254,6 +258,8 @@ app.post("/api/auth/login", async (req, res) => {
       username: userRecord.username,
       displayName: userRecord.display_name,
       role: userRecord.role,
+      parkingPoints: userRecord.parking_points || 0,
+      unlockedSkins: userRecord.unlocked_skins || [],
     };
 
     const token = generateToken(user);
@@ -295,6 +301,8 @@ app.get("/api/auth/me", async (req, res) => {
       username: userRecord.username,
       displayName: userRecord.display_name,
       role: userRecord.role,
+      parkingPoints: userRecord.parking_points || 0,
+      unlockedSkins: userRecord.unlocked_skins || [],
     };
 
     return res.json({ success: true, user: updatedUser });
@@ -330,6 +338,8 @@ app.put("/api/auth/profile", async (req, res) => {
       username: updatedRecord.username,
       displayName: updatedRecord.display_name,
       role: updatedRecord.role,
+      parkingPoints: updatedRecord.parking_points || 0,
+      unlockedSkins: updatedRecord.unlocked_skins || [],
     };
 
     const newToken = generateToken(updatedUser);
@@ -342,6 +352,59 @@ app.put("/api/auth/profile", async (req, res) => {
   } catch (err: any) {
     console.error("Update profile error:", err);
     return res.status(500).json({ success: false, error: "Internal server error." });
+  }
+});
+
+
+/**
+ * Unlock a character sprite skin with parking points.
+ * POST /api/skins/unlock
+ */
+app.post("/api/skins/unlock", async (req, res) => {
+  try {
+    const user = getAuthUser(req);
+    if (!user) {
+      return res.status(401).json({ success: false, error: "Invalid or expired authorization token." });
+    }
+
+    const { skinId } = req.body || {};
+    if (!skinId || typeof skinId !== "string") {
+      return res.status(400).json({ success: false, error: "Missing skinId." });
+    }
+
+    // Define skin costs
+    const SKIN_COSTS: Record<string, number> = {
+      ghost_slime: 10,
+    };
+
+    if (!(skinId in SKIN_COSTS)) {
+      return res.status(400).json({ success: false, error: `Skin '${skinId}' is not unlockable with points.` });
+    }
+
+    const cost = SKIN_COSTS[skinId];
+    const result = await unlockSkinForUser(user.id, skinId, cost);
+
+    if (!result.success) {
+      return res.status(400).json({
+        success: false,
+        error: result.error || "Failed to unlock skin.",
+        points: result.newPoints,
+        unlockedSkins: result.unlockedSkins,
+      });
+    }
+
+    // Synchronize points with active sessions in ParkingPointsService
+    parkingPointsService.updateUserPoints(user.id, result.newPoints);
+
+    return res.json({
+      success: true,
+      points: result.newPoints,
+      unlockedSkins: result.unlockedSkins,
+      skinId,
+    });
+  } catch (err: any) {
+    console.error("Unlock skin error:", err);
+    return res.status(500).json({ success: false, error: "Internal server error while unlocking skin." });
   }
 });
 
@@ -675,7 +738,7 @@ app.put("/api/spaces/:id", async (req, res) => {
       name: updated.name,
       category: updated.category,
       ownerId: updated.owner_id,
-      ownerUsername: updated.owner_username || "admin",
+      ownerUsername: updated.owner_username || "superadmin",
       isPublic: updated.is_public,
       isSuperadminSpace: true,
       whitelist: updated.whitelist,
@@ -841,6 +904,7 @@ gameServer.define("game_room", GameRoom).filterBy(["spaceId"]);
 
 async function start() {
   await initDb();
+  parkingPointsService.start();
   await gameServer.listen(PORT, "0.0.0.0");
   const isTls = serverInstance instanceof https.Server;
   const protocol = isTls ? "https" : "http";

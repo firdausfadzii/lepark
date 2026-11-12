@@ -318,6 +318,8 @@ export const ASSET_ALIASES: Record<string, string> = {
   ashtray: "typewriter_1",
   chess_board_1: "typewriter_1",
   chess_board: "typewriter_1",
+  aquarium_1: "typewriter_1",
+  aquarium: "typewriter_1",
 };
 
 const BITMAP_CACHE = new Map<string, AssetBitmap>();

@@ -18,6 +18,10 @@ import {
   ChessBoardState,
   ChessLobbyState,
   ChessGameState,
+  AquariumState,
+  ThrowBattleState,
+  ThrowBattleInviteData,
+  ThrowBattleTurnResultPayload,
 } from "shared";
 
 export interface NetworkStats {
@@ -49,10 +53,30 @@ export type SmokingGameEndedCallback = (data: { ashtrayId: string; results: Smok
 export type ChessBoardsSyncCallback = (chessBoards: ChessBoardState[]) => void;
 export type ChessBoardUpdateCallback = (chessBoard: ChessBoardState) => void;
 export type ChessBoardDeleteCallback = (chessBoardId: string) => void;
+export type AquariumsSyncCallback = (aquariums: AquariumState[]) => void;
+export type AquariumUpdateCallback = (aquarium: AquariumState) => void;
+export type AquariumDeleteCallback = (aquariumId: string) => void;
 export type ChessLobbyStateCallback = (state: ChessLobbyState) => void;
 export type ChessGameStateCallback = (state: ChessGameState) => void;
 export type ChessGameStartCallback = (state: ChessGameState) => void;
 export type ChessGameEndedCallback = (state: ChessGameState) => void;
+export type ParkingPointsAwardedCallback = (data: { points: number; added: number }) => void;
+
+// Throw Battle Callbacks
+export type ThrowBattleInviteCallback = (data: ThrowBattleInviteData) => void;
+export type ThrowBattleChallengeSentCallback = (data: { targetSessionId: string; targetName: string }) => void;
+export type ThrowBattleChallengeCancelledCallback = (data: { challengerSessionId: string }) => void;
+export type ThrowBattleRejectedCallback = (data: { targetSessionId: string; targetName: string }) => void;
+export type ThrowBattleErrorCallback = (data: { message: string }) => void;
+export type ThrowBattleStartCallback = (state: ThrowBattleState) => void;
+export type ThrowBattlePlayerMovedCallback = (data: { matchId: string; sessionId: string; x: number }) => void;
+export type ThrowBattleAngleStartedCallback = (data: { matchId: string; sessionId: string; x: number }) => void;
+export type ThrowBattlePowerStartedCallback = (data: { matchId: string; sessionId: string; angle: number }) => void;
+export type ThrowBattleThrownCallback = (data: { matchId: string; sessionId: string; angle: number; power: number; wind: number; projectileType?: string }) => void;
+export type ThrowBattleNextTurnCallback = (data: { matchId: string; currentTurn: string; wind: number; round: number; p1Hp: number; p2Hp: number; p1X: number; p2X: number }) => void;
+export type ThrowBattleGameOverCallback = (data: { matchId: string; winnerSessionId: string; p1Hp: number; p2Hp: number }) => void;
+export type ThrowBattlePlayerLeftCallback = (data: { matchId: string; sessionId: string }) => void;
+
 
 export class MultiplayerManager {
   private client!: Client;
@@ -91,21 +115,41 @@ export class MultiplayerManager {
   private onChessBoardsSyncCallbacks: ChessBoardsSyncCallback[] = [];
   private onChessBoardUpdateCallbacks: ChessBoardUpdateCallback[] = [];
   private onChessBoardDeleteCallbacks: ChessBoardDeleteCallback[] = [];
+  private onAquariumsSyncCallbacks: AquariumsSyncCallback[] = [];
+  private onAquariumUpdateCallbacks: AquariumUpdateCallback[] = [];
+  private onAquariumDeleteCallbacks: AquariumDeleteCallback[] = [];
   private onChessLobbyStateCallbacks: ChessLobbyStateCallback[] = [];
   private onChessGameStateCallbacks: ChessGameStateCallback[] = [];
   private onChessGameStartCallbacks: ChessGameStartCallback[] = [];
   private onChessGameEndedCallbacks: ChessGameEndedCallback[] = [];
+  private onParkingPointsAwardedCallbacks: ParkingPointsAwardedCallback[] = [];
+  private onThrowBattleInviteCallbacks: ThrowBattleInviteCallback[] = [];
+  private onThrowBattleChallengeSentCallbacks: ThrowBattleChallengeSentCallback[] = [];
+  private onThrowBattleChallengeCancelledCallbacks: ThrowBattleChallengeCancelledCallback[] = [];
+  private onThrowBattleRejectedCallbacks: ThrowBattleRejectedCallback[] = [];
+  private onThrowBattleErrorCallbacks: ThrowBattleErrorCallback[] = [];
+  private onThrowBattleStartCallbacks: ThrowBattleStartCallback[] = [];
+  private onThrowBattlePlayerMovedCallbacks: ThrowBattlePlayerMovedCallback[] = [];
+  private onThrowBattleAngleStartedCallbacks: ThrowBattleAngleStartedCallback[] = [];
+  private onThrowBattlePowerStartedCallbacks: ThrowBattlePowerStartedCallback[] = [];
+  private onThrowBattleThrownCallbacks: ThrowBattleThrownCallback[] = [];
+  private onThrowBattleNextTurnCallbacks: ThrowBattleNextTurnCallback[] = [];
+  private onThrowBattleGameOverCallbacks: ThrowBattleGameOverCallback[] = [];
+  private onThrowBattlePlayerLeftCallbacks: ThrowBattlePlayerLeftCallback[] = [];
+
   public currentTiles: Record<string, string> = {};
   public currentPrivateZones: PrivateZone[] = [];
   public currentJukeboxes: Map<string, JukeboxState> = new Map();
   public currentTypewriters: Map<string, TypewriterState> = new Map();
   public currentAshtrays: Map<string, AshtrayState> = new Map();
   public currentChessBoards: Map<string, ChessBoardState> = new Map();
+  public currentAquariums: Map<string, AquariumState> = new Map();
   public playerAvatarsMap = new Map<string, PlayerAvatars>();
 
   private pingTimer: number | null = null;
   private pingSeq = 0;
-  private recentPings: { seq: number; sentAt: number; received: boolean }[] = [];
+  private recentPings: { seq: number; sentAt: number; received: boolean; rtt?: number }[] = [];
+  private lastPingMs = 0;
   private readonly MAX_PING_HISTORY = 15;
 
   constructor() {
@@ -235,6 +279,7 @@ export class MultiplayerManager {
       const record = this.recentPings.find((p) => p.seq === data.seq);
       if (record) {
         record.received = true;
+        record.rtt = rtt;
       }
       this.calculateAndNotifyNetworkStats(rtt);
     });
@@ -442,6 +487,30 @@ export class MultiplayerManager {
       }
     });
 
+    this.room.onMessage("CURRENT_AQUARIUMS", (aquariums: AquariumState[]) => {
+      this.currentAquariums.clear();
+      if (Array.isArray(aquariums)) {
+        for (const aq of aquariums) {
+          this.currentAquariums.set(aq.id, aq);
+        }
+      }
+      this.notifyAquariumsSync(Array.from(this.currentAquariums.values()));
+    });
+
+    this.room.onMessage("AQUARIUM_UPDATED", (aquarium: AquariumState) => {
+      if (aquarium && aquarium.id) {
+        this.currentAquariums.set(aquarium.id, aquarium);
+        this.notifyAquariumUpdate(aquarium);
+      }
+    });
+
+    this.room.onMessage("AQUARIUM_DELETED", (data: { aquariumId: string }) => {
+      if (data && data.aquariumId) {
+        this.currentAquariums.delete(data.aquariumId);
+        this.notifyAquariumDelete(data.aquariumId);
+      }
+    });
+
     this.room.onMessage("CHESS_LOBBY_STATE", (state: ChessLobbyState) => {
       if (state) {
         this.notifyChessLobbyState(state);
@@ -466,6 +535,91 @@ export class MultiplayerManager {
       }
     });
 
+    // Throw Battle Room Listeners
+    this.room.onMessage("THROW_BATTLE_INVITED", (data: ThrowBattleInviteData) => {
+      if (data) {
+        this.onThrowBattleInviteCallbacks.forEach((cb) => cb(data));
+      }
+    });
+
+    this.room.onMessage("THROW_BATTLE_CHALLENGE_SENT", (data: { targetSessionId: string; targetName: string }) => {
+      if (data) {
+        this.onThrowBattleChallengeSentCallbacks.forEach((cb) => cb(data));
+      }
+    });
+
+    this.room.onMessage("THROW_BATTLE_CHALLENGE_CANCELLED", (data: { challengerSessionId: string }) => {
+      if (data) {
+        this.onThrowBattleChallengeCancelledCallbacks.forEach((cb) => cb(data));
+      }
+    });
+
+    this.room.onMessage("THROW_BATTLE_REJECTED", (data: { targetSessionId: string; targetName: string }) => {
+      if (data) {
+        this.onThrowBattleRejectedCallbacks.forEach((cb) => cb(data));
+      }
+    });
+
+    this.room.onMessage("THROW_BATTLE_ERROR", (data: { message: string }) => {
+      if (data) {
+        this.onThrowBattleErrorCallbacks.forEach((cb) => cb(data));
+      }
+    });
+
+    this.room.onMessage("THROW_BATTLE_START", (state: ThrowBattleState) => {
+      if (state) {
+        this.onThrowBattleStartCallbacks.forEach((cb) => cb(state));
+      }
+    });
+
+    this.room.onMessage("THROW_BATTLE_PLAYER_MOVED", (data: { matchId: string; sessionId: string; x: number }) => {
+      if (data) {
+        this.onThrowBattlePlayerMovedCallbacks.forEach((cb) => cb(data));
+      }
+    });
+
+    this.room.onMessage("THROW_BATTLE_ANGLE_STARTED", (data: { matchId: string; sessionId: string; x: number }) => {
+      if (data) {
+        this.onThrowBattleAngleStartedCallbacks.forEach((cb) => cb(data));
+      }
+    });
+
+    this.room.onMessage("THROW_BATTLE_POWER_STARTED", (data: { matchId: string; sessionId: string; angle: number }) => {
+      if (data) {
+        this.onThrowBattlePowerStartedCallbacks.forEach((cb) => cb(data));
+      }
+    });
+
+    this.room.onMessage("THROW_BATTLE_THROWN", (data: { matchId: string; sessionId: string; angle: number; power: number; wind: number; projectileType?: string }) => {
+      if (data) {
+        this.onThrowBattleThrownCallbacks.forEach((cb) => cb(data));
+      }
+    });
+
+    this.room.onMessage("THROW_BATTLE_NEXT_TURN", (data: { matchId: string; currentTurn: string; wind: number; round: number; p1Hp: number; p2Hp: number; p1X: number; p2X: number }) => {
+      if (data) {
+        this.onThrowBattleNextTurnCallbacks.forEach((cb) => cb(data));
+      }
+    });
+
+    this.room.onMessage("THROW_BATTLE_GAME_OVER", (data: { matchId: string; winnerSessionId: string; p1Hp: number; p2Hp: number }) => {
+      if (data) {
+        this.onThrowBattleGameOverCallbacks.forEach((cb) => cb(data));
+      }
+    });
+
+    this.room.onMessage("THROW_BATTLE_PLAYER_LEFT", (data: { matchId: string; sessionId: string }) => {
+      if (data) {
+        this.onThrowBattlePlayerLeftCallbacks.forEach((cb) => cb(data));
+      }
+    });
+
+    this.room.onMessage("PARKING_POINTS_AWARDED", (data: { points: number; added: number }) => {
+      if (data && typeof data.points === "number") {
+        this.notifyParkingPointsAwarded(data);
+      }
+    });
+
     this.startPingLoop();
 
     this.room.onLeave((code) => {
@@ -486,8 +640,15 @@ export class MultiplayerManager {
         this.notifyPlayerAdd(sessionId, player);
         this.notifyPlayerCount(state.players.size || 1);
 
+        if (sessionId === this.room?.sessionId && player.parkingPoints !== undefined) {
+          this.notifyParkingPointsAwarded({ points: player.parkingPoints, added: 0 });
+        }
+
         player.onChange(() => {
           this.notifyPlayerChange(sessionId, player);
+          if (sessionId === this.room?.sessionId && player.parkingPoints !== undefined) {
+            this.notifyParkingPointsAwarded({ points: player.parkingPoints, added: 0 });
+          }
         });
       });
 
@@ -652,6 +813,7 @@ export class MultiplayerManager {
     this.stopPingLoop();
     this.recentPings = [];
     this.pingSeq = 0;
+    this.lastPingMs = 0;
 
     // Send immediate initial ping
     this.sendPing();
@@ -706,14 +868,17 @@ export class MultiplayerManager {
       lossPercent = Math.round((lostCount / evaluatedPings.length) * 100);
     }
 
-    let displayPing = latestPing;
-    if (displayPing === undefined) {
-      const lastReceived = [...this.recentPings].reverse().find((p) => p.received);
-      displayPing = lastReceived ? Math.max(1, now - lastReceived.sentAt) : 0;
+    if (latestPing !== undefined) {
+      this.lastPingMs = latestPing;
+    } else if (this.lastPingMs === 0) {
+      const lastReceived = [...this.recentPings].reverse().find((p) => p.received && p.rtt !== undefined);
+      if (lastReceived && lastReceived.rtt !== undefined) {
+        this.lastPingMs = lastReceived.rtt;
+      }
     }
 
     const stats: NetworkStats = {
-      pingMs: Math.round(displayPing),
+      pingMs: Math.round(this.lastPingMs),
       packetLoss: lossPercent,
     };
 
@@ -873,9 +1038,25 @@ export class MultiplayerManager {
     }
   }
 
+  public moveJukeboxTrack(
+    jukeboxId: string,
+    trackId: string,
+    direction: "up" | "down"
+  ) {
+    if (this.room) {
+      this.room.send("JUKEBOX_MOVE_TRACK", { jukeboxId, trackId, direction });
+    }
+  }
+
   public skipJukeboxTrack(jukeboxId: string) {
     if (this.room) {
       this.room.send("JUKEBOX_SKIP_TRACK", { jukeboxId });
+    }
+  }
+
+  public toggleJukeboxPause(jukeboxId: string, paused?: boolean) {
+    if (this.room) {
+      this.room.send("JUKEBOX_TOGGLE_PAUSE", { jukeboxId, paused });
     }
   }
 
@@ -1319,6 +1500,20 @@ export class MultiplayerManager {
     this.onChessGameEndedCallbacks.push(cb);
   }
 
+  public onParkingPointsAwarded(cb: ParkingPointsAwardedCallback) {
+    this.onParkingPointsAwardedCallbacks.push(cb);
+  }
+
+  private notifyParkingPointsAwarded(data: { points: number; added: number }) {
+    this.onParkingPointsAwardedCallbacks.forEach((cb) => {
+      try {
+        cb(data);
+      } catch (err) {
+        console.error("Error in onParkingPointsAwarded callback:", err);
+      }
+    });
+  }
+
   public placeChessBoard(
     x: number,
     y: number,
@@ -1358,6 +1553,12 @@ export class MultiplayerManager {
   public leaveChessLobby(chessBoardId: string) {
     if (this.room) {
       this.room.send("CHESS_LEAVE_LOBBY", { chessBoardId });
+    }
+  }
+
+  public createChessMatch(chessBoardId: string) {
+    if (this.room) {
+      this.room.send("CHESS_CREATE_MATCH", { chessBoardId });
     }
   }
 
@@ -1412,6 +1613,211 @@ export class MultiplayerManager {
   public sendChessRematch(chessBoardId: string, matchId: string) {
     if (this.room) {
       this.room.send("CHESS_REMATCH", { chessBoardId, matchId });
+    }
+  }
+
+  public onAquariumsSync(cb: AquariumsSyncCallback) {
+    this.onAquariumsSyncCallbacks.push(cb);
+  }
+
+  public onAquariumUpdate(cb: AquariumUpdateCallback) {
+    this.onAquariumUpdateCallbacks.push(cb);
+  }
+
+  public onAquariumDelete(cb: AquariumDeleteCallback) {
+    this.onAquariumDeleteCallbacks.push(cb);
+  }
+
+  private notifyAquariumsSync(aquariums: AquariumState[]) {
+    this.onAquariumsSyncCallbacks.forEach((cb) => {
+      try {
+        cb(aquariums);
+      } catch (err) {
+        console.error("Error in onAquariumsSync callback:", err);
+      }
+    });
+  }
+
+  private notifyAquariumUpdate(aquarium: AquariumState) {
+    this.onAquariumUpdateCallbacks.forEach((cb) => {
+      try {
+        cb(aquarium);
+      } catch (err) {
+        console.error("Error in onAquariumUpdate callback:", err);
+      }
+    });
+  }
+
+  private notifyAquariumDelete(aquariumId: string) {
+    this.onAquariumDeleteCallbacks.forEach((cb) => {
+      try {
+        cb(aquariumId);
+      } catch (err) {
+        console.error("Error in onAquariumDelete callback:", err);
+      }
+    });
+  }
+
+  public placeAquarium(
+    x: number,
+    y: number,
+    passable: boolean = false,
+    ontop: boolean = false,
+    layer: number = 0
+  ) {
+    if (this.room) {
+      this.room.send("AQUARIUM_PLACE", { x, y, passable, ontop, layer });
+    }
+  }
+
+  public moveAquarium(aquariumId: string, x: number, y: number) {
+    if (this.room) {
+      this.room.send("AQUARIUM_MOVE", { aquariumId, x, y });
+    }
+  }
+
+  public deleteAquarium(aquariumId: string) {
+    if (this.room) {
+      this.room.send("AQUARIUM_DELETE", { aquariumId });
+    }
+  }
+
+  public setAquariumPassable(aquariumId: string, passable: boolean) {
+    if (this.room) {
+      this.room.send("AQUARIUM_PASSABLE", { aquariumId, passable });
+    }
+  }
+
+  // ==========================================
+  // Throw Battle (Cat vs Dog / Fleabag vs Mutt) Methods
+  // ==========================================
+  public onThrowBattleInvite(cb: ThrowBattleInviteCallback) {
+    this.onThrowBattleInviteCallbacks.push(cb);
+  }
+
+  public onThrowBattleChallengeSent(cb: ThrowBattleChallengeSentCallback) {
+    this.onThrowBattleChallengeSentCallbacks.push(cb);
+  }
+
+  public onThrowBattleChallengeCancelled(cb: ThrowBattleChallengeCancelledCallback) {
+    this.onThrowBattleChallengeCancelledCallbacks.push(cb);
+  }
+
+  public onThrowBattleRejected(cb: ThrowBattleRejectedCallback) {
+    this.onThrowBattleRejectedCallbacks.push(cb);
+  }
+
+  public onThrowBattleError(cb: ThrowBattleErrorCallback) {
+    this.onThrowBattleErrorCallbacks.push(cb);
+  }
+
+  public onThrowBattleStart(cb: ThrowBattleStartCallback) {
+    this.onThrowBattleStartCallbacks.push(cb);
+  }
+
+  public onThrowBattlePlayerMoved(cb: ThrowBattlePlayerMovedCallback) {
+    this.onThrowBattlePlayerMovedCallbacks.push(cb);
+  }
+
+  public onThrowBattleAngleStarted(cb: ThrowBattleAngleStartedCallback) {
+    this.onThrowBattleAngleStartedCallbacks.push(cb);
+  }
+
+  public onThrowBattlePowerStarted(cb: ThrowBattlePowerStartedCallback) {
+    this.onThrowBattlePowerStartedCallbacks.push(cb);
+  }
+
+  public onThrowBattleThrown(cb: ThrowBattleThrownCallback) {
+    this.onThrowBattleThrownCallbacks.push(cb);
+  }
+
+  public onThrowBattleNextTurn(cb: ThrowBattleNextTurnCallback) {
+    this.onThrowBattleNextTurnCallbacks.push(cb);
+  }
+
+  public onThrowBattleGameOver(cb: ThrowBattleGameOverCallback) {
+    this.onThrowBattleGameOverCallbacks.push(cb);
+  }
+
+  public onThrowBattlePlayerLeft(cb: ThrowBattlePlayerLeftCallback) {
+    this.onThrowBattlePlayerLeftCallbacks.push(cb);
+  }
+
+  public sendThrowBattleChallenge(targetSessionId: string) {
+    if (this.room) {
+      this.room.send("THROW_BATTLE_CHALLENGE", { targetSessionId });
+    }
+  }
+
+  public cancelThrowBattleChallenge(targetSessionId: string) {
+    if (this.room) {
+      this.room.send("THROW_BATTLE_CANCEL_CHALLENGE", { targetSessionId });
+    }
+  }
+
+  public rejectThrowBattleChallenge(challengerSessionId: string) {
+    if (this.room) {
+      this.room.send("THROW_BATTLE_REJECT", { challengerSessionId });
+    }
+  }
+
+  public acceptThrowBattleChallenge(challengerSessionId: string) {
+    if (this.room) {
+      this.room.send("THROW_BATTLE_ACCEPT", { challengerSessionId });
+    }
+  }
+
+  public sendThrowBattleMove(matchId: string, x: number) {
+    if (this.room) {
+      this.room.send("THROW_BATTLE_MOVE", { matchId, x });
+    }
+  }
+
+  public sendThrowBattleEnterAngle(matchId: string, x: number) {
+    if (this.room) {
+      this.room.send("THROW_BATTLE_ENTER_ANGLE", { matchId, x });
+    }
+  }
+
+  public sendThrowBattleLockAngle(matchId: string, angle: number) {
+    if (this.room) {
+      this.room.send("THROW_BATTLE_LOCK_ANGLE", { matchId, angle });
+    }
+  }
+
+  public sendThrowBattleThrow(
+    matchId: string,
+    angle: number,
+    power: number,
+    wind: number,
+    projectileType: string
+  ) {
+    if (this.room) {
+      this.room.send("THROW_BATTLE_THROW", {
+        matchId,
+        angle,
+        power,
+        wind,
+        projectileType,
+      });
+    }
+  }
+
+  public sendThrowBattleTurnResult(payload: ThrowBattleTurnResultPayload) {
+    if (this.room) {
+      this.room.send("THROW_BATTLE_TURN_RESULT", payload);
+    }
+  }
+
+  public sendThrowBattleRematch(matchId: string) {
+    if (this.room) {
+      this.room.send("THROW_BATTLE_REMATCH", { matchId });
+    }
+  }
+
+  public sendThrowBattleLeave(matchId: string) {
+    if (this.room) {
+      this.room.send("THROW_BATTLE_LEAVE", { matchId });
     }
   }
 }

@@ -25,6 +25,7 @@ import {
   ChessLobbyState,
   ChessGameState,
   ChessGameSummary,
+  ThrowBattleState,
   isWallAsset,
   isOverlayWallAsset,
   isOverlayFloorAsset,
@@ -32,6 +33,8 @@ import {
 } from "shared";
 import { VoiceManager, VoiceError } from "./network/VoiceManager";
 import { JukeboxManager } from "./audio/JukeboxManager";
+import { FishingGame } from "./fishing/FishingGame";
+import { ThrowBattleGame } from "./battle/ThrowBattleGame";
 import { Chess } from "chess.js";
 
 // Automatically inject skip_zrok_interstitial header on all outgoing fetch and XHR calls
@@ -235,8 +238,11 @@ const editorAlphaTrackBg = document.getElementById(
   "editor-alpha-track-bg",
 ) as HTMLElement | null;
 
-// Top Bar Right Actions (Map, Ping, Loss)
+// Top Bar Right Actions (Map, Ping, Loss) & Parking Points
 const btnOpenMap = document.getElementById("btn-open-map") as HTMLButtonElement;
+const topbarParkingPoints = document.getElementById(
+  "topbar-parking-points",
+) as HTMLElement | null;
 const topbarPingStat = document.getElementById(
   "topbar-ping-stat",
 ) as HTMLSpanElement;
@@ -439,6 +445,28 @@ const playerMenuColorDot = document.getElementById("player-menu-color-dot");
 const btnClosePlayerMenu = document.getElementById("btn-close-player-menu") as HTMLButtonElement | null;
 const btnPlayerMenuWhisper = document.getElementById("btn-player-menu-whisper") as HTMLButtonElement | null;
 const btnPlayerMenuVisitSpace = document.getElementById("btn-player-menu-visit-space") as HTMLButtonElement | null;
+const btnPlayerMenuThrowBattle = document.getElementById("btn-player-menu-throw-battle") as HTMLButtonElement | null;
+
+// Throw Battle Modals & Canvas DOM Elements
+const throwBattleInviteModal = document.getElementById("throw-battle-invite-modal") as HTMLDivElement | null;
+const btnTbRejectInvite = document.getElementById("btn-tb-reject-invite") as HTMLButtonElement | null;
+const btnTbAcceptInvite = document.getElementById("btn-tb-accept-invite") as HTMLButtonElement | null;
+const tbInviteChallengerName = document.getElementById("tb-invite-challenger-name");
+
+const throwBattleWaitingModal = document.getElementById("throw-battle-waiting-modal") as HTMLDivElement | null;
+const btnTbCancelChallenge = document.getElementById("btn-tb-cancel-challenge") as HTMLButtonElement | null;
+const tbWaitingText = document.getElementById("tb-waiting-text");
+
+const throwBattleModal = document.getElementById("throw-battle-modal") as HTMLDivElement | null;
+const btnCloseThrowBattle = document.getElementById("btn-close-throw-battle") as HTMLButtonElement | null;
+const btnTbRematch = document.getElementById("btn-tb-rematch") as HTMLButtonElement | null;
+const btnTbExit = document.getElementById("btn-tb-exit") as HTMLButtonElement | null;
+const throwBattleCanvas = document.getElementById("throw-battle-canvas") as HTMLCanvasElement | null;
+
+let activeThrowBattleGame: ThrowBattleGame | null = null;
+let pendingChallengeTargetSessionId: string | null = null;
+let pendingInviteChallengerSessionId: string | null = null;
+
 
 // Space Access Error Modal DOM Elements
 const spaceErrorModal = document.getElementById("space-error-modal");
@@ -523,6 +551,9 @@ const tabJukeboxPlaylist = document.getElementById("tab-jukebox-playlist") as HT
 const jukeboxNowPlayingTitle = document.getElementById("jukebox-now-playing-title") as HTMLHeadingElement | null;
 const jukeboxNowPlayingSubmitter = document.getElementById("jukebox-now-playing-submitter") as HTMLParagraphElement | null;
 const jukeboxStatusBadge = document.getElementById("jukebox-status-badge") as HTMLSpanElement | null;
+const btnJukeboxPlayPause = document.getElementById("btn-jukebox-play-pause") as HTMLButtonElement | null;
+const btnJukeboxPlayPauseIcon = document.getElementById("btn-jukebox-play-pause-icon") as HTMLSpanElement | null;
+const btnJukeboxPlayPauseText = document.getElementById("btn-jukebox-play-pause-text") as HTMLSpanElement | null;
 const btnJukeboxSkip = document.getElementById("btn-jukebox-skip") as HTMLButtonElement | null;
 const jukeboxAddTrackForm = document.getElementById("jukebox-add-track-form") as HTMLFormElement | null;
 const jukeboxUrlInput = document.getElementById("jukebox-url-input") as HTMLInputElement | null;
@@ -543,10 +574,9 @@ const jukeboxHudTrackTitle = document.getElementById("jukebox-hud-track-title") 
 const jukeboxHudTrackSub = document.getElementById("jukebox-hud-track-sub") as HTMLSpanElement | null;
 const btnJukeboxHudMute = document.getElementById("btn-jukebox-hud-mute") as HTMLButtonElement | null;
 
-// Floating Player Card & Action Elements
-const jukeboxPlayerCard = document.getElementById("jukebox-player-card") as HTMLDivElement | null;
-const btnToggleJukeboxCollapse = document.getElementById("btn-toggle-jukebox-collapse") as HTMLButtonElement | null;
-const btnOpenJukeboxFromPlayer = document.getElementById("btn-open-jukebox-from-player") as HTMLButtonElement | null;
+// Jukebox Video Frame Elements in Modal
+const jukeboxVideoPlaceholder = document.getElementById("jukebox-video-placeholder") as HTMLDivElement | null;
+const jukeboxPlayerBody = document.getElementById("jukebox-player-body") as HTMLDivElement | null;
 const jukeboxPlayerErrorOverlay = document.getElementById("jukebox-player-error-overlay") as HTMLDivElement | null;
 const btnPlayerOpenExternal = document.getElementById("btn-player-open-external") as HTMLAnchorElement | null;
 
@@ -632,6 +662,14 @@ function setGameControlsActive(active: boolean) {
     }
     const twModal = document.getElementById("typerace-modal");
     if (twModal && !twModal.classList.contains("hidden")) {
+      return;
+    }
+    const aqModal = document.getElementById("aquarium-modal");
+    if (aqModal && !aqModal.classList.contains("hidden")) {
+      return;
+    }
+    const tbModal = document.getElementById("throw-battle-modal");
+    if (tbModal && !tbModal.classList.contains("hidden")) {
       return;
     }
   }
@@ -821,6 +859,7 @@ loginForm.addEventListener("submit", async (e) => {
     currentUser = data.user;
     localStorage.setItem("lepark_auth_token", authToken);
     localStorage.setItem("lepark_auth_user", JSON.stringify(currentUser));
+    renderSpriteTemplatesGrid();
 
     closeAuthModal();
     await enterGameSession();
@@ -927,6 +966,7 @@ function selectColor(colorHex: string) {
 interface SpriteTemplate {
   id: string;
   name: string;
+  cost?: number;
   idleFrames: string[];
   directionalFrames?: PlayerAvatars;
 }
@@ -996,12 +1036,104 @@ const SPRITE_TEMPLATES: SpriteTemplate[] = [
       ],
     },
   },
+  {
+    id: "ghost_slime",
+    name: "Ghost Slime",
+    cost: 10,
+    idleFrames: [
+      "/assets/sprites/ghost_slime/sprite-1-1.png",
+      "/assets/sprites/ghost_slime/sprite-1-2.png",
+      "/assets/sprites/ghost_slime/sprite-1-3.png",
+      "/assets/sprites/ghost_slime/sprite-1-4.png",
+      "/assets/sprites/ghost_slime/sprite-1-5.png",
+      "/assets/sprites/ghost_slime/sprite-1-6.png",
+      "/assets/sprites/ghost_slime/sprite-1-7.png",
+      "/assets/sprites/ghost_slime/sprite-1-8.png",
+    ],
+    directionalFrames: {
+      idle: [
+        "/assets/sprites/ghost_slime/sprite-1-1.png",
+        "/assets/sprites/ghost_slime/sprite-1-2.png",
+        "/assets/sprites/ghost_slime/sprite-1-3.png",
+        "/assets/sprites/ghost_slime/sprite-1-4.png",
+        "/assets/sprites/ghost_slime/sprite-1-5.png",
+        "/assets/sprites/ghost_slime/sprite-1-6.png",
+        "/assets/sprites/ghost_slime/sprite-1-7.png",
+        "/assets/sprites/ghost_slime/sprite-1-8.png",
+      ],
+      down: [
+        "/assets/sprites/ghost_slime/sprite-1-1.png",
+        "/assets/sprites/ghost_slime/sprite-1-2.png",
+        "/assets/sprites/ghost_slime/sprite-1-3.png",
+        "/assets/sprites/ghost_slime/sprite-1-4.png",
+        "/assets/sprites/ghost_slime/sprite-1-5.png",
+        "/assets/sprites/ghost_slime/sprite-1-6.png",
+        "/assets/sprites/ghost_slime/sprite-1-7.png",
+        "/assets/sprites/ghost_slime/sprite-1-8.png",
+      ],
+      up: [
+        "/assets/sprites/ghost_slime/sprite-2-1.png",
+        "/assets/sprites/ghost_slime/sprite-2-2.png",
+        "/assets/sprites/ghost_slime/sprite-2-4.png",
+        "/assets/sprites/ghost_slime/sprite-2-6.png",
+        "/assets/sprites/ghost_slime/sprite-2-8.png",
+        "/assets/sprites/ghost_slime/sprite-2-9.png",
+        "/assets/sprites/ghost_slime/sprite-2-10.png",
+        "/assets/sprites/ghost_slime/sprite-2-11.png",
+      ],
+      left: [
+        "/assets/sprites/ghost_slime/sprite-3-1.png",
+        "/assets/sprites/ghost_slime/sprite-3-3.png",
+        "/assets/sprites/ghost_slime/sprite-3-5.png",
+        "/assets/sprites/ghost_slime/sprite-3-6.png",
+        "/assets/sprites/ghost_slime/sprite-3-8.png",
+        "/assets/sprites/ghost_slime/sprite-3-9.png",
+        "/assets/sprites/ghost_slime/sprite-3-10.png",
+        "/assets/sprites/ghost_slime/sprite-3-11.png",
+      ],
+      right: [
+        "/assets/sprites/ghost_slime/sprite-4-1.png",
+        "/assets/sprites/ghost_slime/sprite-4-3.png",
+        "/assets/sprites/ghost_slime/sprite-4-5.png",
+        "/assets/sprites/ghost_slime/sprite-4-7.png",
+        "/assets/sprites/ghost_slime/sprite-4-8.png",
+        "/assets/sprites/ghost_slime/sprite-4-10.png",
+        "/assets/sprites/ghost_slime/sprite-4-11.png",
+        "/assets/sprites/ghost_slime/sprite-4-12.png",
+      ],
+    },
+  },
 ];
 
 let selectedTemplateId = localStorage.getItem("player_sprite_template") || "default";
 
+function isTemplateUnlocked(templateId: string): boolean {
+  const tpl = SPRITE_TEMPLATES.find((t) => t.id === templateId);
+  if (!tpl) return false;
+  if (!tpl.cost || tpl.cost <= 0) return true;
+
+  if (currentUser && Array.isArray(currentUser.unlockedSkins)) {
+    if (currentUser.unlockedSkins.includes(templateId)) return true;
+  }
+
+  try {
+    const local = JSON.parse(localStorage.getItem("player_unlocked_skins") || "[]");
+    if (Array.isArray(local) && local.includes(templateId)) {
+      return true;
+    }
+  } catch {
+    // ignore
+  }
+
+  return false;
+}
+
 function getActiveTemplate(): SpriteTemplate {
-  return SPRITE_TEMPLATES.find((t) => t.id === selectedTemplateId) || SPRITE_TEMPLATES[0];
+  const tpl = SPRITE_TEMPLATES.find((t) => t.id === selectedTemplateId);
+  if (tpl && isTemplateUnlocked(tpl.id)) {
+    return tpl;
+  }
+  return SPRITE_TEMPLATES[0];
 }
 
 function renderSpriteTemplatesGrid() {
@@ -1015,34 +1147,152 @@ function renderSpriteTemplatesGrid() {
   grid.innerHTML = "";
 
   SPRITE_TEMPLATES.forEach((tpl) => {
-    const isActive = tpl.id === selectedTemplateId;
+    const isUnlocked = isTemplateUnlocked(tpl.id);
+    const isActive = tpl.id === selectedTemplateId && isUnlocked;
+    const isLocked = !isUnlocked;
+
     const card = document.createElement("div");
-    card.className = `sprite-template-card ${isActive ? "active" : ""}`;
+    card.className = `sprite-template-card ${isActive ? "active" : ""} ${isLocked ? "locked" : ""}`;
     card.setAttribute("data-template-id", tpl.id);
     card.setAttribute("role", "button");
     card.setAttribute("tabindex", "0");
-    card.title = `${tpl.name} Sprite`;
+    card.title = isLocked
+      ? `${tpl.name} (Locked - Requires ${tpl.cost} Parking Points)`
+      : `${tpl.name} Sprite`;
 
     const initialImg = tpl.idleFrames[0] || "/assets/sprites/default/sprite1.png";
 
+    const badgeHtml = isLocked
+      ? `<span class="template-card-lock-badge" title="${tpl.cost} Parking Points Required">🔒 ${tpl.cost}</span>`
+      : `<span class="template-card-check">✓</span>`;
+
+    const statusText = isActive
+      ? "Active"
+      : isLocked
+      ? `🔒 ${tpl.cost} pts`
+      : "Select";
+
     card.innerHTML = `
-      <span class="template-card-check">✓</span>
+      ${badgeHtml}
       <div class="template-preview-box">
-        <img id="template-anim-${tpl.id}" class="template-idle-img" src="${initialImg}" alt="${tpl.name} Sprite" />
+        <img id="template-anim-${tpl.id}" class="template-idle-img ${isLocked ? "locked-preview" : ""}" src="${initialImg}" alt="${tpl.name} Sprite" />
       </div>
       <span class="template-card-name">${escapeHtml(tpl.name)}</span>
-      <span class="template-card-status">${isActive ? "Active" : "Select"}</span>
+      <span class="template-card-status ${isLocked ? "status-locked" : ""}">${statusText}</span>
     `;
 
     card.addEventListener("click", () => {
-      selectSpriteTemplate(tpl.id);
+      if (isLocked) {
+        handleUnlockTemplate(tpl);
+      } else {
+        selectSpriteTemplate(tpl.id);
+      }
     });
 
     grid.appendChild(card);
   });
 }
 
+async function handleUnlockTemplate(tpl: SpriteTemplate) {
+  const cost = tpl.cost || 10;
+  const currentPoints = currentUser?.parkingPoints ?? 0;
+
+  if (currentPoints < cost) {
+    alert(
+      `🔒 ${tpl.name} requires ${cost} parking points to unlock.\n\nYou currently have ${currentPoints} parking points. Stay online in Lepark to earn more parking points!`
+    );
+    return;
+  }
+
+  const confirmed = confirm(
+    `✨ Unlock ${tpl.name} for ${cost} parking points?\n\nYou currently have ${currentPoints} parking points. After unlocking, you will have ${currentPoints - cost} points remaining.`
+  );
+
+  if (!confirmed) return;
+
+  try {
+    let unlockSuccess = false;
+    let newPoints = currentPoints - cost;
+    let unlockedList: string[] = [];
+
+    if (authToken) {
+      const res = await fetch(getApiUrl("/api/skins/unlock"), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({ skinId: tpl.id }),
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        alert(data.error || "Failed to unlock sprite template.");
+        return;
+      }
+
+      unlockSuccess = true;
+      newPoints = typeof data.points === "number" ? data.points : currentPoints - cost;
+      unlockedList = data.unlockedSkins || [];
+    } else {
+      unlockSuccess = true;
+      unlockedList = [tpl.id];
+    }
+
+    if (unlockSuccess) {
+      // Update currentUser
+      if (currentUser) {
+        currentUser.parkingPoints = newPoints;
+        if (!currentUser.unlockedSkins) currentUser.unlockedSkins = [];
+        if (!currentUser.unlockedSkins.includes(tpl.id)) {
+          currentUser.unlockedSkins.push(tpl.id);
+        }
+        try {
+          localStorage.setItem("lepark_auth_user", JSON.stringify(currentUser));
+        } catch {}
+      }
+
+      // Update local storage unlocked skins
+      try {
+        const localUnlocked: string[] = JSON.parse(localStorage.getItem("player_unlocked_skins") || "[]");
+        if (!localUnlocked.includes(tpl.id)) {
+          localUnlocked.push(tpl.id);
+          localStorage.setItem("player_unlocked_skins", JSON.stringify(localUnlocked));
+        }
+      } catch {}
+
+      // Update topbar UI
+      if (topbarParkingPoints) {
+        topbarParkingPoints.textContent = `${newPoints} Parking`;
+      }
+
+      // Re-render templates grid & select the newly unlocked template
+      renderSpriteTemplatesGrid();
+      selectSpriteTemplate(tpl.id);
+
+      // Auto update character in multiplayer if connected
+      const avatars = computeActiveAvatars();
+      if (multiplayer) {
+        multiplayer.updateProfile(getEffectivePlayerName(), selectedColor, avatars || null);
+      }
+
+      alert(`🎉 Congratulations! You have unlocked ${tpl.name}! It is now equipped as your character.`);
+    }
+  } catch (err: any) {
+    console.error("Error unlocking sprite template:", err);
+    alert("Network error while unlocking sprite template.");
+  }
+}
+
 function selectSpriteTemplate(templateId: string) {
+  if (!isTemplateUnlocked(templateId)) {
+    const targetTpl = SPRITE_TEMPLATES.find((t) => t.id === templateId);
+    if (targetTpl) {
+      handleUnlockTemplate(targetTpl);
+    }
+    return;
+  }
+
   const targetTpl = SPRITE_TEMPLATES.find((t) => t.id === templateId) || SPRITE_TEMPLATES[0];
   selectedTemplateId = targetTpl.id;
   try {
@@ -1060,7 +1310,7 @@ function selectSpriteTemplate(templateId: string) {
       if (statusSpan) statusSpan.textContent = "Active";
     } else {
       card.classList.remove("active");
-      if (statusSpan) statusSpan.textContent = "Select";
+      if (statusSpan && !card.classList.contains("locked")) statusSpan.textContent = "Select";
     }
   });
 
@@ -2021,7 +2271,7 @@ function getAssetImagePath(assetId: string): string | null {
   const decoAssets = new Set([
     "table_1_left", "table_1_middle", "table_1_right",
     "table_2_left", "table_2_middle", "table_2_right",
-    "round_table_1", "typewriter_1", "ashtray_1", "chess_board_1",
+    "round_table_1", "typewriter_1", "ashtray_1", "chess_board_1", "aquarium_1",
     "office_chair_1_front", "office_chair_1_back",
     "jukebox_1"
   ]);
@@ -2081,6 +2331,7 @@ let activeEditorTool:
   | "typewriter"
   | "ashtray"
   | "chess_board"
+  | "aquarium"
   | "freeform_decoration"
   | "spawn_point"
   | "color_dropper" = "none";
@@ -2098,6 +2349,7 @@ let previousToolBeforeDropper: {
     | "typewriter"
     | "ashtray"
     | "chess_board"
+    | "aquarium"
     | "freeform_decoration"
     | "spawn_point";
   assetId: string;
@@ -2118,7 +2370,10 @@ function isCurrentToolLayerable(): boolean {
     activeEditorTool === "decoration" ||
     activeEditorTool === "freeform_decoration" ||
     activeEditorTool === "jukebox" ||
-    activeEditorTool === "typewriter"
+    activeEditorTool === "typewriter" ||
+    activeEditorTool === "ashtray" ||
+    activeEditorTool === "chess_board" ||
+    activeEditorTool === "aquarium"
   ) {
     return true;
   }
@@ -2314,6 +2569,11 @@ function updateEditBannerText() {
     return;
   }
 
+  if (activeEditorTool === "aquarium") {
+    editBannerAssetText.innerHTML = `<span class="banner-private-tag" style="background: rgba(14, 165, 233, 0.2); color: #38bdf8; border-color: rgba(14, 165, 233, 0.4);">🐟 Aquarium</span> Active: <strong>Fishing Minigame (Freeform)</strong> • <span class="banner-layer-tag">Layer ${currentPlacementLayer} (↑/↓)</span> • <em>Click anywhere to place • Use ↑/↓ arrow keys to change layer</em>`;
+    return;
+  }
+
   if (activeEditorTool === "spawn_point") {
     editBannerAssetText.innerHTML = `<span class="banner-spawn-tag">📍 Spawn Point</span> Active: <strong>Player Spawn Point</strong> • <em>Click anywhere to place spawn point (1 per map)</em>`;
     return;
@@ -2506,6 +2766,7 @@ function enterEditMode() {
       setupSceneTypewriterEvents(scene);
       setupSceneAshtrayEvents(scene);
       setupSceneChessEvents(scene);
+      setupSceneAquariumEvents(scene);
       setupSceneEditorToolEvents(scene);
       scene.setEditMode(true);
       scene.setActiveEditorTool(activeEditorTool);
@@ -2773,6 +3034,31 @@ function selectChessBoardTool() {
   }
 
   hideEditorUIForPlacing("Chess Board");
+}
+
+function selectAquariumTool() {
+  activeEditorTool = "aquarium";
+
+  const cards = document.querySelectorAll(".editor-asset-card");
+  cards.forEach((card) => {
+    if ((card as HTMLElement).dataset.toolType === "aquarium") {
+      card.classList.add("selected");
+    } else {
+      card.classList.remove("selected");
+    }
+  });
+
+  updateEditBannerText();
+
+  if (gameInstance) {
+    const scene = gameInstance.scene.getScene("GameScene") as GameScene;
+    if (scene) {
+      scene.setActiveEditorTool("aquarium");
+      scene.setPlacementLayer(currentPlacementLayer);
+    }
+  }
+
+  hideEditorUIForPlacing("Aquarium");
 }
 
 function selectSpawnPointTool() {
@@ -3226,12 +3512,24 @@ function showPlayerContextMenu(player: {
     playerMenuColorDot.style.backgroundColor = player.color || "#3b82f6";
   }
 
+  // If clicking oneself, hide Whisper option; if clicking another player, show Whisper
+  const isMe = !!(multiplayer && player.sessionId === multiplayer.sessionId);
+  if (btnPlayerMenuWhisper) {
+    btnPlayerMenuWhisper.style.display = isMe ? "none" : "flex";
+  }
+  if (btnPlayerMenuThrowBattle) {
+    btnPlayerMenuThrowBattle.style.display = isMe ? "none" : "flex";
+  }
+
   if (gameInstance) {
     const scene = gameInstance.scene.getScene("GameScene") as GameScene;
     if (scene) {
       const cam = scene.cameras.main;
-      const screenX = (player.worldX - cam.scrollX) * cam.zoom;
-      const screenY = (player.worldY - CHARACTER_MAX_SIZE / 2 - 20 - cam.scrollY) * cam.zoom;
+      const screenX =
+        (player.worldX - cam.scrollX - cam.width * 0.5) * cam.zoom + cam.width * 0.5;
+      const screenY =
+        (player.worldY - CHARACTER_MAX_SIZE / 2 - 20 - cam.scrollY - cam.height * 0.5) * cam.zoom +
+        cam.height * 0.5;
       positionPlayerContextMenu(screenX, screenY);
     }
   }
@@ -3242,7 +3540,7 @@ function showPlayerContextMenu(player: {
 function positionPlayerContextMenu(screenX: number, screenY: number) {
   if (!playerContextMenu) return;
   const menuWidth = 170;
-  const menuHeight = 120;
+  const menuHeight = 160;
   const padding = 12;
 
   const clampedX = Math.max(
@@ -3710,6 +4008,12 @@ function setupMultiplayerChatListeners(mgr: MultiplayerManager) {
 }
 
 function isAnyModalOpen(): boolean {
+  const tbModal = document.getElementById("throw-battle-modal");
+  if (tbModal && !tbModal.classList.contains("hidden")) return true;
+  const tbInviteModal = document.getElementById("throw-battle-invite-modal");
+  if (tbInviteModal && !tbInviteModal.classList.contains("hidden")) return true;
+  const tbWaitingModal = document.getElementById("throw-battle-waiting-modal");
+  if (tbWaitingModal && !tbWaitingModal.classList.contains("hidden")) return true;
   const atModal = document.getElementById("ashtray-modal");
   if (atModal && !atModal.classList.contains("hidden")) return true;
   const twModal = document.getElementById("typerace-modal");
@@ -3803,6 +4107,89 @@ if (btnPlayerMenuVisitSpace) {
     }
 
     await switchSpace(targetSpaceId, targetSpaceName);
+  });
+}
+
+// Throw Battle Challenge & Modal Button Handlers
+if (btnPlayerMenuThrowBattle) {
+  btnPlayerMenuThrowBattle.addEventListener("click", () => {
+    if (!activeMenuPlayer || !multiplayer) return;
+    const targetSessionId = activeMenuPlayer.sessionId;
+    const targetName = activeMenuPlayer.name;
+    closePlayerContextMenu();
+
+    pendingChallengeTargetSessionId = targetSessionId;
+    multiplayer.sendThrowBattleChallenge(targetSessionId);
+
+    if (tbWaitingText) {
+      tbWaitingText.textContent = `Waiting for ${targetName} to accept or reject the Throw Battle...`;
+    }
+    throwBattleWaitingModal?.classList.remove("hidden");
+    setGameControlsActive(false);
+  });
+}
+
+if (btnTbCancelChallenge) {
+  btnTbCancelChallenge.addEventListener("click", () => {
+    if (pendingChallengeTargetSessionId && multiplayer) {
+      multiplayer.cancelThrowBattleChallenge(pendingChallengeTargetSessionId);
+    }
+    pendingChallengeTargetSessionId = null;
+    throwBattleWaitingModal?.classList.add("hidden");
+    setGameControlsActive(true);
+  });
+}
+
+if (btnTbRejectInvite) {
+  btnTbRejectInvite.addEventListener("click", () => {
+    if (pendingInviteChallengerSessionId && multiplayer) {
+      multiplayer.rejectThrowBattleChallenge(pendingInviteChallengerSessionId);
+    }
+    pendingInviteChallengerSessionId = null;
+    throwBattleInviteModal?.classList.add("hidden");
+    setGameControlsActive(true);
+  });
+}
+
+if (btnTbAcceptInvite) {
+  btnTbAcceptInvite.addEventListener("click", () => {
+    if (pendingInviteChallengerSessionId && multiplayer) {
+      multiplayer.acceptThrowBattleChallenge(pendingInviteChallengerSessionId);
+    }
+    pendingInviteChallengerSessionId = null;
+    throwBattleInviteModal?.classList.add("hidden");
+  });
+}
+
+function closeThrowBattleModal() {
+  if (activeThrowBattleGame && multiplayer) {
+    if (activeThrowBattleGame.matchId) {
+      multiplayer.sendThrowBattleLeave(activeThrowBattleGame.matchId);
+    }
+    activeThrowBattleGame.destroy();
+    activeThrowBattleGame = null;
+  }
+  throwBattleModal?.classList.add("hidden");
+  setGameControlsActive(true);
+}
+
+if (btnCloseThrowBattle) {
+  btnCloseThrowBattle.addEventListener("click", () => {
+    closeThrowBattleModal();
+  });
+}
+
+if (btnTbExit) {
+  btnTbExit.addEventListener("click", () => {
+    closeThrowBattleModal();
+  });
+}
+
+if (btnTbRematch) {
+  btnTbRematch.addEventListener("click", () => {
+    if (activeThrowBattleGame?.matchId && multiplayer) {
+      multiplayer.sendThrowBattleRematch(activeThrowBattleGame.matchId);
+    }
   });
 }
 
@@ -4298,6 +4685,8 @@ async function toggleMic() {
     setupMultiplayerTypeRaceListeners(multiplayer);
     setupMultiplayerSmokingGameListeners(multiplayer);
     setupMultiplayerChessListeners(multiplayer);
+    setupMultiplayerParkingPointsListeners(multiplayer);
+    setupMultiplayerThrowBattleListeners(multiplayer);
     } else {
       showVoiceNotification({
         code: "CONNECTING",
@@ -4652,8 +5041,14 @@ function renderJukeboxModal(jb: JukeboxState | null) {
     if (jukeboxNowPlayingTitle) jukeboxNowPlayingTitle.textContent = "No Jukebox Found";
     if (jukeboxNowPlayingSubmitter)
       jukeboxNowPlayingSubmitter.textContent = "Place a jukebox in this space using the map editor";
-    if (jukeboxStatusBadge) jukeboxStatusBadge.textContent = "NOT FOUND";
+    if (jukeboxStatusBadge) {
+      jukeboxStatusBadge.textContent = "NOT FOUND";
+      jukeboxStatusBadge.classList.remove("status-paused");
+    }
     if (btnJukeboxSkip) btnJukeboxSkip.disabled = true;
+    if (btnJukeboxPlayPause) btnJukeboxPlayPause.disabled = true;
+    if (jukeboxVideoPlaceholder) jukeboxVideoPlaceholder.classList.remove("hidden");
+    if (jukeboxPlayerBody) jukeboxPlayerBody.classList.add("placeholder-active");
     if (jukeboxQueueCount) jukeboxQueueCount.textContent = "0 tracks";
     if (jukeboxQueueList) {
       jukeboxQueueList.innerHTML = `
@@ -4669,19 +5064,52 @@ function renderJukeboxModal(jb: JukeboxState | null) {
   const hasTracks = jb.playlist && jb.playlist.length > 0;
   const currentTrack = hasTracks ? jb.playlist[jb.currentTrackIndex] : null;
 
-  if (hasTracks && currentTrack && jb.isPlaying) {
+  if (hasTracks && currentTrack) {
     if (jukeboxNowPlayingTitle) jukeboxNowPlayingTitle.textContent = currentTrack.title;
     if (jukeboxNowPlayingSubmitter)
       jukeboxNowPlayingSubmitter.textContent = `Added by ${currentTrack.addedByName || "Player"}`;
-    if (jukeboxStatusBadge)
-      jukeboxStatusBadge.textContent = `🎶 NOW PLAYING (${jb.currentTrackIndex + 1}/${jb.playlist.length})`;
+    if (jukeboxVideoPlaceholder) jukeboxVideoPlaceholder.classList.add("hidden");
+    if (jukeboxPlayerBody) jukeboxPlayerBody.classList.remove("placeholder-active");
+
     if (btnJukeboxSkip) btnJukeboxSkip.disabled = false;
+    if (btnJukeboxPlayPause) {
+      btnJukeboxPlayPause.disabled = false;
+      if (jb.isPlaying) {
+        btnJukeboxPlayPause.title = "Pause playback";
+        if (btnJukeboxPlayPauseIcon) btnJukeboxPlayPauseIcon.textContent = "⏸️";
+        if (btnJukeboxPlayPauseText) btnJukeboxPlayPauseText.textContent = "Pause";
+      } else {
+        btnJukeboxPlayPause.title = "Resume playback";
+        if (btnJukeboxPlayPauseIcon) btnJukeboxPlayPauseIcon.textContent = "▶️";
+        if (btnJukeboxPlayPauseText) btnJukeboxPlayPauseText.textContent = "Play";
+      }
+    }
+
+    if (jukeboxStatusBadge) {
+      if (jb.isPlaying) {
+        jukeboxStatusBadge.textContent = `🎶 NOW PLAYING (${jb.currentTrackIndex + 1}/${jb.playlist.length})`;
+        jukeboxStatusBadge.classList.remove("status-paused");
+      } else {
+        jukeboxStatusBadge.textContent = `⏸️ PAUSED (${jb.currentTrackIndex + 1}/${jb.playlist.length})`;
+        jukeboxStatusBadge.classList.add("status-paused");
+      }
+    }
   } else {
     if (jukeboxNowPlayingTitle) jukeboxNowPlayingTitle.textContent = "Playlist Empty";
     if (jukeboxNowPlayingSubmitter)
       jukeboxNowPlayingSubmitter.textContent = "Add a YouTube link below to start playing";
-    if (jukeboxStatusBadge) jukeboxStatusBadge.textContent = "IDLE";
+    if (jukeboxStatusBadge) {
+      jukeboxStatusBadge.textContent = "IDLE";
+      jukeboxStatusBadge.classList.remove("status-paused");
+    }
     if (btnJukeboxSkip) btnJukeboxSkip.disabled = true;
+    if (btnJukeboxPlayPause) {
+      btnJukeboxPlayPause.disabled = true;
+      if (btnJukeboxPlayPauseIcon) btnJukeboxPlayPauseIcon.textContent = "⏸️";
+      if (btnJukeboxPlayPauseText) btnJukeboxPlayPauseText.textContent = "Pause";
+    }
+    if (jukeboxVideoPlaceholder) jukeboxVideoPlaceholder.classList.remove("hidden");
+    if (jukeboxPlayerBody) jukeboxPlayerBody.classList.add("placeholder-active");
   }
 
   if (jukeboxQueueCount) {
@@ -4708,7 +5136,7 @@ function renderJukeboxModal(jb: JukeboxState | null) {
 
         const idxSpan = document.createElement("span");
         idxSpan.className = "queue-item-idx";
-        idxSpan.textContent = index === jb.currentTrackIndex ? "▶" : `${index + 1}`;
+        idxSpan.textContent = index === jb.currentTrackIndex ? (jb.isPlaying ? "▶" : "⏸") : `${index + 1}`;
 
         const infoDiv = document.createElement("div");
         infoDiv.className = "queue-item-info";
@@ -4726,10 +5154,42 @@ function renderJukeboxModal(jb: JukeboxState | null) {
         itemLeft.appendChild(idxSpan);
         itemLeft.appendChild(infoDiv);
 
+        const actionsDiv = document.createElement("div");
+        actionsDiv.className = "queue-item-actions";
+
+        const btnMoveUp = document.createElement("button");
+        btnMoveUp.type = "button";
+        btnMoveUp.className = "btn-queue-move btn-queue-up";
+        btnMoveUp.title = index === 0 ? "Already at top" : "Move track up";
+        btnMoveUp.setAttribute("aria-label", "Move track up");
+        btnMoveUp.innerHTML = "▲";
+        btnMoveUp.disabled = index === 0;
+        btnMoveUp.addEventListener("click", (e) => {
+          e.stopPropagation();
+          if (multiplayer && currentModalJukeboxId && index > 0) {
+            multiplayer.moveJukeboxTrack(currentModalJukeboxId, track.id, "up");
+          }
+        });
+
+        const btnMoveDown = document.createElement("button");
+        btnMoveDown.type = "button";
+        btnMoveDown.className = "btn-queue-move btn-queue-down";
+        btnMoveDown.title = index === jb.playlist.length - 1 ? "Already at bottom" : "Move track down";
+        btnMoveDown.setAttribute("aria-label", "Move track down");
+        btnMoveDown.innerHTML = "▼";
+        btnMoveDown.disabled = index === jb.playlist.length - 1;
+        btnMoveDown.addEventListener("click", (e) => {
+          e.stopPropagation();
+          if (multiplayer && currentModalJukeboxId && index < jb.playlist.length - 1) {
+            multiplayer.moveJukeboxTrack(currentModalJukeboxId, track.id, "down");
+          }
+        });
+
         const btnRemove = document.createElement("button");
         btnRemove.type = "button";
         btnRemove.className = "btn-queue-remove";
         btnRemove.title = "Remove from playlist";
+        btnRemove.setAttribute("aria-label", "Remove from playlist");
         btnRemove.innerHTML = "🗑️";
         btnRemove.addEventListener("click", (e) => {
           e.stopPropagation();
@@ -4738,8 +5198,12 @@ function renderJukeboxModal(jb: JukeboxState | null) {
           }
         });
 
+        actionsDiv.appendChild(btnMoveUp);
+        actionsDiv.appendChild(btnMoveDown);
+        actionsDiv.appendChild(btnRemove);
+
         item.appendChild(itemLeft);
-        item.appendChild(btnRemove);
+        item.appendChild(actionsDiv);
         jukeboxQueueList.appendChild(item);
       });
     }
@@ -4765,19 +5229,6 @@ function initJukeboxUI() {
     });
   }
 
-  if (btnToggleJukeboxCollapse && jukeboxPlayerCard) {
-    btnToggleJukeboxCollapse.addEventListener("click", () => {
-      jukeboxPlayerCard.classList.toggle("collapsed");
-      btnToggleJukeboxCollapse.textContent = jukeboxPlayerCard.classList.contains("collapsed") ? "🗖" : "🗕";
-    });
-  }
-
-  if (btnOpenJukeboxFromPlayer) {
-    btnOpenJukeboxFromPlayer.addEventListener("click", () => {
-      openJukeboxModal();
-    });
-  }
-
   if (btnJukeboxErrorSkip) {
     btnJukeboxErrorSkip.addEventListener("click", () => {
       if (multiplayer && currentModalJukeboxId) {
@@ -4800,6 +5251,14 @@ function initJukeboxUI() {
       if (jukeboxManager) {
         const isMuted = jukeboxManager.toggleMute();
         btnJukeboxHudMute.textContent = isMuted ? "🔇" : "🔊";
+      }
+    });
+  }
+
+  if (btnJukeboxPlayPause) {
+    btnJukeboxPlayPause.addEventListener("click", () => {
+      if (multiplayer && currentModalJukeboxId) {
+        multiplayer.toggleJukeboxPause(currentModalJukeboxId);
       }
     });
   }
@@ -6289,6 +6748,8 @@ const chessLobbyView = document.getElementById("chess-lobby-view") as HTMLDivEle
 const chessGameView = document.getElementById("chess-game-view") as HTMLDivElement | null;
 
 // Lobby View Elements
+const chessWaitingGrid = document.getElementById("chess-waiting-grid") as HTMLDivElement | null;
+const chessWaitingCountPill = document.getElementById("chess-waiting-count-pill") as HTMLElement | null;
 const btnChessJoinMatch = document.getElementById("btn-chess-join-match") as HTMLButtonElement | null;
 const chessQueueStatus = document.getElementById("chess-queue-status") as HTMLDivElement | null;
 const chessQueueText = document.getElementById("chess-queue-text") as HTMLElement | null;
@@ -6350,6 +6811,31 @@ function setupSceneChessEvents(scene: GameScene) {
   };
 }
 
+let fishingGame: FishingGame | null = null;
+
+function setupSceneAquariumEvents(scene: GameScene) {
+  if (!scene) return;
+  if ((scene as any)._aquariumEventsBound) return;
+  (scene as any)._aquariumEventsBound = true;
+
+  if (!fishingGame) {
+    fishingGame = new FishingGame();
+    fishingGame.init();
+    fishingGame.setBroadcastCallback((fish, size, quality) => {
+      if (multiplayer) {
+        multiplayer.sendChatMessage({
+          roomType: "map",
+          text: `🎣 Caught a ${quality.toUpperCase()} ${fish.name} (${size} in) at the Aquarium!`,
+        });
+      }
+    });
+  }
+
+  scene.onAquariumClick = (aqId: string) => {
+    fishingGame?.open(aqId);
+  };
+}
+
 function openChessModal(chessBoardId: string) {
   if (!chessModal) return;
   activeChessBoardId = chessBoardId;
@@ -6390,6 +6876,14 @@ function closeChessModal() {
       }
     }
 
+    // Cancel own waiting game if modal is closed while waiting
+    const myWaitingMatch = currentChessLobbyState?.waitingMatches?.find(
+      (m) => m.whitePlayer?.sessionId === mySid
+    );
+    if (myWaitingMatch) {
+      multiplayer.cancelChessJoin(activeChessBoardId);
+    }
+
     multiplayer.leaveChessLobby(activeChessBoardId);
   }
 
@@ -6416,18 +6910,156 @@ function renderChessLobby(state: ChessLobbyState) {
   currentChessLobbyState = state;
   const mySessionId = multiplayer?.room?.sessionId;
 
-  // 1. Check if local player is in queue (waiting match)
-  const myWaitingMatch = state.waitingMatches?.find(
+  // 1. Render Waiting Games Grid (Lounge Section)
+  const waitingMatches = state.waitingMatches || [];
+  if (chessWaitingCountPill) {
+    chessWaitingCountPill.textContent = `${waitingMatches.length} Open Match${waitingMatches.length === 1 ? "" : "es"}`;
+  }
+
+  const myWaitingMatch = waitingMatches.find(
     (m) => m.whitePlayer?.sessionId === mySessionId
   );
+  const otherWaitingMatches = waitingMatches.filter(
+    (m) => m.whitePlayer?.sessionId !== mySessionId
+  );
 
-  if (myWaitingMatch) {
-    if (btnChessJoinMatch) btnChessJoinMatch.classList.add("hidden");
-    if (chessQueueStatus) chessQueueStatus.classList.remove("hidden");
-    if (chessQueueText) chessQueueText.textContent = "Waiting for opponent to join...";
-  } else {
-    if (btnChessJoinMatch) btnChessJoinMatch.classList.remove("hidden");
-    if (chessQueueStatus) chessQueueStatus.classList.add("hidden");
+  if (chessWaitingGrid) {
+    chessWaitingGrid.innerHTML = "";
+
+    // FIRST ITEM IN GRID: "Create Game" (or your own hosted waiting game)
+    if (!myWaitingMatch) {
+      const createCard = document.createElement("div");
+      createCard.className = "chess-waiting-card chess-create-card";
+      createCard.title = "Host a new chess game as White";
+      createCard.innerHTML = `
+        <div class="chess-create-card-inner">
+          <div class="chess-create-icon-badge">
+            <span class="chess-create-icon">➕</span>
+          </div>
+          <div class="chess-create-info">
+            <h4 class="chess-create-title">Create Game</h4>
+            <p class="chess-create-desc">Host a match as White ⚪ and wait for a second player to join</p>
+          </div>
+          <button type="button" class="btn-create-chess-game">
+            <span>➕ Create Game</span>
+          </button>
+        </div>
+      `;
+
+      createCard.addEventListener("click", () => {
+        if (!activeChessBoardId || !multiplayer) return;
+        multiplayer.createChessMatch(activeChessBoardId);
+      });
+
+      chessWaitingGrid.appendChild(createCard);
+    } else {
+      // Local player has created a game and is waiting for player 2
+      const myCard = document.createElement("div");
+      myCard.className = "chess-waiting-card chess-my-waiting-card";
+      const hostName = myWaitingMatch.whitePlayer?.name || "You";
+      const hostAvatar = myWaitingMatch.whitePlayer?.avatarUrl || "/assets/sprites/default/sprite1.png";
+
+      myCard.innerHTML = `
+        <div class="chess-card-top-row">
+          <span class="chess-card-match-id">Match #${myWaitingMatch.matchId.slice(-6)} <span class="chess-you-pill">(You)</span></span>
+          <span class="chess-card-status-pill waiting">
+            <span class="chess-card-pulse-dot"></span> Waiting for Opponent
+          </span>
+        </div>
+        <div class="chess-card-players-row">
+          <div class="chess-card-player-item" title="Host: ${escapeHtml(hostName)}">
+            <img src="${hostAvatar}" class="chess-card-player-avatar" alt="${escapeHtml(hostName)}" />
+            <span class="chess-card-player-name">⚪ ${escapeHtml(hostName)}</span>
+          </div>
+          <span class="chess-card-vs">VS</span>
+          <div class="chess-card-player-item waiting-slot" title="Waiting for player 2 to join...">
+            <div class="chess-slot-avatar-placeholder">⏳</div>
+            <span class="chess-card-player-name slot-hint">⚫ Open Slot</span>
+          </div>
+        </div>
+        <div class="chess-card-footer">
+          <div class="chess-waiting-status-text">
+            <span class="chess-queue-spinner"></span>
+            <span>Waiting for Player 2...</span>
+          </div>
+          <button type="button" class="btn-cancel-waiting-game" title="Cancel this game">
+            ✕ Cancel Game
+          </button>
+        </div>
+      `;
+
+      const btnCancel = myCard.querySelector(".btn-cancel-waiting-game");
+      if (btnCancel) {
+        btnCancel.addEventListener("click", (e) => {
+          e.stopPropagation();
+          if (!activeChessBoardId || !multiplayer) return;
+          multiplayer.cancelChessJoin(activeChessBoardId);
+        });
+      }
+
+      chessWaitingGrid.appendChild(myCard);
+    }
+
+    // OTHER ITEMS IN GRID: List of games waiting for player second to join
+    otherWaitingMatches.forEach((game) => {
+      const card = document.createElement("div");
+      card.className = "chess-waiting-card";
+
+      const hostName = game.whitePlayer?.name || "Player 1";
+      const hostAvatar = game.whitePlayer?.avatarUrl || "/assets/sprites/default/sprite1.png";
+
+      card.innerHTML = `
+        <div class="chess-card-top-row">
+          <span class="chess-card-match-id">Match #${game.matchId.slice(-6)}</span>
+          <span class="chess-card-status-pill waiting">
+            <span class="chess-card-pulse-dot"></span> Open Challenge
+          </span>
+        </div>
+        <div class="chess-card-players-row">
+          <div class="chess-card-player-item" title="Host: ${escapeHtml(hostName)}">
+            <img src="${hostAvatar}" class="chess-card-player-avatar" alt="${escapeHtml(hostName)}" />
+            <span class="chess-card-player-name">⚪ ${escapeHtml(hostName)}</span>
+          </div>
+          <span class="chess-card-vs">VS</span>
+          <div class="chess-card-player-item waiting-slot" title="Waiting for second player!">
+            <div class="chess-slot-avatar-placeholder">⚔️</div>
+            <span class="chess-card-player-name slot-hint">⚫ Join as Player 2</span>
+          </div>
+        </div>
+        <div class="chess-card-footer">
+          <div class="chess-waiting-meta">
+            <span>♟️ Ready for Challenger</span>
+          </div>
+          <button type="button" class="btn-join-waiting-game" data-match-id="${game.matchId}">
+            ⚔️ Join Game
+          </button>
+        </div>
+      `;
+
+      const btnJoin = card.querySelector(".btn-join-waiting-game");
+      if (btnJoin) {
+        btnJoin.addEventListener("click", (e) => {
+          e.stopPropagation();
+          if (!activeChessBoardId || !multiplayer) return;
+          multiplayer.joinChessMatch(activeChessBoardId, game.matchId);
+        });
+      }
+
+      chessWaitingGrid.appendChild(card);
+    });
+
+    if (otherWaitingMatches.length === 0 && !myWaitingMatch) {
+      const hintCard = document.createElement("div");
+      hintCard.className = "chess-waiting-card chess-waiting-hint-card";
+      hintCard.innerHTML = `
+        <div class="chess-hint-content">
+          <span class="chess-hint-icon">♟️</span>
+          <strong class="chess-hint-title">No other players waiting</strong>
+          <span class="chess-hint-desc">Click "Create Game" to host a match and wait for a challenger!</span>
+        </div>
+      `;
+      chessWaitingGrid.appendChild(hintCard);
+    }
   }
 
   // 2. Render ongoing games
@@ -7025,6 +7657,160 @@ function setupMultiplayerChessListeners(mgr: MultiplayerManager) {
   });
 }
 
+function setupMultiplayerParkingPointsListeners(mgr: MultiplayerManager) {
+  mgr.onParkingPointsAwarded((data) => {
+    console.log(`[Parking Points] Awarded point! New total: ${data.points} Parking`, data);
+    if (currentUser) {
+      currentUser.parkingPoints = data.points;
+      try {
+        localStorage.setItem("lepark_auth_user", JSON.stringify(currentUser));
+      } catch {}
+    }
+    if (topbarParkingPoints) {
+      topbarParkingPoints.textContent = `${data.points} Parking`;
+    }
+    renderSpriteTemplatesGrid();
+  });
+}
+
+function setupMultiplayerThrowBattleListeners(mgr: MultiplayerManager) {
+  // Received invite to battle from another player
+  mgr.onThrowBattleInvite((data) => {
+    pendingInviteChallengerSessionId = data.challengerSessionId;
+    if (tbInviteChallengerName) {
+      tbInviteChallengerName.textContent = data.challengerName;
+    }
+    const tag = document.getElementById("tb-invite-challenger-tag");
+    if (tag) tag.textContent = data.challengerName;
+    throwBattleInviteModal?.classList.remove("hidden");
+    setGameControlsActive(false);
+  });
+
+  // Challenge sent confirmation
+  mgr.onThrowBattleChallengeSent((data) => {
+    pendingChallengeTargetSessionId = data.targetSessionId;
+    if (tbWaitingText) {
+      tbWaitingText.textContent = `Waiting for ${data.targetName} to accept or reject the Throw Battle...`;
+    }
+    throwBattleWaitingModal?.classList.remove("hidden");
+    setGameControlsActive(false);
+  });
+
+  // Challenger cancelled challenge
+  mgr.onThrowBattleChallengeCancelled(() => {
+    pendingInviteChallengerSessionId = null;
+    throwBattleInviteModal?.classList.add("hidden");
+    setGameControlsActive(true);
+  });
+
+  // Target rejected challenge
+  mgr.onThrowBattleRejected((data) => {
+    if (tbWaitingText) {
+      tbWaitingText.textContent = `${data.targetName} declined your battle challenge.`;
+    }
+    setTimeout(() => {
+      throwBattleWaitingModal?.classList.add("hidden");
+      pendingChallengeTargetSessionId = null;
+      setGameControlsActive(true);
+    }, 1600);
+  });
+
+  // Error during challenge
+  mgr.onThrowBattleError((data) => {
+    alert(data.message || "Throw battle error");
+    throwBattleWaitingModal?.classList.add("hidden");
+    throwBattleInviteModal?.classList.add("hidden");
+    pendingChallengeTargetSessionId = null;
+    pendingInviteChallengerSessionId = null;
+    setGameControlsActive(true);
+  });
+
+  // Battle Start!
+  mgr.onThrowBattleStart((state: ThrowBattleState) => {
+    throwBattleWaitingModal?.classList.add("hidden");
+    throwBattleInviteModal?.classList.add("hidden");
+    pendingChallengeTargetSessionId = null;
+    pendingInviteChallengerSessionId = null;
+
+    throwBattleModal?.classList.remove("hidden");
+    const gameoverOverlay = document.getElementById("tb-gameover-overlay");
+    if (gameoverOverlay) gameoverOverlay.classList.add("hidden");
+
+    if (!activeThrowBattleGame && throwBattleCanvas) {
+      activeThrowBattleGame = new ThrowBattleGame(throwBattleCanvas);
+      activeThrowBattleGame.onMove = (matchId, x) => {
+        multiplayer?.sendThrowBattleMove(matchId, x);
+      };
+      activeThrowBattleGame.onEnterAngle = (matchId, x) => {
+        multiplayer?.sendThrowBattleEnterAngle(matchId, x);
+      };
+      activeThrowBattleGame.onLockAngle = (matchId, angle) => {
+        multiplayer?.sendThrowBattleLockAngle(matchId, angle);
+      };
+      activeThrowBattleGame.onThrow = (matchId, angle, power, wind, projectileType) => {
+        multiplayer?.sendThrowBattleThrow(matchId, angle, power, wind, projectileType);
+      };
+      activeThrowBattleGame.onTurnResolved = (payload) => {
+        multiplayer?.sendThrowBattleTurnResult(payload);
+      };
+      activeThrowBattleGame.onLeaveMatch = (matchId) => {
+        multiplayer?.sendThrowBattleLeave(matchId);
+      };
+    }
+
+    if (activeThrowBattleGame) {
+      activeThrowBattleGame.initBattle(state, mgr.sessionId || "");
+    }
+    setGameControlsActive(false);
+  });
+
+  // Real-time synchronization
+  mgr.onThrowBattlePlayerMoved((data) => {
+    activeThrowBattleGame?.syncOpponentMove(data.sessionId, data.x);
+  });
+
+  mgr.onThrowBattleAngleStarted((data) => {
+    activeThrowBattleGame?.syncAngleStarted(data.sessionId, data.x);
+  });
+
+  mgr.onThrowBattlePowerStarted((data) => {
+    activeThrowBattleGame?.syncPowerStarted(data.sessionId, data.angle);
+  });
+
+  mgr.onThrowBattleThrown((data) => {
+    activeThrowBattleGame?.syncThrown(
+      data.sessionId,
+      data.angle,
+      data.power,
+      data.wind,
+      data.projectileType
+    );
+  });
+
+  mgr.onThrowBattleNextTurn((data) => {
+    activeThrowBattleGame?.syncNextTurn(
+      data.currentTurn,
+      data.wind,
+      data.round,
+      data.p1Hp,
+      data.p2Hp,
+      data.p1X,
+      data.p2X
+    );
+  });
+
+  mgr.onThrowBattleGameOver((data) => {
+    activeThrowBattleGame?.syncGameOver(data.winnerSessionId, data.p1Hp, data.p2Hp);
+  });
+
+  mgr.onThrowBattlePlayerLeft(() => {
+    if (activeThrowBattleGame) {
+      alert("Opponent left or disconnected from the Throw Battle.");
+      closeThrowBattleModal();
+    }
+  });
+}
+
 
 
 if (privateZoneNameForm) {
@@ -7123,6 +7909,8 @@ editorAssetCards.forEach((card) => {
       selectAshtrayTool();
     } else if (toolType === "chess_board") {
       selectChessBoardTool();
+    } else if (toolType === "aquarium") {
+      selectAquariumTool();
     } else if (toolType === "spawn_point") {
       selectSpawnPointTool();
     } else if (toolType === "color_dropper") {
@@ -7255,6 +8043,26 @@ window.addEventListener(
 );
 
 window.addEventListener("keydown", (e: KeyboardEvent) => {
+  if (throwBattleModal && !throwBattleModal.classList.contains("hidden")) {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+    if (
+      e.code === "Space" ||
+      e.code === "ArrowLeft" ||
+      e.code === "ArrowRight" ||
+      e.code === "KeyA" ||
+      e.code === "KeyD"
+    ) {
+      activeThrowBattleGame?.handleKeyDown(e.code);
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+  }
+
   if (e.key === "Escape") {
     if (typeraceModal && !typeraceModal.classList.contains("hidden")) {
       e.preventDefault();
@@ -7339,6 +8147,12 @@ window.addEventListener("keydown", (e: KeyboardEvent) => {
   }
 });
 
+window.addEventListener("keyup", (e: KeyboardEvent) => {
+  if (throwBattleModal && !throwBattleModal.classList.contains("hidden")) {
+    activeThrowBattleGame?.handleKeyUp(e.code);
+  }
+});
+
 // Map Modal Handlers
 function openMapModal() {
   if (mapCurrentSpaceName) {
@@ -7376,6 +8190,11 @@ if (btnAdminAddSpace) {
 function updateTopBarUI() {
   const name = getEffectivePlayerName();
   topbarUserName.textContent = name;
+
+  if (topbarParkingPoints) {
+    const pts = currentUser?.parkingPoints ?? 0;
+    topbarParkingPoints.textContent = `${pts} Parking`;
+  }
 
   const isSuperadmin = currentUser?.role === "superadmin";
   (window as any).currentUserRole = currentUser?.role || "user";
@@ -7686,6 +8505,8 @@ async function switchSpace(
     setupMultiplayerTypeRaceListeners(multiplayer);
     setupMultiplayerSmokingGameListeners(multiplayer);
     setupMultiplayerChessListeners(multiplayer);
+    setupMultiplayerParkingPointsListeners(multiplayer);
+    setupMultiplayerThrowBattleListeners(multiplayer);
 
     await multiplayer.joinGame({
       name: effectiveName,
@@ -8135,7 +8956,7 @@ async function enterGameSession() {
   manager.onNetworkStats((stats) => {
     const { pingMs, packetLoss } = stats;
     if (topbarPingStat) {
-      topbarPingStat.textContent = `${pingMs} ms`;
+      topbarPingStat.textContent = pingMs > 0 ? `${pingMs} ms` : "-- ms";
     }
     if (topbarLossStat) {
       topbarLossStat.textContent = `${packetLoss}% loss`;
@@ -8164,6 +8985,8 @@ async function enterGameSession() {
   setupMultiplayerTypeRaceListeners(manager);
   setupMultiplayerSmokingGameListeners(manager);
   setupMultiplayerChessListeners(manager);
+  setupMultiplayerParkingPointsListeners(manager);
+  setupMultiplayerThrowBattleListeners(manager);
 
   try {
     await manager.joinGame({
@@ -8224,6 +9047,7 @@ async function enterGameSession() {
           setupSceneTypewriterEvents(scene);
           setupSceneAshtrayEvents(scene);
           setupSceneChessEvents(scene);
+      setupSceneAquariumEvents(scene);
           setupSceneEditorToolEvents(scene);
         }
       }

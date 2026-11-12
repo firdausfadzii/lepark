@@ -81,15 +81,13 @@
           </div>
         </div>
 
-        <!-- Right: Map Icon, Ping & Packet Loss -->
-        <div class="topbar-actions-group">
-          <!-- Map Icon Button -->
-          <button type="button" id="btn-open-map" class="topbar-map-btn" title="Explore Spaces (Map)">
-            <svg class="map-svg-icon" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M20.5 3l-6 2.25L8.5 3 3.5 4.88v16.12l6-2.25 6 2.25 5-1.88V3zM9.5 5.15l5 1.88v11.82l-5-1.88V5.15zM5 6.42l3-1.12v12.28l-3 1.13V6.42zm14 11.16l-3 1.13V6.43l3-1.13v12.28z"/>
-            </svg>
-          </button>
+        <!-- Parking Points Display (Beside Player Info) -->
+        <div id="topbar-parking-points" class="topbar-parking-points" title="Parking Points">
+          0 Parking
+        </div>
 
+        <!-- Right: Ping & Packet Loss -->
+        <div class="topbar-actions-group">
           <!-- Network Ping & Loss Pill -->
           <div class="topbar-net-stats" title="Connection latency & packet loss">
             <svg class="net-svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -106,6 +104,13 @@
 
     <!-- Top-Right Action Controls (Chat & Voice toggle triggers) -->
     <div id="topright-bar" class="topright-bar">
+      <!-- Map Icon Button (Moved to right side of bar, left side of chat button) -->
+      <button type="button" id="btn-open-map" class="topright-action-btn topbar-map-btn" title="Explore Spaces (Map)" aria-label="Explore Spaces">
+        <svg class="map-svg-icon" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M20.5 3l-6 2.25L8.5 3 3.5 4.88v16.12l6-2.25 6 2.25 5-1.88V3zM9.5 5.15l5 1.88v11.82l-5-1.88V5.15zM5 6.42l3-1.12v12.28l-3 1.13V6.42zm14 11.16l-3 1.13V6.43l3-1.13v12.28z"/>
+        </svg>
+      </button>
+
       <!-- Message Chat Bubble -->
       <button type="button" id="btn-toggle-chat" class="topright-action-btn topright-chat-btn active" title="Toggle Chat Bar" aria-label="Toggle Chat">
         <svg class="chat-bubble-svg" viewBox="0 0 24 24">
@@ -301,27 +306,7 @@
       </div>
     </div>
 
-    <!-- YouTube Jukebox Floating Video Screen (Fully visible for YouTube embed compliance) -->
-    <div id="jukebox-player-card" class="jukebox-player-card hidden" role="region" aria-label="YouTube Jukebox Video">
-      <div class="jukebox-player-header">
-        <div class="jukebox-player-title-row">
-          <span class="jukebox-player-dot"></span>
-          <span class="jukebox-player-title" id="jukebox-player-header-title">YouTube Jukebox</span>
-        </div>
-        <div class="jukebox-player-actions">
-          <button type="button" id="btn-toggle-jukebox-collapse" class="btn-jukebox-player-action" title="Minimize / Expand Video">🗕</button>
-          <button type="button" id="btn-open-jukebox-from-player" class="btn-jukebox-player-action" title="Open Playlist Queue">📋</button>
-        </div>
-      </div>
-      <div class="jukebox-player-body" id="jukebox-player-body">
-        <div id="youtube-jukebox-iframe"></div>
-        <div id="jukebox-player-error-overlay" class="jukebox-player-error-overlay hidden">
-          <span class="player-error-badge">⚠️ Embed Restricted</span>
-          <p class="player-error-desc">Video owner restricted embed</p>
-          <a id="btn-player-open-external" href="#" target="_blank" rel="noopener noreferrer" class="btn-player-link">Watch on YouTube ↗</a>
-        </div>
-      </div>
-    </div>
+
 
     <!-- Left-Side Tile Color / Tint Sidebar (Can Hide & Expand) -->
     <aside id="map-editor-color-sidebar" class="map-editor-color-sidebar editor-category-group editor-color-group hidden" data-category="color" aria-label="Tile Color & Tint Picker">
@@ -1505,6 +1490,28 @@
               </div>
             </button>
 
+            <!-- Asset: Aquarium (aquarium_1) -->
+            <button
+              type="button"
+              class="editor-asset-card"
+              id="tool-aquarium"
+              data-tool-type="aquarium"
+              data-asset-id="aquarium_1"
+              data-asset-name="Aquarium"
+              data-tile-type="decoration"
+              title="Aquarium (aquarium_1) - Interactive Stardew Valley Fishing Game, freeform placement"
+            >
+              <div class="asset-card-thumb aquarium-tool-thumb">
+                <img src="/assets/decoration/aquarium_1.png" alt="Aquarium" class="aquarium-card-img" />
+                <span class="asset-card-badge aquarium-badge">Fishing</span>
+                <span class="asset-card-check">✓</span>
+              </div>
+              <div class="asset-card-info">
+                <span class="asset-card-name">Aquarium 1</span>
+                <span class="asset-card-code">aquarium_1</span>
+              </div>
+            </button>
+
             <!-- Tool: Remove Decoration -->
             <button
               type="button"
@@ -2303,14 +2310,13 @@
         </div>
         <div class="player-context-body">
           <button type="button" class="player-context-btn" id="btn-player-menu-whisper" title="Send direct message">
-            <span class="player-context-btn-icon">💬</span>
             <span class="player-context-btn-label">Whisper</span>
-            <span class="player-context-btn-tag">DM</span>
           </button>
           <button type="button" class="player-context-btn" id="btn-player-menu-visit-space" title="Visit player's personal space">
-            <span class="player-context-btn-icon">🚀</span>
             <span class="player-context-btn-label">Visit Space</span>
-            <span class="player-context-btn-tag">Space</span>
+          </button>
+          <button type="button" class="player-context-btn" id="btn-player-menu-throw-battle" title="Challenge player to Throw Battle">
+            <span class="player-context-btn-label">Throw battle</span>
           </button>
         </div>
       </div>
@@ -2419,11 +2425,6 @@
           <div class="auth-switch-prompt">
             Don't have an account?
             <button type="button" id="link-go-register" class="auth-link-btn">Create one</button>
-          </div>
-
-          <div class="auth-demo-hint">
-            <span class="demo-pill">👑 Superadmin demo:</span>
-            <span><code>admin</code> / <code>adminpassword123</code></span>
           </div>
         </form>
 
@@ -2577,7 +2578,7 @@
           <!-- Sprite Template Selection (Rendered dynamically based on added sprites) -->
           <div class="form-group sprite-templates-group">
             <label class="form-label">
-              Sprite Template <span class="badge-optional" id="badge-template-count">2 Available</span>
+              Sprite Template <span class="badge-optional" id="badge-template-count">3 Available</span>
             </label>
             <div id="sprite-templates-grid" class="sprite-templates-grid">
               <!-- Dynamically populated based on added sprites -->
@@ -3026,8 +3027,29 @@
             <span class="now-playing-loop-badge">🔁 AUTO-LOOPING</span>
           </div>
 
-          <div class="now-playing-track-info">
-            <div class="now-playing-disc-spin" id="jukebox-disc-icon">💿</div>
+          <!-- Video Frame Container (YouTube player shown directly in Now Playing) -->
+          <div class="jukebox-video-frame-container" id="jukebox-video-frame-container">
+            <div class="jukebox-player-body placeholder-active" id="jukebox-player-body">
+              <div id="youtube-jukebox-iframe"></div>
+              <div id="jukebox-player-error-overlay" class="jukebox-player-error-overlay hidden">
+                <span class="player-error-badge">⚠️ Embed Restricted</span>
+                <p class="player-error-desc">Video owner restricted playback in third-party players</p>
+                <a id="btn-player-open-external" href="#" target="_blank" rel="noopener noreferrer" class="btn-player-link">Watch on YouTube ↗</a>
+              </div>
+            </div>
+
+            <!-- Empty State / Placeholder when no track is playing -->
+            <div id="jukebox-video-placeholder" class="jukebox-video-placeholder">
+              <div class="now-playing-disc-spin" id="jukebox-disc-icon">📻</div>
+              <div class="video-placeholder-meta">
+                <p class="video-placeholder-title">No Video Playing</p>
+                <span class="video-placeholder-sub">Add a YouTube link below to start</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Active Track Info (Always visible whether playing, paused, or idle) -->
+          <div class="now-playing-track-info" id="jukebox-track-info">
             <div class="now-playing-meta">
               <h3 class="now-playing-title" id="jukebox-now-playing-title">Playlist Empty</h3>
               <p class="now-playing-submitter" id="jukebox-now-playing-submitter">Add a YouTube link below to start playing</p>
@@ -3035,6 +3057,10 @@
           </div>
 
           <div class="now-playing-controls-row">
+            <button type="button" id="btn-jukebox-play-pause" class="btn-jukebox-control" title="Pause playback">
+              <span id="btn-jukebox-play-pause-icon">⏸️</span>
+              <span id="btn-jukebox-play-pause-text">Pause</span>
+            </button>
             <button type="button" id="btn-jukebox-skip" class="btn-jukebox-control" title="Skip to next track">
               <span>⏭️ Skip Track</span>
             </button>
@@ -3581,27 +3607,23 @@
 
         <!-- VIEW 1: LOBBY & ONGOING GAMES VIEW -->
         <div id="chess-lobby-view" class="chess-view-section">
-          <!-- Top Hero: Join Match -->
-          <div class="chess-join-hero">
-            <div class="chess-join-badge-row">
-              <div class="chess-pulse-pill">
-                <span class="lobby-pulse-dot"></span>
-                <span id="chess-lobby-status-pill">CHESS LOUNGE</span>
+          <!-- Chess Lounge Section: Grid of Waiting Games -->
+          <div class="chess-lounge-section">
+            <div class="chess-section-header">
+              <div class="chess-section-title-wrap">
+                <div class="chess-pulse-pill">
+                  <span class="lobby-pulse-dot"></span>
+                  <span id="chess-lobby-status-pill">CHESS LOUNGE</span>
+                </div>
+                <h4 class="chess-section-title">Waiting Games</h4>
               </div>
+              <span class="chess-count-pill" id="chess-waiting-count-pill">0 Open Matches</span>
             </div>
-            <h3 class="chess-join-headline">Ready for a Match?</h3>
-            <p class="chess-join-subtext">Click Join Match to pair up with another player. When two players join, a game is created instantly!</p>
+            <p class="chess-lounge-subtitle">Create a game to host a match, or challenge an open player waiting for a second player to join!</p>
 
-            <!-- Actions row -->
-            <div class="chess-join-actions">
-              <button type="button" id="btn-chess-join-match" class="btn-primary btn-chess-join">
-                <span>⚔️ Join Match</span>
-              </button>
-              <div id="chess-queue-status" class="chess-queue-status hidden">
-                <span class="chess-queue-spinner"></span>
-                <span id="chess-queue-text">Waiting for opponent to join...</span>
-                <button type="button" id="btn-chess-cancel-join" class="btn-tertiary btn-chess-cancel">Cancel</button>
-              </div>
+            <!-- Waiting Games Grid: First item is "Create Game", subsequent items are waiting games -->
+            <div class="chess-waiting-grid" id="chess-waiting-grid">
+              <!-- Dynamically populated waiting game cards -->
             </div>
           </div>
 
@@ -3623,7 +3645,7 @@
             <div class="chess-games-empty" id="chess-games-empty">
               <div class="chess-empty-icon">♟️</div>
               <h5>No games in progress</h5>
-              <p>Be the first to join a match above, or invite a friend over to play!</p>
+              <p>Create a game above or challenge an open match to start playing!</p>
             </div>
           </div>
         </div>
@@ -3732,6 +3754,383 @@
               </div>
             </div>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- AQUARIUM MODAL: Stardew Valley Fishing Minigame & Fish Tank -->
+    <div id="aquarium-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="aquarium-modal-title">
+      <div class="modal-card aquarium-modal-card">
+        <!-- Modal Header -->
+        <div class="modal-header aquarium-modal-header">
+          <div class="aquarium-header-title-box">
+            <span class="aquarium-header-icon">🐟</span>
+            <div>
+              <h2 id="aquarium-modal-title" class="modal-title">Aquarium Fishing</h2>
+              <p class="modal-subtitle">Stardew Valley fishing mechanics • Catch rare freshwater &amp; saltwater species</p>
+            </div>
+          </div>
+          <div class="aquarium-header-actions">
+            <div class="aquarium-tabs-nav">
+              <button type="button" id="tab-aquarium-play" class="btn-aquarium-tab active">
+                <span>🎣</span> Fishing Game
+              </button>
+              <button type="button" id="tab-aquarium-collection" class="btn-aquarium-tab">
+                <span>🐠</span> Collection (<span id="aquarium-species-count">0</span>/12)
+              </button>
+            </div>
+            <button type="button" id="btn-aquarium-sound" class="btn-secondary btn-aquarium-icon-btn" title="Toggle Sound">🔊</button>
+            <button type="button" id="btn-close-aquarium-modal" class="btn-modal-close" title="Close">×</button>
+          </div>
+        </div>
+
+        <!-- VIEW 1: Fishing Stage View -->
+        <div id="aquarium-play-view" class="aquarium-view-section">
+          <!-- Top Filter & Status Bar -->
+          <div class="aquarium-top-toolbar">
+            <div class="aquarium-tank-selector">
+              <span class="tank-selector-label">Target Waters:</span>
+              <button type="button" class="btn-tank-choice active" data-tank="all">🌊 All Waters</button>
+              <button type="button" class="btn-tank-choice" data-tank="salt">🧂 Salt Water</button>
+              <button type="button" class="btn-tank-choice" data-tank="fresh">💧 Fresh Water</button>
+            </div>
+            <div class="aquarium-diff-badge" id="aquarium-diff-indicator">
+              <span>⭐ Difficulty:</span> <strong>Medium – Hard</strong>
+            </div>
+          </div>
+
+          <!-- Main Interactive Stage -->
+          <div class="aquarium-interactive-stage" id="aquarium-interactive-stage">
+            
+            <!-- STAGE 1: Cast / Waiting Phase -->
+            <div id="fishing-cast-panel" class="fishing-stage-panel">
+              <div class="fishing-water-scenery">
+                <div class="water-reflection-strip"></div>
+                <div class="water-ambient-bubbles">
+                  <span class="bubble b1"></span>
+                  <span class="bubble b2"></span>
+                  <span class="bubble b3"></span>
+                  <span class="bubble b4"></span>
+                  <span class="bubble b5"></span>
+                </div>
+                <div class="water-fish-silhouettes" id="water-fish-silhouettes">
+                  <!-- Swimming silhouettes in background -->
+                </div>
+                <div class="fishing-bobber-idle" id="fishing-bobber-idle">
+                  <div class="bobber-float-ring"></div>
+                  <div class="bobber-buoy"></div>
+                </div>
+              </div>
+
+              <div class="fishing-prompt-box">
+                <h3 id="fishing-cast-status-title">Cast your line into the aquarium</h3>
+                <p id="fishing-cast-status-desc">Hold &amp; release mechanics tuned for authentic Stardew Valley reel challenge!</p>
+                <button type="button" id="btn-cast-fishing-line" class="btn-primary btn-fishing-cast">
+                  <span>🎣</span> Cast Fishing Line (Space)
+                </button>
+              </div>
+
+              <!-- Bite Reaction Overlay (! HIT !) -->
+              <div id="fishing-bite-alert" class="fishing-bite-alert hidden">
+                <div class="bite-exclamation">❗</div>
+                <div class="bite-text">HIT! CLICK TO HOOK!</div>
+                <div class="bite-sub">Press Space or Click now!</div>
+              </div>
+            </div>
+
+            <!-- STAGE 2: Reeling Minigame (Stardew Valley Bar) -->
+            <div id="fishing-reel-panel" class="fishing-stage-panel hidden">
+              <div class="stardew-fishing-cabinet">
+                <!-- Wooden Header Plaque -->
+                <div class="stardew-cabinet-header">
+                  <span class="cabinet-star-icon">★</span>
+                  <span id="stardew-cabinet-title">REELING IN!</span>
+                  <span class="cabinet-star-icon">★</span>
+                </div>
+
+                <div class="stardew-fishing-core">
+                  <!-- Left: Water Gauge Tube -->
+                  <div class="stardew-water-column" id="stardew-water-column">
+                    <div class="water-column-glass"></div>
+                    <div class="water-column-bubbles">
+                      <span class="wb wb1"></span>
+                      <span class="wb wb2"></span>
+                      <span class="wb wb3"></span>
+                      <span class="wb wb4"></span>
+                    </div>
+
+                    <!-- Green Fishing Bar (Player Bobber Paddle) -->
+                    <div id="stardew-bobber-bar" class="stardew-bobber-bar">
+                      <div class="bobber-bar-cap top"></div>
+                      <div class="bobber-bar-body">
+                        <div class="bobber-bar-glow"></div>
+                      </div>
+                      <div class="bobber-bar-cap bottom"></div>
+                    </div>
+
+                    <!-- Fish Target Icon -->
+                    <div id="stardew-fish-target" class="stardew-fish-target">
+                      <img id="stardew-fish-img" src="/assets/fishing/salt_water/Pufferfish.png" alt="Fish Target" />
+                      <div class="fish-water-ripple"></div>
+                    </div>
+
+                    <!-- Hook Tension Sparks -->
+                    <div id="stardew-hook-sparks" class="stardew-hook-sparks hidden"></div>
+                  </div>
+
+                  <!-- Right: Vertical Catch Meter -->
+                  <div class="stardew-catch-gauge">
+                    <div class="catch-gauge-track">
+                      <div id="stardew-catch-fill" class="stardew-catch-fill" style="height: 25%;">
+                        <div class="catch-fill-shine"></div>
+                      </div>
+                    </div>
+                    <div class="catch-hook-icon" id="catch-hook-icon">🪝</div>
+                  </div>
+                </div>
+
+                <!-- Footer Status & Tension Bar -->
+                <div class="stardew-cabinet-footer">
+                  <div class="reel-tension-badge" id="reel-tension-badge">
+                    <span id="reel-tension-status">HOLD TO LIFT BAR</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Reeling Instructions -->
+              <div class="stardew-controls-hint">
+                <span class="hint-key">[MOUSE HOLD]</span> or <span class="hint-key">[SPACEBAR]</span> to raise green bar • Keep fish inside to reel in!
+              </div>
+            </div>
+
+            <!-- STAGE 3: Catch Result Modal Overlay -->
+            <div id="fishing-result-overlay" class="fishing-result-overlay hidden">
+              <div class="fishing-result-card" id="fishing-result-card">
+                <!-- Success View -->
+                <div id="result-success-box" class="result-box">
+                  <div class="result-banner-top">
+                    <span class="result-banner-sparkle">✨</span>
+                    <h3 class="result-banner-title">YOU CAUGHT A FISH!</h3>
+                    <span class="result-banner-sparkle">✨</span>
+                  </div>
+                  <div class="result-fish-showcase">
+                    <div class="result-fish-circle">
+                      <img id="result-fish-img" class="result-fish-img" src="/assets/fishing/salt_water/Clownfish.png" alt="Caught Fish" />
+                    </div>
+                    <div class="result-fish-badges">
+                      <span id="result-quality-badge" class="result-quality-badge gold-star">★ Gold Star</span>
+                      <span id="result-category-badge" class="result-category-badge">Salt Water</span>
+                    </div>
+                  </div>
+                  <div class="result-fish-details">
+                    <h4 id="result-fish-name" class="result-fish-name">Clownfish</h4>
+                    <p id="result-fish-size" class="result-fish-size">Size: <strong>6.2 in</strong></p>
+                    <p id="result-fish-desc" class="result-fish-desc">Vibrant orange stripes. Weaves between sea anemones.</p>
+                  </div>
+                  <div class="result-actions-row">
+                    <button type="button" id="btn-result-cast-again" class="btn-primary btn-result-btn">
+                      <span>🎣</span> Cast Again
+                    </button>
+                    <button type="button" id="btn-result-view-collection" class="btn-secondary btn-result-btn">
+                      <span>🐠</span> View Tank
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Escape View -->
+                <div id="result-escape-box" class="result-box hidden">
+                  <div class="result-escape-icon">💨</div>
+                  <h3 class="result-escape-title">The fish got away!</h3>
+                  <p class="result-escape-desc">It slipped off the hook! Maintain the green bar over the fish to keep tension.</p>
+                  <div class="result-actions-row">
+                    <button type="button" id="btn-result-try-again" class="btn-primary btn-result-btn">
+                      <span>🔄</span> Try Again
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- VIEW 2: Aquarium Tank & Fish Collection Journal -->
+        <div id="aquarium-collection-view" class="aquarium-view-section hidden">
+          <!-- Virtual Animated Tank Preview -->
+          <div class="aquarium-virtual-tank" id="aquarium-virtual-tank">
+            <div class="tank-glass-glare"></div>
+            <div class="tank-water-surface"></div>
+            <div class="tank-swimming-pool" id="tank-swimming-pool">
+              <!-- Dynamically populated swimming fish that player has caught -->
+            </div>
+            <div class="tank-gravel-bed">
+              <div class="tank-seaweed sw1"></div>
+              <div class="tank-seaweed sw2"></div>
+              <div class="tank-seaweed sw3"></div>
+            </div>
+            <div class="tank-caption">
+              <span>🐠 Virtual Aquarium Tank</span>
+              <em>Caught fish will swim here! (<span id="tank-swimming-count">0</span> swimming)</em>
+            </div>
+          </div>
+
+          <!-- Collection Stats & Header -->
+          <div class="aquarium-collection-header">
+            <div>
+              <h3 class="collection-title">Aquarium Species Encyclopedia</h3>
+              <p class="collection-subtitle">Discover and catch all 12 freshwater, saltwater, and misc aquarium specimens.</p>
+            </div>
+            <div class="collection-progress-pill">
+              <span id="collection-progress-text">0 of 12 Caught</span>
+              <div class="collection-mini-bar">
+                <div id="collection-mini-bar-fill" style="width: 0%;"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Collection Grid Cards -->
+          <div class="aquarium-collection-grid" id="aquarium-collection-grid">
+            <!-- Dynamically populated with all 12 fish definitions -->
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Modal: Throw Battle Challenge Invitation (Player B) -->
+    <div id="throw-battle-invite-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="tb-invite-title">
+      <div class="modal-card tb-invite-card">
+        <div class="tb-invite-header">
+          <div class="tb-invite-icon">⚔️</div>
+          <h2 id="tb-invite-title" class="tb-invite-title">Throw Battle Challenge!</h2>
+          <p id="tb-invite-desc" class="tb-invite-desc"><strong id="tb-invite-challenger-name">Player</strong> has challenged you to a Throw Battle duel!</p>
+        </div>
+        <div class="tb-invite-info-box">
+          <div class="tb-invite-feature">
+            <span class="tb-feat-icon">🎯</span>
+            <div class="tb-feat-text">
+              <strong>Fleabag vs Mutt Rules</strong>
+              <span>Turn-based projectile battle • 50/50 split arena • Wind dynamics</span>
+            </div>
+          </div>
+          <div class="tb-invite-feature">
+            <span class="tb-feat-icon">⚡</span>
+            <div class="tb-feat-text">
+              <strong>Fair Play First Turn</strong>
+              <span>You were challenged, so <u>you move first</u>!</span>
+            </div>
+          </div>
+        </div>
+        <div class="tb-invite-actions">
+          <button type="button" id="btn-tb-reject-invite" class="btn-secondary btn-tb-reject">✕ Reject</button>
+          <button type="button" id="btn-tb-accept-invite" class="btn-primary btn-tb-accept">✓ Accept Challenge</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal: Throw Battle Waiting for Response (Player A) -->
+    <div id="throw-battle-waiting-modal" class="modal-overlay hidden" role="dialog" aria-modal="true">
+      <div class="modal-card tb-waiting-card">
+        <div class="tb-waiting-spinner"></div>
+        <h3 class="tb-waiting-title">Challenge Sent</h3>
+        <p id="tb-waiting-text" class="tb-waiting-text">Waiting for player to accept or reject the Throw Battle...</p>
+        <button type="button" id="btn-tb-cancel-challenge" class="btn-secondary">Cancel Challenge</button>
+      </div>
+    </div>
+
+    <!-- Modal: Throw Battle Arena (Fleabag vs Mutt Cat vs Dog Minigame) -->
+    <div id="throw-battle-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="tb-arena-title">
+      <div class="modal-card throw-battle-card">
+        <!-- Header -->
+        <div class="modal-header tb-arena-header">
+          <div class="modal-header-row">
+            <div class="tb-header-title-box">
+              <span class="tb-header-icon">⚔️</span>
+              <div>
+                <h2 id="tb-arena-title" class="modal-title">Throw Battle</h2>
+                <span class="modal-subtitle">Fleabag vs Mutt style projectile duel</span>
+              </div>
+            </div>
+            <button type="button" id="btn-close-throw-battle" class="btn-modal-close" title="Leave battle">✕</button>
+          </div>
+        </div>
+
+        <!-- Arena HUD (Players HP & Wind) -->
+        <div class="tb-hud">
+          <!-- Left Player (Player 1 - Challenged, goes first) -->
+          <div class="tb-player-hud tb-hud-left" id="tb-hud-p1">
+            <div class="tb-player-info">
+              <span class="tb-avatar-dot" id="tb-p1-dot"></span>
+              <strong class="tb-player-name" id="tb-p1-name">Player 1</strong>
+              <span class="tb-turn-badge" id="tb-p1-turn-badge">TURNING</span>
+            </div>
+            <div class="tb-hp-bar-wrap">
+              <div class="tb-hp-bar" id="tb-p1-hp-bar" style="width: 100%;"></div>
+            </div>
+            <div class="tb-hp-label"><span id="tb-p1-hp-text">20</span> / 20 Hits</div>
+          </div>
+
+          <!-- Middle Wind & Round Info -->
+          <div class="tb-wind-container">
+            <div class="tb-turn-indicator" id="tb-turn-indicator">Your Turn!</div>
+            <div class="tb-wind-box">
+              <span class="tb-wind-label">💨 WIND</span>
+              <div class="tb-wind-display">
+                <span class="tb-wind-arrow" id="tb-wind-arrow" title="Wind Direction">
+                  <svg viewBox="0 0 24 24" class="wind-arrow-svg" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                    <polyline points="12 5 19 12 12 19"></polyline>
+                  </svg>
+                </span>
+                <span class="tb-wind-val" id="tb-wind-val">0.0 mph</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right Player (Player 2 - Challenger) -->
+          <div class="tb-player-hud tb-hud-right" id="tb-hud-p2">
+            <div class="tb-player-info">
+              <span class="tb-turn-badge" id="tb-p2-turn-badge">WAITING</span>
+              <strong class="tb-player-name" id="tb-p2-name">Player 2</strong>
+              <span class="tb-avatar-dot" id="tb-p2-dot"></span>
+            </div>
+            <div class="tb-hp-bar-wrap">
+              <div class="tb-hp-bar" id="tb-p2-hp-bar" style="width: 100%;"></div>
+            </div>
+            <div class="tb-hp-label"><span id="tb-p2-hp-text">20</span> / 20 Hits</div>
+          </div>
+        </div>
+
+        <!-- Interactive 2D Canvas Arena -->
+        <div class="tb-canvas-container">
+          <canvas id="throw-battle-canvas" width="800" height="460"></canvas>
+          
+          <!-- Game Over Overlay -->
+          <div id="tb-gameover-overlay" class="tb-gameover-overlay hidden">
+            <div class="tb-gameover-box">
+              <span class="tb-gameover-trophy">🏆</span>
+              <h2 id="tb-gameover-title" class="tb-gameover-title">Victory!</h2>
+              <p id="tb-gameover-subtitle" class="tb-gameover-subtitle">Player won the Throw Battle!</p>
+              <div class="tb-gameover-actions">
+                <button type="button" id="btn-tb-rematch" class="btn-primary">🔄 Play Again</button>
+                <button type="button" id="btn-tb-exit" class="btn-secondary">Leave Battle</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Phase & Instruction Footer Bar -->
+        <div class="tb-footer-bar">
+          <div class="tb-phase-steps">
+            <span class="tb-step-chip active" id="tb-step-move">1. Position (← → / A D)</span>
+            <span class="tb-step-arrow">➔</span>
+            <span class="tb-step-chip" id="tb-step-angle">2. Angle (Space)</span>
+            <span class="tb-step-arrow">➔</span>
+            <span class="tb-step-chip" id="tb-step-power">3. Power (Space)</span>
+            <span class="tb-step-arrow">➔</span>
+            <span class="tb-step-chip" id="tb-step-throw">4. Throw!</span>
+          </div>
+          <div class="tb-hint-text" id="tb-hint-text">Move with ← → or A / D to take position. Press [SPACE] when ready to aim angle.</div>
         </div>
       </div>
     </div>

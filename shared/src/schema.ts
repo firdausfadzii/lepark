@@ -11,6 +11,7 @@ export class PlayerState extends Schema {
   @type("boolean") isSuperadmin: boolean = false;
   @type("number") userId: number = 0;
   @type("string") userSpaceId: string = "";
+  @type("number") parkingPoints: number = 0;
 }
 
 export class GameState extends Schema {

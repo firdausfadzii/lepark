@@ -68,10 +68,7 @@ function getHttpsConfig(enabled: boolean, customCert?: string, customKey?: strin
 export default defineConfig(({ mode }) => {
   const envDir = path.resolve(__dirname, ".");
   const env = loadEnv(mode, envDir, "");
-  const serverUrl =
-    env.VITE_SERVER_URL ||
-    process.env.VITE_SERVER_URL ||
-    "https://lan.jomlepark.cc:2567";
+  const serverUrl = typeof env.VITE_SERVER_URL === "string" ? env.VITE_SERVER_URL : (typeof process.env.VITE_SERVER_URL === "string" ? process.env.VITE_SERVER_URL : "");
 
   const enableHttps =
     env.VITE_HTTPS === "true" ||
@@ -142,3 +139,4 @@ export default defineConfig(({ mode }) => {
     },
   };
 });
+

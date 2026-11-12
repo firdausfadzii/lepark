@@ -1,4 +1,5 @@
 import { Room, Client, ServerError } from "colyseus";
+import { parkingPointsService } from "../services/ParkingPointsService";
 import { GameState, PlayerState } from "../schema/GameState";
 import {
   PlayerInputPayload,
@@ -31,6 +32,8 @@ import {
   JukeboxAddTrackPayload,
   JukeboxAddPlaylistPayload,
   JukeboxRemoveTrackPayload,
+  JukeboxMoveTrackPayload,
+  JukeboxTogglePausePayload,
   JukeboxSkipPayload,
   JukeboxPlacePayload,
   JukeboxMovePayload,
@@ -65,6 +68,7 @@ import {
   ChessGameState,
   ChessLobbyState,
   ChessJoinMatchPayload,
+  ChessCreateMatchPayload,
   ChessCancelJoinPayload,
   ChessSpectateMatchPayload,
   ChessLeaveMatchPayload,
@@ -72,6 +76,22 @@ import {
   ChessResignPayload,
   ChessOfferDrawPayload,
   ChessRematchPayload,
+  AquariumState,
+  AquariumPlacePayload,
+  AquariumMovePayload,
+  AquariumDeletePayload,
+  ThrowBattleTurnPhase,
+  ThrowBattlePlayer,
+  ThrowBattleState,
+  ThrowBattleChallengePayload,
+  ThrowBattleInviteData,
+  ThrowBattleMovePayload,
+  ThrowBattleEnterAnglePayload,
+  ThrowBattleLockAnglePayload,
+  ThrowBattleThrowPayload,
+  ThrowBattleTurnResultPayload,
+  ThrowBattleRematchPayload,
+  ThrowBattleLeavePayload,
 } from "shared";
 import { Chess } from "chess.js";
 import {
@@ -90,6 +110,8 @@ import {
   updateSpaceAshtrays,
   getSpaceChessBoards,
   updateSpaceChessBoards,
+  getSpaceAquariums,
+  updateSpaceAquariums,
   findUserById,
   ensureUserPersonalSpace,
   saveChatMessage,
@@ -152,6 +174,7 @@ export class GameRoom extends Room<GameState> {
   > = new Map();
   private clientAshtrayGameMap: Map<string, string> = new Map();
   private chessBoards: Map<string, ChessBoardState> = new Map();
+  private aquariums: Map<string, AquariumState> = new Map();
   private chessMatches: Map<
     string,
     {
@@ -171,6 +194,28 @@ export class GameRoom extends Room<GameState> {
   > = new Map();
   private clientChessMatchMap: Map<string, string> = new Map(); // sessionId -> matchId
   private chessLobbyViewers: Map<string, Set<string>> = new Map(); // chessBoardId -> Set of sessionIds
+  private throwBattleMatches: Map<
+    string,
+    {
+      matchId: string;
+      status: "playing" | "ended";
+      player1: ThrowBattlePlayer;
+      player2: ThrowBattlePlayer;
+      currentTurn: string;
+      turnPhase: ThrowBattleTurnPhase;
+      wind: number;
+      round: number;
+      winnerSessionId?: string | null;
+      lockedAngle?: number;
+      lockedPower?: number;
+      rematchRequests: Set<string>;
+    }
+  > = new Map();
+  private clientThrowBattleMatchMap: Map<string, string> = new Map(); // sessionId -> matchId
+  private pendingThrowBattleChallenges: Map<
+    string,
+    { challengerSessionId: string; targetSessionId: string; createdAt: number }
+  > = new Map(); // targetSessionId -> challenge info
   private voiceParticipants: Set<string> = new Set();
   private spaceOwnerId: number | null = null;
   private clientAuthMap: Map<string, any> = new Map();
@@ -186,6 +231,7 @@ export class GameRoom extends Room<GameState> {
         typewriters: this.typewriters.values(),
         ashtrays: this.ashtrays.values(),
         chessBoards: this.chessBoards.values(),
+        aquariums: this.aquariums.values(),
       });
     }
     return this.cachedPixelCollisionChecker;
@@ -218,6 +264,14 @@ export class GameRoom extends Room<GameState> {
         const userExists = await findUserById(user.id);
         if (!userExists) {
           user = null;
+        } else {
+          user = {
+            id: userExists.id,
+            username: userExists.username,
+            displayName: userExists.display_name,
+            role: userExists.role,
+            parkingPoints: userExists.parking_points || 0,
+          };
         }
       }
     }
@@ -364,7 +418,7 @@ export class GameRoom extends Room<GameState> {
 
     // Load initial tiles, space metadata, zones, jukeboxes, typewriters, ashtrays, and recent chat history
     try {
-      const [loadedTiles, space, loadedZones, loadedJukeboxes, loadedTypewriters, loadedAshtrays, loadedChessBoards, loadedChats] =
+      const [loadedTiles, space, loadedZones, loadedJukeboxes, loadedTypewriters, loadedAshtrays, loadedChessBoards, loadedAquariums, loadedChats] =
         await Promise.all([
           getSpaceTiles(this.spaceId),
           getSpaceById(this.spaceId),
@@ -373,6 +427,7 @@ export class GameRoom extends Room<GameState> {
           getSpaceTypewriters(this.spaceId),
           getSpaceAshtrays(this.spaceId),
           getSpaceChessBoards(this.spaceId),
+          getSpaceAquariums(this.spaceId),
           getRecentChatMessages(this.spaceId, "map", 50),
         ]);
 
@@ -399,6 +454,11 @@ export class GameRoom extends Room<GameState> {
       if (loadedChessBoards && Array.isArray(loadedChessBoards)) {
         for (const cb of loadedChessBoards) {
           this.chessBoards.set(cb.id, cb);
+        }
+      }
+      if (loadedAquariums && Array.isArray(loadedAquariums)) {
+        for (const aq of loadedAquariums) {
+          this.aquariums.set(aq.id, aq);
         }
       }
       this.recentChatMessages = loadedChats || [];
@@ -654,7 +714,7 @@ export class GameRoom extends Room<GameState> {
                 const submitterName =
                   player?.name || user?.displayName || user?.username || "Player";
 
-                const wasEmpty = !jb.isPlaying || jb.playlist.length === 0;
+                const wasEmpty = jb.playlist.length === 0;
                 const initialLength = jb.playlist.length;
 
                 const newTracks: JukeboxTrack[] = result.videos.map((vid, idx) => ({
@@ -673,6 +733,7 @@ export class GameRoom extends Room<GameState> {
                   jb.isPlaying = true;
                   jb.currentTrackIndex = initialLength;
                   jb.trackStartedAt = Date.now();
+                  jb.pausedAt = 0;
                 }
 
                 this.broadcast("JUKEBOX_UPDATED", jb);
@@ -737,10 +798,11 @@ export class GameRoom extends Room<GameState> {
         jb.playlist.push(newTrack);
 
         // If previously stopped or this was the first track, start looping playback
-        if (!jb.isPlaying || jb.playlist.length === 1) {
+        if (jb.playlist.length === 1) {
           jb.isPlaying = true;
-          jb.currentTrackIndex = jb.playlist.length - 1;
+          jb.currentTrackIndex = 0;
           jb.trackStartedAt = Date.now();
+          jb.pausedAt = 0;
         }
 
         this.broadcast("JUKEBOX_UPDATED", jb);
@@ -786,7 +848,7 @@ export class GameRoom extends Room<GameState> {
           const submitterName =
             player?.name || user?.displayName || user?.username || "Player";
 
-          const wasEmpty = !jb.isPlaying || jb.playlist.length === 0;
+          const wasEmpty = jb.playlist.length === 0;
           const initialLength = jb.playlist.length;
 
           const newTracks: JukeboxTrack[] = result.videos.map((vid, idx) => ({
@@ -805,6 +867,7 @@ export class GameRoom extends Room<GameState> {
             jb.isPlaying = true;
             jb.currentTrackIndex = initialLength;
             jb.trackStartedAt = Date.now();
+            jb.pausedAt = 0;
           }
 
           this.broadcast("JUKEBOX_UPDATED", jb);
@@ -841,12 +904,51 @@ export class GameRoom extends Room<GameState> {
           jb.isPlaying = false;
           jb.currentTrackIndex = 0;
           jb.trackStartedAt = 0;
+          jb.pausedAt = 0;
         } else if (isCurrent) {
           // If current track removed, loop to next valid track
           jb.currentTrackIndex = jb.currentTrackIndex % jb.playlist.length;
           jb.trackStartedAt = Date.now();
+          jb.pausedAt = 0;
+          jb.isPlaying = true;
         } else if (idx < jb.currentTrackIndex) {
           jb.currentTrackIndex--;
+        }
+
+        this.broadcast("JUKEBOX_UPDATED", jb);
+        await this.persistJukeboxes();
+      },
+    );
+
+    // 5b. Move track up or down in playlist (rearrange)
+    this.onMessage(
+      "JUKEBOX_MOVE_TRACK",
+      async (client: Client, data: JukeboxMoveTrackPayload) => {
+        const jb = this.jukeboxes.get(data?.jukeboxId);
+        if (!jb || !jb.playlist || jb.playlist.length <= 1) return;
+        if (!data?.trackId || (data.direction !== "up" && data.direction !== "down")) return;
+
+        const currentIndex = jb.playlist.findIndex((t) => t.id === data.trackId);
+        if (currentIndex === -1) return;
+
+        const targetIndex = data.direction === "up" ? currentIndex - 1 : currentIndex + 1;
+        if (targetIndex < 0 || targetIndex >= jb.playlist.length) return;
+
+        // Remember which track was playing before rearranging
+        const currentPlayingTrackId = jb.playlist[jb.currentTrackIndex]?.id;
+
+        // Swap / move track to the target index
+        const [movedTrack] = jb.playlist.splice(currentIndex, 1);
+        jb.playlist.splice(targetIndex, 0, movedTrack);
+
+        // Update currentTrackIndex so that the currently playing track continues smoothly
+        if (currentPlayingTrackId) {
+          const newPlayingIndex = jb.playlist.findIndex(
+            (t) => t.id === currentPlayingTrackId
+          );
+          if (newPlayingIndex !== -1) {
+            jb.currentTrackIndex = newPlayingIndex;
+          }
         }
 
         this.broadcast("JUKEBOX_UPDATED", jb);
@@ -863,7 +965,37 @@ export class GameRoom extends Room<GameState> {
 
         jb.currentTrackIndex = (jb.currentTrackIndex + 1) % jb.playlist.length;
         jb.trackStartedAt = Date.now();
+        jb.pausedAt = 0;
         jb.isPlaying = true;
+
+        this.broadcast("JUKEBOX_UPDATED", jb);
+        await this.persistJukeboxes();
+      },
+    );
+
+    // 6b. Toggle play / pause on Jukebox
+    this.onMessage(
+      "JUKEBOX_TOGGLE_PAUSE",
+      async (client: Client, data: JukeboxTogglePausePayload) => {
+        const jb = this.jukeboxes.get(data?.jukeboxId);
+        if (!jb || !jb.playlist || jb.playlist.length === 0) return;
+
+        const willBePlaying = data.paused !== undefined ? !data.paused : !jb.isPlaying;
+        if (willBePlaying === jb.isPlaying) return;
+
+        const now = Date.now();
+        if (!willBePlaying) {
+          // Pausing
+          jb.isPlaying = false;
+          jb.pausedAt = now;
+        } else {
+          // Resuming
+          const pausedDuration =
+            jb.pausedAt && jb.pausedAt > 0 ? Math.max(0, now - jb.pausedAt) : 0;
+          jb.trackStartedAt = (jb.trackStartedAt || now) + pausedDuration;
+          jb.pausedAt = 0;
+          jb.isPlaying = true;
+        }
 
         this.broadcast("JUKEBOX_UPDATED", jb);
         await this.persistJukeboxes();
@@ -1708,6 +1840,134 @@ export class GameRoom extends Room<GameState> {
       }
     );
 
+    // ==========================================
+    // Aquarium & Fishing Message Handlers
+    // ==========================================
+
+    // 1. Place Aquarium (owner/superadmin)
+    this.onMessage(
+      "AQUARIUM_PLACE",
+      async (client: Client, data: AquariumPlacePayload) => {
+        const auth = this.clientAuthMap.get(client.sessionId);
+        const user = auth?.user;
+        const isSuperadmin = user?.role === "superadmin";
+        const isOwner =
+          user && this.spaceOwnerId !== null && user.id === this.spaceOwnerId;
+
+        if (!isSuperadmin && !isOwner) {
+          client.send("ERROR", {
+            message:
+              "Permission denied: Only space owner or superadmin can place an aquarium.",
+          });
+          return;
+        }
+
+        const newAq: AquariumState = {
+          id:
+            "aquarium_" +
+            Date.now() +
+            "_" +
+            Math.floor(Math.random() * 10000),
+          spaceId: this.spaceId,
+          x: Math.round(data.x),
+          y: Math.round(data.y),
+          passable: data.passable !== undefined ? Boolean(data.passable) : false,
+          ontop: data.ontop !== undefined ? Boolean(data.ontop) : false,
+          layer: typeof data.layer === "number" ? data.layer : 0,
+        };
+
+        this.aquariums.set(newAq.id, newAq);
+        this.invalidatePixelCollisionChecker();
+        this.broadcast("AQUARIUM_UPDATED", newAq);
+        await this.persistAquariums();
+      }
+    );
+
+    // 2. Move Aquarium (owner/superadmin)
+    this.onMessage(
+      "AQUARIUM_MOVE",
+      async (client: Client, data: AquariumMovePayload) => {
+        const auth = this.clientAuthMap.get(client.sessionId);
+        const user = auth?.user;
+        const isSuperadmin = user?.role === "superadmin";
+        const isOwner =
+          user && this.spaceOwnerId !== null && user.id === this.spaceOwnerId;
+
+        if (!isSuperadmin && !isOwner) {
+          client.send("ERROR", {
+            message:
+              "Permission denied: Only space owner or superadmin can move an aquarium.",
+          });
+          return;
+        }
+
+        const aq = this.aquariums.get(data.aquariumId);
+        if (aq) {
+          aq.x = Math.round(data.x);
+          aq.y = Math.round(data.y);
+          this.invalidatePixelCollisionChecker();
+          this.broadcast("AQUARIUM_UPDATED", aq);
+          await this.persistAquariums();
+        }
+      }
+    );
+
+    // 3. Delete Aquarium (owner/superadmin)
+    this.onMessage(
+      "AQUARIUM_DELETE",
+      async (client: Client, data: AquariumDeletePayload) => {
+        const auth = this.clientAuthMap.get(client.sessionId);
+        const user = auth?.user;
+        const isSuperadmin = user?.role === "superadmin";
+        const isOwner =
+          user && this.spaceOwnerId !== null && user.id === this.spaceOwnerId;
+
+        if (!isSuperadmin && !isOwner) {
+          client.send("ERROR", {
+            message:
+              "Permission denied: Only space owner or superadmin can delete an aquarium.",
+          });
+          return;
+        }
+
+        if (this.aquariums.delete(data.aquariumId)) {
+          this.invalidatePixelCollisionChecker();
+          this.broadcast("AQUARIUM_DELETED", {
+            aquariumId: data.aquariumId,
+          });
+          await this.persistAquariums();
+        }
+      }
+    );
+
+    // 4. Set Aquarium Passable (owner/superadmin)
+    this.onMessage(
+      "AQUARIUM_PASSABLE",
+      async (client: Client, data: { aquariumId: string; passable: boolean }) => {
+        const auth = this.clientAuthMap.get(client.sessionId);
+        const user = auth?.user;
+        const isSuperadmin = user?.role === "superadmin";
+        const isOwner =
+          user && this.spaceOwnerId !== null && user.id === this.spaceOwnerId;
+
+        if (!isSuperadmin && !isOwner) {
+          client.send("ERROR", {
+            message:
+              "Permission denied: Only space owner or superadmin can update an aquarium.",
+          });
+          return;
+        }
+
+        const aq = this.aquariums.get(data.aquariumId);
+        if (aq) {
+          aq.passable = Boolean(data.passable);
+          this.invalidatePixelCollisionChecker();
+          this.broadcast("AQUARIUM_UPDATED", aq);
+          await this.persistAquariums();
+        }
+      }
+    );
+
     // 5. Open Chess Lobby / View Games List
     this.onMessage(
       "CHESS_OPEN_LOBBY",
@@ -1735,7 +1995,59 @@ export class GameRoom extends Room<GameState> {
       }
     );
 
-    // 7. Join Match (Queue / Matchmaking / Create Game)
+    // 7. Create Match (explicitly host a waiting match)
+    this.onMessage(
+      "CHESS_CREATE_MATCH",
+      (client: Client, data: ChessCreateMatchPayload) => {
+        if (!data?.chessBoardId) return;
+        const cbId = data.chessBoardId;
+        const auth = this.clientAuthMap.get(client.sessionId);
+        const name = auth?.user?.displayName || auth?.user?.username || "Player";
+        const userId = auth?.user?.id;
+        const avatarUrl = this.getPlayerAvatarUrl(client.sessionId);
+
+        // If player already has a waiting match on this board, return early
+        const existingMatchId = this.clientChessMatchMap.get(client.sessionId);
+        if (existingMatchId) {
+          const existingMatch = this.chessMatches.get(existingMatchId);
+          if (existingMatch && existingMatch.status === "waiting") {
+            if (existingMatch.chessBoardId === cbId) {
+              return;
+            } else {
+              this.chessMatches.delete(existingMatchId);
+              this.broadcastChessLobbyState(existingMatch.chessBoardId);
+            }
+          }
+          this.clientChessMatchMap.delete(client.sessionId);
+        }
+
+        // Create new match in waiting state
+        const matchId =
+          "match_" + Date.now() + "_" + Math.floor(Math.random() * 1000);
+        const chess = new Chess();
+        const newMatch = {
+          matchId,
+          chessBoardId: cbId,
+          chess,
+          whitePlayer: {
+            sessionId: client.sessionId,
+            userId,
+            name,
+            avatarUrl,
+            color: "white" as const,
+            isReady: true,
+          },
+          spectators: new Map<string, ChessGameSpectator>(),
+          status: "waiting" as const,
+          createdAt: Date.now(),
+        };
+        this.chessMatches.set(matchId, newMatch);
+        this.clientChessMatchMap.set(client.sessionId, matchId);
+        this.broadcastChessLobbyState(cbId);
+      }
+    );
+
+    // 7b. Join Match (Queue / Matchmaking / Join specific waiting game)
     this.onMessage(
       "CHESS_JOIN_MATCH",
       (client: Client, data: ChessJoinMatchPayload) => {
@@ -1751,7 +2063,7 @@ export class GameRoom extends Room<GameState> {
         if (existingMatchId) {
           const existingMatch = this.chessMatches.get(existingMatchId);
           if (existingMatch && existingMatch.status === "waiting") {
-            if (existingMatch.chessBoardId === cbId) {
+            if (existingMatch.chessBoardId === cbId && !data.matchId && !data.createOnly) {
               return;
             } else {
               this.chessMatches.delete(existingMatchId);
@@ -1767,10 +2079,12 @@ export class GameRoom extends Room<GameState> {
           const m = this.chessMatches.get(data.matchId);
           if (m && m.status === "waiting" && m.whitePlayer?.sessionId !== client.sessionId) {
             targetMatch = m;
+          } else {
+            // Match no longer waiting or invalid
+            this.broadcastChessLobbyState(cbId);
+            return;
           }
-        }
-
-        if (!targetMatch) {
+        } else if (!data.createOnly) {
           for (const match of this.chessMatches.values()) {
             if (
               match.chessBoardId === cbId &&
@@ -2115,6 +2429,372 @@ export class GameRoom extends Room<GameState> {
       }
     );
 
+    // ==========================================
+    // THROW BATTLE (Fleabag vs Mutt / Cat vs Dog)
+    // ==========================================
+
+    // 1. Challenge Player
+    this.onMessage(
+      "THROW_BATTLE_CHALLENGE",
+      (client: Client, data: ThrowBattleChallengePayload) => {
+        const challengerSessionId = client.sessionId;
+        const targetSessionId = data?.targetSessionId;
+        if (!targetSessionId || challengerSessionId === targetSessionId) return;
+
+        const challengerPlayer = this.state.players.get(challengerSessionId);
+        const targetPlayer = this.state.players.get(targetSessionId);
+        const targetClient = this.clients.find((c) => c.sessionId === targetSessionId);
+
+        if (!challengerPlayer || !targetPlayer || !targetClient) {
+          client.send("THROW_BATTLE_ERROR", { message: "Player is not available." });
+          return;
+        }
+
+        if (this.clientThrowBattleMatchMap.has(targetSessionId)) {
+          client.send("THROW_BATTLE_ERROR", {
+            message: `${targetPlayer.name} is currently in a Throw Battle.`,
+          });
+          return;
+        }
+
+        if (this.clientThrowBattleMatchMap.has(challengerSessionId)) {
+          client.send("THROW_BATTLE_ERROR", {
+            message: "You are already in an active Throw Battle.",
+          });
+          return;
+        }
+
+        this.pendingThrowBattleChallenges.set(targetSessionId, {
+          challengerSessionId,
+          targetSessionId,
+          createdAt: Date.now(),
+        });
+
+        client.send("THROW_BATTLE_CHALLENGE_SENT", {
+          targetSessionId,
+          targetName: targetPlayer.name || "Player",
+        });
+
+        targetClient.send("THROW_BATTLE_INVITED", {
+          challengerSessionId,
+          challengerName: challengerPlayer.name || "Player",
+          challengerColor: challengerPlayer.color || "#3b82f6",
+          challengerAvatar: this.getPlayerAvatarUrl(challengerSessionId),
+        });
+      }
+    );
+
+    // 2. Cancel Challenge
+    this.onMessage(
+      "THROW_BATTLE_CANCEL_CHALLENGE",
+      (client: Client, data: { targetSessionId: string }) => {
+        const targetSessionId = data?.targetSessionId;
+        if (!targetSessionId) return;
+
+        const challenge = this.pendingThrowBattleChallenges.get(targetSessionId);
+        if (challenge && challenge.challengerSessionId === client.sessionId) {
+          this.pendingThrowBattleChallenges.delete(targetSessionId);
+          const targetClient = this.clients.find((c) => c.sessionId === targetSessionId);
+          if (targetClient) {
+            targetClient.send("THROW_BATTLE_CHALLENGE_CANCELLED", {
+              challengerSessionId: client.sessionId,
+            });
+          }
+        }
+      }
+    );
+
+    // 3. Reject Challenge
+    this.onMessage(
+      "THROW_BATTLE_REJECT",
+      (client: Client, data: { challengerSessionId: string }) => {
+        const targetSessionId = client.sessionId;
+        const challengerSessionId = data?.challengerSessionId;
+        if (!challengerSessionId) return;
+
+        const challenge = this.pendingThrowBattleChallenges.get(targetSessionId);
+        if (challenge && challenge.challengerSessionId === challengerSessionId) {
+          this.pendingThrowBattleChallenges.delete(targetSessionId);
+        }
+
+        const targetPlayer = this.state.players.get(targetSessionId);
+        const challengerClient = this.clients.find((c) => c.sessionId === challengerSessionId);
+        if (challengerClient) {
+          challengerClient.send("THROW_BATTLE_REJECTED", {
+            targetSessionId,
+            targetName: targetPlayer?.name || "Player",
+          });
+        }
+      }
+    );
+
+    // 4. Accept Challenge & Start Game
+    this.onMessage(
+      "THROW_BATTLE_ACCEPT",
+      (client: Client, data: { challengerSessionId: string }) => {
+        const targetSessionId = client.sessionId; // Challenged player!
+        const challengerSessionId = data?.challengerSessionId; // Challenger!
+        if (!challengerSessionId) return;
+
+        this.pendingThrowBattleChallenges.delete(targetSessionId);
+
+        const targetPlayer = this.state.players.get(targetSessionId);
+        const challengerPlayer = this.state.players.get(challengerSessionId);
+        const challengerClient = this.clients.find((c) => c.sessionId === challengerSessionId);
+
+        if (!targetPlayer || !challengerPlayer || !challengerClient) {
+          client.send("THROW_BATTLE_ERROR", { message: "Challenger is no longer available." });
+          return;
+        }
+
+        // Clean up any old matches for both sessions
+        this.handleThrowBattleLeave(targetSessionId);
+        this.handleThrowBattleLeave(challengerSessionId);
+
+        const matchId = `tb_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+        const initialWind = Math.round((Math.random() * 14 - 7) * 10) / 10;
+
+        // Requirement: "to make it fair, player who got challenged will move first."
+        // Player 1 is target (challenged player), placed on Left side, moves first!
+        // Player 2 is challenger, placed on Right side.
+        const match = {
+          matchId,
+          status: "playing" as const,
+          player1: {
+            sessionId: targetSessionId,
+            name: targetPlayer.name || "Player 1",
+            color: targetPlayer.color || "#3b82f6",
+            avatarUrl: this.getPlayerAvatarUrl(targetSessionId),
+            side: "left" as const,
+            x: 140,
+            hp: 20,
+            maxHp: 20,
+          },
+          player2: {
+            sessionId: challengerSessionId,
+            name: challengerPlayer.name || "Player 2",
+            color: challengerPlayer.color || "#ef4444",
+            avatarUrl: this.getPlayerAvatarUrl(challengerSessionId),
+            side: "right" as const,
+            x: 660,
+            hp: 20,
+            maxHp: 20,
+          },
+          currentTurn: targetSessionId, // Challenged player moves first!
+          turnPhase: "move" as ThrowBattleTurnPhase,
+          wind: initialWind,
+          round: 1,
+          rematchRequests: new Set<string>(),
+        };
+
+        this.throwBattleMatches.set(matchId, match);
+        this.clientThrowBattleMatchMap.set(targetSessionId, matchId);
+        this.clientThrowBattleMatchMap.set(challengerSessionId, matchId);
+
+        const battleState: ThrowBattleState = {
+          matchId: match.matchId,
+          status: match.status,
+          player1: match.player1,
+          player2: match.player2,
+          currentTurn: match.currentTurn,
+          turnPhase: match.turnPhase,
+          wind: match.wind,
+          round: match.round,
+        };
+
+        client.send("THROW_BATTLE_START", battleState);
+        challengerClient.send("THROW_BATTLE_START", battleState);
+      }
+    );
+
+    // 5. Active Player Movement
+    this.onMessage(
+      "THROW_BATTLE_MOVE",
+      (client: Client, data: ThrowBattleMovePayload) => {
+        if (!data?.matchId) return;
+        const match = this.throwBattleMatches.get(data.matchId);
+        if (!match || match.status !== "playing") return;
+        if (match.currentTurn !== client.sessionId || match.turnPhase !== "move") return;
+
+        if (match.player1.sessionId === client.sessionId) {
+          match.player1.x = Math.max(45, Math.min(353, data.x));
+        } else if (match.player2.sessionId === client.sessionId) {
+          match.player2.x = Math.max(447, Math.min(755, data.x));
+        }
+
+        const opponentSid =
+          match.player1.sessionId === client.sessionId
+            ? match.player2.sessionId
+            : match.player1.sessionId;
+        const oppClient = this.clients.find((c) => c.sessionId === opponentSid);
+        if (oppClient) {
+          oppClient.send("THROW_BATTLE_PLAYER_MOVED", {
+            matchId: match.matchId,
+            sessionId: client.sessionId,
+            x: data.x,
+          });
+        }
+      }
+    );
+
+    // 6. Enter Angle Mode
+    this.onMessage(
+      "THROW_BATTLE_ENTER_ANGLE",
+      (client: Client, data: ThrowBattleEnterAnglePayload) => {
+        if (!data?.matchId) return;
+        const match = this.throwBattleMatches.get(data.matchId);
+        if (!match || match.status !== "playing") return;
+        if (match.currentTurn !== client.sessionId) return;
+
+        match.turnPhase = "angle";
+        if (match.player1.sessionId === client.sessionId) match.player1.x = data.x;
+        else if (match.player2.sessionId === client.sessionId) match.player2.x = data.x;
+
+        this.broadcastThrowBattleEvent(match.matchId, "THROW_BATTLE_ANGLE_STARTED", {
+          matchId: match.matchId,
+          sessionId: client.sessionId,
+          x: data.x,
+        });
+      }
+    );
+
+    // 7. Lock Angle Mode
+    this.onMessage(
+      "THROW_BATTLE_LOCK_ANGLE",
+      (client: Client, data: ThrowBattleLockAnglePayload) => {
+        if (!data?.matchId) return;
+        const match = this.throwBattleMatches.get(data.matchId);
+        if (!match || match.status !== "playing") return;
+        if (match.currentTurn !== client.sessionId) return;
+
+        match.turnPhase = "power";
+        match.lockedAngle = data.angle;
+
+        this.broadcastThrowBattleEvent(match.matchId, "THROW_BATTLE_POWER_STARTED", {
+          matchId: match.matchId,
+          sessionId: client.sessionId,
+          angle: data.angle,
+        });
+      }
+    );
+
+    // 8. Throw Projectile
+    this.onMessage(
+      "THROW_BATTLE_THROW",
+      (client: Client, data: ThrowBattleThrowPayload) => {
+        if (!data?.matchId) return;
+        const match = this.throwBattleMatches.get(data.matchId);
+        if (!match || match.status !== "playing") return;
+        if (match.currentTurn !== client.sessionId) return;
+
+        match.turnPhase = "throw";
+        match.lockedPower = data.power;
+
+        this.broadcastThrowBattleEvent(match.matchId, "THROW_BATTLE_THROWN", {
+          matchId: match.matchId,
+          sessionId: client.sessionId,
+          angle: data.angle,
+          power: data.power,
+          wind: match.wind,
+          projectileType: data.projectileType,
+        });
+      }
+    );
+
+    // 9. Turn Result & Advance
+    this.onMessage(
+      "THROW_BATTLE_TURN_RESULT",
+      (client: Client, data: ThrowBattleTurnResultPayload) => {
+        if (!data?.matchId) return;
+        const match = this.throwBattleMatches.get(data.matchId);
+        if (!match || match.status !== "playing") return;
+
+        match.player1.hp = data.p1Hp;
+        match.player2.hp = data.p2Hp;
+
+        if (data.winnerSessionId || match.player1.hp <= 0 || match.player2.hp <= 0) {
+          match.status = "ended";
+          match.winnerSessionId =
+            data.winnerSessionId ||
+            (match.player1.hp <= 0 ? match.player2.sessionId : match.player1.sessionId);
+
+          this.broadcastThrowBattleEvent(match.matchId, "THROW_BATTLE_GAME_OVER", {
+            matchId: match.matchId,
+            winnerSessionId: match.winnerSessionId,
+            p1Hp: match.player1.hp,
+            p2Hp: match.player2.hp,
+          });
+        } else {
+          // Switch turn to next player!
+          match.currentTurn =
+            match.currentTurn === match.player1.sessionId
+              ? match.player2.sessionId
+              : match.player1.sessionId;
+          match.turnPhase = "move";
+          match.round += 1;
+          match.lockedAngle = undefined;
+          match.lockedPower = undefined;
+          match.wind = Math.round((Math.random() * 14 - 7) * 10) / 10;
+
+          this.broadcastThrowBattleEvent(match.matchId, "THROW_BATTLE_NEXT_TURN", {
+            matchId: match.matchId,
+            currentTurn: match.currentTurn,
+            wind: match.wind,
+            round: match.round,
+            p1Hp: match.player1.hp,
+            p2Hp: match.player2.hp,
+            p1X: match.player1.x,
+            p2X: match.player2.x,
+          });
+        }
+      }
+    );
+
+    // 10. Rematch
+    this.onMessage(
+      "THROW_BATTLE_REMATCH",
+      (client: Client, data: ThrowBattleRematchPayload) => {
+        if (!data?.matchId) return;
+        const match = this.throwBattleMatches.get(data.matchId);
+        if (!match) return;
+
+        match.player1.hp = 20;
+        match.player2.hp = 20;
+        match.player1.x = 140;
+        match.player2.x = 660;
+        match.status = "playing";
+        match.round = 1;
+        match.turnPhase = "move";
+        match.lockedAngle = undefined;
+        match.lockedPower = undefined;
+        match.winnerSessionId = null;
+        match.wind = Math.round((Math.random() * 14 - 7) * 10) / 10;
+        match.currentTurn = match.player1.sessionId;
+
+        const battleState: ThrowBattleState = {
+          matchId: match.matchId,
+          status: match.status,
+          player1: match.player1,
+          player2: match.player2,
+          currentTurn: match.currentTurn,
+          turnPhase: match.turnPhase,
+          wind: match.wind,
+          round: match.round,
+        };
+
+        this.broadcastThrowBattleEvent(match.matchId, "THROW_BATTLE_START", battleState);
+      }
+    );
+
+    // 11. Leave Battle
+    this.onMessage(
+      "THROW_BATTLE_LEAVE",
+      (client: Client, data: ThrowBattleLeavePayload) => {
+        this.handleThrowBattleLeave(client.sessionId);
+      }
+    );
+
+
     // Handle chat messages from clients
     this.onMessage(
       "SEND_CHAT_MESSAGE",
@@ -2391,6 +3071,17 @@ export class GameRoom extends Room<GameState> {
       (auth && auth.user && auth.user.role === "superadmin") || false;
     player.userId = (auth && auth.user && auth.user.id) || 0;
     player.userSpaceId = auth && auth.user ? `user_space_${auth.user.id}` : "";
+    player.parkingPoints = (auth && auth.user && auth.user.parkingPoints) || 0;
+
+    parkingPointsService.registerClient({
+      userId: player.userId,
+      sessionId: client.sessionId,
+      client,
+      room: this,
+      playerState: player,
+    }).catch((err) => {
+      console.warn("Could not register client in parkingPointsService:", err);
+    });
 
     if (auth && auth.user) {
       ensureUserPersonalSpace(auth.user.id, auth.user.username).catch((err) => {
@@ -2484,6 +3175,9 @@ export class GameRoom extends Room<GameState> {
     // Send current space chess boards to joining client
     client.send("CURRENT_CHESS_BOARDS", Array.from(this.chessBoards.values()));
 
+    // Send current space aquariums to joining client
+    client.send("CURRENT_AQUARIUMS", Array.from(this.aquariums.values()));
+
     // Send recent chat messages from DB to joining client
     if (this.recentChatMessages && this.recentChatMessages.length > 0) {
       client.send("CHAT_HISTORY", this.recentChatMessages);
@@ -2491,6 +3185,7 @@ export class GameRoom extends Room<GameState> {
   }
 
   onLeave(client: Client, consented?: boolean) {
+    parkingPointsService.unregisterClient(client.sessionId);
     const count = activeSpaceCounts.get(this.spaceId) || 1;
     activeSpaceCounts.set(this.spaceId, Math.max(0, count - 1));
 
@@ -2511,6 +3206,9 @@ export class GameRoom extends Room<GameState> {
 
     // Cleanup chess match or spectator if user was in chess
     this.handleChessLeave(client.sessionId);
+
+    // Cleanup throw battle match or challenge if user was in throw battle
+    this.handleThrowBattleLeave(client.sessionId);
 
     const player = this.state.players.get(client.sessionId);
     if (player) {
@@ -3017,6 +3715,16 @@ export class GameRoom extends Room<GameState> {
         });
       }
     }
+    for (const aq of this.aquariums.values()) {
+      if (aq.passable === false) {
+        boxes.push({
+          minX: aq.x - 22,
+          maxX: aq.x + 22,
+          minY: aq.y - 22,
+          maxY: aq.y + 22,
+        });
+      }
+    }
     for (const [k, val] of Object.entries(this.tiles)) {
       if (k.startsWith("freeform:") && val) {
         const parts = val.split("::");
@@ -3066,6 +3774,17 @@ export class GameRoom extends Room<GameState> {
       );
     } catch (err) {
       console.error("[GameRoom] Error persisting space chess boards:", err);
+    }
+  }
+
+  private async persistAquariums() {
+    try {
+      await updateSpaceAquariums(
+        this.spaceId,
+        Array.from(this.aquariums.values())
+      );
+    } catch (err) {
+      console.error("[GameRoom] Error persisting space aquariums:", err);
     }
   }
 
@@ -3239,6 +3958,56 @@ export class GameRoom extends Room<GameState> {
     this.clientChessMatchMap.delete(sessionId);
   }
 
+  private broadcastThrowBattleEvent(matchId: string, event: string, data: any) {
+    const match = this.throwBattleMatches.get(matchId);
+    if (!match) return;
+    const sids = [match.player1.sessionId, match.player2.sessionId];
+    sids.forEach((sid) => {
+      const client = this.clients.find((c) => c.sessionId === sid);
+      if (client) {
+        client.send(event, data);
+      }
+    });
+  }
+
+  private handleThrowBattleLeave(sessionId: string) {
+    // 1. Remove pending challenges
+    this.pendingThrowBattleChallenges.delete(sessionId);
+    for (const [targetSid, challenge] of this.pendingThrowBattleChallenges.entries()) {
+      if (challenge.challengerSessionId === sessionId) {
+        this.pendingThrowBattleChallenges.delete(targetSid);
+        const targetClient = this.clients.find((c) => c.sessionId === targetSid);
+        if (targetClient) {
+          targetClient.send("THROW_BATTLE_CHALLENGE_CANCELLED", {
+            challengerSessionId: sessionId,
+          });
+        }
+      }
+    }
+
+    // 2. Remove active match
+    if (this.clientThrowBattleMatchMap.has(sessionId)) {
+      const matchId = this.clientThrowBattleMatchMap.get(sessionId)!;
+      this.clientThrowBattleMatchMap.delete(sessionId);
+      const match = this.throwBattleMatches.get(matchId);
+      if (match) {
+        const otherSid =
+          match.player1.sessionId === sessionId
+            ? match.player2.sessionId
+            : match.player1.sessionId;
+        this.clientThrowBattleMatchMap.delete(otherSid);
+        const otherClient = this.clients.find((c) => c.sessionId === otherSid);
+        if (otherClient) {
+          otherClient.send("THROW_BATTLE_PLAYER_LEFT", {
+            matchId,
+            sessionId,
+          });
+        }
+        this.throwBattleMatches.delete(matchId);
+      }
+    }
+  }
+
   onDispose() {
     if (this.jukeboxTimer) {
       clearInterval(this.jukeboxTimer);
@@ -3257,5 +4026,9 @@ export class GameRoom extends Room<GameState> {
     this.chessMatches.clear();
     this.chessLobbyViewers.clear();
     this.clientChessMatchMap.clear();
+    this.throwBattleMatches.clear();
+    this.clientThrowBattleMatchMap.clear();
+    this.pendingThrowBattleChallenges.clear();
+    parkingPointsService.unregisterRoom(this);
   }
 }

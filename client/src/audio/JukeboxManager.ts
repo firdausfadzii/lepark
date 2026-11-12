@@ -122,8 +122,8 @@ export class JukeboxManager {
         !isNumericIp && window.location.hostname.includes(".");
 
       this.player = new window.YT.Player("youtube-jukebox-iframe", {
-        height: "140",
-        width: "250",
+        height: "100%",
+        width: "100%",
         playerVars: {
           autoplay: 1,
           controls: 1,
@@ -223,7 +223,7 @@ export class JukeboxManager {
       }
     } else if (state === 0) {
       // Video ended: advance track if server timer hasn't triggered yet
-      if (this.activeJukebox && this.activeJukebox.playlist.length > 0) {
+      if (this.activeJukebox && this.activeJukebox.playlist.length > 0 && this.activeJukebox.isPlaying) {
         this.multiplayer.skipJukeboxTrack(this.activeJukebox.id);
       }
     }
@@ -253,11 +253,9 @@ export class JukeboxManager {
   public updateJukeboxState(jukebox: JukeboxState | null) {
     this.activeJukebox = jukebox;
 
-    if (!jukebox || !jukebox.isPlaying || jukebox.playlist.length === 0) {
+    if (!jukebox || !jukebox.playlist || jukebox.playlist.length === 0) {
       this.currentTrack = null;
       this.currentVideoId = "";
-      const playerCard = document.getElementById("jukebox-player-card");
-      if (playerCard) playerCard.classList.add("hidden");
 
       if (this.player && this.isPlayerReady) {
         try {
@@ -272,7 +270,7 @@ export class JukeboxManager {
   }
 
   private syncPlaybackWithState(jukebox: JukeboxState) {
-    if (!jukebox.isPlaying || jukebox.playlist.length === 0) return;
+    if (!jukebox.playlist || jukebox.playlist.length === 0) return;
 
     const track = jukebox.playlist[jukebox.currentTrackIndex];
     if (!track) return;
@@ -280,36 +278,51 @@ export class JukeboxManager {
     this.currentTrack = track;
     this.notifyTrackChange(track, jukebox);
 
-    // Update floating player card visibility and title
-    const playerCard = document.getElementById("jukebox-player-card");
-    const playerTitle = document.getElementById("jukebox-player-header-title");
-    if (playerCard) playerCard.classList.remove("hidden");
-    if (playerTitle) playerTitle.textContent = track.title;
-
-    const elapsedSeconds = Math.max(0, (Date.now() - jukebox.trackStartedAt) / 1000);
+    let elapsedSeconds = 0;
+    if (jukebox.isPlaying) {
+      elapsedSeconds = Math.max(0, (Date.now() - jukebox.trackStartedAt) / 1000);
+    } else if (jukebox.pausedAt && jukebox.pausedAt > 0) {
+      elapsedSeconds = Math.max(0, (jukebox.pausedAt - jukebox.trackStartedAt) / 1000);
+    } else {
+      elapsedSeconds = Math.max(0, (Date.now() - jukebox.trackStartedAt) / 1000);
+    }
 
     if (this.player && this.isPlayerReady) {
       if (this.currentVideoId !== track.youtubeId) {
         this.currentVideoId = track.youtubeId;
         try {
           const startSec = elapsedSeconds > 3 ? Math.floor(elapsedSeconds) : 0;
-          this.player.loadVideoById({
-            videoId: track.youtubeId,
-            startSeconds: startSec,
-          });
-          this.applyVolume(true);
+          if (jukebox.isPlaying) {
+            this.player.loadVideoById({
+              videoId: track.youtubeId,
+              startSeconds: startSec,
+            });
+            this.applyVolume(true);
+          } else {
+            this.player.cueVideoById({
+              videoId: track.youtubeId,
+              startSeconds: startSec,
+            });
+            this.applyVolume(true);
+          }
         } catch (err) {
           console.warn("Failed to load video in Jukebox player:", err);
         }
       } else {
-        // Same video, check drift
+        // Same video
         try {
-          const currentTime = this.player.getCurrentTime?.() || 0;
-          if (Math.abs(currentTime - elapsedSeconds) > 4) {
-            this.player.seekTo(elapsedSeconds, true);
-          }
-          if (this.player.getPlayerState?.() !== 1) {
-            this.player.playVideo();
+          if (jukebox.isPlaying) {
+            const currentTime = this.player.getCurrentTime?.() || 0;
+            if (Math.abs(currentTime - elapsedSeconds) > 4) {
+              this.player.seekTo(elapsedSeconds, true);
+            }
+            if (this.player.getPlayerState?.() !== 1) {
+              this.player.playVideo();
+            }
+          } else {
+            if (this.player.getPlayerState?.() === 1) {
+              this.player.pauseVideo();
+            }
           }
         } catch {}
       }
