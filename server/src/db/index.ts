@@ -27,6 +27,7 @@ const pool = new Pool({
 });
 
 let isDbConnected = false;
+let lastDbError: string | null = null;
 let isReconnecting = false;
 let reconnectTimer: NodeJS.Timeout | null = null;
 
@@ -398,6 +399,7 @@ function scheduleReconnect() {
 }
 
 function handleDbQueryError(context: string, err: any) {
+  lastDbError = `${context}: ${err?.message || err}`;
   console.error(`${context}:`, err);
   const isConnError =
     err?.code === "ECONNREFUSED" ||
@@ -449,6 +451,10 @@ export async function initDb(): Promise<boolean> {
 
 export function isDatabaseHealthy(): boolean {
   return isDbConnected;
+}
+
+export function getLastDbError(): string | null {
+  return lastDbError;
 }
 
 // ==========================================
@@ -1298,11 +1304,12 @@ export async function updateSpacePrivateZones(
   spaceId: string,
   zones: PrivateZone[]
 ): Promise<boolean> {
+  let dbSaved = false;
   if (isDbConnected) {
     try {
       const res = await pool.query(
         "UPDATE spaces SET private_zones = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1",
-        [spaceId, JSON.stringify(zones)]
+        [spaceId, JSON.stringify(zones, (_k, v) => (typeof v === "bigint" ? Number(v) : v))]
       );
       if (res.rowCount === 0) {
         await pool.query(
@@ -1312,21 +1319,40 @@ export async function updateSpacePrivateZones(
           [
             spaceId,
             spaceId.startsWith("user_space_") ? "Personal Space" : spaceId,
-            JSON.stringify(zones),
+            JSON.stringify(zones, (_k, v) => (typeof v === "bigint" ? Number(v) : v)),
           ]
         );
       }
+      lastDbError = null;
+      dbSaved = true;
     } catch (err) {
       handleDbQueryError("Error updating space private zones in DB", err);
     }
+  } else {
+    lastDbError = `Database is disconnected (isDbConnected=false)`;
+    console.warn(
+      `[DB] Cannot persist private zones for space ${spaceId}: database is disconnected.`
+    );
   }
 
   let inMem = inMemorySpaces.get(spaceId);
-  if (inMem) {
-    inMem.private_zones = [...zones];
-    inMem.updated_at = new Date();
+  if (!inMem) {
+    inMem = {
+      id: spaceId,
+      name: spaceId.startsWith("user_space_") ? "Personal Space" : spaceId,
+      category: "General",
+      owner_id: 1,
+      is_public: true,
+      is_superadmin_space: false,
+      whitelist: [],
+      created_at: new Date(),
+      updated_at: new Date(),
+    };
+    inMemorySpaces.set(spaceId, inMem);
   }
-  return true;
+  inMem.private_zones = [...zones];
+  inMem.updated_at = new Date();
+  return dbSaved;
 }
 
 /**

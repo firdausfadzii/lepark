@@ -248,12 +248,12 @@ export function createPixelCollisionChecker(world: PixelCollisionWorldInput): Pi
     for (const aq of world.aquariums) {
       if (aq.passable === false) {
         solidProps.push({
-          minX: aq.x - 24,
-          maxX: aq.x + 24 - 1,
-          minY: aq.y - 24,
-          maxY: aq.y + 24 - 1,
-          originX: aq.x - 24,
-          originY: aq.y - 24,
+          minX: aq.x - 25,
+          maxX: aq.x + 25 - 1,
+          minY: aq.y - 25,
+          maxY: aq.y + 25 - 1,
+          originX: aq.x - 25,
+          originY: aq.y - 25,
           rects: getAssetRects("aquarium_1"),
         });
       }

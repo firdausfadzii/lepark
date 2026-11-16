@@ -94,6 +94,7 @@ export class MultiplayerManager {
   private onNetworkStatsCallbacks: NetworkStatsCallback[] = [];
   private onTilesUpdateCallbacks: TilesUpdateCallback[] = [];
   private onPrivateZonesUpdateCallbacks: PrivateZonesUpdateCallback[] = [];
+  private onErrorCallbacks: ((data: { message: string }) => void)[] = [];
   private onChatMessageCallbacks: ChatMessageCallback[] = [];
   private onChatHistoryCallbacks: ((messages: ChatMessage[]) => void)[] = [];
   private onRoomJoinedCallbacks: (() => void)[] = [];
@@ -361,6 +362,17 @@ export class MultiplayerManager {
         });
       }
     );
+
+    this.room.onMessage("ERROR", (data: { message: string }) => {
+      console.error("[MultiplayerManager] Server error:", data?.message || data);
+      this.onErrorCallbacks.forEach((cb) => {
+        try {
+          cb(data);
+        } catch (err) {
+          console.error("Error in onError callback:", err);
+        }
+      });
+    });
 
     this.room.onMessage("JUKEBOX_ERROR", (data: { message: string }) => {
       this.onJukeboxErrorCallbacks.forEach((cb) => {
@@ -929,10 +941,17 @@ export class MultiplayerManager {
     });
   }
 
-  public sendUpdatePrivateZones(zones: PrivateZone[]) {
-    if (this.room) {
+  public onError(callback: (data: { message: string }) => void) {
+    this.onErrorCallbacks.push(callback);
+  }
+
+  public sendUpdatePrivateZones(zones: PrivateZone[]): boolean {
+    if (this.room && this.room.connection?.isOpen) {
       this.room.send("UPDATE_PRIVATE_ZONES", { zones });
+      return true;
     }
+    console.warn("[MultiplayerManager] Cannot send UPDATE_PRIVATE_ZONES: room is not connected.");
+    return false;
   }
 
   // --- Jukebox Handlers & Actions ---

@@ -110,6 +110,7 @@ import {
   updateSpaceTiles,
   getSpacePrivateZones,
   updateSpacePrivateZones,
+  getLastDbError,
   getSpaceJukeboxes,
   updateSpaceJukeboxes,
   getSpaceTypewriters,
@@ -752,9 +753,35 @@ export class GameRoom extends Room<GameState> {
         }
 
         if (data && Array.isArray(data.zones)) {
-          this.privateZones = data.zones;
+          this.privateZones = data.zones.map((z) => ({
+            id: String(z.id),
+            name: String(z.name || "Private Area"),
+            bounds: {
+              minCol: Number(z.bounds?.minCol ?? 0),
+              minRow: Number(z.bounds?.minRow ?? 0),
+              maxCol: Number(z.bounds?.maxCol ?? 0),
+              maxRow: Number(z.bounds?.maxRow ?? 0),
+            },
+            createdAt: Number(z.createdAt ?? Date.now()),
+          }));
           this.broadcast("PRIVATE_ZONES_UPDATED", this.privateZones);
-          await updateSpacePrivateZones(this.spaceId, this.privateZones);
+          const saved = await updateSpacePrivateZones(
+            this.spaceId,
+            this.privateZones,
+          );
+          if (!saved) {
+            const dbErr = getLastDbError();
+            console.error(
+              `[GameRoom] Failed to persist ${this.privateZones.length} private zones to DB for space ${this.spaceId}: ${dbErr}`,
+            );
+            client.send("ERROR", {
+              message: `Failed to save private area to database.${dbErr ? ` (${dbErr})` : ""}`,
+            });
+          } else {
+            console.log(
+              `[GameRoom] Saved ${this.privateZones.length} private zones to DB for space ${this.spaceId}`,
+            );
+          }
         }
       },
     );

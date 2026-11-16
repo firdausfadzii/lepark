@@ -157,6 +157,12 @@ const dropdownMySpaceSub = document.getElementById(
 const dropdownUpdateCharBtn = document.getElementById(
   "dropdown-update-char-btn",
 ) as HTMLButtonElement;
+const dropdownEditSpaceBtn = document.getElementById(
+  "dropdown-edit-space-btn",
+) as HTMLButtonElement | null;
+const dropdownEditMapBtn = document.getElementById(
+  "dropdown-edit-map-btn",
+) as HTMLButtonElement | null;
 const dropdownLogoutBtn = document.getElementById(
   "dropdown-logout-btn",
 ) as HTMLButtonElement;
@@ -239,16 +245,26 @@ const tileOptFlipXHint = document.getElementById(
   "tile-opt-flip-x-hint",
 ) as HTMLElement | null;
 
-// Top Bar Right Actions (Map, Ping, Loss) & Parking Points
+// Top Bar Right Actions (Map) & Parking Points & Bottom-Left Ping
 const btnOpenMap = document.getElementById("btn-open-map") as HTMLButtonElement;
 const topbarParkingPoints = document.getElementById(
   "topbar-parking-points",
 ) as HTMLElement | null;
+const dropdownParkingPointsVal = document.getElementById(
+  "dropdown-parking-points-val",
+) as HTMLElement | null;
+
+function updateParkingPointsDisplay(points: number) {
+  const label = `${points} Parking`;
+  if (topbarParkingPoints) {
+    topbarParkingPoints.textContent = label;
+  }
+  if (dropdownParkingPointsVal) {
+    dropdownParkingPointsVal.textContent = label;
+  }
+}
 const topbarPingStat = document.getElementById(
   "topbar-ping-stat",
-) as HTMLSpanElement;
-const topbarLossStat = document.getElementById(
-  "topbar-loss-stat",
 ) as HTMLSpanElement;
 
 // DOM Elements - Map Modal (Grid of 4)
@@ -925,9 +941,10 @@ function handleLogout() {
   topbarStatusDot.style.boxShadow = "0 0 6px #ef4444";
   topbarStatusSubtitle.textContent = "Offline";
   if (topbarPingStat) topbarPingStat.textContent = "-- ms";
-  if (topbarLossStat) topbarLossStat.textContent = "-- loss";
   if (btnMapSettings) btnMapSettings.classList.add("hidden");
   if (btnEditMap) btnEditMap.classList.add("hidden");
+  if (dropdownEditSpaceBtn) dropdownEditSpaceBtn.classList.add("hidden");
+  if (dropdownEditMapBtn) dropdownEditMapBtn.classList.add("hidden");
   exitEditMode();
 
   // Reset inputs
@@ -1282,9 +1299,7 @@ async function handleUnlockTemplate(tpl: SpriteTemplate) {
       } catch {}
 
       // Update topbar UI
-      if (topbarParkingPoints) {
-        topbarParkingPoints.textContent = `${newPoints} Parking`;
-      }
+      updateParkingPointsDisplay(newPoints);
 
       // Re-render templates grid & select the newly unlocked template
       renderSpriteTemplatesGrid();
@@ -1822,24 +1837,43 @@ dropdownMySpaceBtn.addEventListener("click", () => {
   }
 });
 
+function openCurrentSpaceSettings() {
+  // If in own personal space, open personal space settings modal
+  if (myPersonalSpace && currentSpaceId === myPersonalSpace.id) {
+    openMySpaceSettingsModal();
+    return;
+  }
+
+  // If superadmin in directory space, open edit space modal for current space
+  if (currentUser?.role === "superadmin") {
+    const spaceToEdit = loadedSpaces.find((s) => s.id === currentSpaceId);
+    if (spaceToEdit) {
+      openAdminEditSpaceModal(spaceToEdit);
+    } else {
+      openMySpaceSettingsModal();
+    }
+  }
+}
+
 // Top-Left Map Settings Click Handler
 if (btnMapSettings) {
   btnMapSettings.addEventListener("click", () => {
-    // If in own personal space, open personal space settings modal
-    if (myPersonalSpace && currentSpaceId === myPersonalSpace.id) {
-      openMySpaceSettingsModal();
-      return;
-    }
+    openCurrentSpaceSettings();
+  });
+}
 
-    // If superadmin in directory space, open edit space modal for current space
-    if (currentUser?.role === "superadmin") {
-      const spaceToEdit = loadedSpaces.find((s) => s.id === currentSpaceId);
-      if (spaceToEdit) {
-        openAdminEditSpaceModal(spaceToEdit);
-      } else {
-        openMySpaceSettingsModal();
-      }
-    }
+// Mobile Profile Dropdown: Edit Space Info & Edit Map
+if (dropdownEditSpaceBtn) {
+  dropdownEditSpaceBtn.addEventListener("click", () => {
+    closeProfileDropdown();
+    openCurrentSpaceSettings();
+  });
+}
+
+if (dropdownEditMapBtn) {
+  dropdownEditMapBtn.addEventListener("click", () => {
+    closeProfileDropdown();
+    toggleEditMode();
   });
 }
 
@@ -3136,7 +3170,7 @@ function positionEditorItemContextMenu(screenX: number, screenY: number) {
   if (!menuEl) return;
 
   const menuWidth = 224;
-  const menuHeight = 190;
+  const menuHeight = 230;
   const padding = 12;
 
   const clampedX = Math.max(
@@ -3185,6 +3219,10 @@ function setupSceneEditorToolEvents(scene: GameScene) {
 
   scene.onEditorItemContextMenu = ({ item, screenX, screenY }) => {
     showEditorItemContextMenu(item, screenX, screenY);
+  };
+
+  scene.onEditorItemMoved = (item) => {
+    showPlacingToast(`Moved ${item.label || "item"}`);
   };
 
   scene.onEditorItemMenuPositionUpdate = ({ screenX, screenY, visible }) => {
@@ -6937,6 +6975,9 @@ function setupSceneAquariumEvents(scene: GameScene) {
   if (!fishingGame) {
     fishingGame = new FishingGame();
     fishingGame.init();
+    fishingGame.setControlsActiveCallback((active) => {
+      setGameControlsActive(active);
+    });
     fishingGame.setBroadcastCallback((fish, size, quality) => {
       if (multiplayer) {
         multiplayer.sendChatMessage({
@@ -7782,9 +7823,7 @@ function setupMultiplayerParkingPointsListeners(mgr: MultiplayerManager) {
         localStorage.setItem("lepark_auth_user", JSON.stringify(currentUser));
       } catch {}
     }
-    if (topbarParkingPoints) {
-      topbarParkingPoints.textContent = `${data.points} Parking`;
-    }
+    updateParkingPointsDisplay(data.points);
     renderSpriteTemplatesGrid();
   });
 }
@@ -8212,6 +8251,25 @@ if (editorInteractionSearchInput) {
   });
 }
 
+const btnEditorItemMove = document.getElementById("btn-editor-item-move");
+if (btnEditorItemMove) {
+  btnEditorItemMove.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (!activeEditorContextMenuItem) return;
+    const itemToMove = activeEditorContextMenuItem;
+    closeEditorItemContextMenu();
+    if (gameInstance) {
+      const scene = gameInstance.scene.getScene("GameScene") as GameScene;
+      if (scene && typeof scene.startMovingInspectableItem === "function") {
+        scene.startMovingInspectableItem(itemToMove);
+        showPlacingToast(
+          `Click anywhere on the map to move ${itemToMove.label || "item"} (Esc to cancel)`
+        );
+      }
+    }
+  });
+}
+
 const btnEditorItemDelete = document.getElementById("btn-editor-item-delete");
 if (btnEditorItemDelete) {
   btnEditorItemDelete.addEventListener("click", (e) => {
@@ -8355,6 +8413,14 @@ window.addEventListener("keydown", (e: KeyboardEvent) => {
       return;
     }
     if (isEditModeActive) {
+      if (gameInstance) {
+        const scene = gameInstance.scene.getScene("GameScene") as GameScene;
+        if (scene && typeof scene.isMovingItem === "function" && scene.isMovingItem()) {
+          scene.cancelMovingInspectableItem();
+          showPlacingToast("Move cancelled");
+          return;
+        }
+      }
       const editorItemMenuEl = document.getElementById("editor-item-context-menu");
       if (editorItemMenuEl && !editorItemMenuEl.classList.contains("hidden")) {
         closeEditorItemContextMenu();
@@ -8445,10 +8511,8 @@ function updateTopBarUI() {
   const name = getEffectivePlayerName();
   topbarUserName.textContent = name;
 
-  if (topbarParkingPoints) {
-    const pts = currentUser?.parkingPoints ?? 0;
-    topbarParkingPoints.textContent = `${pts} Parking`;
-  }
+  const pts = currentUser?.parkingPoints ?? 0;
+  updateParkingPointsDisplay(pts);
 
   const isSuperadmin = currentUser?.role === "superadmin";
   (window as any).currentUserRole = currentUser?.role || "user";
@@ -8525,6 +8589,13 @@ function updateMapSettingsVisibility() {
       btnEditMap.classList.add("hidden");
       exitEditMode();
     }
+  }
+
+  if (dropdownEditSpaceBtn) {
+    dropdownEditSpaceBtn.classList.toggle("hidden", !canEdit);
+  }
+  if (dropdownEditMapBtn) {
+    dropdownEditMapBtn.classList.toggle("hidden", !canEdit);
   }
 }
 
@@ -9208,12 +9279,9 @@ async function enterGameSession() {
   const manager = new MultiplayerManager();
 
   manager.onNetworkStats((stats) => {
-    const { pingMs, packetLoss } = stats;
+    const { pingMs } = stats;
     if (topbarPingStat) {
       topbarPingStat.textContent = pingMs > 0 ? `${pingMs} ms` : "-- ms";
-    }
-    if (topbarLossStat) {
-      topbarLossStat.textContent = `${packetLoss}% loss`;
     }
   });
 
@@ -9227,8 +9295,13 @@ async function enterGameSession() {
       topbarStatusDot.style.boxShadow = "0 0 6px #ef4444";
       topbarStatusSubtitle.textContent = "Disconnected";
       if (topbarPingStat) topbarPingStat.textContent = "-- ms";
-      if (topbarLossStat) topbarLossStat.textContent = "-- loss";
       voiceManager?.leaveVoice();
+    }
+  });
+
+  manager.onError((data) => {
+    if (data?.message) {
+      showPlacingToast(`⚠️ ${data.message}`);
     }
   });
 
@@ -9398,6 +9471,174 @@ function setupHudControlBadges() {
   });
 }
 
+function setupMobileJoystick() {
+  const base = document.getElementById("mobile-analog-base");
+  const knob = document.getElementById("mobile-analog-knob");
+  if (!base || !knob) return;
+
+  let activePointerId: number | null = null;
+  let activeTouchId: number | null = null;
+  let cachedCenterX = 0;
+  let cachedCenterY = 0;
+  let curLeft = false;
+  let curRight = false;
+  let curUp = false;
+  let curDown = false;
+
+  const maxRadius = 32;
+  const enterDeadzone = 0.22;
+  const exitDeadzone = 0.15;
+  const enterThreshold = 0.44; // ~26 deg from axis to engage diagonal
+  const exitThreshold = 0.30;  // ~17 deg from axis to disengage diagonal
+
+  const setVirtualInput = (left: boolean, right: boolean, up: boolean, down: boolean) => {
+    if (left === curLeft && right === curRight && up === curUp && down === curDown) {
+      return;
+    }
+    curLeft = left;
+    curRight = right;
+    curUp = up;
+    curDown = down;
+
+    if (!gameInstance) return;
+    const scene = gameInstance.scene.getScene("GameScene") as any;
+    if (scene && scene.virtualInput) {
+      scene.virtualInput.left = left;
+      scene.virtualInput.right = right;
+      scene.virtualInput.up = up;
+      scene.virtualInput.down = down;
+    }
+  };
+
+  const resetStick = () => {
+    activePointerId = null;
+    activeTouchId = null;
+    knob.style.transform = "translate3d(0px, 0px, 0)";
+    base.classList.remove("active");
+    setVirtualInput(false, false, false, false);
+  };
+
+  const updateStick = (clientX: number, clientY: number) => {
+    const dx = clientX - cachedCenterX;
+    const dy = clientY - cachedCenterY;
+    const dist = Math.hypot(dx, dy);
+
+    const clampedDist = Math.min(dist, maxRadius);
+    const angle = Math.atan2(dy, dx);
+    const clampedX = dist > 0 ? Math.cos(angle) * clampedDist : 0;
+    const clampedY = dist > 0 ? Math.sin(angle) * clampedDist : 0;
+    knob.style.transform = `translate3d(${clampedX}px, ${clampedY}px, 0)`;
+
+    const normDist = clampedDist / maxRadius;
+    const wasMoving = curLeft || curRight || curUp || curDown;
+    const activeDeadzone = wasMoving ? exitDeadzone : enterDeadzone;
+    if (normDist < activeDeadzone) {
+      setVirtualInput(false, false, false, false);
+      return;
+    }
+
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    const nextLeft = curLeft ? cos < -exitThreshold : cos < -enterThreshold;
+    const nextRight = curRight ? cos > exitThreshold : cos > enterThreshold;
+    const nextUp = curUp ? sin < -exitThreshold : sin < -enterThreshold;
+    const nextDown = curDown ? sin > exitThreshold : sin > enterThreshold;
+
+    setVirtualInput(
+      nextLeft && !nextRight,
+      nextRight && !nextLeft,
+      nextUp && !nextDown,
+      nextDown && !nextUp,
+    );
+  };
+
+  const cacheCenter = () => {
+    const rect = base.getBoundingClientRect();
+    cachedCenterX = rect.left + rect.width / 2;
+    cachedCenterY = rect.top + rect.height / 2;
+  };
+
+  // Native TouchEvents with passive: false prevent iOS WebKit from stealing/canceling the touch
+  base.addEventListener(
+    "touchstart",
+    (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (activeTouchId !== null) return;
+      const touch = e.changedTouches[0];
+      if (!touch) return;
+      activeTouchId = touch.identifier;
+      cacheCenter();
+      base.classList.add("active");
+      updateStick(touch.clientX, touch.clientY);
+    },
+    { passive: false },
+  );
+
+  window.addEventListener(
+    "touchmove",
+    (e) => {
+      if (activeTouchId === null) return;
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        const touch = e.changedTouches[i];
+        if (touch.identifier === activeTouchId) {
+          e.preventDefault();
+          e.stopPropagation();
+          updateStick(touch.clientX, touch.clientY);
+          break;
+        }
+      }
+    },
+    { passive: false },
+  );
+
+  const handleTouchEnd = (e: TouchEvent) => {
+    if (activeTouchId === null) return;
+    for (let i = 0; i < e.changedTouches.length; i++) {
+      if (e.changedTouches[i].identifier === activeTouchId) {
+        e.preventDefault();
+        e.stopPropagation();
+        resetStick();
+        break;
+      }
+    }
+  };
+
+  window.addEventListener("touchend", handleTouchEnd, { passive: false });
+  window.addEventListener("touchcancel", handleTouchEnd, { passive: false });
+
+  // Mouse / non-touch PointerEvents fallback (without setPointerCapture to avoid iOS WebKit quirks)
+  base.addEventListener("pointerdown", (e) => {
+    if (e.pointerType === "touch") return;
+    if (activePointerId !== null) return;
+    e.preventDefault();
+    e.stopPropagation();
+    cacheCenter();
+    activePointerId = e.pointerId;
+    base.classList.add("active");
+    updateStick(e.clientX, e.clientY);
+  });
+
+  window.addEventListener("pointermove", (e) => {
+    if (e.pointerType === "touch") return;
+    if (e.pointerId !== activePointerId) return;
+    e.preventDefault();
+    e.stopPropagation();
+    updateStick(e.clientX, e.clientY);
+  });
+
+  const handlePointerEnd = (e: PointerEvent) => {
+    if (e.pointerType === "touch") return;
+    if (e.pointerId !== activePointerId) return;
+    e.preventDefault();
+    e.stopPropagation();
+    resetStick();
+  };
+
+  window.addEventListener("pointerup", handlePointerEnd);
+  window.addEventListener("pointercancel", handlePointerEnd);
+}
+
 // App Initialization
 async function init() {
   setupColorSwatches();
@@ -9405,6 +9646,7 @@ async function init() {
   setupMapEditorAccordions();
   setupUploadSlots();
   setupHudControlBadges();
+  setupMobileJoystick();
 
   const savedColor = localStorage.getItem("player_color");
   const savedSwitch = localStorage.getItem("player_upload_switch");

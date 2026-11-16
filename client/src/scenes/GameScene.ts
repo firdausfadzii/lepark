@@ -220,6 +220,8 @@ export class GameScene extends Phaser.Scene {
     | "freeform_decoration"
     | "spawn_point" = "none";
   public activeEditorMenuItem: InspectableMapItem | null = null;
+  private movingEditorItem: InspectableMapItem | null = null;
+  public onEditorItemMoved?: (item: InspectableMapItem) => void;
   public onEditorItemContextMenu?: (data: {
     item: InspectableMapItem;
     screenX: number;
@@ -1347,7 +1349,7 @@ export class GameScene extends Phaser.Scene {
       this.localPlayerId = sessionId;
       if (!this.isEditMode) {
         this.cameras.main.centerOn(container.x, container.y);
-        this.cameras.main.startFollow(container, true, 0.15, 0.15);
+        this.cameras.main.startFollow(container, true, 1, 1);
       }
     }
 
@@ -2046,12 +2048,15 @@ export class GameScene extends Phaser.Scene {
         }
 
         if (localVisual.currentDirection !== targetDir) {
+          const wasIdle = localVisual.currentDirection === "idle";
           if (targetDir !== "idle") {
             localVisual.facingDirection = targetDir;
           }
           localVisual.currentDirection = targetDir;
-          localVisual.currentFrameIdx = 0;
-          localVisual.animTimer = 0;
+          if (wasIdle || targetDir === "idle") {
+            localVisual.currentFrameIdx = 0;
+            localVisual.animTimer = 0;
+          }
           try {
             this.updateVisualSprite(this.localPlayerId);
           } catch (e) {
@@ -2605,7 +2610,7 @@ export class GameScene extends Phaser.Scene {
         }
       }
       const anyModalOpen = document.querySelector(".modal-overlay:not(.hidden)");
-      if (!anyModalOpen && !this.controlsActive && !this.isTyperaceModalOpen() && !this.isSmokingGameModalOpen() && !this.isChessModalOpen()) {
+      if (!anyModalOpen && !this.controlsActive && !this.isTyperaceModalOpen() && !this.isSmokingGameModalOpen() && !this.isChessModalOpen() && !this.isFishingModalOpen()) {
         this.setControlsActive(true);
       }
 
@@ -2614,6 +2619,11 @@ export class GameScene extends Phaser.Scene {
       if (target && target.tagName !== "CANVAS") return;
 
       if (pointer.leftButtonDown()) {
+        if (this.movingEditorItem) {
+          this.finishMovingInspectableItem(pointer.worldX, pointer.worldY);
+          return;
+        }
+
         if (this.activeEditorTool === "none") {
           this.closeEditorItemMenu();
           return;
@@ -2764,8 +2774,15 @@ export class GameScene extends Phaser.Scene {
         if (this.editorJukeboxGhost) this.editorJukeboxGhost.setVisible(false);
         if (this.editorTypewriterGhost) this.editorTypewriterGhost.setVisible(false);
         if (this.editorAshtrayGhost) this.editorAshtrayGhost.setVisible(false);
+        if (this.editorChessBoardGhost) this.editorChessBoardGhost.setVisible(false);
+        if (this.editorAquariumGhost) this.editorAquariumGhost.setVisible(false);
         if (this.editorFreeformGhost) this.editorFreeformGhost.setVisible(false);
         if (this.game.canvas) this.game.canvas.style.cursor = "default";
+        return;
+      }
+
+      if (this.movingEditorItem) {
+        this.updateMovePreview(pointer.worldX, pointer.worldY);
         return;
       }
 
@@ -3619,6 +3636,7 @@ export class GameScene extends Phaser.Scene {
       this.cameras.main.stopFollow();
       this.cameras.main.removeBounds();
     } else {
+      this.cancelMovingInspectableItem();
       this.closeEditorItemMenu();
       this.isSelectingArea = false;
       this.selectionStartTile = null;
@@ -3644,7 +3662,7 @@ export class GameScene extends Phaser.Scene {
         const localVisual = this.playerVisuals.get(this.localPlayerId);
         if (localVisual) {
           this.cameras.main.centerOn(localVisual.container.x, localVisual.container.y);
-          this.cameras.main.startFollow(localVisual.container, true, 0.15, 0.15);
+          this.cameras.main.startFollow(localVisual.container, true, 1, 1);
         }
       }
     }
@@ -3911,6 +3929,11 @@ export class GameScene extends Phaser.Scene {
         }
         event.stopPropagation();
 
+        if (this.movingEditorItem) {
+          this.finishMovingInspectableItem(pointer.worldX, pointer.worldY);
+          return;
+        }
+
         if (this.activeEditorTool === "cursor") {
           const { width, height } = getAssetDimensions(data.assetKey);
           const originX = data.x - width / 2;
@@ -3969,6 +3992,32 @@ export class GameScene extends Phaser.Scene {
           this.multiplayer.placeAshtray(
             ax,
             ay,
+            this.decorationPassable,
+            this.decorationOntop,
+            this.placementLayer
+          );
+          return;
+        }
+
+        if (this.activeEditorTool === "chess_board") {
+          const cx = Math.round(pointer.worldX);
+          const cy = Math.round(pointer.worldY);
+          this.multiplayer.placeChessBoard(
+            cx,
+            cy,
+            this.decorationPassable,
+            this.decorationOntop,
+            this.placementLayer
+          );
+          return;
+        }
+
+        if (this.activeEditorTool === "aquarium") {
+          const qx = Math.round(pointer.worldX);
+          const qy = Math.round(pointer.worldY);
+          this.multiplayer.placeAquarium(
+            qx,
+            qy,
             this.decorationPassable,
             this.decorationOntop,
             this.placementLayer
@@ -4313,9 +4362,21 @@ export class GameScene extends Phaser.Scene {
     // Highlight solid chess boards in edit mode
     for (const visual of this.chessBoardVisuals.values()) {
       if (visual.state.passable === false) {
-        const bx = visual.state.x - 24;
-        const by = visual.state.y - 24;
+        const bx = visual.state.x - 25;
+        const by = visual.state.y - 25;
         const rects = getAssetRects("chess_board_1");
+        for (const [rx, ry, rw, rh] of rects) {
+          this.obstaclesGraphics.fillRect(bx + rx, by + ry, rw, rh);
+        }
+      }
+    }
+
+    // Highlight solid aquariums in edit mode
+    for (const visual of this.aquariumVisuals.values()) {
+      if (visual.state.passable === false) {
+        const bx = visual.state.x - 25;
+        const by = visual.state.y - 25;
+        const rects = getAssetRects("aquarium_1");
         for (const [rx, ry, rw, rh] of rects) {
           this.obstaclesGraphics.fillRect(bx + rx, by + ry, rw, rh);
         }
@@ -4446,6 +4507,7 @@ export class GameScene extends Phaser.Scene {
   ) {
     this.activeEditorTool = tool;
     if (tool !== "cursor") {
+      this.cancelMovingInspectableItem();
       this.closeEditorItemMenu();
     }
     if (tool === "none") {
@@ -4974,6 +5036,350 @@ export class GameScene extends Phaser.Scene {
 
     this.closeEditorItemMenu();
     this.editorHoverGraphics.clear();
+  }
+
+  public isMovingItem(): boolean {
+    return this.movingEditorItem !== null;
+  }
+
+  public startMovingInspectableItem(item: InspectableMapItem) {
+    if (!item) return;
+    this.movingEditorItem = item;
+    this.closeEditorItemMenu();
+    const pointer = this.input.activePointer;
+    if (pointer) {
+      this.updateMovePreview(pointer.worldX, pointer.worldY);
+    }
+    if (this.game.canvas) {
+      this.game.canvas.style.cursor = "grabbing";
+    }
+  }
+
+  public cancelMovingInspectableItem() {
+    if (!this.movingEditorItem) return;
+    this.movingEditorItem = null;
+    this.hideMovePreviewGhosts();
+    this.editorHoverGraphics.clear();
+    this.editorOverlayText.setVisible(false);
+    if (this.game.canvas) {
+      this.game.canvas.style.cursor =
+        this.activeEditorTool === "cursor" || this.activeEditorTool === "clear_decoration"
+          ? "pointer"
+          : "default";
+    }
+  }
+
+  private hideMovePreviewGhosts() {
+    if (this.editorJukeboxGhost) this.editorJukeboxGhost.setVisible(false);
+    if (this.editorTypewriterGhost) this.editorTypewriterGhost.setVisible(false);
+    if (this.editorAshtrayGhost) this.editorAshtrayGhost.setVisible(false);
+    if (this.editorChessBoardGhost) this.editorChessBoardGhost.setVisible(false);
+    if (this.editorAquariumGhost) this.editorAquariumGhost.setVisible(false);
+    if (this.editorFreeformGhost) this.editorFreeformGhost.setVisible(false);
+  }
+
+  private updateMovePreview(worldX: number, worldY: number) {
+    const item = this.movingEditorItem;
+    if (!item) return;
+
+    this.editorHoverGraphics.clear();
+    this.hideMovePreviewGhosts();
+    this.drawInspectHighlight(item, 0xf59e0b, 0.22, 2, 0.9);
+
+    const isFreeformKind =
+      item.kind === "jukebox" ||
+      item.kind === "typewriter" ||
+      item.kind === "ashtray" ||
+      item.kind === "chess_board" ||
+      item.kind === "aquarium" ||
+      item.kind === "freeform_decoration";
+
+    if (isFreeformKind) {
+      const nx = Math.round(worldX);
+      const ny = Math.round(worldY);
+      if (item.kind === "jukebox" && this.editorJukeboxGhost) {
+        const jb = this.jukeboxVisuals.get(item.id)?.state;
+        this.editorJukeboxGhost.setDepth(this.computeLayerDepth(jb?.layer ?? 0, !!jb?.ontop) + 1);
+        this.editorJukeboxGhost.setPosition(nx, ny);
+        this.editorJukeboxGhost.setVisible(true);
+      } else if (item.kind === "typewriter" && this.editorTypewriterGhost) {
+        const tw = this.typewriterVisuals.get(item.id)?.state;
+        this.editorTypewriterGhost.setDepth(this.computeLayerDepth(tw?.layer ?? 0, !!tw?.ontop) + 1);
+        this.editorTypewriterGhost.setPosition(nx, ny);
+        this.editorTypewriterGhost.setVisible(true);
+      } else if (item.kind === "ashtray" && this.editorAshtrayGhost) {
+        const at = this.ashtrayVisuals.get(item.id)?.state;
+        this.editorAshtrayGhost.setDepth(this.computeLayerDepth(at?.layer ?? 0, !!at?.ontop) + 1);
+        this.editorAshtrayGhost.setPosition(nx, ny);
+        this.editorAshtrayGhost.setVisible(true);
+      } else if (item.kind === "chess_board" && this.editorChessBoardGhost) {
+        const cb = this.chessBoardVisuals.get(item.id)?.state;
+        this.editorChessBoardGhost.setDepth(this.computeLayerDepth(cb?.layer ?? 0, !!cb?.ontop) + 1);
+        this.editorChessBoardGhost.setPosition(nx, ny);
+        this.editorChessBoardGhost.setVisible(true);
+      } else if (item.kind === "aquarium" && this.editorAquariumGhost) {
+        const aq = this.aquariumVisuals.get(item.id)?.state;
+        this.editorAquariumGhost.setDepth(this.computeLayerDepth(aq?.layer ?? 0, !!aq?.ontop) + 1);
+        this.editorAquariumGhost.setPosition(nx, ny);
+        this.editorAquariumGhost.setVisible(true);
+      } else if (item.kind === "freeform_decoration" && this.editorFreeformGhost) {
+        const d = this.freeformVisuals.get(item.id)?.data;
+        if (d) {
+          const normKey = normalizeDecorationAssetKey(d.assetKey);
+          const tex = this.resolveDecorationTexture(normKey, "office_chair_1_front");
+          this.editorFreeformGhost.setTexture(tex.key, tex.frame);
+          this.fitSpriteToBox(this.editorFreeformGhost, normKey);
+          this.editorFreeformGhost.setFlipX(!!d.flipX);
+          if (d.color) {
+            this.editorFreeformGhost.setTint(this.parseColor(d.color));
+          } else {
+            this.editorFreeformGhost.clearTint();
+          }
+          this.editorFreeformGhost.setAlpha(0.75);
+          this.editorFreeformGhost.setDepth(this.computeLayerDepth(d.layer ?? 0, d.ontop) + 1);
+          this.editorFreeformGhost.setPosition(nx, ny);
+          this.editorFreeformGhost.setVisible(true);
+        }
+      }
+
+      this.editorOverlayText.setText(`✥ Move ${item.label} • Click to place (Esc to cancel)`);
+      this.editorOverlayText.setPosition(nx + 28, Math.max(8, ny - 28));
+      this.editorOverlayText.setVisible(true);
+    } else {
+      const col = Math.max(0, Math.min(GRID_COLS - 1, Math.floor(worldX / TILE_SIZE)));
+      const row = Math.max(0, Math.min(GRID_ROWS - 1, Math.floor(worldY / TILE_SIZE)));
+
+      if (item.kind === "private_zone") {
+        const zone = this.privateZones.find((z) => z.id === item.id);
+        if (zone) {
+          const srcCol = item.col ?? zone.bounds.minCol;
+          const srcRow = item.row ?? zone.bounds.minRow;
+          const widthCols = zone.bounds.maxCol - zone.bounds.minCol;
+          const heightRows = zone.bounds.maxRow - zone.bounds.minRow;
+          const newMinCol = Math.max(
+            0,
+            Math.min(GRID_COLS - 1 - widthCols, zone.bounds.minCol + (col - srcCol))
+          );
+          const newMinRow = Math.max(
+            0,
+            Math.min(GRID_ROWS - 1 - heightRows, zone.bounds.minRow + (row - srcRow))
+          );
+          const rx = newMinCol * TILE_SIZE;
+          const ry = newMinRow * TILE_SIZE;
+          const rw = (widthCols + 1) * TILE_SIZE;
+          const rh = (heightRows + 1) * TILE_SIZE;
+          this.editorHoverGraphics.fillStyle(0x10b981, 0.24);
+          this.editorHoverGraphics.fillRect(rx, ry, rw, rh);
+          this.editorHoverGraphics.lineStyle(2.5, 0x10b981, 0.95);
+          this.editorHoverGraphics.strokeRect(rx, ry, rw, rh);
+        }
+      } else {
+        this.editorHoverGraphics.fillStyle(0x10b981, 0.28);
+        this.editorHoverGraphics.fillRect(col * TILE_SIZE, row * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+        this.editorHoverGraphics.lineStyle(2.5, 0x10b981, 0.95);
+        this.editorHoverGraphics.strokeRect(col * TILE_SIZE, row * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+      }
+
+      this.editorOverlayText.setText(
+        `✥ Move ${item.label} to (${col}, ${row}) • Click to place (Esc to cancel)`
+      );
+      this.editorOverlayText.setPosition(col * TILE_SIZE + 8, Math.max(8, row * TILE_SIZE - 32));
+      this.editorOverlayText.setVisible(true);
+    }
+
+    if (this.game.canvas) {
+      this.game.canvas.style.cursor = "grabbing";
+    }
+  }
+
+  public finishMovingInspectableItem(worldX: number, worldY: number) {
+    const item = this.movingEditorItem;
+    if (!item) return;
+
+    this.movingEditorItem = null;
+    this.hideMovePreviewGhosts();
+    this.editorHoverGraphics.clear();
+    this.editorOverlayText.setVisible(false);
+    if (this.game.canvas) {
+      this.game.canvas.style.cursor =
+        this.activeEditorTool === "cursor" || this.activeEditorTool === "clear_decoration"
+          ? "pointer"
+          : "default";
+    }
+
+    const nx = Math.round(worldX);
+    const ny = Math.round(worldY);
+    const dstCol = Math.max(0, Math.min(GRID_COLS - 1, Math.floor(worldX / TILE_SIZE)));
+    const dstRow = Math.max(0, Math.min(GRID_ROWS - 1, Math.floor(worldY / TILE_SIZE)));
+
+    if (item.kind === "aquarium") {
+      const vis = this.aquariumVisuals.get(item.id);
+      if (vis) {
+        vis.state.x = nx;
+        vis.state.y = ny;
+        vis.container.setPosition(nx, ny);
+        this.drawObstacles();
+      }
+      this.multiplayer?.moveAquarium(item.id, nx, ny);
+    } else if (item.kind === "chess_board") {
+      const vis = this.chessBoardVisuals.get(item.id);
+      if (vis) {
+        vis.state.x = nx;
+        vis.state.y = ny;
+        vis.container.setPosition(nx, ny);
+        this.drawObstacles();
+      }
+      this.multiplayer?.moveChessBoard(item.id, nx, ny);
+    } else if (item.kind === "ashtray") {
+      const vis = this.ashtrayVisuals.get(item.id);
+      if (vis) {
+        vis.state.x = nx;
+        vis.state.y = ny;
+        vis.container.setPosition(nx, ny);
+        this.drawObstacles();
+      }
+      this.multiplayer?.moveAshtray(item.id, nx, ny);
+    } else if (item.kind === "typewriter") {
+      const vis = this.typewriterVisuals.get(item.id);
+      if (vis) {
+        vis.state.x = nx;
+        vis.state.y = ny;
+        vis.container.setPosition(nx, ny);
+        this.drawObstacles();
+      }
+      this.multiplayer?.moveTypewriter(item.id, nx, ny);
+    } else if (item.kind === "jukebox") {
+      const vis = this.jukeboxVisuals.get(item.id);
+      if (vis) {
+        vis.state.x = nx;
+        vis.state.y = ny;
+        vis.container.setPosition(nx, ny);
+        this.drawObstacles();
+      }
+      this.multiplayer?.moveJukebox(item.id, nx, ny);
+    } else if (item.kind === "freeform_decoration") {
+      const vis = this.freeformVisuals.get(item.id);
+      if (vis) {
+        vis.data.x = nx;
+        vis.data.y = ny;
+        const serialized = serializeFreeformTile(
+          vis.data.assetKey,
+          nx,
+          ny,
+          vis.data.color,
+          vis.data.passable,
+          vis.data.ontop,
+          vis.data.layer,
+          vis.data.interaction,
+          !!vis.data.flipX
+        );
+        this.currentTilesMap.set(item.id, serialized);
+        this.updateFreeformDecoration(item.id, serialized);
+        this.multiplayer?.sendUpdateTiles({ [item.id]: serialized });
+      }
+    } else if (item.kind === "spawn_point") {
+      const spawnVal = `${dstCol},${dstRow}`;
+      if (this.currentTilesMap.get("spawn_point") !== spawnVal) {
+        this.currentTilesMap.set("spawn_point", spawnVal);
+        this.drawSpawnPoint();
+        this.multiplayer?.sendUpdateTiles({ spawn_point: spawnVal });
+      }
+    } else if (item.kind === "private_zone") {
+      const zone = this.privateZones.find((z) => z.id === item.id);
+      if (zone) {
+        const srcCol = item.col ?? zone.bounds.minCol;
+        const srcRow = item.row ?? zone.bounds.minRow;
+        const widthCols = zone.bounds.maxCol - zone.bounds.minCol;
+        const heightRows = zone.bounds.maxRow - zone.bounds.minRow;
+        const newMinCol = Math.max(
+          0,
+          Math.min(GRID_COLS - 1 - widthCols, zone.bounds.minCol + (dstCol - srcCol))
+        );
+        const newMinRow = Math.max(
+          0,
+          Math.min(GRID_ROWS - 1 - heightRows, zone.bounds.minRow + (dstRow - srcRow))
+        );
+        zone.bounds = {
+          minCol: newMinCol,
+          minRow: newMinRow,
+          maxCol: newMinCol + widthCols,
+          maxRow: newMinRow + heightRows,
+        };
+        this.multiplayer?.sendUpdatePrivateZones(this.privateZones);
+        this.drawPrivateZones();
+        this.notifyPrivateZonesListChange();
+      }
+    } else {
+      const srcKey = item.id;
+      const dstKey = `${dstCol},${dstRow}`;
+      if (srcKey !== dstKey) {
+        const srcComp = this.parseTileComponents(this.currentTilesMap.get(srcKey));
+        const dstComp = this.parseTileComponents(this.currentTilesMap.get(dstKey));
+
+        if (item.kind === "grid_decoration" || item.kind === "overlay_wall") {
+          if (srcComp.decoParts.length > 0) {
+            const movedDeco = srcComp.decoParts.pop()!;
+            const srcWasObstacle = srcComp.hasObstacle;
+            const srcBaseAsset = this.parseLayerPart(srcComp.basePart, false).assetKey;
+            if (srcComp.decoParts.length > 0) {
+              const top = srcComp.decoParts[srcComp.decoParts.length - 1];
+              srcComp.decoPart = top.rawPart;
+              srcComp.isOntop = top.isOntop;
+              srcComp.hasObstacle =
+                srcWasObstacle ||
+                isWallAsset(srcBaseAsset) ||
+                srcComp.decoParts.some((d) => isWallAsset(d.assetKey));
+            } else {
+              srcComp.decoParts = [];
+              srcComp.decoPart = null;
+              srcComp.isOntop = false;
+              srcComp.hasObstacle = isWallAsset(srcBaseAsset);
+            }
+
+            dstComp.decoParts.push(movedDeco);
+            dstComp.decoPart = movedDeco.rawPart;
+            dstComp.isOntop = movedDeco.isOntop;
+            if (
+              isWallAsset(movedDeco.assetKey) ||
+              (srcComp.decoParts.length === 0 && !isWallAsset(srcBaseAsset) && srcWasObstacle)
+            ) {
+              dstComp.hasObstacle = true;
+            }
+          }
+        } else if (item.kind === "wall") {
+          dstComp.basePart = srcComp.basePart;
+          dstComp.hasObstacle = true;
+          srcComp.basePart = "grass_4";
+          srcComp.hasObstacle = srcComp.decoParts.some((d) => isWallAsset(d.assetKey));
+        } else if (item.kind === "overlay_floor") {
+          dstComp.overlayFloorPart = srcComp.overlayFloorPart;
+          dstComp.overlayFloorLayer = srcComp.overlayFloorLayer;
+          dstComp.overlayFloorOntop = srcComp.overlayFloorOntop;
+          dstComp.overlayFloorFlipX = srcComp.overlayFloorFlipX;
+          srcComp.overlayFloorPart = null;
+          srcComp.overlayFloorLayer = 0;
+          srcComp.overlayFloorOntop = false;
+          srcComp.overlayFloorFlipX = false;
+        } else if (item.kind === "floor") {
+          dstComp.basePart = srcComp.basePart;
+          srcComp.basePart = "grass_4";
+        } else if (item.kind === "obstacle") {
+          srcComp.hasObstacle = false;
+          dstComp.hasObstacle = true;
+        }
+
+        const updates: Record<string, string> = {
+          [srcKey]: this.buildTileString(srcComp),
+          [dstKey]: this.buildTileString(dstComp),
+        };
+        this.applyTileUpdates(updates);
+        this.multiplayer?.sendUpdateTiles(updates);
+      }
+    }
+
+    if (this.onEditorItemMoved) {
+      this.onEditorItemMoved(item);
+    }
   }
 
   public isItemObstacle(item: InspectableMapItem): boolean {
@@ -5628,6 +6034,106 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  /**
+   * Handles edit-mode pointerdown on special freeform entities (jukebox, typewriter,
+   * ashtray, chess_board, aquarium) uniformly across all editor tools.
+   */
+  private handleSpecialEntityEditPointerDown(
+    pointer: Phaser.Input.Pointer,
+    entityKind: "jukebox" | "typewriter" | "ashtray" | "chess_board" | "aquarium",
+    entityLayer: number | undefined,
+    inspectItem: InspectableMapItem
+  ) {
+    if (this.movingEditorItem) {
+      this.finishMovingInspectableItem(pointer.worldX, pointer.worldY);
+      return;
+    }
+    if (this.activeEditorTool === "cursor") {
+      this.openEditorItemMenu(inspectItem);
+      return;
+    }
+    if (this.activeEditorTool === "clear_decoration") {
+      this.deleteInspectableItem(inspectItem);
+      return;
+    }
+    if (this.activeEditorTool === entityKind && (entityLayer ?? 0) === this.placementLayer) {
+      this.deleteInspectableItem(inspectItem);
+      return;
+    }
+
+    const px = Math.round(pointer.worldX);
+    const py = Math.round(pointer.worldY);
+    if (this.activeEditorTool === "jukebox") {
+      this.multiplayer.placeJukebox(
+        px,
+        py,
+        this.decorationPassable,
+        this.decorationOntop,
+        this.placementLayer
+      );
+      return;
+    }
+    if (this.activeEditorTool === "typewriter") {
+      this.multiplayer.placeTypewriter(
+        px,
+        py,
+        this.decorationPassable,
+        this.decorationOntop,
+        this.placementLayer
+      );
+      return;
+    }
+    if (this.activeEditorTool === "ashtray") {
+      this.multiplayer.placeAshtray(
+        px,
+        py,
+        this.decorationPassable,
+        this.decorationOntop,
+        this.placementLayer
+      );
+      return;
+    }
+    if (this.activeEditorTool === "chess_board") {
+      this.multiplayer.placeChessBoard(
+        px,
+        py,
+        this.decorationPassable,
+        this.decorationOntop,
+        this.placementLayer
+      );
+      return;
+    }
+    if (this.activeEditorTool === "aquarium") {
+      this.multiplayer.placeAquarium(
+        px,
+        py,
+        this.decorationPassable,
+        this.decorationOntop,
+        this.placementLayer
+      );
+      return;
+    }
+    if (this.activeEditorTool === "freeform_decoration") {
+      this.placeFreeformDecoration(
+        this.selectedAssetKey,
+        px,
+        py,
+        null,
+        this.decorationPassable,
+        this.decorationOntop,
+        this.placementLayer
+      );
+      return;
+    }
+
+    const col = Math.max(0, Math.min(GRID_COLS - 1, Math.floor(pointer.worldX / TILE_SIZE)));
+    const row = Math.max(0, Math.min(GRID_ROWS - 1, Math.floor(pointer.worldY / TILE_SIZE)));
+    this.isSelectingArea = true;
+    this.selectionStartTile = { x: col, y: row };
+    this.selectionCurrentTile = { x: col, y: row };
+    this.updateSelectionVisuals();
+  }
+
   private createJukeboxVisual(jb: JukeboxState) {
     const isVirtual =
       jb.id.startsWith("freeform:") ||
@@ -5669,82 +6175,15 @@ export class GameScene extends Phaser.Scene {
         event.stopPropagation();
 
         if (this.isEditMode) {
-          if (this.activeEditorTool === "cursor") {
-            this.openEditorItemMenu({
-              kind: "jukebox",
-              id: jb.id,
-              label: "Jukebox",
-              categoryLabel: "Music",
-              worldX: jb.x,
-              worldY: jb.y - 24,
-              bounds: { x: jb.x - 24, y: jb.y - 24, width: 48, height: 48 },
-            });
-            return;
-          }
-          if (this.activeEditorTool === "clear_decoration") {
-            this.multiplayer.deleteJukebox(jb.id);
-            return;
-          }
-          if (this.activeEditorTool === "jukebox") {
-            if ((jb.layer ?? 0) === this.placementLayer) {
-              this.multiplayer.deleteJukebox(jb.id);
-            } else {
-              const jx = Math.round(pointer.worldX);
-              const jy = Math.round(pointer.worldY);
-              this.multiplayer.placeJukebox(
-                jx,
-                jy,
-                this.decorationPassable,
-                this.decorationOntop,
-                this.placementLayer
-              );
-            }
-            return;
-          }
-          if (this.activeEditorTool === "typewriter") {
-            const tx = Math.round(pointer.worldX);
-            const ty = Math.round(pointer.worldY);
-            this.multiplayer.placeTypewriter(
-              tx,
-              ty,
-              this.decorationPassable,
-              this.decorationOntop,
-              this.placementLayer
-            );
-            return;
-          }
-          if (this.activeEditorTool === "ashtray") {
-            const ax = Math.round(pointer.worldX);
-            const ay = Math.round(pointer.worldY);
-            this.multiplayer.placeAshtray(
-              ax,
-              ay,
-              this.decorationPassable,
-              this.decorationOntop,
-              this.placementLayer
-            );
-            return;
-          }
-          if (this.activeEditorTool === "freeform_decoration") {
-            const fx = Math.round(pointer.worldX);
-            const fy = Math.round(pointer.worldY);
-            this.placeFreeformDecoration(
-              this.selectedAssetKey,
-              fx,
-              fy,
-              null,
-              this.decorationPassable,
-              this.decorationOntop,
-              this.placementLayer
-            );
-            return;
-          }
-          const col = Math.max(0, Math.min(GRID_COLS - 1, Math.floor(pointer.worldX / TILE_SIZE)));
-          const row = Math.max(0, Math.min(GRID_ROWS - 1, Math.floor(pointer.worldY / TILE_SIZE)));
-          this.isSelectingArea = true;
-          this.selectionStartTile = { x: col, y: row };
-          this.selectionCurrentTile = { x: col, y: row };
-          this.updateSelectionVisuals();
+          this.handleSpecialEntityEditPointerDown(pointer, "jukebox", jb.layer, {
+            kind: "jukebox",
+            id: jb.id,
+            label: "Jukebox",
+            categoryLabel: "Music",
+            worldX: jb.x,
+            worldY: jb.y - 24,
+            bounds: { x: jb.x - 24, y: jb.y - 24, width: 48, height: 48 },
+          });
         } else {
           const effective = this.getEffectiveEntityInteraction(jb, "jukebox");
           if (effective) {
@@ -5871,82 +6310,15 @@ export class GameScene extends Phaser.Scene {
         event.stopPropagation();
 
         if (this.isEditMode) {
-          if (this.activeEditorTool === "cursor") {
-            this.openEditorItemMenu({
-              kind: "typewriter",
-              id: tw.id,
-              label: "Typewriter",
-              categoryLabel: "Game",
-              worldX: tw.x,
-              worldY: tw.y - 24,
-              bounds: { x: tw.x - 24, y: tw.y - 24, width: 48, height: 48 },
-            });
-            return;
-          }
-          if (this.activeEditorTool === "clear_decoration") {
-            this.multiplayer.deleteTypewriter(tw.id);
-            return;
-          }
-          if (this.activeEditorTool === "typewriter") {
-            if ((tw.layer ?? 0) === this.placementLayer) {
-              this.multiplayer.deleteTypewriter(tw.id);
-            } else {
-              const tx = Math.round(pointer.worldX);
-              const ty = Math.round(pointer.worldY);
-              this.multiplayer.placeTypewriter(
-                tx,
-                ty,
-                this.decorationPassable,
-                this.decorationOntop,
-                this.placementLayer
-              );
-            }
-            return;
-          }
-          if (this.activeEditorTool === "ashtray") {
-            const tx = Math.round(pointer.worldX);
-            const ty = Math.round(pointer.worldY);
-            this.multiplayer.placeAshtray(
-              tx,
-              ty,
-              this.decorationPassable,
-              this.decorationOntop,
-              this.placementLayer
-            );
-            return;
-          }
-          if (this.activeEditorTool === "jukebox") {
-            const jx = Math.round(pointer.worldX);
-            const jy = Math.round(pointer.worldY);
-            this.multiplayer.placeJukebox(
-              jx,
-              jy,
-              this.decorationPassable,
-              this.decorationOntop,
-              this.placementLayer
-            );
-            return;
-          }
-          if (this.activeEditorTool === "freeform_decoration") {
-            const fx = Math.round(pointer.worldX);
-            const fy = Math.round(pointer.worldY);
-            this.placeFreeformDecoration(
-              this.selectedAssetKey,
-              fx,
-              fy,
-              null,
-              this.decorationPassable,
-              this.decorationOntop,
-              this.placementLayer
-            );
-            return;
-          }
-          const col = Math.max(0, Math.min(GRID_COLS - 1, Math.floor(pointer.worldX / TILE_SIZE)));
-          const row = Math.max(0, Math.min(GRID_ROWS - 1, Math.floor(pointer.worldY / TILE_SIZE)));
-          this.isSelectingArea = true;
-          this.selectionStartTile = { x: col, y: row };
-          this.selectionCurrentTile = { x: col, y: row };
-          this.updateSelectionVisuals();
+          this.handleSpecialEntityEditPointerDown(pointer, "typewriter", tw.layer, {
+            kind: "typewriter",
+            id: tw.id,
+            label: "Typewriter",
+            categoryLabel: "Game",
+            worldX: tw.x,
+            worldY: tw.y - 24,
+            bounds: { x: tw.x - 24, y: tw.y - 24, width: 48, height: 48 },
+          });
         } else {
           const effective = this.getEffectiveEntityInteraction(tw, "type_race");
           if (effective) {
@@ -6042,82 +6414,15 @@ export class GameScene extends Phaser.Scene {
         event.stopPropagation();
 
         if (this.isEditMode) {
-          if (this.activeEditorTool === "cursor") {
-            this.openEditorItemMenu({
-              kind: "ashtray",
-              id: at.id,
-              label: "Ashtray",
-              categoryLabel: "Game",
-              worldX: at.x,
-              worldY: at.y - 24,
-              bounds: { x: at.x - 24, y: at.y - 24, width: 48, height: 48 },
-            });
-            return;
-          }
-          if (this.activeEditorTool === "clear_decoration") {
-            this.multiplayer.deleteAshtray(at.id);
-            return;
-          }
-          if (this.activeEditorTool === "ashtray") {
-            if ((at.layer ?? 0) === this.placementLayer) {
-              this.multiplayer.deleteAshtray(at.id);
-            } else {
-              const tx = Math.round(pointer.worldX);
-              const ty = Math.round(pointer.worldY);
-              this.multiplayer.placeAshtray(
-                tx,
-                ty,
-                this.decorationPassable,
-                this.decorationOntop,
-                this.placementLayer
-              );
-            }
-            return;
-          }
-          if (this.activeEditorTool === "typewriter") {
-            const tx = Math.round(pointer.worldX);
-            const ty = Math.round(pointer.worldY);
-            this.multiplayer.placeTypewriter(
-              tx,
-              ty,
-              this.decorationPassable,
-              this.decorationOntop,
-              this.placementLayer
-            );
-            return;
-          }
-          if (this.activeEditorTool === "jukebox") {
-            const jx = Math.round(pointer.worldX);
-            const jy = Math.round(pointer.worldY);
-            this.multiplayer.placeJukebox(
-              jx,
-              jy,
-              this.decorationPassable,
-              this.decorationOntop,
-              this.placementLayer
-            );
-            return;
-          }
-          if (this.activeEditorTool === "freeform_decoration") {
-            const fx = Math.round(pointer.worldX);
-            const fy = Math.round(pointer.worldY);
-            this.placeFreeformDecoration(
-              this.selectedAssetKey,
-              fx,
-              fy,
-              null,
-              this.decorationPassable,
-              this.decorationOntop,
-              this.placementLayer
-            );
-            return;
-          }
-          const col = Math.max(0, Math.min(GRID_COLS - 1, Math.floor(pointer.worldX / TILE_SIZE)));
-          const row = Math.max(0, Math.min(GRID_ROWS - 1, Math.floor(pointer.worldY / TILE_SIZE)));
-          this.isSelectingArea = true;
-          this.selectionStartTile = { x: col, y: row };
-          this.selectionCurrentTile = { x: col, y: row };
-          this.updateSelectionVisuals();
+          this.handleSpecialEntityEditPointerDown(pointer, "ashtray", at.layer, {
+            kind: "ashtray",
+            id: at.id,
+            label: "Ashtray",
+            categoryLabel: "Game",
+            worldX: at.x,
+            worldY: at.y - 24,
+            bounds: { x: at.x - 24, y: at.y - 24, width: 48, height: 48 },
+          });
         } else {
           const effective = this.getEffectiveEntityInteraction(at, "smoke_duel");
           if (effective) {
@@ -6213,94 +6518,15 @@ export class GameScene extends Phaser.Scene {
         event.stopPropagation();
 
         if (this.isEditMode) {
-          if (this.activeEditorTool === "cursor") {
-            this.openEditorItemMenu({
-              kind: "chess_board",
-              id: cb.id,
-              label: "Chess Board",
-              categoryLabel: "Game",
-              worldX: cb.x,
-              worldY: cb.y - 25,
-              bounds: { x: cb.x - 25, y: cb.y - 25, width: 50, height: 50 },
-            });
-            return;
-          }
-          if (this.activeEditorTool === "clear_decoration") {
-            this.multiplayer.deleteChessBoard(cb.id);
-            return;
-          }
-          if (this.activeEditorTool === "chess_board") {
-            if ((cb.layer ?? 0) === this.placementLayer) {
-              this.multiplayer.deleteChessBoard(cb.id);
-            } else {
-              const tx = Math.round(pointer.worldX);
-              const ty = Math.round(pointer.worldY);
-              this.multiplayer.placeChessBoard(
-                tx,
-                ty,
-                this.decorationPassable,
-                this.decorationOntop,
-                this.placementLayer
-              );
-            }
-            return;
-          }
-          if (this.activeEditorTool === "ashtray") {
-            const ax = Math.round(pointer.worldX);
-            const ay = Math.round(pointer.worldY);
-            this.multiplayer.placeAshtray(
-              ax,
-              ay,
-              this.decorationPassable,
-              this.decorationOntop,
-              this.placementLayer
-            );
-            return;
-          }
-          if (this.activeEditorTool === "typewriter") {
-            const tx = Math.round(pointer.worldX);
-            const ty = Math.round(pointer.worldY);
-            this.multiplayer.placeTypewriter(
-              tx,
-              ty,
-              this.decorationPassable,
-              this.decorationOntop,
-              this.placementLayer
-            );
-            return;
-          }
-          if (this.activeEditorTool === "jukebox") {
-            const jx = Math.round(pointer.worldX);
-            const jy = Math.round(pointer.worldY);
-            this.multiplayer.placeJukebox(
-              jx,
-              jy,
-              this.decorationPassable,
-              this.decorationOntop,
-              this.placementLayer
-            );
-            return;
-          }
-          if (this.activeEditorTool === "freeform_decoration") {
-            const fx = Math.round(pointer.worldX);
-            const fy = Math.round(pointer.worldY);
-            this.placeFreeformDecoration(
-              this.selectedAssetKey,
-              fx,
-              fy,
-              null,
-              this.decorationPassable,
-              this.decorationOntop,
-              this.placementLayer
-            );
-            return;
-          }
-          const col = Math.max(0, Math.min(GRID_COLS - 1, Math.floor(pointer.worldX / TILE_SIZE)));
-          const row = Math.max(0, Math.min(GRID_ROWS - 1, Math.floor(pointer.worldY / TILE_SIZE)));
-          this.isSelectingArea = true;
-          this.selectionStartTile = { x: col, y: row };
-          this.selectionCurrentTile = { x: col, y: row };
-          this.updateSelectionVisuals();
+          this.handleSpecialEntityEditPointerDown(pointer, "chess_board", cb.layer, {
+            kind: "chess_board",
+            id: cb.id,
+            label: "Chess Board",
+            categoryLabel: "Game",
+            worldX: cb.x,
+            worldY: cb.y - 25,
+            bounds: { x: cb.x - 25, y: cb.y - 25, width: 50, height: 50 },
+          });
         } else {
           const effective = this.getEffectiveEntityInteraction(cb, "chess");
           if (effective) {
@@ -6394,106 +6620,15 @@ export class GameScene extends Phaser.Scene {
         event.stopPropagation();
 
         if (this.isEditMode) {
-          if (this.activeEditorTool === "cursor") {
-            this.openEditorItemMenu({
-              kind: "aquarium",
-              id: aq.id,
-              label: "Aquarium",
-              categoryLabel: "Fishing",
-              worldX: aq.x,
-              worldY: aq.y - 25,
-              bounds: { x: aq.x - 25, y: aq.y - 25, width: 50, height: 50 },
-            });
-            return;
-          }
-          if (this.activeEditorTool === "clear_decoration") {
-            this.multiplayer.deleteAquarium(aq.id);
-            return;
-          }
-          if (this.activeEditorTool === "aquarium") {
-            if ((aq.layer ?? 0) === this.placementLayer) {
-              this.multiplayer.deleteAquarium(aq.id);
-            } else {
-              const tx = Math.round(pointer.worldX);
-              const ty = Math.round(pointer.worldY);
-              this.multiplayer.placeAquarium(
-                tx,
-                ty,
-                this.decorationPassable,
-                this.decorationOntop,
-                this.placementLayer
-              );
-            }
-            return;
-          }
-          if (this.activeEditorTool === "chess_board") {
-            const cx = Math.round(pointer.worldX);
-            const cy = Math.round(pointer.worldY);
-            this.multiplayer.placeChessBoard(
-              cx,
-              cy,
-              this.decorationPassable,
-              this.decorationOntop,
-              this.placementLayer
-            );
-            return;
-          }
-          if (this.activeEditorTool === "ashtray") {
-            const ax = Math.round(pointer.worldX);
-            const ay = Math.round(pointer.worldY);
-            this.multiplayer.placeAshtray(
-              ax,
-              ay,
-              this.decorationPassable,
-              this.decorationOntop,
-              this.placementLayer
-            );
-            return;
-          }
-          if (this.activeEditorTool === "typewriter") {
-            const tx = Math.round(pointer.worldX);
-            const ty = Math.round(pointer.worldY);
-            this.multiplayer.placeTypewriter(
-              tx,
-              ty,
-              this.decorationPassable,
-              this.decorationOntop,
-              this.placementLayer
-            );
-            return;
-          }
-          if (this.activeEditorTool === "jukebox") {
-            const jx = Math.round(pointer.worldX);
-            const jy = Math.round(pointer.worldY);
-            this.multiplayer.placeJukebox(
-              jx,
-              jy,
-              this.decorationPassable,
-              this.decorationOntop,
-              this.placementLayer
-            );
-            return;
-          }
-          if (this.activeEditorTool === "freeform_decoration") {
-            const fx = Math.round(pointer.worldX);
-            const fy = Math.round(pointer.worldY);
-            this.placeFreeformDecoration(
-              this.selectedAssetKey,
-              fx,
-              fy,
-              null,
-              this.decorationPassable,
-              this.decorationOntop,
-              this.placementLayer
-            );
-            return;
-          }
-          const col = Math.max(0, Math.min(GRID_COLS - 1, Math.floor(pointer.worldX / TILE_SIZE)));
-          const row = Math.max(0, Math.min(GRID_ROWS - 1, Math.floor(pointer.worldY / TILE_SIZE)));
-          this.isSelectingArea = true;
-          this.selectionStartTile = { x: col, y: row };
-          this.selectionCurrentTile = { x: col, y: row };
-          this.updateSelectionVisuals();
+          this.handleSpecialEntityEditPointerDown(pointer, "aquarium", aq.layer, {
+            kind: "aquarium",
+            id: aq.id,
+            label: "Aquarium",
+            categoryLabel: "Fishing",
+            worldX: aq.x,
+            worldY: aq.y - 25,
+            bounds: { x: aq.x - 25, y: aq.y - 25, width: 50, height: 50 },
+          });
         } else {
           const effective = this.getEffectiveEntityInteraction(aq, "fishing");
           if (effective) {

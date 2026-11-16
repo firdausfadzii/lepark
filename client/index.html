@@ -57,6 +57,14 @@
 
           <!-- Dropdown Menu -->
           <div id="user-profile-dropdown" class="user-profile-dropdown hidden">
+            <div id="dropdown-parking-points" class="dropdown-item dropdown-parking-info mobile-only-dropdown-item">
+              <span class="dropdown-icon">🅿️</span>
+              <div class="dropdown-text">
+                <span class="dropdown-title" id="dropdown-parking-points-val">0 Parking</span>
+                <span class="dropdown-sub">Parking points balance</span>
+              </div>
+            </div>
+            <div class="dropdown-divider mobile-only-dropdown-item"></div>
             <button type="button" id="dropdown-my-space-btn" class="dropdown-item">
               <span class="dropdown-icon">🏠</span>
               <div class="dropdown-text">
@@ -69,6 +77,20 @@
               <div class="dropdown-text">
                 <span class="dropdown-title">Update character</span>
                 <span class="dropdown-sub">Customize avatar & appearance</span>
+              </div>
+            </button>
+            <button type="button" id="dropdown-edit-space-btn" class="dropdown-item mobile-only-dropdown-item hidden">
+              <span class="dropdown-icon">🛠️</span>
+              <div class="dropdown-text">
+                <span class="dropdown-title">Edit space info</span>
+                <span class="dropdown-sub">Manage space name & settings</span>
+              </div>
+            </button>
+            <button type="button" id="dropdown-edit-map-btn" class="dropdown-item mobile-only-dropdown-item hidden">
+              <span class="dropdown-icon">✏️</span>
+              <div class="dropdown-text">
+                <span class="dropdown-title">Edit map</span>
+                <span class="dropdown-sub">Customize tiles & decorations</span>
               </div>
             </button>
             <div class="dropdown-divider"></div>
@@ -84,21 +106,6 @@
         <!-- Parking Points Display (Beside Player Info) -->
         <div id="topbar-parking-points" class="topbar-parking-points" title="Parking Points">
           0 Parking
-        </div>
-
-        <!-- Right: Ping & Packet Loss -->
-        <div class="topbar-actions-group">
-          <!-- Network Ping & Loss Pill -->
-          <div class="topbar-net-stats" title="Connection latency & packet loss">
-            <svg class="net-svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
-              <line x1="8" y1="21" x2="16" y2="21"></line>
-              <line x1="12" y1="17" x2="12" y2="21"></line>
-            </svg>
-            <span id="topbar-ping-stat" class="net-stat-val">-- ms</span>
-            <span class="net-stat-div">|</span>
-            <span id="topbar-loss-stat" class="net-stat-val">0% loss</span>
-          </div>
         </div>
       </div>
 
@@ -2186,10 +2193,31 @@
               <div id="editor-interaction-options" class="editor-interaction-options"></div>
             </div>
           </div>
+          <button type="button" class="player-context-btn editor-item-move-btn" id="btn-editor-item-move" title="Move this item to another location">
+            <span class="player-context-btn-icon">✥</span>
+            <span class="player-context-btn-label">Move</span>
+          </button>
           <button type="button" class="player-context-btn editor-item-delete-btn" id="btn-editor-item-delete" title="Delete this item from the map">
             <span class="player-context-btn-icon">🗑️</span>
             <span class="player-context-btn-label">Delete</span>
           </button>
+        </div>
+      </div>
+
+      <!-- Bottom-Left Network Ping Indicator -->
+      <div id="hud-ping-pill" class="hud-ping-pill" title="Connection latency">
+        <svg class="net-svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+          <line x1="8" y1="21" x2="16" y2="21"></line>
+          <line x1="12" y1="17" x2="12" y2="21"></line>
+        </svg>
+        <span id="topbar-ping-stat" class="net-stat-val">-- ms</span>
+      </div>
+
+      <!-- Mobile Analog Movement Joystick (Bottom Right) -->
+      <div id="mobile-analog-control" class="mobile-analog-control" aria-label="Movement Analog Stick">
+        <div id="mobile-analog-base" class="mobile-analog-base">
+          <div id="mobile-analog-knob" class="mobile-analog-knob"></div>
         </div>
       </div>
 

@@ -227,6 +227,7 @@ export class FishingGame {
   private soundEnabled: boolean = true;
   private audioCtx: AudioContext | null = null;
   private onCatchBroadcast?: (fish: FishSpecies, size: number, quality: string) => void;
+  private onControlsActiveChange?: (active: boolean) => void;
 
   // Collection records stored in localStorage
   private caughtRecords: Map<string, CaughtRecord> = new Map();
@@ -328,12 +329,17 @@ export class FishingGame {
     this.onCatchBroadcast = cb;
   }
 
+  public setControlsActiveCallback(cb: (active: boolean) => void) {
+    this.onControlsActiveChange = cb;
+  }
+
   public open(aquariumId: string) {
     this.activeAquariumId = aquariumId;
     if (!this.modalEl) this.cacheDOMElements();
     if (!this.modalEl) return;
 
     this.modalEl.classList.remove("hidden");
+    this.onControlsActiveChange?.(false);
     this.switchTab("play");
     this.resetToCastStage();
     this.updateHeaderStats();
@@ -347,6 +353,7 @@ export class FishingGame {
     if (this.modalEl) {
       this.modalEl.classList.add("hidden");
     }
+    this.onControlsActiveChange?.(true);
   }
 
   public isOpen(): boolean {

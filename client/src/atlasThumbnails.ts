@@ -168,7 +168,7 @@ export function hydrateEditorAssetThumbnails(root: ParentNode = document): void 
   const cards = root.querySelectorAll<HTMLElement>(".editor-asset-card[data-asset-id]");
   for (const card of cards) {
     const assetId = card.dataset.assetId;
-    const img = card.querySelector<HTMLImageElement>("img.asset-thumb-img");
+    const img = card.querySelector<HTMLImageElement>("img.asset-thumb-img, img[data-atlas-thumb]");
     if (!assetId || !img) continue;
     void resolveAssetThumbnailUrl(assetId).then((url) => {
       if (url) img.src = url;
