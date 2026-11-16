@@ -9329,8 +9329,6 @@ async function enterGameSession() {
       voiceManager.connectToVoice();
     }
 
-    const TOP_BAR_HEIGHT = 40;
-
     const config: Phaser.Types.Core.GameConfig = {
       type: Phaser.AUTO,
       parent: "game-container",
@@ -9340,7 +9338,7 @@ async function enterGameSession() {
         mode: Phaser.Scale.RESIZE,
         autoCenter: Phaser.Scale.CENTER_BOTH,
         width: window.innerWidth,
-        height: window.innerHeight - TOP_BAR_HEIGHT,
+        height: window.innerHeight - getTopBarHeight(),
       },
       physics: {
         default: "arcade",
@@ -9397,11 +9395,16 @@ async function enterGameSession() {
   }
 }
 
+function getTopBarHeight(): number {
+  const topBar = document.getElementById("top-bar");
+  const measured = topBar ? topBar.getBoundingClientRect().height : 0;
+  return measured > 0 ? Math.round(measured) : 40;
+}
+
 // Window Resize Handler
 window.addEventListener("resize", () => {
   if (gameInstance) {
-    const TOP_BAR_HEIGHT = 40;
-    gameInstance.scale.resize(window.innerWidth, window.innerHeight - TOP_BAR_HEIGHT);
+    gameInstance.scale.resize(window.innerWidth, window.innerHeight - getTopBarHeight());
   }
 });
 
@@ -9731,3 +9734,11 @@ async function init() {
 }
 
 init();
+
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").catch((err) => {
+      console.warn("Service worker registration failed:", err);
+    });
+  });
+}
