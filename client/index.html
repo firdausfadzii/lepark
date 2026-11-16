@@ -308,132 +308,119 @@
 
 
 
-    <!-- Left-Side Tile Color / Tint Sidebar (Can Hide & Expand) -->
-    <aside id="map-editor-color-sidebar" class="map-editor-color-sidebar editor-category-group editor-color-group hidden" data-category="color" aria-label="Tile Color & Tint Picker">
-      <div class="editor-category-header color-sidebar-header" id="color-sidebar-header-toggle" role="button" tabindex="0" aria-expanded="true" title="Click to hide or expand Color Picker">
+    <!-- Right-Side Tile Options Sidebar (Passable, Render Layer, Layer Level) -->
+    <aside id="map-editor-tile-options-sidebar" class="map-editor-right-sidebar editor-category-group hidden" aria-label="Tile Options">
+      <div class="editor-category-header right-sidebar-header" id="right-sidebar-header-toggle" role="button" tabindex="0" aria-expanded="true" title="Click to hide or expand Tile Options">
         <div class="editor-category-name-wrap">
-          <span class="category-icon">🎨</span>
-          <span class="category-title">Color Picker</span>
+          <span class="category-icon">⚙️</span>
+          <span class="category-title">Tile Options</span>
         </div>
         <div class="editor-category-header-right">
-          <div class="editor-color-header-actions" style="display: flex; gap: 6px; align-items: center;">
-            <button
-              type="button"
-              id="btn-dropper-shortcut"
-              class="editor-color-reset-btn dropper-shortcut-btn"
-              title="Pick color from map tile (Color Dropper)"
-            >
-              💧 Dropper
-            </button>
-            <button
-              type="button"
-              id="btn-reset-tile-color"
-              class="editor-color-reset-btn"
-              title="Reset to original asset texture (No tint)"
-            >
-              ↺ Original
-            </button>
-          </div>
           <button
             type="button"
-            id="btn-toggle-color-sidebar"
-            class="color-sidebar-collapse-btn"
-            aria-label="Hide or expand Color Picker"
-            title="Hide / Expand Color Picker"
+            id="btn-toggle-right-sidebar"
+            class="right-sidebar-collapse-btn"
+            aria-label="Hide or expand Tile Options"
+            title="Hide / Expand Tile Options"
           >
-            <span class="color-collapse-label" id="color-collapse-label">Hide</span>
+            <span class="right-collapse-label">Hide</span>
             <svg class="category-chevron-svg" viewBox="0 0 24 24" width="16" height="16">
-              <path fill="currentColor" d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/>
+              <path fill="currentColor" d="M8.59 16.59L10 18l6-6-6-6-1.41 1.41L13.17 12z"/>
             </svg>
           </button>
         </div>
       </div>
 
-      <!-- Collapsed pill shown when left color sidebar is hidden -->
+      <!-- Collapsed pill shown when right sidebar is hidden -->
       <button
         type="button"
-        id="btn-expand-color-sidebar"
-        class="color-sidebar-expand-pill"
-        title="Expand Color Picker"
-        aria-label="Expand Color Picker"
+        id="btn-expand-right-sidebar"
+        class="right-sidebar-expand-pill"
+        title="Expand Tile Options"
+        aria-label="Expand Tile Options"
       >
-        <span class="expand-pill-icon">🎨</span>
-        <span class="expand-pill-swatch" id="color-Collapsed-swatch"></span>
-        <span class="expand-pill-text">Color</span>
-        <span class="expand-pill-arrow">▸</span>
+        <span class="expand-pill-arrow">◂</span>
+        <span class="expand-pill-icon">⚙️</span>
+        <span class="expand-pill-text">Tile Options</span>
       </button>
 
-      <div class="editor-category-content color-sidebar-content">
-        <!-- Active Brush Combined Preview -->
-        <div class="editor-brush-card" id="editor-brush-card">
-          <div class="brush-swatch-box" id="brush-swatch-box">
-            <div class="brush-pattern-layer" id="brush-pattern-layer"></div>
-            <div class="brush-tint-layer" id="brush-tint-layer"></div>
+      <div class="editor-category-content right-sidebar-content">
+        <!-- Selected Tile Summary Card -->
+        <div class="tile-options-selected-card" id="tile-options-selected-card">
+          <div class="tile-options-preview" id="tile-options-preview">
+            <span class="tile-options-preview-placeholder" id="tile-options-preview-placeholder">🧩</span>
+            <img id="tile-options-preview-img" class="tile-options-preview-img hidden" src="" alt="" />
           </div>
-          <div class="brush-info">
-            <div class="brush-headline" id="brush-headline">No Asset Selected</div>
-            <div class="brush-color-status">
-              <span class="brush-dot" id="brush-dot"></span>
-              <span class="brush-color-text" id="brush-color-text">Original (No Tint)</span>
+          <div class="tile-options-info">
+            <div class="tile-options-name" id="tile-options-name">No Tile Selected</div>
+            <div class="tile-options-category" id="tile-options-category">Select flooring, wall, or decoration</div>
+          </div>
+        </div>
+
+        <!-- Tile Option Controls -->
+        <div class="tile-options-controls disabled" id="tile-options-controls">
+          <!-- 1. Passable or Not (Switch) -->
+          <div class="tile-option-row tile-option-switch-row">
+            <div class="tile-option-label-group">
+              <label class="tile-option-label" for="tile-opt-passable-switch">Passable</label>
+              <span class="tile-option-hint" id="tile-opt-passable-hint">Walkable</span>
+            </div>
+            <label class="editor-switch" title="Toggle whether players can walk through this tile">
+              <input type="checkbox" id="tile-opt-passable-switch" checked disabled />
+              <span class="editor-switch-slider"></span>
+            </label>
+          </div>
+
+          <!-- 2. Render Layer (Top or Bottom of Player - Dropdown) -->
+          <div class="tile-option-row">
+            <label class="tile-option-label" for="tile-opt-render-layer">Render Layer</label>
+            <select id="tile-opt-render-layer" class="editor-select" disabled>
+              <option value="bottom">Bottom of Player</option>
+              <option value="top">Top of Player</option>
+            </select>
+          </div>
+
+          <!-- 3. Layer Level (Button Up and Down) -->
+          <div class="tile-option-row">
+            <div class="tile-option-label-group">
+              <span class="tile-option-label">Layer Level</span>
+              <span class="tile-option-hint">Shortcuts: ↑ / ↓</span>
+            </div>
+            <div class="editor-layer-stepper">
+              <button
+                type="button"
+                id="btn-tile-opt-layer-down"
+                class="editor-layer-step-btn"
+                title="Decrease Layer Level (Down)"
+                disabled
+              >
+                ▼
+              </button>
+              <span class="editor-layer-step-value" id="tile-opt-layer-value">0</span>
+              <button
+                type="button"
+                id="btn-tile-opt-layer-up"
+                class="editor-layer-step-btn"
+                title="Increase Layer Level (Up)"
+                disabled
+              >
+                ▲
+              </button>
             </div>
           </div>
-        </div>
 
-        <!-- Custom Color Picker Row -->
-        <div class="editor-custom-color-row">
-          <label class="editor-color-input-wrap" title="Click to pick custom color">
-            <input type="color" id="editor-tile-color-input" value="#3B8282" />
-            <span class="editor-color-circle" id="editor-color-circle" style="background-color: #3B8282;"></span>
-            <span class="editor-color-picker-title">Pick Custom Color</span>
-          </label>
-          <div class="editor-hex-wrap">
-            <span class="editor-hex-hash">#</span>
-            <input
-              type="text"
-              id="editor-tile-hex-input"
-              class="editor-hex-field"
-              value="3B8282"
-              maxlength="8"
-              placeholder="RRGGBBAA"
-              spellcheck="false"
-            />
+          <!-- 4. Flip Horizontal (Switch) -->
+          <div class="tile-option-row tile-option-switch-row">
+            <div class="tile-option-label-group">
+              <label class="tile-option-label" for="tile-opt-flip-x-switch">Flip Horizontal</label>
+              <span class="tile-option-hint" id="tile-opt-flip-x-hint">Normal</span>
+            </div>
+            <label class="editor-switch" title="Flip this asset horizontally">
+              <input type="checkbox" id="tile-opt-flip-x-switch" disabled />
+              <span class="editor-switch-slider"></span>
+            </label>
           </div>
         </div>
-
-        <!-- Alpha / Opacity Channel Row -->
-        <div class="editor-alpha-row">
-          <span class="editor-alpha-label">Opacity</span>
-          <div class="editor-alpha-slider-wrap">
-            <div class="editor-alpha-track-bg" id="editor-alpha-track-bg"></div>
-            <input
-              type="range"
-              id="editor-tile-alpha-slider"
-              class="editor-alpha-slider"
-              min="0"
-              max="100"
-              step="1"
-              value="100"
-              title="Adjust alpha channel / opacity (0% - 100%)"
-            />
-          </div>
-          <div class="editor-alpha-input-wrap">
-            <input
-              type="number"
-              id="editor-tile-alpha-input"
-              class="editor-alpha-field"
-              min="0"
-              max="100"
-              step="1"
-              value="100"
-              aria-label="Opacity percentage"
-            />
-            <span class="editor-alpha-unit">%</span>
-          </div>
-        </div>
-
-        <!-- Preset Colors Palette Grid -->
-        <div class="editor-swatches-title">Preset Colors</div>
-        <div class="editor-color-palette" id="editor-color-palette"></div>
       </div>
     </aside>
 
@@ -499,6 +486,19 @@
         <!-- Bottom Bar Right Actions -->
         <div class="editor-bottom-bar-actions">
           <span class="editor-inline-tip">Press <kbd class="editor-tip-kbd">Esc</kbd> to show/exit</span>
+          <button
+            type="button"
+            id="btn-expand-map-editor"
+            class="editor-expand-btn"
+            aria-expanded="false"
+            aria-label="Expand Map Editor bar"
+            title="Expand / Collapse Map Editor bar"
+          >
+            <svg class="editor-expand-chevron" viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
+              <path fill="currentColor" d="M7.41 15.41L12 10.83l4.59 4.58L18 14l-6-6-6 6z"/>
+            </svg>
+            <span class="editor-expand-label">Expand</span>
+          </button>
           <button type="button" id="btn-close-map-editor" class="editor-finish-btn">
             <span>✓</span> Done Editing
           </button>
@@ -515,7 +515,7 @@
               <span class="category-title">Flooring Patterns</span>
             </div>
             <div class="editor-category-header-right">
-              <span class="category-count">32 styles</span>
+              <span class="category-count">30 styles</span>
               <span class="category-chevron-icon" aria-hidden="true">
                 <svg class="category-chevron-svg" viewBox="0 0 24 24" width="16" height="16">
                   <path fill="currentColor" d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"/>
@@ -525,6 +525,18 @@
           </div>
 
           <div class="editor-category-content">
+            <div class="editor-group-tabs-nav" role="tablist" aria-label="Flooring Asset Groups">
+              <button
+                type="button"
+                class="editor-group-tab-btn active"
+                data-asset-group-tab="Free"
+                role="tab"
+                aria-selected="true"
+              >
+                Free
+              </button>
+            </div>
+            <div class="editor-group-panel active-group-panel" data-asset-group-panel="Free">
             <div class="editor-assets-grid">
             <!-- Wood 5 (wood_5) - Default / 90° Wood Floor -->
             <button
@@ -535,7 +547,7 @@
               title="Wood Floor 5 (wood_5)"
             >
               <div class="asset-card-thumb">
-                <img src="/assets/floor/wood_5.png" alt="Wood 5" class="asset-thumb-img" />
+                <img data-atlas-thumb="1" alt="Wood 5" class="asset-thumb-img" />
                 <span class="asset-card-check">✓</span>
               </div>
               <div class="asset-card-info">
@@ -553,7 +565,7 @@
               title="Wood Floor 1 (wood_1)"
             >
               <div class="asset-card-thumb">
-                <img src="/assets/floor/wood_1.png" alt="Wood 1" class="asset-thumb-img" />
+                <img data-atlas-thumb="1" alt="Wood 1" class="asset-thumb-img" />
                 <span class="asset-card-check">✓</span>
               </div>
               <div class="asset-card-info">
@@ -571,7 +583,7 @@
               title="Wood Floor 2 (wood_2)"
             >
               <div class="asset-card-thumb">
-                <img src="/assets/floor/wood_2.png" alt="Wood 2" class="asset-thumb-img" />
+                <img data-atlas-thumb="1" alt="Wood 2" class="asset-thumb-img" />
                 <span class="asset-card-check">✓</span>
               </div>
               <div class="asset-card-info">
@@ -589,7 +601,7 @@
               title="Wood Floor 3 (wood_3)"
             >
               <div class="asset-card-thumb">
-                <img src="/assets/floor/wood_3.png" alt="Wood 3" class="asset-thumb-img" />
+                <img data-atlas-thumb="1" alt="Wood 3" class="asset-thumb-img" />
                 <span class="asset-card-check">✓</span>
               </div>
               <div class="asset-card-info">
@@ -607,7 +619,7 @@
               title="Wood Floor 4 (wood_4)"
             >
               <div class="asset-card-thumb">
-                <img src="/assets/floor/wood_4.png" alt="Wood 4" class="asset-thumb-img" />
+                <img data-atlas-thumb="1" alt="Wood 4" class="asset-thumb-img" />
                 <span class="asset-card-check">✓</span>
               </div>
               <div class="asset-card-info">
@@ -625,7 +637,7 @@
               title="Wood Floor 6 (wood_6)"
             >
               <div class="asset-card-thumb">
-                <img src="/assets/floor/wood_6.png" alt="Wood 6" class="asset-thumb-img" />
+                <img data-atlas-thumb="1" alt="Wood 6" class="asset-thumb-img" />
                 <span class="asset-card-check">✓</span>
               </div>
               <div class="asset-card-info">
@@ -643,7 +655,7 @@
               title="Grass 4 (grass_4)"
             >
               <div class="asset-card-thumb">
-                <img src="/assets/floor/grass_4.png" alt="Grass 4" class="asset-thumb-img" />
+                <img data-atlas-thumb="1" alt="Grass 4" class="asset-thumb-img" />
                 <span class="asset-card-check">✓</span>
               </div>
               <div class="asset-card-info">
@@ -661,7 +673,7 @@
               title="Grass 1 (grass_1)"
             >
               <div class="asset-card-thumb">
-                <img src="/assets/floor/grass_1.png" alt="Grass 1" class="asset-thumb-img" />
+                <img data-atlas-thumb="1" alt="Grass 1" class="asset-thumb-img" />
                 <span class="asset-card-check">✓</span>
               </div>
               <div class="asset-card-info">
@@ -679,7 +691,7 @@
               title="Grass 2 (grass_2)"
             >
               <div class="asset-card-thumb">
-                <img src="/assets/floor/grass_2.png" alt="Grass 2" class="asset-thumb-img" />
+                <img data-atlas-thumb="1" alt="Grass 2" class="asset-thumb-img" />
                 <span class="asset-card-check">✓</span>
               </div>
               <div class="asset-card-info">
@@ -697,7 +709,7 @@
               title="Grass 3 (grass_3)"
             >
               <div class="asset-card-thumb">
-                <img src="/assets/floor/grass_3.png" alt="Grass 3" class="asset-thumb-img" />
+                <img data-atlas-thumb="1" alt="Grass 3" class="asset-thumb-img" />
                 <span class="asset-card-check">✓</span>
               </div>
               <div class="asset-card-info">
@@ -715,7 +727,7 @@
               title="Carpet 4 (carpet_4)"
             >
               <div class="asset-card-thumb">
-                <img src="/assets/floor/carpet_4.png" alt="Carpet 4" class="asset-thumb-img" />
+                <img data-atlas-thumb="1" alt="Carpet 4" class="asset-thumb-img" />
                 <span class="asset-card-check">✓</span>
               </div>
               <div class="asset-card-info">
@@ -733,7 +745,7 @@
               title="Carpet 1 (carpet_1)"
             >
               <div class="asset-card-thumb">
-                <img src="/assets/floor/carpet_1.png" alt="Carpet 1" class="asset-thumb-img" />
+                <img data-atlas-thumb="1" alt="Carpet 1" class="asset-thumb-img" />
                 <span class="asset-card-check">✓</span>
               </div>
               <div class="asset-card-info">
@@ -751,7 +763,7 @@
               title="Carpet 2 (carpet_2)"
             >
               <div class="asset-card-thumb">
-                <img src="/assets/floor/carpet_2.png" alt="Carpet 2" class="asset-thumb-img" />
+                <img data-atlas-thumb="1" alt="Carpet 2" class="asset-thumb-img" />
                 <span class="asset-card-check">✓</span>
               </div>
               <div class="asset-card-info">
@@ -769,7 +781,7 @@
               title="Carpet 3 (carpet_3)"
             >
               <div class="asset-card-thumb">
-                <img src="/assets/floor/carpet_3.png" alt="Carpet 3" class="asset-thumb-img" />
+                <img data-atlas-thumb="1" alt="Carpet 3" class="asset-thumb-img" />
                 <span class="asset-card-check">✓</span>
               </div>
               <div class="asset-card-info">
@@ -787,7 +799,7 @@
               title="Carpet 5 (carpet_5)"
             >
               <div class="asset-card-thumb">
-                <img src="/assets/floor/carpet_5.png" alt="Carpet 5" class="asset-thumb-img" />
+                <img data-atlas-thumb="1" alt="Carpet 5" class="asset-thumb-img" />
                 <span class="asset-card-check">✓</span>
               </div>
               <div class="asset-card-info">
@@ -805,7 +817,7 @@
               title="Carpet 6 (carpet_6)"
             >
               <div class="asset-card-thumb">
-                <img src="/assets/floor/carpet_6.png" alt="Carpet 6" class="asset-thumb-img" />
+                <img data-atlas-thumb="1" alt="Carpet 6" class="asset-thumb-img" />
                 <span class="asset-card-check">✓</span>
               </div>
               <div class="asset-card-info">
@@ -823,7 +835,7 @@
               title="Carpet 7 (carpet_7)"
             >
               <div class="asset-card-thumb">
-                <img src="/assets/floor/carpet_7.png" alt="Carpet 7" class="asset-thumb-img" />
+                <img data-atlas-thumb="1" alt="Carpet 7" class="asset-thumb-img" />
                 <span class="asset-card-check">✓</span>
               </div>
               <div class="asset-card-info">
@@ -841,7 +853,7 @@
               title="Carpet 8 (carpet_8)"
             >
               <div class="asset-card-thumb">
-                <img src="/assets/floor/carpet_8.png" alt="Carpet 8" class="asset-thumb-img" />
+                <img data-atlas-thumb="1" alt="Carpet 8" class="asset-thumb-img" />
                 <span class="asset-card-check">✓</span>
               </div>
               <div class="asset-card-info">
@@ -859,7 +871,7 @@
               title="Stone Floor 1 (stone_1)"
             >
               <div class="asset-card-thumb">
-                <img src="/assets/floor/stone_1.png" alt="Stone 1" class="asset-thumb-img" />
+                <img data-atlas-thumb="1" alt="Stone 1" class="asset-thumb-img" />
                 <span class="asset-card-check">✓</span>
               </div>
               <div class="asset-card-info">
@@ -877,7 +889,7 @@
               title="Stone Floor 2 (stone_2)"
             >
               <div class="asset-card-thumb">
-                <img src="/assets/floor/stone_2.png" alt="Stone 2" class="asset-thumb-img" />
+                <img data-atlas-thumb="1" alt="Stone 2" class="asset-thumb-img" />
                 <span class="asset-card-check">✓</span>
               </div>
               <div class="asset-card-info">
@@ -895,7 +907,7 @@
               title="Stone Floor 3 (stone_3)"
             >
               <div class="asset-card-thumb">
-                <img src="/assets/floor/stone_3.png" alt="Stone 3" class="asset-thumb-img" />
+                <img data-atlas-thumb="1" alt="Stone 3" class="asset-thumb-img" />
                 <span class="asset-card-check">✓</span>
               </div>
               <div class="asset-card-info">
@@ -913,7 +925,7 @@
               title="Stone Floor 4 (stone_4)"
             >
               <div class="asset-card-thumb">
-                <img src="/assets/floor/stone_4.png" alt="Stone 4" class="asset-thumb-img" />
+                <img data-atlas-thumb="1" alt="Stone 4" class="asset-thumb-img" />
                 <span class="asset-card-check">✓</span>
               </div>
               <div class="asset-card-info">
@@ -931,7 +943,7 @@
               title="Stone Floor 5 (stone_5)"
             >
               <div class="asset-card-thumb">
-                <img src="/assets/floor/stone_5.png" alt="Stone 5" class="asset-thumb-img" />
+                <img data-atlas-thumb="1" alt="Stone 5" class="asset-thumb-img" />
                 <span class="asset-card-check">✓</span>
               </div>
               <div class="asset-card-info">
@@ -949,7 +961,7 @@
               title="Stone Floor 6 (stone_6)"
             >
               <div class="asset-card-thumb">
-                <img src="/assets/floor/stone_6.png" alt="Stone 6" class="asset-thumb-img" />
+                <img data-atlas-thumb="1" alt="Stone 6" class="asset-thumb-img" />
                 <span class="asset-card-check">✓</span>
               </div>
               <div class="asset-card-info">
@@ -967,7 +979,7 @@
               title="Stone Floor 7 (stone_7)"
             >
               <div class="asset-card-thumb">
-                <img src="/assets/floor/stone_7.png" alt="Stone 7" class="asset-thumb-img" />
+                <img data-atlas-thumb="1" alt="Stone 7" class="asset-thumb-img" />
                 <span class="asset-card-check">✓</span>
               </div>
               <div class="asset-card-info">
@@ -985,7 +997,7 @@
               title="Stone Floor 8 (stone_8)"
             >
               <div class="asset-card-thumb">
-                <img src="/assets/floor/stone_8.png" alt="Stone 8" class="asset-thumb-img" />
+                <img data-atlas-thumb="1" alt="Stone 8" class="asset-thumb-img" />
                 <span class="asset-card-check">✓</span>
               </div>
               <div class="asset-card-info">
@@ -1003,7 +1015,7 @@
               title="Marble Floor 1 (marble_1)"
             >
               <div class="asset-card-thumb">
-                <img src="/assets/floor/marble_1.png" alt="Marble 1" class="asset-thumb-img" />
+                <img data-atlas-thumb="1" alt="Marble 1" class="asset-thumb-img" />
                 <span class="asset-card-check">✓</span>
               </div>
               <div class="asset-card-info">
@@ -1021,7 +1033,7 @@
               title="Marble Floor 2 (marble_2)"
             >
               <div class="asset-card-thumb">
-                <img src="/assets/floor/marble_2.png" alt="Marble 2" class="asset-thumb-img" />
+                <img data-atlas-thumb="1" alt="Marble 2" class="asset-thumb-img" />
                 <span class="asset-card-check">✓</span>
               </div>
               <div class="asset-card-info">
@@ -1039,7 +1051,7 @@
               title="Marble Floor 3 (marble_3)"
             >
               <div class="asset-card-thumb">
-                <img src="/assets/floor/marble_3.png" alt="Marble 3" class="asset-thumb-img" />
+                <img data-atlas-thumb="1" alt="Marble 3" class="asset-thumb-img" />
                 <span class="asset-card-check">✓</span>
               </div>
               <div class="asset-card-info">
@@ -1057,7 +1069,7 @@
               title="Marble Floor 4 (marble_4)"
             >
               <div class="asset-card-thumb">
-                <img src="/assets/floor/marble_4.png" alt="Marble 4" class="asset-thumb-img" />
+                <img data-atlas-thumb="1" alt="Marble 4" class="asset-thumb-img" />
                 <span class="asset-card-check">✓</span>
               </div>
               <div class="asset-card-info">
@@ -1065,44 +1077,7 @@
                 <span class="asset-card-code">marble_4</span>
               </div>
             </button>
-
-            <!-- Plain / Solid Color Tile (color_tile) -->
-            <button
-              type="button"
-              class="editor-asset-card"
-              data-asset-id="color_tile"
-              data-asset-name="Plain Tile"
-              title="Plain Solid Tile (color_tile)"
-            >
-              <div class="asset-card-thumb plain-tile-thumb">
-                <div class="plain-tile-preview-square" id="plain-tile-preview-square"></div>
-                <span class="asset-card-check">✓</span>
-              </div>
-              <div class="asset-card-info">
-                <span class="asset-card-name">Plain Tile</span>
-                <span class="asset-card-code">color_tile</span>
-              </div>
-            </button>
-
-            <!-- Overlay Plain Tile (color_tile_overlay) -->
-            <button
-              type="button"
-              class="editor-asset-card"
-              data-asset-id="color_tile_overlay"
-              data-asset-name="Overlay Plain Tile"
-              data-is-overlay-floor="true"
-              title="Overlay Plain Tile (color_tile_overlay) - Rendered on top of floor (does not replace floor). Click placed overlay to remove."
-            >
-              <div class="asset-card-thumb plain-tile-thumb overlay-plain-tile-thumb">
-                <div class="plain-tile-preview-square" id="overlay-plain-tile-preview-square"></div>
-                <span class="asset-card-badge wall-badge" style="background:#2563eb;">Overlay</span>
-                <span class="asset-card-check">✓</span>
-              </div>
-              <div class="asset-card-info">
-                <span class="asset-card-name">Overlay Plain</span>
-                <span class="asset-card-code">color_tile_overlay</span>
-              </div>
-            </button>
+          </div>
           </div>
           </div>
         </div>
@@ -1125,100 +1100,36 @@
           </div>
 
           <div class="editor-category-content">
-            <!-- Decoration Passage Option (Passable vs Solid) -->
-          <div class="editor-deco-options" id="editor-deco-options">
-            <div class="editor-deco-options-header">
-              <span class="editor-deco-options-title">Passage / Collision:</span>
-              <span class="editor-deco-options-hint" id="deco-passable-hint">Walkable</span>
-            </div>
-            <div class="editor-deco-toggle-group">
-              <button
-                type="button"
-                id="btn-deco-passable"
-                class="editor-deco-toggle-btn active"
-                data-passable="true"
-                title="Passable: Players can walk freely across this decoration"
-              >
-                <span class="deco-toggle-icon">🟢</span>
-                <span class="deco-toggle-label">Passable</span>
-                <span class="deco-toggle-sub">Walkable</span>
-              </button>
-              <button
-                type="button"
-                id="btn-deco-solid"
-                class="editor-deco-toggle-btn"
-                data-passable="false"
-                title="Solid: Impassable barrier that blocks player movement"
-              >
-                <span class="deco-toggle-icon">🚫</span>
-                <span class="deco-toggle-label">Solid</span>
-                <span class="deco-toggle-sub">Impassable</span>
-              </button>
-            </div>
+          <div class="editor-group-tabs-nav" role="tablist" aria-label="Decoration Asset Groups">
+            <button
+              type="button"
+              class="editor-group-tab-btn active"
+              data-asset-group-tab="Free"
+              role="tab"
+              aria-selected="true"
+            >
+              Free
+            </button>
+            <button
+              type="button"
+              class="editor-group-tab-btn"
+              data-asset-group-tab="Office One"
+              role="tab"
+              aria-selected="false"
+            >
+              Office One
+            </button>
+            <button
+              type="button"
+              class="editor-group-tab-btn"
+              data-asset-group-tab="Office Two"
+              role="tab"
+              aria-selected="false"
+            >
+              Office Two
+            </button>
           </div>
-
-          <!-- Decoration Render Layer Option (Behind vs On Top of Character) -->
-          <div class="editor-deco-options" id="editor-deco-layer-options">
-            <div class="editor-deco-options-header">
-              <span class="editor-deco-options-title">Render Layer:</span>
-              <span class="editor-deco-options-hint" id="deco-layer-hint">Behind Character</span>
-            </div>
-            <div class="editor-deco-toggle-group">
-              <button
-                type="button"
-                id="btn-deco-layer-behind"
-                class="editor-deco-toggle-btn active"
-                data-layer="behind"
-                title="Behind Character: Character walks on top of the decoration (Floor level)"
-              >
-                <span class="deco-toggle-icon">🔽</span>
-                <span class="deco-toggle-label">Behind</span>
-                <span class="deco-toggle-sub">Under Player</span>
-              </button>
-              <button
-                type="button"
-                id="btn-deco-layer-ontop"
-                class="editor-deco-toggle-btn"
-                data-layer="ontop"
-                title="On Top of Character: Decoration renders above character (Overhead / Foreground)"
-              >
-                <span class="deco-toggle-icon">🔼</span>
-                <span class="deco-toggle-label">On Top</span>
-                <span class="deco-toggle-sub">Above Player</span>
-              </button>
-            </div>
-          </div>
-
-          <!-- Decoration / Overlay Layer Level Option (Up / Down Arrow Keys) -->
-          <div class="editor-deco-options" id="editor-deco-level-options">
-            <div class="editor-deco-options-header">
-              <span class="editor-deco-options-title">Layer Level (↑/↓ Arrows):</span>
-              <span class="editor-deco-options-hint" id="deco-level-hint">Layer 0</span>
-            </div>
-            <div class="editor-deco-toggle-group">
-              <button
-                type="button"
-                id="btn-deco-level-down"
-                class="editor-deco-toggle-btn"
-                title="Decrease Layer Level (Down Arrow Key) - Renders under higher layers"
-              >
-                <span class="deco-toggle-icon">⬇️</span>
-                <span class="deco-toggle-label">Down (↓)</span>
-                <span class="deco-toggle-sub">Lower Layer</span>
-              </button>
-              <button
-                type="button"
-                id="btn-deco-level-up"
-                class="editor-deco-toggle-btn"
-                title="Increase Layer Level (Up Arrow Key) - Renders above lower layers"
-              >
-                <span class="deco-toggle-icon">⬆️</span>
-                <span class="deco-toggle-label">Up (↑)</span>
-                <span class="deco-toggle-sub">Higher Layer</span>
-              </button>
-            </div>
-          </div>
-
+          <div class="editor-group-panel active-group-panel" data-asset-group-panel="Free">
           <div class="editor-assets-grid">
             <!-- Asset: Table 1 Left (table_1_left) -->
             <button
@@ -1230,8 +1141,7 @@
               title="Table 1 Left (table_1_left) - Decorative tile placed on top of other tiles"
             >
               <div class="asset-card-thumb">
-                <img src="/assets/decoration/table_1_left.png" alt="Table 1 Left" class="asset-thumb-img" />
-                <span class="asset-card-badge decoration-badge">Deco</span>
+                <img data-atlas-thumb="1" alt="Table 1 Left" class="asset-thumb-img" />
                 <span class="asset-card-check">✓</span>
               </div>
               <div class="asset-card-info">
@@ -1250,8 +1160,7 @@
               title="Table 1 Middle (table_1_middle) - Decorative tile placed on top of other tiles"
             >
               <div class="asset-card-thumb">
-                <img src="/assets/decoration/table_1_middle.png" alt="Table 1 Middle" class="asset-thumb-img" />
-                <span class="asset-card-badge decoration-badge">Deco</span>
+                <img data-atlas-thumb="1" alt="Table 1 Middle" class="asset-thumb-img" />
                 <span class="asset-card-check">✓</span>
               </div>
               <div class="asset-card-info">
@@ -1270,8 +1179,7 @@
               title="Table 1 Right (table_1_right) - Decorative tile placed on top of other tiles"
             >
               <div class="asset-card-thumb">
-                <img src="/assets/decoration/table_1_right.png" alt="Table 1 Right" class="asset-thumb-img" />
-                <span class="asset-card-badge decoration-badge">Deco</span>
+                <img data-atlas-thumb="1" alt="Table 1 Right" class="asset-thumb-img" />
                 <span class="asset-card-check">✓</span>
               </div>
               <div class="asset-card-info">
@@ -1290,8 +1198,7 @@
               title="Table 2 Left (table_2_left) - Decorative tile placed on top of other tiles"
             >
               <div class="asset-card-thumb">
-                <img src="/assets/decoration/table_2_left.png" alt="Table 2 Left" class="asset-thumb-img" />
-                <span class="asset-card-badge decoration-badge">Deco</span>
+                <img data-atlas-thumb="1" alt="Table 2 Left" class="asset-thumb-img" />
                 <span class="asset-card-check">✓</span>
               </div>
               <div class="asset-card-info">
@@ -1310,8 +1217,7 @@
               title="Table 2 Middle (table_2_middle) - Decorative tile placed on top of other tiles"
             >
               <div class="asset-card-thumb">
-                <img src="/assets/decoration/table_2_middle.png" alt="Table 2 Middle" class="asset-thumb-img" />
-                <span class="asset-card-badge decoration-badge">Deco</span>
+                <img data-atlas-thumb="1" alt="Table 2 Middle" class="asset-thumb-img" />
                 <span class="asset-card-check">✓</span>
               </div>
               <div class="asset-card-info">
@@ -1330,8 +1236,7 @@
               title="Table 2 Right (table_2_right) - Decorative tile placed on top of other tiles"
             >
               <div class="asset-card-thumb">
-                <img src="/assets/decoration/table_2_right.png" alt="Table 2 Right" class="asset-thumb-img" />
-                <span class="asset-card-badge decoration-badge">Deco</span>
+                <img data-atlas-thumb="1" alt="Table 2 Right" class="asset-thumb-img" />
                 <span class="asset-card-check">✓</span>
               </div>
               <div class="asset-card-info">
@@ -1350,8 +1255,7 @@
               title="Round Table 1 (round_table_1) - Decorative round table, bounded by grid"
             >
               <div class="asset-card-thumb">
-                <img src="/assets/decoration/round_table_1.png" alt="Round Table 1" class="asset-thumb-img" />
-                <span class="asset-card-badge decoration-badge">Deco</span>
+                <img data-atlas-thumb="1" alt="Round Table 1" class="asset-thumb-img" />
                 <span class="asset-card-check">✓</span>
               </div>
               <div class="asset-card-info">
@@ -1371,8 +1275,7 @@
               title="Office Chair 1 Front (office_chair_1_front) - Freeform decoration (not bounded by grid, place anywhere anyhow)"
             >
               <div class="asset-card-thumb">
-                <img src="/assets/decoration/office_chair_1_front.png" alt="Office Chair 1 Front" class="asset-thumb-img" />
-                <span class="asset-card-badge freeform-badge">Freeform</span>
+                <img data-atlas-thumb="1" alt="Office Chair 1 Front" class="asset-thumb-img" />
                 <span class="asset-card-check">✓</span>
               </div>
               <div class="asset-card-info">
@@ -1392,8 +1295,7 @@
               title="Office Chair 1 Back (office_chair_1_back) - Freeform decoration (not bounded by grid, place anywhere anyhow)"
             >
               <div class="asset-card-thumb">
-                <img src="/assets/decoration/office_chair_1_back.png" alt="Office Chair 1 Back" class="asset-thumb-img" />
-                <span class="asset-card-badge freeform-badge">Freeform</span>
+                <img data-atlas-thumb="1" alt="Office Chair 1 Back" class="asset-thumb-img" />
                 <span class="asset-card-check">✓</span>
               </div>
               <div class="asset-card-info">
@@ -1414,8 +1316,7 @@
               title="YouTube Jukebox (jukebox_1) - Special decorative jukebox, freeform placement (not bounded by grid)"
             >
               <div class="asset-card-thumb jukebox-tool-thumb">
-                <img src="/assets/decoration/jukebox_1.png" alt="Jukebox" class="jukebox-card-img" />
-                <span class="asset-card-badge jukebox-badge">Jukebox</span>
+                <img data-atlas-thumb="1" alt="Jukebox" class="jukebox-card-img" />
                 <span class="asset-card-check">✓</span>
               </div>
               <div class="asset-card-info">
@@ -1436,8 +1337,7 @@
               title="Typewriter (typewriter_1) - Typeracing Game, freeform placement (not bounded by grid)"
             >
               <div class="asset-card-thumb typewriter-tool-thumb">
-                <img src="/assets/decoration/typewriter_1.png" alt="Typewriter" class="typewriter-card-img" />
-                <span class="asset-card-badge typewriter-badge">Game</span>
+                <img data-atlas-thumb="1" alt="Typewriter" class="typewriter-card-img" />
                 <span class="asset-card-check">✓</span>
               </div>
               <div class="asset-card-info">
@@ -1458,8 +1358,7 @@
               title="Ashtray (ashtray_1) - Cigarette Smoking Button-Spam Game, freeform placement"
             >
               <div class="asset-card-thumb ashtray-tool-thumb">
-                <img src="/assets/decoration/ashtray_1.png" alt="Ashtray" class="ashtray-card-img" />
-                <span class="asset-card-badge ashtray-badge">Game</span>
+                <img data-atlas-thumb="1" alt="Ashtray" class="ashtray-card-img" />
                 <span class="asset-card-check">✓</span>
               </div>
               <div class="asset-card-info">
@@ -1480,8 +1379,7 @@
               title="Chess Board (chess_board_1) - Live Multiplayer Chess, freeform placement"
             >
               <div class="asset-card-thumb chess-tool-thumb">
-                <img src="/assets/decoration/chess_board_1.png" alt="Chess Board" class="chess-card-img" />
-                <span class="asset-card-badge chess-badge">Game</span>
+                <img data-atlas-thumb="1" alt="Chess Board" class="chess-card-img" />
                 <span class="asset-card-check">✓</span>
               </div>
               <div class="asset-card-info">
@@ -1502,8 +1400,7 @@
               title="Aquarium (aquarium_1) - Interactive Stardew Valley Fishing Game, freeform placement"
             >
               <div class="asset-card-thumb aquarium-tool-thumb">
-                <img src="/assets/decoration/aquarium_1.png" alt="Aquarium" class="aquarium-card-img" />
-                <span class="asset-card-badge aquarium-badge">Fishing</span>
+                <img data-atlas-thumb="1" alt="Aquarium" class="aquarium-card-img" />
                 <span class="asset-card-check">✓</span>
               </div>
               <div class="asset-card-info">
@@ -1526,7 +1423,6 @@
                 <svg class="private-card-svg" viewBox="0 0 24 24">
                   <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
                 </svg>
-                <span class="asset-card-badge clear-badge">Remove</span>
                 <span class="asset-card-check">✓</span>
               </div>
               <div class="asset-card-info">
@@ -1534,6 +1430,13 @@
                 <span class="asset-card-code">Click to Remove</span>
               </div>
             </button>
+          </div>
+          </div>
+          <div class="editor-group-panel" data-asset-group-panel="Office One">
+            <div class="editor-assets-grid" id="office-one-deco-grid"></div>
+          </div>
+          <div class="editor-group-panel" data-asset-group-panel="Office Two">
+            <div class="editor-assets-grid" id="office-two-deco-grid"></div>
           </div>
           </div>
         </div>
@@ -1556,38 +1459,18 @@
           </div>
 
           <div class="editor-category-content">
-            <!-- Wall Obstacle Option (Obstacle vs Passable) -->
-            <div class="editor-deco-options" id="editor-wall-options">
-              <div class="editor-deco-options-header">
-                <span class="editor-deco-options-title">Obstacle / Passage:</span>
-                <span class="editor-deco-options-hint" id="wall-obstacle-hint">Solid (Obstacle)</span>
-              </div>
-              <div class="editor-deco-toggle-group">
-                <button
-                  type="button"
-                  id="btn-wall-obstacle"
-                  class="editor-deco-toggle-btn active"
-                  data-obstacle="true"
-                  title="Obstacle: Collision active by rendered pixels (blocks movement)"
-                >
-                  <span class="deco-toggle-icon">🚫</span>
-                  <span class="deco-toggle-label">Obstacle</span>
-                  <span class="deco-toggle-sub">Solid (Pixels)</span>
-                </button>
-                <button
-                  type="button"
-                  id="btn-wall-passable"
-                  class="editor-deco-toggle-btn"
-                  data-obstacle="false"
-                  title="Passable: Players can walk freely through this wall"
-                >
-                  <span class="deco-toggle-icon">🟢</span>
-                  <span class="deco-toggle-label">Passable</span>
-                  <span class="deco-toggle-sub">Walkable</span>
-                </button>
-              </div>
+            <div class="editor-group-tabs-nav" role="tablist" aria-label="Wall Asset Groups">
+              <button
+                type="button"
+                class="editor-group-tab-btn active"
+                data-asset-group-tab="Free"
+                role="tab"
+                aria-selected="true"
+              >
+                Free
+              </button>
             </div>
-
+            <div class="editor-group-panel active-group-panel" data-asset-group-panel="Free">
             <div class="editor-assets-grid">
               <!-- Glass Wall 1 (glass_1) -->
               <button
@@ -1599,8 +1482,7 @@
                 title="Glass Wall 1 (glass_1) - Comes with Obstacle tile. Can be cleared using Clear Obstacle to allow passage."
               >
                 <div class="asset-card-thumb">
-                  <img src="/assets/wall/glass_1.png" alt="Glass Wall 1" class="asset-thumb-img" />
-                  <span class="asset-card-badge wall-badge">Wall</span>
+                  <img data-atlas-thumb="1" alt="Glass Wall 1" class="asset-thumb-img" />
                   <span class="asset-card-check">✓</span>
                 </div>
                 <div class="asset-card-info">
@@ -1619,8 +1501,7 @@
                 title="Wood Wall 1 (wood_wall_1) - Solid wall with Obstacle tile. Can be cleared using Clear Obstacle to allow passage."
               >
                 <div class="asset-card-thumb">
-                  <img src="/assets/wall/wood_1.png" alt="Wood Wall 1" class="asset-thumb-img" />
-                  <span class="asset-card-badge wall-badge">Wall</span>
+                  <img data-atlas-thumb="1" alt="Wood Wall 1" class="asset-thumb-img" />
                   <span class="asset-card-check">✓</span>
                 </div>
                 <div class="asset-card-info">
@@ -1640,8 +1521,7 @@
                 title="Wood Wall 2 (wood_wall_2) - Transparent wall rendered on top of floor (does not replace floor). Comes with Obstacle tile."
               >
                 <div class="asset-card-thumb">
-                  <img src="/assets/wall/wood_2.png" alt="Wood Wall 2" class="asset-thumb-img" />
-                  <span class="asset-card-badge wall-badge" style="background:#2563eb;">Overlay</span>
+                  <img data-atlas-thumb="1" alt="Wood Wall 2" class="asset-thumb-img" />
                   <span class="asset-card-check">✓</span>
                 </div>
                 <div class="asset-card-info">
@@ -1660,8 +1540,7 @@
                 title="Wood Wall 3 (wood_wall_3) - Solid wall with Obstacle tile. Can be cleared using Clear Obstacle to allow passage."
               >
                 <div class="asset-card-thumb">
-                  <img src="/assets/wall/wood_3.png" alt="Wood Wall 3" class="asset-thumb-img" />
-                  <span class="asset-card-badge wall-badge">Wall</span>
+                  <img data-atlas-thumb="1" alt="Wood Wall 3" class="asset-thumb-img" />
                   <span class="asset-card-check">✓</span>
                 </div>
                 <div class="asset-card-info">
@@ -1680,8 +1559,7 @@
                 title="Wood Wall 4 (wood_wall_4) - Solid wall with Obstacle tile. Can be cleared using Clear Obstacle to allow passage."
               >
                 <div class="asset-card-thumb">
-                  <img src="/assets/wall/wood_4.png" alt="Wood Wall 4" class="asset-thumb-img" />
-                  <span class="asset-card-badge wall-badge">Wall</span>
+                  <img data-atlas-thumb="1" alt="Wood Wall 4" class="asset-thumb-img" />
                   <span class="asset-card-check">✓</span>
                 </div>
                 <div class="asset-card-info">
@@ -1700,8 +1578,7 @@
                 title="Wood Wall 5 (wood_wall_5) - Solid wall with Obstacle tile. Can be cleared using Clear Obstacle to allow passage."
               >
                 <div class="asset-card-thumb">
-                  <img src="/assets/wall/wood_5.png" alt="Wood Wall 5" class="asset-thumb-img" />
-                  <span class="asset-card-badge wall-badge">Wall</span>
+                  <img data-atlas-thumb="1" alt="Wood Wall 5" class="asset-thumb-img" />
                   <span class="asset-card-check">✓</span>
                 </div>
                 <div class="asset-card-info">
@@ -1720,8 +1597,7 @@
                 title="Wood Wall 6 (wood_wall_6) - Solid wall with Obstacle tile. Can be cleared using Clear Obstacle to allow passage."
               >
                 <div class="asset-card-thumb">
-                  <img src="/assets/wall/wood_6.png" alt="Wood Wall 6" class="asset-thumb-img" />
-                  <span class="asset-card-badge wall-badge">Wall</span>
+                  <img data-atlas-thumb="1" alt="Wood Wall 6" class="asset-thumb-img" />
                   <span class="asset-card-check">✓</span>
                 </div>
                 <div class="asset-card-info">
@@ -1740,8 +1616,7 @@
                 title="Wood Wall 7 (wood_wall_7) - Solid wall with Obstacle tile. Can be cleared using Clear Obstacle to allow passage."
               >
                 <div class="asset-card-thumb">
-                  <img src="/assets/wall/wood_7.png" alt="Wood Wall 7" class="asset-thumb-img" />
-                  <span class="asset-card-badge wall-badge">Wall</span>
+                  <img data-atlas-thumb="1" alt="Wood Wall 7" class="asset-thumb-img" />
                   <span class="asset-card-check">✓</span>
                 </div>
                 <div class="asset-card-info">
@@ -1760,8 +1635,7 @@
                 title="Wood Wall 8 (wood_wall_8) - Solid wall with Obstacle tile. Can be cleared using Clear Obstacle to allow passage."
               >
                 <div class="asset-card-thumb">
-                  <img src="/assets/wall/wood_8.png" alt="Wood Wall 8" class="asset-thumb-img" />
-                  <span class="asset-card-badge wall-badge">Wall</span>
+                  <img data-atlas-thumb="1" alt="Wood Wall 8" class="asset-thumb-img" />
                   <span class="asset-card-check">✓</span>
                 </div>
                 <div class="asset-card-info">
@@ -1780,8 +1654,7 @@
                 title="Wood Wall 9 (wood_wall_9) - Solid wall with Obstacle tile. Can be cleared using Clear Obstacle to allow passage."
               >
                 <div class="asset-card-thumb">
-                  <img src="/assets/wall/wood_9.png" alt="Wood Wall 9" class="asset-thumb-img" />
-                  <span class="asset-card-badge wall-badge">Wall</span>
+                  <img data-atlas-thumb="1" alt="Wood Wall 9" class="asset-thumb-img" />
                   <span class="asset-card-check">✓</span>
                 </div>
                 <div class="asset-card-info">
@@ -1800,8 +1673,7 @@
                 title="Wood Wall 10 (wood_wall_10) - Solid wall with Obstacle tile. Can be cleared using Clear Obstacle to allow passage."
               >
                 <div class="asset-card-thumb">
-                  <img src="/assets/wall/wood_10.png" alt="Wood Wall 10" class="asset-thumb-img" />
-                  <span class="asset-card-badge wall-badge">Wall</span>
+                  <img data-atlas-thumb="1" alt="Wood Wall 10" class="asset-thumb-img" />
                   <span class="asset-card-check">✓</span>
                 </div>
                 <div class="asset-card-info">
@@ -1820,8 +1692,7 @@
                 title="Wood Wall 11 (wood_wall_11) - Solid wall with Obstacle tile. Can be cleared using Clear Obstacle to allow passage."
               >
                 <div class="asset-card-thumb">
-                  <img src="/assets/wall/wood_11.png" alt="Wood Wall 11" class="asset-thumb-img" />
-                  <span class="asset-card-badge wall-badge">Wall</span>
+                  <img data-atlas-thumb="1" alt="Wood Wall 11" class="asset-thumb-img" />
                   <span class="asset-card-check">✓</span>
                 </div>
                 <div class="asset-card-info">
@@ -1840,8 +1711,7 @@
                 title="Wood Wall 12 (wood_wall_12) - Solid wall with Obstacle tile. Can be cleared using Clear Obstacle to allow passage."
               >
                 <div class="asset-card-thumb">
-                  <img src="/assets/wall/wood_12.png" alt="Wood Wall 12" class="asset-thumb-img" />
-                  <span class="asset-card-badge wall-badge">Wall</span>
+                  <img data-atlas-thumb="1" alt="Wood Wall 12" class="asset-thumb-img" />
                   <span class="asset-card-check">✓</span>
                 </div>
                 <div class="asset-card-info">
@@ -1860,8 +1730,7 @@
                 title="Wood Wall 13 (wood_wall_13) - Solid wall with Obstacle tile. Can be cleared using Clear Obstacle to allow passage."
               >
                 <div class="asset-card-thumb">
-                  <img src="/assets/wall/wood_13.png" alt="Wood Wall 13" class="asset-thumb-img" />
-                  <span class="asset-card-badge wall-badge">Wall</span>
+                  <img data-atlas-thumb="1" alt="Wood Wall 13" class="asset-thumb-img" />
                   <span class="asset-card-check">✓</span>
                 </div>
                 <div class="asset-card-info">
@@ -1880,8 +1749,7 @@
                 title="Wood Wall 14 (wood_wall_14) - Solid wall with Obstacle tile. Can be cleared using Clear Obstacle to allow passage."
               >
                 <div class="asset-card-thumb">
-                  <img src="/assets/wall/wood_14.png" alt="Wood Wall 14" class="asset-thumb-img" />
-                  <span class="asset-card-badge wall-badge">Wall</span>
+                  <img data-atlas-thumb="1" alt="Wood Wall 14" class="asset-thumb-img" />
                   <span class="asset-card-check">✓</span>
                 </div>
                 <div class="asset-card-info">
@@ -1900,8 +1768,7 @@
                 title="Wood Wall 15 (wood_wall_15) - Solid wall with Obstacle tile. Can be cleared using Clear Obstacle to allow passage."
               >
                 <div class="asset-card-thumb">
-                  <img src="/assets/wall/wood_15.png" alt="Wood Wall 15" class="asset-thumb-img" />
-                  <span class="asset-card-badge wall-badge">Wall</span>
+                  <img data-atlas-thumb="1" alt="Wood Wall 15" class="asset-thumb-img" />
                   <span class="asset-card-check">✓</span>
                 </div>
                 <div class="asset-card-info">
@@ -1920,8 +1787,7 @@
                 title="Wood Wall 16 (wood_wall_16) - Solid wall with Obstacle tile. Can be cleared using Clear Obstacle to allow passage."
               >
                 <div class="asset-card-thumb">
-                  <img src="/assets/wall/wood_16.png" alt="Wood Wall 16" class="asset-thumb-img" />
-                  <span class="asset-card-badge wall-badge">Wall</span>
+                  <img data-atlas-thumb="1" alt="Wood Wall 16" class="asset-thumb-img" />
                   <span class="asset-card-check">✓</span>
                 </div>
                 <div class="asset-card-info">
@@ -1940,8 +1806,7 @@
                 title="Wood Wall 17 (wood_wall_17) - Solid wall with Obstacle tile. Can be cleared using Clear Obstacle to allow passage."
               >
                 <div class="asset-card-thumb">
-                  <img src="/assets/wall/wood_17.png" alt="Wood Wall 17" class="asset-thumb-img" />
-                  <span class="asset-card-badge wall-badge">Wall</span>
+                  <img data-atlas-thumb="1" alt="Wood Wall 17" class="asset-thumb-img" />
                   <span class="asset-card-check">✓</span>
                 </div>
                 <div class="asset-card-info">
@@ -1960,8 +1825,7 @@
                 title="Wood Wall 18 (wood_wall_18) - Solid wall with Obstacle tile. Can be cleared using Clear Obstacle to allow passage."
               >
                 <div class="asset-card-thumb">
-                  <img src="/assets/wall/wood_18.png" alt="Wood Wall 18" class="asset-thumb-img" />
-                  <span class="asset-card-badge wall-badge">Wall</span>
+                  <img data-atlas-thumb="1" alt="Wood Wall 18" class="asset-thumb-img" />
                   <span class="asset-card-check">✓</span>
                 </div>
                 <div class="asset-card-info">
@@ -1980,8 +1844,7 @@
                 title="Wood Wall 19 (wood_wall_19) - Solid wall with Obstacle tile. Can be cleared using Clear Obstacle to allow passage."
               >
                 <div class="asset-card-thumb">
-                  <img src="/assets/wall/wood_19.png" alt="Wood Wall 19" class="asset-thumb-img" />
-                  <span class="asset-card-badge wall-badge">Wall</span>
+                  <img data-atlas-thumb="1" alt="Wood Wall 19" class="asset-thumb-img" />
                   <span class="asset-card-check">✓</span>
                 </div>
                 <div class="asset-card-info">
@@ -2001,8 +1864,7 @@
                 title="Glass Wall 2 (glass_2) - Transparent wall rendered on top of floor (does not replace floor). Comes with Obstacle tile."
               >
                 <div class="asset-card-thumb">
-                  <img src="/assets/wall/glass_2.png" alt="Glass Wall 2" class="asset-thumb-img" />
-                  <span class="asset-card-badge wall-badge" style="background:#2563eb;">Overlay</span>
+                  <img data-atlas-thumb="1" alt="Glass Wall 2" class="asset-thumb-img" />
                   <span class="asset-card-check">✓</span>
                 </div>
                 <div class="asset-card-info">
@@ -2022,8 +1884,7 @@
                 title="Glass Wall 3 (glass_3) - Transparent wall rendered on top of floor (does not replace floor). Comes with Obstacle tile."
               >
                 <div class="asset-card-thumb">
-                  <img src="/assets/wall/glass_3.png" alt="Glass Wall 3" class="asset-thumb-img" />
-                  <span class="asset-card-badge wall-badge" style="background:#2563eb;">Overlay</span>
+                  <img data-atlas-thumb="1" alt="Glass Wall 3" class="asset-thumb-img" />
                   <span class="asset-card-check">✓</span>
                 </div>
                 <div class="asset-card-info">
@@ -2043,8 +1904,7 @@
                 title="Glass Wall 4 (glass_4) - Transparent wall rendered on top of floor (does not replace floor). Comes with Obstacle tile."
               >
                 <div class="asset-card-thumb">
-                  <img src="/assets/wall/glass_4.png" alt="Glass Wall 4" class="asset-thumb-img" />
-                  <span class="asset-card-badge wall-badge" style="background:#2563eb;">Overlay</span>
+                  <img data-atlas-thumb="1" alt="Glass Wall 4" class="asset-thumb-img" />
                   <span class="asset-card-check">✓</span>
                 </div>
                 <div class="asset-card-info">
@@ -2052,6 +1912,7 @@
                   <span class="asset-card-code">glass_4</span>
                 </div>
               </button>
+            </div>
             </div>
           </div>
         </div>
@@ -2088,7 +1949,6 @@
                 <svg class="private-card-svg cursor-card-svg" viewBox="0 0 24 24">
                   <path fill="currentColor" d="M5.5 3.21V20.8c0 .45.54.67.85.35l4.86-4.86a.5.5 0 0 1 .35-.15h6.87a.5.5 0 0 0 .35-.85L6.35 2.85a.5.5 0 0 0-.85.36z"/>
                 </svg>
-                <span class="asset-card-badge cursor-badge">Cursor</span>
                 <span class="asset-card-check">✓</span>
               </div>
               <div class="asset-card-info">
@@ -2110,7 +1970,6 @@
                 <svg class="private-card-svg" viewBox="0 0 24 24">
                   <path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/>
                 </svg>
-                <span class="asset-card-badge private-badge">Flag</span>
                 <span class="asset-card-check">✓</span>
               </div>
               <div class="asset-card-info">
@@ -2132,7 +1991,6 @@
                 <svg class="private-card-svg" viewBox="0 0 24 24">
                   <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
                 </svg>
-                <span class="asset-card-badge clear-badge">Clear</span>
                 <span class="asset-card-check">✓</span>
               </div>
               <div class="asset-card-info">
@@ -2152,32 +2010,11 @@
             >
               <div class="asset-card-thumb spawn-tool-thumb">
                 <span class="spawn-card-emoji">📍</span>
-                <span class="asset-card-badge spawn-badge">Spawn</span>
                 <span class="asset-card-check">✓</span>
               </div>
               <div class="asset-card-info">
                 <span class="asset-card-name">Spawn Point</span>
                 <span class="asset-card-code">Place Spawn</span>
-              </div>
-            </button>
-
-            <!-- Tool 6: Color Dropper -->
-            <button
-              type="button"
-              class="editor-asset-card editor-tool-card"
-              id="tool-color-dropper"
-              data-tool-type="color_dropper"
-              data-tool-name="Color Dropper"
-              title="Color Dropper - Click on any tile on the map to sample and reuse its color for your brush"
-            >
-              <div class="asset-card-thumb dropper-tool-thumb">
-                <span class="dropper-card-emoji">💧</span>
-                <span class="asset-card-badge dropper-badge">Dropper</span>
-                <span class="asset-card-check">✓</span>
-              </div>
-              <div class="asset-card-info">
-                <span class="asset-card-name">Color Dropper</span>
-                <span class="asset-card-code">Pick Color</span>
               </div>
             </button>
           </div>
@@ -2326,7 +2163,6 @@
         <div class="player-context-menu-arrow"></div>
         <div class="player-context-header">
           <div class="player-context-user-info">
-            <span class="editor-item-menu-badge" id="editor-item-menu-badge">Item</span>
             <span class="player-context-name" id="editor-item-menu-name">Wall</span>
           </div>
           <button type="button" class="player-context-close-btn" id="btn-close-editor-item-menu" title="Close menu" aria-label="Close">✕</button>
@@ -2336,6 +2172,20 @@
             <span class="player-context-btn-icon" id="editor-item-obstacle-icon">🚫</span>
             <span class="player-context-btn-label" id="editor-item-obstacle-label">Obstacle: ON</span>
           </button>
+          <button type="button" class="player-context-btn editor-item-interact-btn hidden" id="btn-editor-item-interactable" title="Toggle whether players can interact with this decoration">
+            <span class="player-context-btn-icon" id="editor-item-interact-icon">⚡</span>
+            <span class="player-context-btn-label" id="editor-item-interact-label">Interactable: OFF</span>
+          </button>
+          <div id="editor-item-interaction-picker" class="editor-interaction-picker hidden">
+            <button type="button" class="player-context-btn editor-interaction-trigger" id="btn-editor-interaction-dropdown" title="Choose interaction type">
+              <span class="editor-interaction-trigger-text" id="editor-interaction-selected-label">Select interaction...</span>
+              <span class="editor-interaction-caret">▾</span>
+            </button>
+            <div id="editor-interaction-dropdown-panel" class="editor-interaction-dropdown-panel hidden">
+              <input type="text" id="editor-interaction-search-input" class="editor-interaction-search-input" placeholder="Search interaction..." autocomplete="off" />
+              <div id="editor-interaction-options" class="editor-interaction-options"></div>
+            </div>
+          </div>
           <button type="button" class="player-context-btn editor-item-delete-btn" id="btn-editor-item-delete" title="Delete this item from the map">
             <span class="player-context-btn-icon">🗑️</span>
             <span class="player-context-btn-label">Delete</span>
@@ -3144,7 +2994,26 @@
         <div class="jukebox-queue-section">
           <div class="jukebox-queue-header">
             <span class="queue-heading">Playlist Queue</span>
-            <span class="queue-count-badge" id="jukebox-queue-count">0 tracks</span>
+            <div class="jukebox-queue-header-actions">
+              <span class="queue-count-badge" id="jukebox-queue-count">0 tracks</span>
+              <button type="button" id="btn-jukebox-clear-list" class="btn-queue-clear-list" title="Clear entire playlist" disabled>
+                <span>🧹 Clear List</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Bulk Selection Toolbar -->
+          <div id="jukebox-bulk-toolbar" class="jukebox-bulk-toolbar hidden">
+            <label class="jukebox-select-all-label" for="jukebox-select-all-checkbox">
+              <input type="checkbox" id="jukebox-select-all-checkbox" class="jukebox-track-checkbox" />
+              <span>Select All</span>
+            </label>
+            <span id="jukebox-selected-count" class="jukebox-selected-count">0 selected</span>
+            <div class="jukebox-bulk-actions">
+              <button type="button" id="btn-jukebox-bulk-up" class="btn-queue-bulk" title="Move selected tracks up" disabled>▲ Up</button>
+              <button type="button" id="btn-jukebox-bulk-down" class="btn-queue-bulk" title="Move selected tracks down" disabled>▼ Down</button>
+              <button type="button" id="btn-jukebox-bulk-delete" class="btn-queue-bulk btn-queue-bulk-delete" title="Delete selected tracks" disabled>🗑️ Delete</button>
+            </div>
           </div>
 
           <div class="jukebox-queue-list" id="jukebox-queue-list">
@@ -3997,6 +3866,45 @@
       </div>
     </div>
 
+    <!-- Modal: Throw Battle Setup / Challenge Config (Challenger) -->
+    <div id="throw-battle-setup-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="tb-setup-title">
+      <div class="modal-card tb-setup-card">
+        <div class="tb-setup-header">
+          <div class="tb-setup-icon">⚔️</div>
+          <h2 id="tb-setup-title" class="tb-setup-title">Throw Battle Setup</h2>
+          <p id="tb-setup-desc" class="tb-setup-desc">Challenge <strong id="tb-setup-target-name">Player</strong> to a Cat vs Dog duel</p>
+        </div>
+
+        <div class="tb-setup-body">
+          <div class="tb-setup-config-card">
+            <div class="tb-setup-label-row">
+              <span class="tb-setup-label-icon">❤️</span>
+              <span class="tb-setup-label-title">Hits Required (Health Points)</span>
+            </div>
+            <p class="tb-setup-label-sub">How many direct hits to defeat a player? Got hit this many times, lose!</p>
+
+            <div class="tb-setup-input-wrap">
+              <input type="number" id="input-tb-hits" min="1" max="100" value="20" class="tb-number-input" />
+              <span class="tb-setup-unit">hits</span>
+            </div>
+
+            <div class="tb-setup-presets" id="tb-hits-presets">
+              <button type="button" class="preset-pill" data-val="5">5 Hits</button>
+              <button type="button" class="preset-pill" data-val="10">10 Hits</button>
+              <button type="button" class="preset-pill active" data-val="20">20 Hits (Def)</button>
+              <button type="button" class="preset-pill" data-val="30">30 Hits</button>
+              <button type="button" class="preset-pill" data-val="50">50 Hits</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="tb-setup-actions">
+          <button type="button" id="btn-tb-cancel-setup" class="btn-secondary">Cancel</button>
+          <button type="button" id="btn-tb-confirm-challenge" class="btn-primary btn-tb-accept">⚔️ Send Challenge</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Modal: Throw Battle Challenge Invitation (Player B) -->
     <div id="throw-battle-invite-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="tb-invite-title">
       <div class="modal-card tb-invite-card">
@@ -4011,6 +3919,13 @@
             <div class="tb-feat-text">
               <strong>Fleabag vs Mutt Rules</strong>
               <span>Turn-based projectile battle • 50/50 split arena • Wind dynamics</span>
+            </div>
+          </div>
+          <div class="tb-invite-feature">
+            <span class="tb-feat-icon">❤️</span>
+            <div class="tb-feat-text">
+              <strong>Hits Required</strong>
+              <span><strong id="tb-invite-hits-count">20</strong> hits to defeat (Health Points)</span>
             </div>
           </div>
           <div class="tb-invite-feature">
@@ -4067,7 +3982,7 @@
             <div class="tb-hp-bar-wrap">
               <div class="tb-hp-bar" id="tb-p1-hp-bar" style="width: 100%;"></div>
             </div>
-            <div class="tb-hp-label"><span id="tb-p1-hp-text">20</span> / 20 Hits</div>
+            <div class="tb-hp-label"><span id="tb-p1-hp-text">20</span> / <span id="tb-p1-max-hp-text">20</span> Hits</div>
           </div>
 
           <!-- Middle Wind & Round Info -->
@@ -4097,7 +4012,7 @@
             <div class="tb-hp-bar-wrap">
               <div class="tb-hp-bar" id="tb-p2-hp-bar" style="width: 100%;"></div>
             </div>
-            <div class="tb-hp-label"><span id="tb-p2-hp-text">20</span> / 20 Hits</div>
+            <div class="tb-hp-label"><span id="tb-p2-hp-text">20</span> / <span id="tb-p2-max-hp-text">20</span> Hits</div>
           </div>
         </div>
 

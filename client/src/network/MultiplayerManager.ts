@@ -22,6 +22,8 @@ import {
   ThrowBattleState,
   ThrowBattleInviteData,
   ThrowBattleTurnResultPayload,
+  DecorationInteractionType,
+  InteractiveEntityKind,
 } from "shared";
 
 export interface NetworkStats {
@@ -64,7 +66,7 @@ export type ParkingPointsAwardedCallback = (data: { points: number; added: numbe
 
 // Throw Battle Callbacks
 export type ThrowBattleInviteCallback = (data: ThrowBattleInviteData) => void;
-export type ThrowBattleChallengeSentCallback = (data: { targetSessionId: string; targetName: string }) => void;
+export type ThrowBattleChallengeSentCallback = (data: { targetSessionId: string; targetName: string; hits?: number }) => void;
 export type ThrowBattleChallengeCancelledCallback = (data: { challengerSessionId: string }) => void;
 export type ThrowBattleRejectedCallback = (data: { targetSessionId: string; targetName: string }) => void;
 export type ThrowBattleErrorCallback = (data: { message: string }) => void;
@@ -542,7 +544,7 @@ export class MultiplayerManager {
       }
     });
 
-    this.room.onMessage("THROW_BATTLE_CHALLENGE_SENT", (data: { targetSessionId: string; targetName: string }) => {
+    this.room.onMessage("THROW_BATTLE_CHALLENGE_SENT", (data: { targetSessionId: string; targetName: string; hits?: number }) => {
       if (data) {
         this.onThrowBattleChallengeSentCallbacks.forEach((cb) => cb(data));
       }
@@ -1010,6 +1012,22 @@ export class MultiplayerManager {
     }
   }
 
+  public setEntityInteraction(
+    kind: InteractiveEntityKind,
+    id: string,
+    interactable: boolean,
+    interaction: DecorationInteractionType | null
+  ) {
+    if (this.room) {
+      this.room.send("ENTITY_SET_INTERACTION", {
+        kind,
+        id,
+        interactable,
+        interaction,
+      });
+    }
+  }
+
   public addJukeboxTrack(jukeboxId: string, urlOrId: string) {
     if (this.room) {
       this.room.send("JUKEBOX_ADD_TRACK", { jukeboxId, urlOrId });
@@ -1038,6 +1056,12 @@ export class MultiplayerManager {
     }
   }
 
+  public removeJukeboxTracks(jukeboxId: string, trackIds: string[]) {
+    if (this.room && trackIds.length > 0) {
+      this.room.send("JUKEBOX_REMOVE_TRACKS", { jukeboxId, trackIds });
+    }
+  }
+
   public moveJukeboxTrack(
     jukeboxId: string,
     trackId: string,
@@ -1045,6 +1069,22 @@ export class MultiplayerManager {
   ) {
     if (this.room) {
       this.room.send("JUKEBOX_MOVE_TRACK", { jukeboxId, trackId, direction });
+    }
+  }
+
+  public moveJukeboxTracks(
+    jukeboxId: string,
+    trackIds: string[],
+    direction: "up" | "down"
+  ) {
+    if (this.room && trackIds.length > 0) {
+      this.room.send("JUKEBOX_MOVE_TRACKS", { jukeboxId, trackIds, direction });
+    }
+  }
+
+  public clearJukeboxPlaylist(jukeboxId: string) {
+    if (this.room) {
+      this.room.send("JUKEBOX_CLEAR_PLAYLIST", { jukeboxId });
     }
   }
 
@@ -1743,9 +1783,9 @@ export class MultiplayerManager {
     this.onThrowBattlePlayerLeftCallbacks.push(cb);
   }
 
-  public sendThrowBattleChallenge(targetSessionId: string) {
+  public sendThrowBattleChallenge(targetSessionId: string, hits: number = 20) {
     if (this.room) {
-      this.room.send("THROW_BATTLE_CHALLENGE", { targetSessionId });
+      this.room.send("THROW_BATTLE_CHALLENGE", { targetSessionId, hits });
     }
   }
 

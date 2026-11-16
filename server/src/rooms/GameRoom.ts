@@ -13,6 +13,8 @@ import {
   PLAYER_SPEED,
   CHARACTER_MAX_SIZE,
   PLAYER_HITBOX_HALF_WIDTH,
+  PLAYER_FEET_TOP_OFFSET,
+  PLAYER_FEET_BOTTOM_OFFSET,
   SERVER_TICK_RATE,
   getTileCenter,
   isWallTile,
@@ -32,7 +34,10 @@ import {
   JukeboxAddTrackPayload,
   JukeboxAddPlaylistPayload,
   JukeboxRemoveTrackPayload,
+  JukeboxRemoveTracksPayload,
   JukeboxMoveTrackPayload,
+  JukeboxMoveTracksPayload,
+  JukeboxClearPlaylistPayload,
   JukeboxTogglePausePayload,
   JukeboxSkipPayload,
   JukeboxPlacePayload,
@@ -92,6 +97,9 @@ import {
   ThrowBattleTurnResultPayload,
   ThrowBattleRematchPayload,
   ThrowBattleLeavePayload,
+  EntitySetInteractionPayload,
+  isValidInteractionType,
+  parseFreeformTile,
 } from "shared";
 import { Chess } from "chess.js";
 import {
@@ -133,6 +141,7 @@ export class GameRoom extends Room<GameState> {
 
   public spaceId: string = "space_central_plaza";
   private playerInputs: Map<string, PlayerInputPayload> = new Map();
+  private playerInputSyncTimes: Map<string, number> = new Map();
   private playerAvatars: Map<string, PlayerAvatars> = new Map();
   private tiles: Record<string, string> = {};
   private privateZones: PrivateZone[] = [];
@@ -214,7 +223,12 @@ export class GameRoom extends Room<GameState> {
   private clientThrowBattleMatchMap: Map<string, string> = new Map(); // sessionId -> matchId
   private pendingThrowBattleChallenges: Map<
     string,
-    { challengerSessionId: string; targetSessionId: string; createdAt: number }
+    {
+      challengerSessionId: string;
+      targetSessionId: string;
+      hits: number;
+      createdAt: number;
+    }
   > = new Map(); // targetSessionId -> challenge info
   private voiceParticipants: Set<string> = new Set();
   private spaceOwnerId: number | null = null;
@@ -239,6 +253,78 @@ export class GameRoom extends Room<GameState> {
 
   private invalidatePixelCollisionChecker(): void {
     this.cachedPixelCollisionChecker = null;
+  }
+
+  private reconcilePlayerPosition(
+    player: PlayerState,
+    clientX: number,
+    clientY: number,
+    pixelChecker: PixelCollisionOptions
+  ): boolean {
+    if (!Number.isFinite(clientX) || !Number.isFinite(clientY)) return false;
+
+    const headHalf = CHARACTER_MAX_SIZE / 2;
+    const targetX = Math.max(
+      PLAYER_HITBOX_HALF_WIDTH,
+      Math.min(WORLD_WIDTH - PLAYER_HITBOX_HALF_WIDTH, clientX)
+    );
+    const targetY = Math.max(
+      headHalf,
+      Math.min(WORLD_HEIGHT - PLAYER_FEET_BOTTOM_OFFSET, clientY)
+    );
+
+    const dist = Math.hypot(targetX - player.x, targetY - player.y);
+    if (dist > 800) return false;
+
+    const isBlocked = (px: number, py: number): boolean => {
+      const left = Math.round(px - PLAYER_HITBOX_HALF_WIDTH);
+      const right = Math.round(px + PLAYER_HITBOX_HALF_WIDTH);
+      const top = Math.round(py + PLAYER_FEET_TOP_OFFSET);
+      const bottom = Math.round(py + PLAYER_FEET_BOTTOM_OFFSET);
+      if (pixelChecker.isBoxBlocked) {
+        return pixelChecker.isBoxBlocked(left, top, right, bottom);
+      }
+      for (let y = top; y <= bottom; y++) {
+        for (let x = left; x <= right; x++) {
+          if (pixelChecker.isPixelSolid(x, y)) return true;
+        }
+      }
+      return false;
+    };
+
+    if (!isBlocked(targetX, targetY)) {
+      player.x = targetX;
+      player.y = targetY;
+      return true;
+    }
+
+    const offsets = [
+      [0, -1],
+      [0, 1],
+      [-1, 0],
+      [1, 0],
+      [-1, -1],
+      [1, -1],
+      [-1, 1],
+      [1, 1],
+    ];
+    for (const [ox, oy] of offsets) {
+      const nx = Math.max(
+        PLAYER_HITBOX_HALF_WIDTH,
+        Math.min(WORLD_WIDTH - PLAYER_HITBOX_HALF_WIDTH, targetX + ox)
+      );
+      const ny = Math.max(
+        headHalf,
+        Math.min(WORLD_HEIGHT - PLAYER_FEET_BOTTOM_OFFSET, targetY + oy)
+      );
+      if (!isBlocked(nx, ny)) {
+        player.x = nx;
+        player.y = ny;
+        return true;
+      }
+    }
+
+    return false;
   }
 
   async onAuth(client: Client, options: PlayerJoinOptions, request?: any) {
@@ -341,12 +427,44 @@ export class GameRoom extends Room<GameState> {
     this.onMessage(
       "PLAYER_INPUT",
       (client: Client, data: PlayerInputPayload) => {
+        const left = !!data.left;
+        const right = !!data.right;
+        const up = !!data.up;
+        const down = !!data.down;
+
         this.playerInputs.set(client.sessionId, {
-          left: !!data.left,
-          right: !!data.right,
-          up: !!data.up,
-          down: !!data.down,
+          left,
+          right,
+          up,
+          down,
         });
+
+        const player = this.state.players.get(client.sessionId);
+        if (player) {
+          if (typeof data.x === "number" && typeof data.y === "number") {
+            const pixelChecker = this.getPixelCollisionChecker();
+            if (this.reconcilePlayerPosition(player, data.x, data.y, pixelChecker)) {
+              this.playerInputSyncTimes.set(client.sessionId, Date.now());
+            }
+          }
+
+          let vx = 0;
+          let vy = 0;
+          if (left) vx -= 1;
+          if (right) vx += 1;
+          if (up) vy -= 1;
+          if (down) vy += 1;
+
+          if (vx !== 0 || vy !== 0) {
+            if (Math.abs(vx) >= Math.abs(vy)) {
+              player.direction = vx < 0 ? "left" : "right";
+            } else {
+              player.direction = vy < 0 ? "up" : "down";
+            }
+          } else {
+            player.direction = "idle";
+          }
+        }
       },
     );
 
@@ -461,6 +579,8 @@ export class GameRoom extends Room<GameState> {
           this.aquariums.set(aq.id, aq);
         }
       }
+      this.invalidatePixelCollisionChecker();
+      await this.syncVirtualJukeboxesFromTiles(this.tiles, false);
       this.recentChatMessages = loadedChats || [];
     } catch (err) {
       console.warn(`[GameRoom] Error preloading data for space ${this.spaceId}:`, err);
@@ -529,6 +649,83 @@ export class GameRoom extends Room<GameState> {
           this.invalidatePixelCollisionChecker();
           this.broadcast("TILES_UPDATED", migratedUpdates);
           await updateSpaceTiles(this.spaceId, this.tiles);
+          await this.syncVirtualJukeboxesFromTiles(migratedUpdates, true);
+        }
+      },
+    );
+
+    // Handle updating interactable & interaction type on special entities (jukebox, typewriter, ashtray, chess_board, aquarium)
+    this.onMessage(
+      "ENTITY_SET_INTERACTION",
+      async (client: Client, data: EntitySetInteractionPayload) => {
+        const auth = this.clientAuthMap.get(client.sessionId);
+        const user = auth?.user;
+        const isSuperadmin = user?.role === "superadmin";
+        const isOwner =
+          user && this.spaceOwnerId !== null && user.id === this.spaceOwnerId;
+
+        if (!isSuperadmin && !isOwner) {
+          client.send("ERROR", {
+            message:
+              "Permission denied: Only space owner or superadmin can edit map.",
+          });
+          return;
+        }
+
+        if (!data || !data.id || !data.kind) return;
+        const interactable = Boolean(data.interactable);
+        const interaction =
+          interactable && data.interaction && isValidInteractionType(data.interaction)
+            ? data.interaction
+            : null;
+
+        if (data.kind === "jukebox") {
+          const jb = this.jukeboxes.get(data.id);
+          if (!jb) return;
+          jb.interactable = interactable;
+          jb.interaction = interaction;
+          this.broadcast("JUKEBOX_UPDATED", jb);
+          await this.persistJukeboxes();
+        } else if (data.kind === "typewriter") {
+          const tw = this.typewriters.get(data.id);
+          if (!tw) return;
+          tw.interactable = interactable;
+          tw.interaction = interaction;
+          if (interactable && interaction === "jukebox") {
+            await this.ensureVirtualJukebox(tw.id, tw.x, tw.y, true);
+          }
+          this.broadcast("TYPEWRITER_UPDATED", tw);
+          await this.persistTypewriters();
+        } else if (data.kind === "ashtray") {
+          const at = this.ashtrays.get(data.id);
+          if (!at) return;
+          at.interactable = interactable;
+          at.interaction = interaction;
+          if (interactable && interaction === "jukebox") {
+            await this.ensureVirtualJukebox(at.id, at.x, at.y, true);
+          }
+          this.broadcast("ASHTRAY_UPDATED", at);
+          await this.persistAshtrays();
+        } else if (data.kind === "chess_board") {
+          const cb = this.chessBoards.get(data.id);
+          if (!cb) return;
+          cb.interactable = interactable;
+          cb.interaction = interaction;
+          if (interactable && interaction === "jukebox") {
+            await this.ensureVirtualJukebox(cb.id, cb.x, cb.y, true);
+          }
+          this.broadcast("CHESS_BOARD_UPDATED", cb);
+          await this.persistChessBoards();
+        } else if (data.kind === "aquarium") {
+          const aq = this.aquariums.get(data.id);
+          if (!aq) return;
+          aq.interactable = interactable;
+          aq.interaction = interaction;
+          if (interactable && interaction === "jukebox") {
+            await this.ensureVirtualJukebox(aq.id, aq.x, aq.y, true);
+          }
+          this.broadcast("AQUARIUM_UPDATED", aq);
+          await this.persistAquariums();
         }
       },
     );
@@ -950,6 +1147,122 @@ export class GameRoom extends Room<GameState> {
             jb.currentTrackIndex = newPlayingIndex;
           }
         }
+
+        this.broadcast("JUKEBOX_UPDATED", jb);
+        await this.persistJukeboxes();
+      },
+    );
+
+    // 5c. Bulk remove selected tracks from playlist
+    this.onMessage(
+      "JUKEBOX_REMOVE_TRACKS",
+      async (client: Client, data: JukeboxRemoveTracksPayload) => {
+        const jb = this.jukeboxes.get(data?.jukeboxId);
+        if (!jb || !Array.isArray(data?.trackIds) || data.trackIds.length === 0) return;
+
+        const toRemove = new Set(data.trackIds);
+        const currentPlayingTrackId = jb.playlist[jb.currentTrackIndex]?.id;
+        const oldCurrentIdx = jb.currentTrackIndex;
+
+        let keptBeforeCurrent = 0;
+        let removedAny = false;
+        const nextPlaylist: JukeboxTrack[] = [];
+
+        jb.playlist.forEach((track, idx) => {
+          if (toRemove.has(track.id)) {
+            removedAny = true;
+          } else {
+            if (idx < oldCurrentIdx) {
+              keptBeforeCurrent++;
+            }
+            nextPlaylist.push(track);
+          }
+        });
+
+        if (!removedAny) return;
+        jb.playlist = nextPlaylist;
+
+        if (jb.playlist.length === 0) {
+          jb.isPlaying = false;
+          jb.currentTrackIndex = 0;
+          jb.trackStartedAt = 0;
+          jb.pausedAt = 0;
+        } else if (currentPlayingTrackId && !toRemove.has(currentPlayingTrackId)) {
+          const newIdx = jb.playlist.findIndex((t) => t.id === currentPlayingTrackId);
+          jb.currentTrackIndex = newIdx !== -1 ? newIdx : 0;
+        } else {
+          jb.currentTrackIndex = keptBeforeCurrent % jb.playlist.length;
+          jb.trackStartedAt = Date.now();
+          jb.pausedAt = 0;
+          jb.isPlaying = true;
+        }
+
+        this.broadcast("JUKEBOX_UPDATED", jb);
+        await this.persistJukeboxes();
+      },
+    );
+
+    // 5d. Bulk move selected tracks up or down in playlist
+    this.onMessage(
+      "JUKEBOX_MOVE_TRACKS",
+      async (client: Client, data: JukeboxMoveTracksPayload) => {
+        const jb = this.jukeboxes.get(data?.jukeboxId);
+        if (!jb || !jb.playlist || jb.playlist.length <= 1) return;
+        if (!Array.isArray(data?.trackIds) || data.trackIds.length === 0) return;
+        if (data.direction !== "up" && data.direction !== "down") return;
+
+        const selectedSet = new Set(data.trackIds);
+        const currentPlayingTrackId = jb.playlist[jb.currentTrackIndex]?.id;
+        let moved = false;
+
+        if (data.direction === "up") {
+          for (let i = 1; i < jb.playlist.length; i++) {
+            if (selectedSet.has(jb.playlist[i].id) && !selectedSet.has(jb.playlist[i - 1].id)) {
+              const tmp = jb.playlist[i - 1];
+              jb.playlist[i - 1] = jb.playlist[i];
+              jb.playlist[i] = tmp;
+              moved = true;
+            }
+          }
+        } else {
+          for (let i = jb.playlist.length - 2; i >= 0; i--) {
+            if (selectedSet.has(jb.playlist[i].id) && !selectedSet.has(jb.playlist[i + 1].id)) {
+              const tmp = jb.playlist[i + 1];
+              jb.playlist[i + 1] = jb.playlist[i];
+              jb.playlist[i] = tmp;
+              moved = true;
+            }
+          }
+        }
+
+        if (!moved) return;
+
+        if (currentPlayingTrackId) {
+          const newPlayingIndex = jb.playlist.findIndex(
+            (t) => t.id === currentPlayingTrackId
+          );
+          if (newPlayingIndex !== -1) {
+            jb.currentTrackIndex = newPlayingIndex;
+          }
+        }
+
+        this.broadcast("JUKEBOX_UPDATED", jb);
+        await this.persistJukeboxes();
+      },
+    );
+
+    // 5e. Clear entire playlist in one action
+    this.onMessage(
+      "JUKEBOX_CLEAR_PLAYLIST",
+      async (client: Client, data: JukeboxClearPlaylistPayload) => {
+        const jb = this.jukeboxes.get(data?.jukeboxId);
+        if (!jb || !jb.playlist || jb.playlist.length === 0) return;
+
+        jb.playlist = [];
+        jb.isPlaying = false;
+        jb.currentTrackIndex = 0;
+        jb.trackStartedAt = 0;
+        jb.pausedAt = 0;
 
         this.broadcast("JUKEBOX_UPDATED", jb);
         await this.persistJukeboxes();
@@ -2464,15 +2777,22 @@ export class GameRoom extends Room<GameState> {
           return;
         }
 
+        const hits = Math.min(
+          100,
+          Math.max(1, typeof data?.hits === "number" ? Math.round(data.hits) : 20)
+        );
+
         this.pendingThrowBattleChallenges.set(targetSessionId, {
           challengerSessionId,
           targetSessionId,
+          hits,
           createdAt: Date.now(),
         });
 
         client.send("THROW_BATTLE_CHALLENGE_SENT", {
           targetSessionId,
           targetName: targetPlayer.name || "Player",
+          hits,
         });
 
         targetClient.send("THROW_BATTLE_INVITED", {
@@ -2480,6 +2800,7 @@ export class GameRoom extends Room<GameState> {
           challengerName: challengerPlayer.name || "Player",
           challengerColor: challengerPlayer.color || "#3b82f6",
           challengerAvatar: this.getPlayerAvatarUrl(challengerSessionId),
+          hits,
         });
       }
     );
@@ -2536,6 +2857,8 @@ export class GameRoom extends Room<GameState> {
         const challengerSessionId = data?.challengerSessionId; // Challenger!
         if (!challengerSessionId) return;
 
+        const challenge = this.pendingThrowBattleChallenges.get(targetSessionId);
+        const matchHits = challenge?.hits && challenge.hits > 0 ? challenge.hits : 20;
         this.pendingThrowBattleChallenges.delete(targetSessionId);
 
         const targetPlayer = this.state.players.get(targetSessionId);
@@ -2567,8 +2890,8 @@ export class GameRoom extends Room<GameState> {
             avatarUrl: this.getPlayerAvatarUrl(targetSessionId),
             side: "left" as const,
             x: 140,
-            hp: 20,
-            maxHp: 20,
+            hp: matchHits,
+            maxHp: matchHits,
           },
           player2: {
             sessionId: challengerSessionId,
@@ -2577,8 +2900,8 @@ export class GameRoom extends Room<GameState> {
             avatarUrl: this.getPlayerAvatarUrl(challengerSessionId),
             side: "right" as const,
             x: 660,
-            hp: 20,
-            maxHp: 20,
+            hp: matchHits,
+            maxHp: matchHits,
           },
           currentTurn: targetSessionId, // Challenged player moves first!
           turnPhase: "move" as ThrowBattleTurnPhase,
@@ -2758,8 +3081,8 @@ export class GameRoom extends Room<GameState> {
         const match = this.throwBattleMatches.get(data.matchId);
         if (!match) return;
 
-        match.player1.hp = 20;
-        match.player2.hp = 20;
+        match.player1.hp = match.player1.maxHp || 20;
+        match.player2.hp = match.player2.maxHp || 20;
         match.player1.x = 140;
         match.player2.x = 660;
         match.status = "playing";
@@ -3219,6 +3542,7 @@ export class GameRoom extends Room<GameState> {
       this.state.players.delete(client.sessionId);
     }
     this.playerInputs.delete(client.sessionId);
+    this.playerInputSyncTimes.delete(client.sessionId);
     this.playerAvatars.delete(client.sessionId);
     this.clientAuthMap.delete(client.sessionId);
   }
@@ -3235,7 +3559,8 @@ export class GameRoom extends Room<GameState> {
   }
 
   update(deltaTime: number) {
-    const dtSeconds = deltaTime / 1000;
+    const now = Date.now();
+    const baseDtSeconds = Math.min(deltaTime / 1000, 0.1);
     const pixelChecker = this.getPixelCollisionChecker();
 
     this.state.players.forEach((player: PlayerState, sessionId: string) => {
@@ -3254,21 +3579,33 @@ export class GameRoom extends Room<GameState> {
           } else {
             player.direction = vy < 0 ? "up" : "down";
           }
-          const resolved = resolveMovement(
-            player.x,
-            player.y,
-            vx,
-            vy,
-            dtSeconds,
-            undefined,
-            PLAYER_HITBOX_HALF_WIDTH,
-            undefined,
-            pixelChecker
-          );
-          player.x = resolved.x;
-          player.y = resolved.y;
+
+          let dtSeconds = baseDtSeconds;
+          const lastSync = this.playerInputSyncTimes.get(sessionId);
+          if (lastSync !== undefined) {
+            const elapsedSinceSync = Math.max(0, (now - lastSync) / 1000);
+            dtSeconds = Math.min(baseDtSeconds, elapsedSinceSync);
+            this.playerInputSyncTimes.delete(sessionId);
+          }
+
+          if (dtSeconds > 0) {
+            const resolved = resolveMovement(
+              player.x,
+              player.y,
+              vx,
+              vy,
+              dtSeconds,
+              undefined,
+              PLAYER_HITBOX_HALF_WIDTH,
+              undefined,
+              pixelChecker
+            );
+            player.x = resolved.x;
+            player.y = resolved.y;
+          }
         } else {
           player.direction = "idle";
+          this.playerInputSyncTimes.delete(sessionId);
         }
       } else {
         player.direction = "idle";
@@ -3745,6 +4082,86 @@ export class GameRoom extends Room<GameState> {
       }
     }
     return boxes;
+  }
+
+  private async ensureVirtualJukebox(
+    id: string,
+    x: number,
+    y: number,
+    broadcast: boolean
+  ) {
+    let jb = this.jukeboxes.get(id);
+    if (!jb) {
+      jb = {
+        id,
+        spaceId: this.spaceId,
+        x: Math.round(x),
+        y: Math.round(y),
+        isPlaying: false,
+        currentTrackIndex: 0,
+        trackStartedAt: 0,
+        playlist: [],
+        passable: true,
+        ontop: false,
+        layer: 0,
+        interactable: true,
+        interaction: "jukebox",
+      };
+      this.jukeboxes.set(id, jb);
+      if (broadcast) {
+        this.broadcast("JUKEBOX_UPDATED", jb);
+      }
+      await this.persistJukeboxes();
+    } else if (jb.x !== Math.round(x) || jb.y !== Math.round(y)) {
+      jb.x = Math.round(x);
+      jb.y = Math.round(y);
+      if (broadcast) {
+        this.broadcast("JUKEBOX_UPDATED", jb);
+      }
+      await this.persistJukeboxes();
+    }
+  }
+
+  private async syncVirtualJukeboxesFromTiles(
+    entries: Record<string, string>,
+    broadcast: boolean
+  ) {
+    let changed = false;
+    for (const [k, v] of Object.entries(entries)) {
+      if (k.startsWith("freeform:")) {
+        const parsed = v ? parseFreeformTile(v) : null;
+        if (parsed && parsed.interaction === "jukebox") {
+          await this.ensureVirtualJukebox(k, parsed.x, parsed.y, broadcast);
+        } else if (this.jukeboxes.has(k)) {
+          this.jukeboxes.delete(k);
+          if (broadcast) {
+            this.broadcast("JUKEBOX_DELETED", { jukeboxId: k });
+          }
+          changed = true;
+        }
+      } else if (k.includes(",")) {
+        const jbId = `tile_deco_${k.replace(",", "_")}`;
+        if (v && v.includes("~interact:jukebox")) {
+          const [colStr, rowStr] = k.split(",");
+          const col = parseInt(colStr, 10);
+          const row = parseInt(rowStr, 10);
+          if (!isNaN(col) && !isNaN(row)) {
+            const x = col * TILE_SIZE + TILE_SIZE / 2;
+            const y = row * TILE_SIZE + TILE_SIZE / 2;
+            await this.ensureVirtualJukebox(jbId, x, y, broadcast);
+          }
+        } else if (this.jukeboxes.has(jbId)) {
+          this.jukeboxes.delete(jbId);
+          if (broadcast) {
+            this.broadcast("JUKEBOX_DELETED", { jukeboxId: jbId });
+          }
+          changed = true;
+        }
+      }
+    }
+    if (changed) {
+      await this.persistJukeboxes();
+    }
   }
 
   private async persistJukeboxes() {

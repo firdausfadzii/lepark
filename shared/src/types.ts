@@ -55,6 +55,8 @@ export interface PlayerInputPayload {
   right: boolean;
   up: boolean;
   down: boolean;
+  x?: number;
+  y?: number;
 }
 
 export interface PlayerJoinOptions {
@@ -192,6 +194,42 @@ export interface JukeboxTrack {
   addedAt: number; // Timestamp added (ms)
 }
 
+export const DECORATION_INTERACTIONS = [
+  { id: "type_race", label: "Type Race", icon: "⌨️" },
+  { id: "smoke_duel", label: "Smoke Duel", icon: "🚬" },
+  { id: "chess", label: "Chess", icon: "♟️" },
+  { id: "jukebox", label: "Jukebox", icon: "🎵" },
+  { id: "fishing", label: "Fishing", icon: "🎣" },
+] as const;
+
+export type DecorationInteractionType = (typeof DECORATION_INTERACTIONS)[number]["id"];
+
+export function isValidInteractionType(
+  val: string | null | undefined
+): val is DecorationInteractionType {
+  return (
+    val === "type_race" ||
+    val === "smoke_duel" ||
+    val === "chess" ||
+    val === "jukebox" ||
+    val === "fishing"
+  );
+}
+
+export type InteractiveEntityKind =
+  | "jukebox"
+  | "typewriter"
+  | "ashtray"
+  | "chess_board"
+  | "aquarium";
+
+export interface EntitySetInteractionPayload {
+  kind: InteractiveEntityKind;
+  id: string;
+  interactable: boolean;
+  interaction: DecorationInteractionType | null;
+}
+
 export interface JukeboxState {
   id: string; // Jukebox entity ID
   spaceId: string; // Space ID where jukebox is located
@@ -205,6 +243,8 @@ export interface JukeboxState {
   passable?: boolean; // Whether players can walk through it (default false = solid obstacle)
   ontop?: boolean; // Render on top of character (true) or behind character (false)
   layer?: number; // Layer placement level (integer, default 0)
+  interactable?: boolean; // Whether players can interact (default true for jukebox entity)
+  interaction?: DecorationInteractionType | null; // Interaction override (default "jukebox")
 }
 
 export interface JukeboxAddTrackPayload {
@@ -222,10 +262,25 @@ export interface JukeboxRemoveTrackPayload {
   trackId: string;
 }
 
+export interface JukeboxRemoveTracksPayload {
+  jukeboxId: string;
+  trackIds: string[];
+}
+
 export interface JukeboxMoveTrackPayload {
   jukeboxId: string;
   trackId: string;
   direction: "up" | "down";
+}
+
+export interface JukeboxMoveTracksPayload {
+  jukeboxId: string;
+  trackIds: string[];
+  direction: "up" | "down";
+}
+
+export interface JukeboxClearPlaylistPayload {
+  jukeboxId: string;
 }
 
 export interface JukeboxTogglePausePayload {
@@ -263,6 +318,8 @@ export interface TypewriterState {
   passable?: boolean; // Whether players can walk through it (default false = solid obstacle)
   ontop?: boolean; // Render on top of character (true) or behind character (false)
   layer?: number; // Layer placement level (integer, default 0)
+  interactable?: boolean;
+  interaction?: DecorationInteractionType | null;
 }
 
 export interface TypewriterPlacePayload {
@@ -359,6 +416,8 @@ export interface AshtrayState {
   passable?: boolean; // Whether players can walk through it (default false = solid obstacle)
   ontop?: boolean; // Render on top of character (true) or behind character (false)
   layer?: number; // Layer placement level (integer, default 0)
+  interactable?: boolean;
+  interaction?: DecorationInteractionType | null;
 }
 
 export interface AshtrayPlacePayload {
@@ -391,6 +450,8 @@ export interface AquariumState {
   passable?: boolean; // Whether players can walk through it (default false = solid obstacle)
   ontop?: boolean; // Render on top of character (true) or behind character (false)
   layer?: number; // Layer placement level (integer, default 0)
+  interactable?: boolean;
+  interaction?: DecorationInteractionType | null;
 }
 
 export interface AquariumPlacePayload {
@@ -506,6 +567,8 @@ export interface ChessBoardState {
   passable?: boolean; // Whether players can walk through it (default false = solid obstacle)
   ontop?: boolean; // Render on top of character (true) or behind character (false)
   layer?: number; // Layer placement level (integer, default 0)
+  interactable?: boolean;
+  interaction?: DecorationInteractionType | null;
 }
 
 export interface ChessBoardPlacePayload {
@@ -654,12 +717,25 @@ export function isFreeformAsset(assetKey: string | undefined | null): boolean {
   if (!assetKey) return false;
   const baseKey = assetKey.includes("|") ? assetKey.split("|")[0] : assetKey;
   return (
+    baseKey.startsWith("office_one/") ||
+    baseKey.startsWith("office_two/") ||
+    baseKey.startsWith("table_") ||
+    baseKey === "round_table_1" ||
+    baseKey === "round_table_150" ||
     baseKey === "office_chair_1_front" ||
     baseKey === "office_chair_1_back" ||
     baseKey === "office_chair_150" ||
     baseKey === "office_chair_back_150" ||
     baseKey === "chess_board_1" ||
-    baseKey === "aquarium_1"
+    baseKey === "chess_board" ||
+    baseKey === "aquarium_1" ||
+    baseKey === "aquarium" ||
+    baseKey === "jukebox_1" ||
+    baseKey === "jukebox_150" ||
+    baseKey === "typewriter_1" ||
+    baseKey === "typewriter_150" ||
+    baseKey === "ashtray_1" ||
+    baseKey === "ashtray"
   );
 }
 
@@ -672,6 +748,9 @@ export interface FreeformDecorationData {
   passable: boolean;
   ontop: boolean;
   layer: number;
+  interactable?: boolean;
+  interaction?: DecorationInteractionType | null;
+  flipX?: boolean;
 }
 
 export function parseFreeformTile(val: string): FreeformDecorationData | null {
@@ -687,12 +766,19 @@ export function parseFreeformTile(val: string): FreeformDecorationData | null {
 
   const isPassable = !parts.includes("solid") && !parts.includes("obstacle");
   const isOntop = parts.includes("ontop") || parts.includes("above");
+  const isFlipX = parts.includes("flipx");
   let layer = 0;
+  let interaction: DecorationInteractionType | null = null;
   for (const p of parts) {
     if (p.startsWith("layer:")) {
       const parsed = parseInt(p.slice(6), 10);
       if (!isNaN(parsed)) {
         layer = parsed;
+      }
+    } else if (p.startsWith("interact:")) {
+      const parsedInter = p.slice(9);
+      if (isValidInteractionType(parsedInter)) {
+        interaction = parsedInter;
       }
     }
   }
@@ -706,6 +792,9 @@ export function parseFreeformTile(val: string): FreeformDecorationData | null {
     passable: isPassable,
     ontop: isOntop,
     layer,
+    interactable: interaction !== null,
+    interaction,
+    flipX: isFlipX,
   };
 }
 
@@ -716,13 +805,18 @@ export function serializeFreeformTile(
   color?: string | null,
   passable: boolean = true,
   ontop: boolean = false,
-  layer: number = 0
+  layer: number = 0,
+  interaction?: DecorationInteractionType | null,
+  flipX: boolean = false
 ): string {
   const colPart = color ? color : "none";
   const passPart = passable ? "passable" : "solid";
   const layerPart = ontop ? "ontop" : "behind";
   const levelPart = `layer:${Math.round(layer)}`;
-  return `${assetKey}|${colPart}::${Math.round(x)},${Math.round(y)}::${passPart}::${layerPart}::${levelPart}`;
+  const interactPart =
+    interaction && isValidInteractionType(interaction) ? `::interact:${interaction}` : "";
+  const flipPart = flipX ? "::flipx" : "";
+  return `${assetKey}|${colPart}::${Math.round(x)},${Math.round(y)}::${passPart}::${layerPart}::${levelPart}${interactPart}${flipPart}`;
 }
 
 // ==========================================
@@ -757,6 +851,7 @@ export interface ThrowBattleState {
 
 export interface ThrowBattleChallengePayload {
   targetSessionId: string;
+  hits?: number;
 }
 
 export interface ThrowBattleInviteData {
@@ -764,6 +859,7 @@ export interface ThrowBattleInviteData {
   challengerName: string;
   challengerColor: string;
   challengerAvatar?: string;
+  hits?: number;
 }
 
 export interface ThrowBattleMovePayload {

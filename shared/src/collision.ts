@@ -10,7 +10,7 @@ import {
   PLAYER_FEET_TOP_OFFSET,
   PLAYER_FEET_BOTTOM_OFFSET,
 } from "./constants";
-import { isAssetPixelSolid, getAssetRects } from "./assetBitmaps";
+import { isAssetPixelSolid, getAssetRects, getAssetDimensions } from "./assetBitmaps";
 
 export const WALL_ASSET_KEYS = [
   "glass_1",
@@ -155,7 +155,7 @@ export interface PixelCollisionWorldInput {
   ashtrays?: Iterable<PixelCollisionEntity>;
   chessBoards?: Iterable<PixelCollisionEntity>;
   aquariums?: Iterable<PixelCollisionEntity>;
-  freeformDecorations?: Iterable<{ x: number; y: number; assetKey: string; passable?: boolean }>;
+  freeformDecorations?: Iterable<{ x: number; y: number; assetKey: string; passable?: boolean; flipX?: boolean }>;
 }
 
 interface SolidProp {
@@ -263,14 +263,17 @@ export function createPixelCollisionChecker(world: PixelCollisionWorldInput): Pi
   if (world.freeformDecorations) {
     for (const d of world.freeformDecorations) {
       if (!d.passable) {
+        const { width, height } = getAssetDimensions(d.assetKey);
+        const halfW = width / 2;
+        const halfH = height / 2;
         solidProps.push({
-          minX: d.x - 25,
-          maxX: d.x + 25 - 1,
-          minY: d.y - 25,
-          maxY: d.y + 25 - 1,
-          originX: d.x - 25,
-          originY: d.y - 25,
-          rects: getAssetRects(d.assetKey),
+          minX: d.x - halfW,
+          maxX: d.x + halfW - 1,
+          minY: d.y - halfH,
+          maxY: d.y + halfH - 1,
+          originX: d.x - halfW,
+          originY: d.y - halfH,
+          rects: getAssetRects(d.assetKey, !!d.flipX),
         });
       }
     }
@@ -284,18 +287,22 @@ export function createPixelCollisionChecker(world: PixelCollisionWorldInput): Pi
         const isSolid = parts.includes("solid") || parts.includes("obstacle");
         if (isSolid && parts.length >= 2) {
           const assetKey = parts[0]?.split("|")[0];
+          const isFlipX = parts.includes("flipx");
           const coords = parts[1].split(",");
           const fx = parseFloat(coords[0]);
           const fy = parseFloat(coords[1]);
           if (!isNaN(fx) && !isNaN(fy) && assetKey) {
+            const { width, height } = getAssetDimensions(assetKey);
+            const halfW = width / 2;
+            const halfH = height / 2;
             solidProps.push({
-              minX: fx - 25,
-              maxX: fx + 25 - 1,
-              minY: fy - 25,
-              maxY: fy + 25 - 1,
-              originX: fx - 25,
-              originY: fy - 25,
-              rects: getAssetRects(assetKey),
+              minX: fx - halfW,
+              maxX: fx + halfW - 1,
+              minY: fy - halfH,
+              maxY: fy + halfH - 1,
+              originX: fx - halfW,
+              originY: fy - halfH,
+              rects: getAssetRects(assetKey, isFlipX),
             });
           }
         }
@@ -318,21 +325,35 @@ export function createPixelCollisionChecker(world: PixelCollisionWorldInput): Pi
     }
     const parts = val.split("::");
     let hasDeco = false;
+    const combinedDecoRects: Array<[number, number, number, number]> = [];
     for (let i = parts.length - 1; i >= 1; i--) {
       const p = parts[i];
-      if (p === "obstacle" || p === "ontop" || p === "behind" || p.startsWith("layer:")) continue;
+      if (
+        p === "obstacle" ||
+        p === "ontop" ||
+        p === "behind" ||
+        p.startsWith("layer:") ||
+        p.startsWith("interact:")
+      )
+        continue;
+      const assetKey = p.split("~")[0].split("@")[0].split("^")[0].split("|")[0];
+      if (isOverlayFloorAsset(assetKey)) continue;
       hasDeco = true;
-      const assetKey = p.split("@")[0].split("^")[0].split("|")[0];
-      const rects = getAssetRects(assetKey);
+      const isFlipX = p.includes("~flipx");
+      const rects = getAssetRects(assetKey, isFlipX);
       if (rects.length > 0) {
-        tileRectCache.set(key, rects);
-        return rects;
+        combinedDecoRects.push(...rects);
       }
     }
+    if (combinedDecoRects.length > 0) {
+      tileRectCache.set(key, combinedDecoRects);
+      return combinedDecoRects;
+    }
     if (!hasDeco) {
-      const baseKey = parts[0]?.split("|")[0];
+      const basePart = parts[0] || "";
+      const baseKey = basePart.split("~")[0].split("@")[0].split("^")[0].split("|")[0];
       if (baseKey && isWallAsset(baseKey)) {
-        const rects = getAssetRects(baseKey);
+        const rects = getAssetRects(baseKey, basePart.includes("~flipx"));
         tileRectCache.set(key, rects);
         return rects;
       }

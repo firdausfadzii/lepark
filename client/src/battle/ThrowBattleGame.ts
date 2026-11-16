@@ -93,10 +93,10 @@ export class ThrowBattleGame {
 
   // Clouds in sky
   private clouds: { x: number; y: number; speed: number; scale: number }[] = [
-    { x: 50, y: 50, speed: 12, scale: 1.2 },
-    { x: 260, y: 90, speed: 8, scale: 0.9 },
-    { x: 520, y: 40, speed: 15, scale: 1.1 },
-    { x: 700, y: 110, speed: 10, scale: 0.8 },
+    { x: 50, y: 45, speed: 28, scale: 1.2 },
+    { x: 260, y: 85, speed: 34, scale: 0.9 },
+    { x: 520, y: 35, speed: 25, scale: 1.1 },
+    { x: 700, y: 100, speed: 30, scale: 0.85 },
   ];
 
   // Callbacks to network manager
@@ -555,10 +555,15 @@ export class ThrowBattleGame {
       if (this.shakeTime <= 0) this.shakeMagnitude = 0;
     }
 
-    // Clouds drift
+    // Clouds drift in wind direction as visual hint for players (speed magnitude stays constant)
+    const windDir = this.wind < 0 ? -1 : 1;
     for (const c of this.clouds) {
-      c.x += c.speed * dt;
-      if (c.x > this.width + 100) c.x = -120;
+      c.x += windDir * c.speed * dt;
+      if (windDir > 0) {
+        if (c.x > this.width + 120) c.x = -120;
+      } else {
+        if (c.x < -120) c.x = this.width + 120;
+      }
     }
 
     // Active movement during "move" phase
@@ -760,10 +765,11 @@ export class ThrowBattleGame {
       });
     }
 
+    const maxHp = target.maxHp || 20;
     this.floatingTexts.push({
       x: target.x,
       y: this.groundY - 60,
-      text: `💥 -1 HIT! (${target.hp}/20)`,
+      text: `💥 -1 HIT! (${target.hp}/${maxHp})`,
       color: "#ef4444",
       alpha: 1,
       vy: -45,
@@ -1240,6 +1246,8 @@ export class ThrowBattleGame {
           : "linear-gradient(90deg, #ef4444, #f87171)";
     }
     if (p1HpText) p1HpText.textContent = String(Math.max(0, this.player1.hp));
+    const p1MaxHpText = document.getElementById("tb-p1-max-hp-text");
+    if (p1MaxHpText) p1MaxHpText.textContent = String(this.player1.maxHp || 20);
     if (p1Badge) {
       const isP1Turn = this.currentTurn === this.player1.sessionId;
       p1Badge.textContent = isP1Turn ? "TURNING" : "WAITING";
@@ -1266,6 +1274,8 @@ export class ThrowBattleGame {
           : "linear-gradient(90deg, #ef4444, #f87171)";
     }
     if (p2HpText) p2HpText.textContent = String(Math.max(0, this.player2.hp));
+    const p2MaxHpText = document.getElementById("tb-p2-max-hp-text");
+    if (p2MaxHpText) p2MaxHpText.textContent = String(this.player2.maxHp || 20);
     if (p2Badge) {
       const isP2Turn = this.currentTurn === this.player2.sessionId;
       p2Badge.textContent = isP2Turn ? "TURNING" : "WAITING";

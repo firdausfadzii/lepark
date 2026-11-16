@@ -37,18 +37,22 @@ import {
   createPixelCollisionChecker,
   PixelCollisionOptions,
   getAssetRects,
+  getAssetDimensions,
   isAssetPixelSolid,
   hasObstacleTile,
+  DecorationInteractionType,
+  isValidInteractionType,
 } from "shared";
 import { JukeboxManager } from "../audio/JukeboxManager";
 
 interface JukeboxVisual {
   container: Phaser.GameObjects.Container;
-  sprite: Phaser.GameObjects.Image;
-  hitZone: Phaser.GameObjects.Rectangle;
-  promptText: Phaser.GameObjects.Text;
+  sprite: Phaser.GameObjects.Image | null;
+  hitZone: Phaser.GameObjects.Rectangle | null;
+  promptText: Phaser.GameObjects.Text | null;
   notesTimer: number;
   state: JukeboxState;
+  isVirtual?: boolean;
 }
 
 interface TypewriterVisual {
@@ -146,6 +150,7 @@ export interface InspectableMapItem {
   row?: number;
   layer?: number;
   bounds?: { x: number; y: number; width: number; height: number };
+  pixelRects?: Array<{ x: number; y: number; width: number; height: number }>;
 }
 
 export interface GridDecoItem {
@@ -154,6 +159,8 @@ export interface GridDecoItem {
   color: string | null;
   layer: number;
   isOntop: boolean;
+  interaction?: DecorationInteractionType | null;
+  flipX?: boolean;
 }
 
 export class GameScene extends Phaser.Scene {
@@ -168,6 +175,8 @@ export class GameScene extends Phaser.Scene {
   private playerVisuals: Map<string, PlayerVisual> = new Map();
   private localPlayerId: string | null = null;
   private lastInputState = { left: false, right: false, up: false, down: false };
+  private lastInputSyncTime = 0;
+  private lastLocalMoveTime = 0;
   public controlsActive = true;
   public virtualInput = { left: false, right: false, up: false, down: false };
   public voiceManager: VoiceManager | null = null;
@@ -209,8 +218,7 @@ export class GameScene extends Phaser.Scene {
     | "chess_board"
     | "aquarium"
     | "freeform_decoration"
-    | "spawn_point"
-    | "color_dropper" = "none";
+    | "spawn_point" = "none";
   public activeEditorMenuItem: InspectableMapItem | null = null;
   public onEditorItemContextMenu?: (data: {
     item: InspectableMapItem;
@@ -223,20 +231,19 @@ export class GameScene extends Phaser.Scene {
     visible: boolean;
   }) => void;
   public selectedAssetKey: string = "";
-  public selectedTileColor: string | null = null;
   public isObstacleEnabled: boolean = true;
   public decorationPassable: boolean = false;
   public decorationOntop: boolean = false;
   public placementLayer: number = 0;
+  public placementFlipX: boolean = false;
   public onPlacementLayerChange?: (layer: number) => void;
   private isSelectingArea: boolean = false;
   private selectionStartTile: { x: number; y: number } | null = null;
   private selectionCurrentTile: { x: number; y: number } | null = null;
 
-  // Spawn Point & Dropper State
+  // Spawn Point State
   private spawnPointGraphics: Phaser.GameObjects.Graphics | null = null;
   private spawnPointText: Phaser.GameObjects.Text | null = null;
-  public onColorPicked?: (hex: string | null) => void;
 
   // Jukebox State & Free-Placement Objects
   public jukeboxManager: JukeboxManager | null = null;
@@ -281,6 +288,15 @@ export class GameScene extends Phaser.Scene {
       data: FreeformDecorationData;
     }
   > = new Map();
+  private interactableGridDecos: Map<
+    string,
+    { id: string; x: number; y: number; interaction: DecorationInteractionType }
+  > = new Map();
+  private nearbyDecoPromptText: Phaser.GameObjects.Text | null = null;
+  private nearbyCustomInteraction: {
+    id: string;
+    interaction: DecorationInteractionType;
+  } | null = null;
   private editorFreeformGhost: Phaser.GameObjects.Image | null = null;
 
   // Private Zones State & Effects
@@ -308,7 +324,9 @@ export class GameScene extends Phaser.Scene {
     if (!this.cachedPixelCollisionChecker) {
       this.cachedPixelCollisionChecker = createPixelCollisionChecker({
         tiles: this.currentTilesMap,
-        jukeboxes: Array.from(this.jukeboxVisuals.values()).map((v) => v.state),
+        jukeboxes: Array.from(this.jukeboxVisuals.values())
+          .filter((v) => !v.isVirtual)
+          .map((v) => v.state),
         typewriters: Array.from(this.typewriterVisuals.values()).map((v) => v.state),
         ashtrays: Array.from(this.ashtrayVisuals.values()).map((v) => v.state),
         chessBoards: Array.from(this.chessBoardVisuals.values()).map((v) => v.state),
@@ -354,60 +372,33 @@ export class GameScene extends Phaser.Scene {
   }
 
   preload() {
-    // Floor assets (all from /assets/floor/)
-    const floorAssets = [
-      "carpet_1", "carpet_2", "carpet_3", "carpet_4", "carpet_5", "carpet_6", "carpet_7", "carpet_8",
-      "grass_1", "grass_2", "grass_3", "grass_4",
-      "marble_1", "marble_2", "marble_3", "marble_4",
-      "stone_1", "stone_2", "stone_3", "stone_4", "stone_5", "stone_6", "stone_7", "stone_8",
-      "wood_1", "wood_2", "wood_3", "wood_4", "wood_5", "wood_6",
-    ];
-    for (const fa of floorAssets) {
-      this.load.image(fa, `/assets/floor/${fa}.png`);
-    }
-    this.load.image("grass_tile", "/assets/floor/grass_4.png");
-    // Wall assets (all from /assets/wall/)
-    const wallAssets = [
-      "glass_1", "glass_2", "glass_3", "glass_4",
-    ];
-    for (const wa of wallAssets) {
-      this.load.image(wa, `/assets/wall/${wa}.png`);
-    }
-    for (let i = 1; i <= 19; i++) {
-      this.load.image(`wood_wall_${i}`, `/assets/wall/wood_${i}.png`);
-      this.load.image(`wall_wood_${i}`, `/assets/wall/wood_${i}.png`);
-    }
-    // Decoration assets (all from /assets/decoration/)
-    const decoAssets = [
-      "table_1_left",
-      "table_1_middle",
-      "table_1_right",
-      "table_2_left",
-      "table_2_middle",
-      "table_2_right",
-      "round_table_1",
-      "office_chair_1_front",
-      "office_chair_1_back",
-      "jukebox_1",
-      "typewriter_1",
-      "ashtray_1",
-      "chess_board_1",
-      "aquarium_1",
-    ];
-    for (const da of decoAssets) {
-      this.load.image(da, `/assets/decoration/${da}.png`);
-    }
-    // Backward-compatible aliases for legacy decoration keys
-    this.load.image("aquarium", "/assets/decoration/aquarium_1.png");
-    this.load.image("chess_board", "/assets/decoration/chess_board_1.png");
-    this.load.image("table_left_150", "/assets/decoration/table_2_left.png");
-    this.load.image("table_middle_150", "/assets/decoration/table_2_middle.png");
-    this.load.image("table_right_150", "/assets/decoration/table_2_right.png");
-    this.load.image("round_table_150", "/assets/decoration/round_table_1.png");
-    this.load.image("office_chair_150", "/assets/decoration/office_chair_1_front.png");
-    this.load.image("office_chair_back_150", "/assets/decoration/office_chair_1_back.png");
-    this.load.image("jukebox_150", "/assets/decoration/jukebox_1.png");
-    this.load.image("typewriter_150", "/assets/decoration/typewriter_1.png");
+    // Floor, Wall, and Decoration texture atlases
+    this.load.atlas(
+      "floor_free_atlas",
+      "/assets/floor/floor_free.png",
+      "/assets/floor/floor_free.json"
+    );
+    this.load.atlas(
+      "wall_free_atlas",
+      "/assets/wall/wall_free.png",
+      "/assets/wall/wall_free.json"
+    );
+    this.load.atlas(
+      "decoration_free_atlas",
+      "/assets/decoration/decoration_free.png",
+      "/assets/decoration/decoration_free.json"
+    );
+    // Decoration assets (Office One & Office Two texture atlases)
+    this.load.atlas(
+      "office_one_atlas",
+      "/assets/decoration/office_one.png",
+      "/assets/decoration/office_one.json"
+    );
+    this.load.atlas(
+      "office_two_atlas",
+      "/assets/decoration/office_spritesheet_2.png",
+      "/assets/decoration/office_sprites_2.json"
+    );
 
     // Default character avatar atlas & frames
     this.load.atlas(
@@ -456,9 +447,9 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    // World & Camera bounds
+    // World & Camera setup (unbounded camera so local player stays centered in viewport)
     this.cameras.main.setBackgroundColor(0x142020);
-    this.cameras.main.setBounds(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
+    this.cameras.main.removeBounds();
     this.cameras.main.setRoundPixels(true);
     this.physics.world.setBounds(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
 
@@ -507,8 +498,15 @@ export class GameScene extends Phaser.Scene {
       g.destroy();
     }
 
-    // Background fully rendered with grass_4.png on each 50x50 tile as base
-    const bgTileSprite = this.add.tileSprite(0, 0, WORLD_WIDTH, WORLD_HEIGHT, "grass_tile");
+    // Background fully rendered with grass_4 on each 50x50 tile as base
+    const bgTileSprite = this.add.tileSprite(
+      0,
+      0,
+      WORLD_WIDTH,
+      WORLD_HEIGHT,
+      "floor_free_atlas",
+      "grass_4"
+    );
     bgTileSprite.setOrigin(0, 0);
     bgTileSprite.setTileScale(TILE_SIZE / 96, TILE_SIZE / 96);
     bgTileSprite.setDepth(0);
@@ -518,7 +516,7 @@ export class GameScene extends Phaser.Scene {
     for (let row = 0; row < GRID_ROWS; row++) {
       this.tileImages[row] = [];
       for (let col = 0; col < GRID_COLS; col++) {
-        const img = this.add.image(col * TILE_SIZE, row * TILE_SIZE, "grass_4");
+        const img = this.add.image(col * TILE_SIZE, row * TILE_SIZE, "floor_free_atlas", "grass_4");
         img.setOrigin(0, 0);
         img.setDisplaySize(TILE_SIZE, TILE_SIZE);
         img.setDepth(0.1);
@@ -545,7 +543,12 @@ export class GameScene extends Phaser.Scene {
     for (let row = 0; row < GRID_ROWS; row++) {
       this.decorationImages[row] = [];
       for (let col = 0; col < GRID_COLS; col++) {
-        const decoImg = this.add.image(col * TILE_SIZE, row * TILE_SIZE, "table_1_left");
+        const decoImg = this.add.image(
+          col * TILE_SIZE,
+          row * TILE_SIZE,
+          "decoration_free_atlas",
+          "table_1_left"
+        );
         decoImg.setOrigin(0, 0);
         decoImg.setDisplaySize(TILE_SIZE, TILE_SIZE);
         decoImg.setDepth(0.2);
@@ -683,62 +686,92 @@ export class GameScene extends Phaser.Scene {
     }
 
     // Ghost preview for freeform jukebox placement
-    this.editorJukeboxGhost = this.add.image(0, 0, "jukebox_1");
+    this.editorJukeboxGhost = this.add.image(0, 0, "decoration_free_atlas", "jukebox_1");
     this.editorJukeboxGhost.setDisplaySize(48, 48);
     this.editorJukeboxGhost.setAlpha(0.65);
     this.editorJukeboxGhost.setDepth(136);
     this.editorJukeboxGhost.setVisible(false);
 
     // Ghost preview for freeform typewriter placement
-    this.editorTypewriterGhost = this.add.image(0, 0, "typewriter_1");
+    this.editorTypewriterGhost = this.add.image(0, 0, "decoration_free_atlas", "typewriter_1");
     this.editorTypewriterGhost.setDisplaySize(48, 48);
     this.editorTypewriterGhost.setAlpha(0.65);
     this.editorTypewriterGhost.setDepth(136);
     this.editorTypewriterGhost.setVisible(false);
 
     // Ghost preview for freeform ashtray placement
-    this.editorAshtrayGhost = this.add.image(0, 0, "ashtray_1");
+    this.editorAshtrayGhost = this.add.image(0, 0, "decoration_free_atlas", "ashtray_1");
     this.editorAshtrayGhost.setDisplaySize(48, 48);
     this.editorAshtrayGhost.setAlpha(0.65);
     this.editorAshtrayGhost.setDepth(136);
     this.editorAshtrayGhost.setVisible(false);
 
     // Ghost preview for freeform chess board placement
-    this.editorChessBoardGhost = this.add.image(0, 0, "chess_board_1");
+    this.editorChessBoardGhost = this.add.image(0, 0, "decoration_free_atlas", "chess_board_1");
     this.editorChessBoardGhost.setDisplaySize(50, 50);
     this.editorChessBoardGhost.setAlpha(0.65);
     this.editorChessBoardGhost.setDepth(136);
     this.editorChessBoardGhost.setVisible(false);
 
     // Ghost preview for freeform aquarium placement
-    this.editorAquariumGhost = this.add.image(0, 0, "aquarium_1");
+    this.editorAquariumGhost = this.add.image(0, 0, "decoration_free_atlas", "aquarium_1");
     this.editorAquariumGhost.setDisplaySize(50, 50);
     this.editorAquariumGhost.setAlpha(0.65);
     this.editorAquariumGhost.setDepth(136);
     this.editorAquariumGhost.setVisible(false);
 
     // Ghost preview for freeform decoration placement (e.g. chairs, not bounded by grid)
-    this.editorFreeformGhost = this.add.image(0, 0, "office_chair_1_front");
+    this.editorFreeformGhost = this.add.image(0, 0, "decoration_free_atlas", "office_chair_1_front");
     this.editorFreeformGhost.setDisplaySize(50, 50);
     this.editorFreeformGhost.setAlpha(0.7);
     this.editorFreeformGhost.setDepth(136);
     this.editorFreeformGhost.setVisible(false);
 
     // E key for interacting with nearby typewriter, jukebox, ashtray, or chess board
+    this.nearbyDecoPromptText = this.add.text(0, 0, "Press E", {
+      fontFamily: "Outfit, sans-serif",
+      fontSize: "11px",
+      fontStyle: "bold",
+      color: "#ffffff",
+      backgroundColor: "rgba(15, 23, 42, 0.88)",
+      padding: { x: 6, y: 2.5 },
+    });
+    this.nearbyDecoPromptText.setOrigin(0.5, 0.5);
+    this.nearbyDecoPromptText.setDepth(10000);
+    this.nearbyDecoPromptText.setVisible(false);
+
     if (this.input.keyboard) {
       this.keyE = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.E);
       this.keyE.on("down", () => {
         if (this.isTyperaceModalOpen() || this.isSmokingGameModalOpen() || this.isChessModalOpen() || this.isFishingModalOpen()) return;
-        if (this.nearbyAquariumId && !this.isEditMode && this.onAquariumClick) {
-          this.onAquariumClick(this.nearbyAquariumId);
-        } else if (this.nearbyChessBoardId && !this.isEditMode && this.onChessBoardClick) {
-          this.onChessBoardClick(this.nearbyChessBoardId);
-        } else if (this.nearbyAshtrayId && !this.isEditMode && this.onAshtrayClick) {
-          this.onAshtrayClick(this.nearbyAshtrayId);
-        } else if (this.nearbyTypewriterId && !this.isEditMode && this.onTypewriterClick) {
-          this.onTypewriterClick(this.nearbyTypewriterId);
-        } else if (this.nearbyJukeboxId && !this.isEditMode && this.onJukeboxClick) {
-          this.onJukeboxClick(this.nearbyJukeboxId);
+        if (this.isEditMode) return;
+        if (this.nearbyCustomInteraction) {
+          this.triggerInteraction(
+            this.nearbyCustomInteraction.id,
+            this.nearbyCustomInteraction.interaction
+          );
+          return;
+        }
+        if (this.nearbyAquariumId) {
+          const aq = this.aquariumVisuals.get(this.nearbyAquariumId)?.state;
+          const inter = aq ? this.getEffectiveEntityInteraction(aq, "fishing") : "fishing";
+          if (inter) this.triggerInteraction(this.nearbyAquariumId, inter);
+        } else if (this.nearbyChessBoardId) {
+          const cb = this.chessBoardVisuals.get(this.nearbyChessBoardId)?.state;
+          const inter = cb ? this.getEffectiveEntityInteraction(cb, "chess") : "chess";
+          if (inter) this.triggerInteraction(this.nearbyChessBoardId, inter);
+        } else if (this.nearbyAshtrayId) {
+          const at = this.ashtrayVisuals.get(this.nearbyAshtrayId)?.state;
+          const inter = at ? this.getEffectiveEntityInteraction(at, "smoke_duel") : "smoke_duel";
+          if (inter) this.triggerInteraction(this.nearbyAshtrayId, inter);
+        } else if (this.nearbyTypewriterId) {
+          const tw = this.typewriterVisuals.get(this.nearbyTypewriterId)?.state;
+          const inter = tw ? this.getEffectiveEntityInteraction(tw, "type_race") : "type_race";
+          if (inter) this.triggerInteraction(this.nearbyTypewriterId, inter);
+        } else if (this.nearbyJukeboxId) {
+          const jb = this.jukeboxVisuals.get(this.nearbyJukeboxId)?.state;
+          const inter = jb ? this.getEffectiveEntityInteraction(jb, "jukebox") : "jukebox";
+          if (inter) this.triggerInteraction(this.nearbyJukeboxId, inter);
         }
       });
     }
@@ -898,21 +931,13 @@ export class GameScene extends Phaser.Scene {
   }
 
   public isLayerableEditorSelection(): boolean {
-    if (
+    return (
+      this.activeEditorTool === "flooring" ||
       this.activeEditorTool === "decoration" ||
       this.activeEditorTool === "freeform_decoration" ||
       this.activeEditorTool === "jukebox" ||
       this.activeEditorTool === "typewriter"
-    ) {
-      return true;
-    }
-    if (
-      this.activeEditorTool === "flooring" &&
-      (isOverlayFloorAsset(this.selectedAssetKey) || isOverlayWallAsset(this.selectedAssetKey))
-    ) {
-      return true;
-    }
-    return false;
+    );
   }
 
   public setPlacementLayer(layer: number) {
@@ -941,6 +966,32 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  public setPlacementFlipX(flipX: boolean) {
+    this.placementFlipX = flipX;
+    this.syncGhostFlips();
+  }
+
+  private syncGhostFlips() {
+    if (this.editorFreeformGhost) {
+      this.editorFreeformGhost.setFlipX(this.placementFlipX);
+    }
+    if (this.editorJukeboxGhost) {
+      this.editorJukeboxGhost.setFlipX(this.placementFlipX);
+    }
+    if (this.editorTypewriterGhost) {
+      this.editorTypewriterGhost.setFlipX(this.placementFlipX);
+    }
+    if (this.editorAshtrayGhost) {
+      this.editorAshtrayGhost.setFlipX(this.placementFlipX);
+    }
+    if (this.editorChessBoardGhost) {
+      this.editorChessBoardGhost.setFlipX(this.placementFlipX);
+    }
+    if (this.editorAquariumGhost) {
+      this.editorAquariumGhost.setFlipX(this.placementFlipX);
+    }
+  }
+
   private syncGhostDepths() {
     const ghostDepth = this.computeLayerDepth(this.placementLayer, this.decorationOntop);
     if (this.editorFreeformGhost) {
@@ -965,6 +1016,21 @@ export class GameScene extends Phaser.Scene {
 
   private parseLayerPart(partStr: string, defaultOntop: boolean = false): GridDecoItem {
     let working = partStr;
+    let flipX = false;
+    if (working.includes("~flipx")) {
+      flipX = true;
+      working = working.replace("~flipx", "");
+    }
+    let interaction: DecorationInteractionType | null = null;
+    const interactIdx = working.indexOf("~interact:");
+    if (interactIdx !== -1) {
+      const interStr = working.slice(interactIdx + 10);
+      if (isValidInteractionType(interStr)) {
+        interaction = interStr;
+      }
+      working = working.slice(0, interactIdx);
+    }
+
     let isOntop = defaultOntop;
     if (working.endsWith("^ontop")) {
       isOntop = true;
@@ -998,6 +1064,8 @@ export class GameScene extends Phaser.Scene {
       color,
       layer,
       isOntop,
+      interaction,
+      flipX,
     };
   }
 
@@ -1005,18 +1073,25 @@ export class GameScene extends Phaser.Scene {
     assetKey: string,
     color: string | null | undefined,
     layer: number = 0,
-    isOntop: boolean = false
+    isOntop: boolean = false,
+    interaction?: DecorationInteractionType | null,
+    flipX: boolean = false
   ): string {
     const base = color ? `${assetKey}|${color}` : assetKey;
     const layerSuffix = `@${Math.round(layer)}`;
     const ontopSuffix = isOntop ? "^ontop" : "";
-    return `${base}${layerSuffix}${ontopSuffix}`;
+    const interactSuffix =
+      interaction && isValidInteractionType(interaction) ? `~interact:${interaction}` : "";
+    const flipSuffix = flipX ? "~flipx" : "";
+    return `${base}${layerSuffix}${ontopSuffix}${interactSuffix}${flipSuffix}`;
   }
 
   private parseTileComponents(rawValue: string | undefined): {
     basePart: string;
     overlayFloorPart: string | null;
     overlayFloorLayer: number;
+    overlayFloorOntop: boolean;
+    overlayFloorFlipX: boolean;
     decoPart: string | null;
     decoLayer: number;
     decoParts: GridDecoItem[];
@@ -1026,6 +1101,8 @@ export class GameScene extends Phaser.Scene {
     let basePart = "grass_4";
     let overlayFloorPart: string | null = null;
     let overlayFloorLayer = 0;
+    let overlayFloorOntop = false;
+    let overlayFloorFlipX = false;
     let decoPart: string | null = null;
     let decoLayer = 0;
     const decoParts: GridDecoItem[] = [];
@@ -1037,6 +1114,8 @@ export class GameScene extends Phaser.Scene {
         basePart,
         overlayFloorPart,
         overlayFloorLayer,
+        overlayFloorOntop,
+        overlayFloorFlipX,
         decoPart,
         decoLayer,
         decoParts,
@@ -1068,6 +1147,8 @@ export class GameScene extends Phaser.Scene {
         if (isOverlayFloorAsset(parsed.assetKey)) {
           overlayFloorPart = parsed.color ? `${parsed.assetKey}|${parsed.color}` : parsed.assetKey;
           overlayFloorLayer = parsed.layer;
+          overlayFloorOntop = parsed.isOntop;
+          overlayFloorFlipX = !!parsed.flipX;
         } else {
           decoParts.push(parsed);
         }
@@ -1090,6 +1171,8 @@ export class GameScene extends Phaser.Scene {
       basePart,
       overlayFloorPart,
       overlayFloorLayer,
+      overlayFloorOntop,
+      overlayFloorFlipX,
       decoPart,
       decoLayer,
       decoParts,
@@ -1102,6 +1185,8 @@ export class GameScene extends Phaser.Scene {
     basePart: string;
     overlayFloorPart?: string | null;
     overlayFloorLayer?: number;
+    overlayFloorOntop?: boolean;
+    overlayFloorFlipX?: boolean;
     decoPart?: string | null;
     decoLayer?: number;
     decoParts?: GridDecoItem[];
@@ -1113,11 +1198,15 @@ export class GameScene extends Phaser.Scene {
       const parsedOv = this.parseLayerPart(comp.overlayFloorPart, false);
       const ovLayer =
         comp.overlayFloorLayer !== undefined ? comp.overlayFloorLayer : parsedOv.layer;
-      out.push(this.formatLayerPart(parsedOv.assetKey, parsedOv.color, ovLayer, false));
+      const ovOntop =
+        comp.overlayFloorOntop !== undefined ? comp.overlayFloorOntop : parsedOv.isOntop;
+      const ovFlipX =
+        comp.overlayFloorFlipX !== undefined ? comp.overlayFloorFlipX : !!parsedOv.flipX;
+      out.push(this.formatLayerPart(parsedOv.assetKey, parsedOv.color, ovLayer, ovOntop, null, ovFlipX));
     }
     if (comp.decoParts && comp.decoParts.length > 0) {
       for (const d of comp.decoParts) {
-        out.push(this.formatLayerPart(d.assetKey, d.color, d.layer, d.isOntop));
+        out.push(this.formatLayerPart(d.assetKey, d.color, d.layer, d.isOntop, d.interaction, !!d.flipX));
       }
       if (comp.decoParts.some((d) => d.isOntop)) {
         out.push("ontop");
@@ -1126,7 +1215,7 @@ export class GameScene extends Phaser.Scene {
       const parsedDeco = this.parseLayerPart(comp.decoPart, !!comp.isOntop);
       const dLayer = comp.decoLayer !== undefined ? comp.decoLayer : parsedDeco.layer;
       const dOntop = comp.isOntop !== undefined ? comp.isOntop : parsedDeco.isOntop;
-      out.push(this.formatLayerPart(parsedDeco.assetKey, parsedDeco.color, dLayer, dOntop));
+      out.push(this.formatLayerPart(parsedDeco.assetKey, parsedDeco.color, dLayer, dOntop, parsedDeco.interaction, !!parsedDeco.flipX));
       if (dOntop) {
         out.push("ontop");
       }
@@ -1256,8 +1345,10 @@ export class GameScene extends Phaser.Scene {
     // If local player, center camera immediately on container and follow smoothly
     if (sessionId === this.multiplayer.sessionId) {
       this.localPlayerId = sessionId;
-      this.cameras.main.centerOn(container.x, container.y);
-      this.cameras.main.startFollow(container, true, 0.12, 0.12);
+      if (!this.isEditMode) {
+        this.cameras.main.centerOn(container.x, container.y);
+        this.cameras.main.startFollow(container, true, 0.15, 0.15);
+      }
     }
 
     // Check if avatars are already available for this player
@@ -1551,21 +1642,26 @@ export class GameScene extends Phaser.Scene {
 
     // For local player, reconcile with authoritative server position smoothly
     if (sessionId === this.localPlayerId) {
-      const dist = Phaser.Math.Distance.Between(
-        visual.container.x,
-        visual.container.y,
-        player.x,
-        player.y
-      );
+      const isMovingLocally =
+        this.lastInputState.left ||
+        this.lastInputState.right ||
+        this.lastInputState.up ||
+        this.lastInputState.down;
+      const recentlyMoved = Date.now() - this.lastLocalMoveTime < 600;
 
-      // Hard teleport only if discrepancy is massive (e.g. initial spawn or boundary correction)
-      if (dist > 120) {
-        visual.container.x = player.x;
-        visual.container.y = player.y;
-      } else if (dist > 25) {
-        // Soft reconciliation glide (smooth lerp with zero snapping)
-        visual.container.x = Phaser.Math.Linear(visual.container.x, player.x, 0.15);
-        visual.container.y = Phaser.Math.Linear(visual.container.y, player.y, 0.15);
+      if (!isMovingLocally && !recentlyMoved) {
+        const dist = Phaser.Math.Distance.Between(
+          visual.container.x,
+          visual.container.y,
+          player.x,
+          player.y
+        );
+
+        // Hard teleport only if discrepancy is massive while completely idle
+        if (dist > 600) {
+          visual.container.x = player.x;
+          visual.container.y = player.y;
+        }
       }
     }
   }
@@ -1790,8 +1886,7 @@ export class GameScene extends Phaser.Scene {
         this.lastInputState.up ||
         this.lastInputState.down
       ) {
-        this.lastInputState = { left: false, right: false, up: false, down: false };
-        this.multiplayer.sendInput(this.lastInputState);
+        this.sendLocalInput(false, false, false, false);
       }
 
       if (this.localPlayerId) {
@@ -1811,6 +1906,24 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  private sendLocalInput(left: boolean, right: boolean, up: boolean, down: boolean) {
+    this.lastInputState = { left, right, up, down };
+    this.lastInputSyncTime = Date.now();
+    const localVisual = this.localPlayerId ? this.playerVisuals.get(this.localPlayerId) : undefined;
+    if (localVisual) {
+      this.multiplayer.sendInput({
+        left,
+        right,
+        up,
+        down,
+        x: localVisual.container.x,
+        y: localVisual.container.y,
+      });
+    } else {
+      this.multiplayer.sendInput({ left, right, up, down });
+    }
+  }
+
   private registerKeyCaptures() {
     if (!this.input.keyboard) return;
     this.input.keyboard.addCapture([
@@ -1823,7 +1936,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   update(time: number, delta: number) {
-    const dtSeconds = delta / 1000;
+    const dtSeconds = Math.min(delta / 1000, 0.1);
 
     // In Edit Mode, WASD pans the camera smoothly instead of moving player (no arrow keys)
     if (this.isEditMode) {
@@ -1858,8 +1971,7 @@ export class GameScene extends Phaser.Scene {
         this.lastInputState.up ||
         this.lastInputState.down
       ) {
-        this.lastInputState = { left: false, right: false, up: false, down: false };
-        this.multiplayer.sendInput(this.lastInputState);
+        this.sendLocalInput(false, false, false, false);
       }
       return;
     }
@@ -1870,7 +1982,12 @@ export class GameScene extends Phaser.Scene {
     let up = false;
     let down = false;
 
-    if (this.isTyperaceModalOpen() || this.isSmokingGameModalOpen() || this.isChessModalOpen()) {
+    if (
+      this.isTyperaceModalOpen() ||
+      this.isSmokingGameModalOpen() ||
+      this.isChessModalOpen() ||
+      this.isFishingModalOpen()
+    ) {
       if (this.controlsActive) {
         this.setControlsActive(false);
       }
@@ -1884,17 +2001,6 @@ export class GameScene extends Phaser.Scene {
       right = this.wasdKeys.D.isDown || this.virtualInput.right;
       up = this.wasdKeys.W.isDown || this.virtualInput.up;
       down = this.wasdKeys.S.isDown || this.virtualInput.down;
-    }
-
-    // Send input whenever state changed
-    if (
-      left !== this.lastInputState.left ||
-      right !== this.lastInputState.right ||
-      up !== this.lastInputState.up ||
-      down !== this.lastInputState.down
-    ) {
-      this.lastInputState = { left, right, up, down };
-      this.multiplayer.sendInput(this.lastInputState);
     }
 
     // 2. Local player continuous movement (smooth client-side prediction)
@@ -1911,6 +2017,7 @@ export class GameScene extends Phaser.Scene {
         let targetDir: "idle" | "left" | "right" | "up" | "down" = "idle";
 
         if (vx !== 0 || vy !== 0) {
+          this.lastLocalMoveTime = Date.now();
           if (Math.abs(vx) >= Math.abs(vy)) {
             targetDir = vx < 0 ? "left" : "right";
           } else {
@@ -1952,6 +2059,19 @@ export class GameScene extends Phaser.Scene {
           }
         }
       }
+    }
+
+    // 2.5. Send input whenever key state changed or periodically while moving to keep server position in sync
+    const inputChanged =
+      left !== this.lastInputState.left ||
+      right !== this.lastInputState.right ||
+      up !== this.lastInputState.up ||
+      down !== this.lastInputState.down;
+    const isMoving = left || right || up || down;
+    const now = Date.now();
+
+    if (inputChanged || (isMoving && now - this.lastInputSyncTime >= 100)) {
+      this.sendLocalInput(left, right, up, down);
     }
 
     // 3. Snapshot Interpolation for remote players (anti-jitter pipeline)
@@ -2069,8 +2189,8 @@ export class GameScene extends Phaser.Scene {
       this.notifyZoneChanged(insideZone);
     }
 
-    // Modal-like darkening: when inside a private area, everything outside dims to 72% opacity
-    this.targetDarknessAlpha = insideZone ? 0.72 : 0;
+    // Modal-like darkening: when inside a private area, everything outside dims to 20% opacity (80% background visibility)
+    this.targetDarknessAlpha = insideZone ? 0.2 : 0;
     if (Math.abs(this.darknessAlpha - this.targetDarknessAlpha) > 0.003) {
       this.darknessAlpha = Phaser.Math.Linear(this.darknessAlpha, this.targetDarknessAlpha, 0.14);
     } else {
@@ -2177,7 +2297,11 @@ export class GameScene extends Phaser.Scene {
             ) || null;
 
           const dist = Phaser.Math.Distance.Between(lx, ly, jx, jy);
-          if (dist < closestDist) {
+          const jbEffective = jbVisual.isVirtual
+            ? "jukebox"
+            : this.getEffectiveEntityInteraction(jb, "jukebox");
+
+          if (!jbVisual.isVirtual && jbEffective !== null && dist < closestDist) {
             closestDist = dist;
             closestJukebox = jb;
           }
@@ -2185,7 +2309,7 @@ export class GameScene extends Phaser.Scene {
           // Show proximity prompt [Press E] if within 1.5 tiles (72px)
           const isNearby = dist <= 1.5 * TILE_SIZE;
           if (jbVisual.promptText) {
-            jbVisual.promptText.setVisible(isNearby && !this.isEditMode);
+            jbVisual.promptText.setVisible(isNearby && !this.isEditMode && jbEffective !== null);
           }
 
           let volume = 0;
@@ -2247,14 +2371,17 @@ export class GameScene extends Phaser.Scene {
         let closestTypewriterDist = Infinity;
         this.typewriterVisuals.forEach((twVisual) => {
           const tw = twVisual.state;
+          const effective = this.getEffectiveEntityInteraction(tw, "type_race");
           const dist = Phaser.Math.Distance.Between(lx, ly, tw.x, tw.y);
-          if (dist < closestTypewriterDist) {
+          if (effective !== null && dist < closestTypewriterDist) {
             closestTypewriterDist = dist;
             closestTypewriter = tw;
           }
           const isNearby = dist <= 1.5 * TILE_SIZE;
           if (twVisual.promptText) {
-            twVisual.promptText.setVisible(isNearby && !this.isEditMode && !this.isTyperaceModalOpen());
+            twVisual.promptText.setVisible(
+              isNearby && !this.isEditMode && !this.isTyperaceModalOpen() && effective !== null
+            );
           }
         });
         const nearbyTw = closestTypewriterDist <= 1.5 * TILE_SIZE ? closestTypewriter : null;
@@ -2265,14 +2392,17 @@ export class GameScene extends Phaser.Scene {
         let closestAshtrayDist = Infinity;
         this.ashtrayVisuals.forEach((atVisual) => {
           const at = atVisual.state;
+          const effective = this.getEffectiveEntityInteraction(at, "smoke_duel");
           const dist = Phaser.Math.Distance.Between(lx, ly, at.x, at.y);
-          if (dist < closestAshtrayDist) {
+          if (effective !== null && dist < closestAshtrayDist) {
             closestAshtrayDist = dist;
             closestAshtray = at;
           }
           const isNearby = dist <= 1.5 * TILE_SIZE;
           if (atVisual.promptText) {
-            atVisual.promptText.setVisible(isNearby && !this.isEditMode && !this.isSmokingGameModalOpen());
+            atVisual.promptText.setVisible(
+              isNearby && !this.isEditMode && !this.isSmokingGameModalOpen() && effective !== null
+            );
           }
         });
         const nearbyAt = closestAshtrayDist <= 1.5 * TILE_SIZE ? closestAshtray : null;
@@ -2283,14 +2413,17 @@ export class GameScene extends Phaser.Scene {
         let closestChessBoardDist = Infinity;
         this.chessBoardVisuals.forEach((cbVisual) => {
           const cb = cbVisual.state;
+          const effective = this.getEffectiveEntityInteraction(cb, "chess");
           const dist = Phaser.Math.Distance.Between(lx, ly, cb.x, cb.y);
-          if (dist < closestChessBoardDist) {
+          if (effective !== null && dist < closestChessBoardDist) {
             closestChessBoardDist = dist;
             closestChessBoard = cb;
           }
           const isNearby = dist <= 1.5 * TILE_SIZE;
           if (cbVisual.promptText) {
-            cbVisual.promptText.setVisible(isNearby && !this.isEditMode && !this.isChessModalOpen());
+            cbVisual.promptText.setVisible(
+              isNearby && !this.isEditMode && !this.isChessModalOpen() && effective !== null
+            );
           }
         });
         const nearbyCb = closestChessBoardDist <= 1.5 * TILE_SIZE ? closestChessBoard : null;
@@ -2301,18 +2434,74 @@ export class GameScene extends Phaser.Scene {
         let closestAquariumDist = Infinity;
         this.aquariumVisuals.forEach((aqVisual) => {
           const aq = aqVisual.state;
+          const effective = this.getEffectiveEntityInteraction(aq, "fishing");
           const dist = Phaser.Math.Distance.Between(lx, ly, aq.x, aq.y);
-          if (dist < closestAquariumDist) {
+          if (effective !== null && dist < closestAquariumDist) {
             closestAquariumDist = dist;
             closestAquarium = aq;
           }
           const isNearby = dist <= 1.5 * TILE_SIZE;
           if (aqVisual.promptText) {
-            aqVisual.promptText.setVisible(isNearby && !this.isEditMode && !this.isFishingModalOpen());
+            aqVisual.promptText.setVisible(
+              isNearby && !this.isEditMode && !this.isFishingModalOpen() && effective !== null
+            );
           }
         });
         const nearbyAq = closestAquariumDist <= 1.5 * TILE_SIZE ? closestAquarium : null;
         this.nearbyAquariumId = nearbyAq ? (nearbyAq as AquariumState).id : null;
+
+        // Update nearby custom interactable decorations (freeform & grid decorations)
+        let closestCustomDeco: {
+          id: string;
+          x: number;
+          y: number;
+          interaction: DecorationInteractionType;
+        } | null = null;
+        let closestCustomDist = Infinity;
+        this.freeformVisuals.forEach((vis) => {
+          const d = vis.data;
+          if (!d.interactable || !d.interaction) return;
+          const dist = Phaser.Math.Distance.Between(lx, ly, d.x, d.y);
+          if (dist <= 1.5 * TILE_SIZE && dist < closestCustomDist) {
+            closestCustomDist = dist;
+            closestCustomDeco = { id: d.id, x: d.x, y: d.y, interaction: d.interaction };
+          }
+        });
+        this.interactableGridDecos.forEach((deco) => {
+          const dist = Phaser.Math.Distance.Between(lx, ly, deco.x, deco.y);
+          if (dist <= 1.5 * TILE_SIZE && dist < closestCustomDist) {
+            closestCustomDist = dist;
+            closestCustomDeco = deco;
+          }
+        });
+
+        const isAnyModalOpen =
+          this.isTyperaceModalOpen() ||
+          this.isSmokingGameModalOpen() ||
+          this.isChessModalOpen() ||
+          this.isFishingModalOpen();
+
+        if (closestCustomDeco && !this.isEditMode && !isAnyModalOpen) {
+          const targetDeco = closestCustomDeco as {
+            id: string;
+            x: number;
+            y: number;
+            interaction: DecorationInteractionType;
+          };
+          this.nearbyCustomInteraction = {
+            id: targetDeco.id,
+            interaction: targetDeco.interaction,
+          };
+          if (this.nearbyDecoPromptText) {
+            this.nearbyDecoPromptText.setPosition(targetDeco.x, targetDeco.y - 32);
+            this.nearbyDecoPromptText.setVisible(true);
+          }
+        } else {
+          this.nearbyCustomInteraction = null;
+          if (this.nearbyDecoPromptText) {
+            this.nearbyDecoPromptText.setVisible(false);
+          }
+        }
 
         // Apply audio attenuation to JukeboxManager
         if (this.jukeboxManager) {
@@ -2432,7 +2621,7 @@ export class GameScene extends Phaser.Scene {
 
         if (this.activeEditorTool === "cursor") {
           const inspected = this.getInspectableItemAt(pointer.worldX, pointer.worldY);
-          if (inspected) {
+          if (inspected && inspected.bounds) {
             this.openEditorItemMenu(inspected);
           } else {
             this.closeEditorItemMenu();
@@ -2520,10 +2709,11 @@ export class GameScene extends Phaser.Scene {
             this.selectedAssetKey,
             fx,
             fy,
-            this.selectedTileColor,
+            null,
             this.decorationPassable,
             this.decorationOntop,
-            this.placementLayer
+            this.placementLayer,
+            this.placementFlipX
           );
           return;
         }
@@ -2536,14 +2726,6 @@ export class GameScene extends Phaser.Scene {
           this.drawSpawnPoint();
           if (this.multiplayer) {
             this.multiplayer.sendUpdateTiles({ spawn_point: spawnVal });
-          }
-          return;
-        }
-
-        if (this.activeEditorTool === "color_dropper") {
-          const pickedColor = this.getTileColorAt(pointer.worldX, pointer.worldY);
-          if (this.onColorPicked) {
-            this.onColorPicked(pickedColor);
           }
           return;
         }
@@ -2715,18 +2897,12 @@ export class GameScene extends Phaser.Scene {
         if (this.editorJukeboxGhost) this.editorJukeboxGhost.setVisible(false);
         if (this.editorFreeformGhost) {
           const normKey = normalizeDecorationAssetKey(this.selectedAssetKey);
-          const texture = this.textures.exists(normKey)
-            ? normKey
-            : "office_chair_1_front";
-          this.editorFreeformGhost.setTexture(texture);
-          this.editorFreeformGhost.setDisplaySize(50, 50);
-          if (this.selectedTileColor) {
-            this.editorFreeformGhost.setTint(this.parseColor(this.selectedTileColor));
-            this.editorFreeformGhost.setAlpha(this.parseAlpha(this.selectedTileColor) * 0.75);
-          } else {
-            this.editorFreeformGhost.clearTint();
-            this.editorFreeformGhost.setAlpha(0.75);
-          }
+          const tex = this.resolveDecorationTexture(normKey, "office_chair_1_front");
+          this.editorFreeformGhost.setTexture(tex.key, tex.frame);
+          this.fitSpriteToBox(this.editorFreeformGhost, normKey);
+          this.editorFreeformGhost.setFlipX(this.placementFlipX);
+          this.editorFreeformGhost.clearTint();
+          this.editorFreeformGhost.setAlpha(0.75);
           this.editorFreeformGhost.setDepth(
             this.computeLayerDepth(this.placementLayer, this.decorationOntop)
           );
@@ -2759,38 +2935,11 @@ export class GameScene extends Phaser.Scene {
       if (this.activeEditorTool === "cursor") {
         this.editorHoverGraphics.clear();
         const inspected = this.getInspectableItemAt(pointer.worldX, pointer.worldY);
-        const activeBounds = this.activeEditorMenuItem?.bounds;
-        if (activeBounds) {
-          this.editorHoverGraphics.lineStyle(2.5, 0xf59e0b, 1);
-          this.editorHoverGraphics.strokeRect(
-            activeBounds.x,
-            activeBounds.y,
-            activeBounds.width,
-            activeBounds.height
-          );
-          this.editorHoverGraphics.fillStyle(0xf59e0b, 0.22);
-          this.editorHoverGraphics.fillRect(
-            activeBounds.x,
-            activeBounds.y,
-            activeBounds.width,
-            activeBounds.height
-          );
+        if (this.activeEditorMenuItem) {
+          this.drawInspectHighlight(this.activeEditorMenuItem, 0xf59e0b, 0.28, 2.5, 1);
         }
         if (inspected && inspected.bounds) {
-          this.editorHoverGraphics.lineStyle(2, 0x38bdf8, 0.95);
-          this.editorHoverGraphics.strokeRect(
-            inspected.bounds.x,
-            inspected.bounds.y,
-            inspected.bounds.width,
-            inspected.bounds.height
-          );
-          this.editorHoverGraphics.fillStyle(0x38bdf8, 0.2);
-          this.editorHoverGraphics.fillRect(
-            inspected.bounds.x,
-            inspected.bounds.y,
-            inspected.bounds.width,
-            inspected.bounds.height
-          );
+          this.drawInspectHighlight(inspected, 0x38bdf8, 0.25, 2, 0.95);
           this.editorOverlayText.setText(
             `🖱️ ${inspected.categoryLabel}: ${inspected.label} • Click for menu`
           );
@@ -2815,19 +2964,6 @@ export class GameScene extends Phaser.Scene {
         this.editorHoverGraphics.strokeRect(col * TILE_SIZE, row * TILE_SIZE, TILE_SIZE, TILE_SIZE);
 
         this.editorOverlayText.setText(`📍 Place Spawn Point (${col}, ${row}) • Click to place`);
-        this.editorOverlayText.setPosition(col * TILE_SIZE + 8, Math.max(8, row * TILE_SIZE - 32));
-        this.editorOverlayText.setVisible(true);
-        return;
-      }
-
-      if (this.activeEditorTool === "color_dropper") {
-        this.editorHoverGraphics.clear();
-        this.editorHoverGraphics.lineStyle(2, 0x06b6d4, 0.95);
-        this.editorHoverGraphics.strokeRect(col * TILE_SIZE, row * TILE_SIZE, TILE_SIZE, TILE_SIZE);
-
-        const sampleHex = this.getTileColorAt(pointer.worldX, pointer.worldY);
-        const label = sampleHex ? `💧 Sample Color: ${sampleHex.toUpperCase()}` : "💧 Original Texture (No Tint)";
-        this.editorOverlayText.setText(`${label} • Click to pick`);
         this.editorOverlayText.setPosition(col * TILE_SIZE + 8, Math.max(8, row * TILE_SIZE - 32));
         this.editorOverlayText.setVisible(true);
         return;
@@ -2892,8 +3028,7 @@ export class GameScene extends Phaser.Scene {
             this.editorHoverGraphics.lineBetween(x + TILE_SIZE - 12, y + 12, x + 12, y + TILE_SIZE - 12);
             if (this.game.canvas) this.game.canvas.style.cursor = "pointer";
           } else {
-            const defaultHover = this.decorationPassable ? 0x10b981 : 0xef4444;
-            const hoverColor = this.selectedTileColor ? this.parseColor(this.selectedTileColor) : defaultHover;
+            const hoverColor = this.decorationPassable ? 0x10b981 : 0xef4444;
             this.editorHoverGraphics.lineStyle(2, hoverColor, 0.95);
             this.editorHoverGraphics.strokeRect(col * TILE_SIZE, row * TILE_SIZE, TILE_SIZE, TILE_SIZE);
             this.editorHoverGraphics.fillStyle(hoverColor, 0.26);
@@ -2938,8 +3073,7 @@ export class GameScene extends Phaser.Scene {
             this.editorHoverGraphics.lineBetween(x + TILE_SIZE - 12, y + 12, x + 12, y + TILE_SIZE - 12);
             if (this.game.canvas) this.game.canvas.style.cursor = "pointer";
           } else {
-            const defaultHover = isWall ? 0xdb5b47 : isOverlayFloor ? 0x3b82f6 : 0xeca239;
-            const hoverColor = this.selectedTileColor ? this.parseColor(this.selectedTileColor) : defaultHover;
+            const hoverColor = isWall ? 0xdb5b47 : isOverlayFloor ? 0x3b82f6 : 0xeca239;
             this.editorHoverGraphics.lineStyle(2, hoverColor, 0.95);
             this.editorHoverGraphics.strokeRect(col * TILE_SIZE, row * TILE_SIZE, TILE_SIZE, TILE_SIZE);
             this.editorHoverGraphics.fillStyle(hoverColor, 0.22);
@@ -3045,9 +3179,7 @@ export class GameScene extends Phaser.Scene {
           }
         } else if (this.activeEditorTool === "decoration") {
           // Decoration placed on top of existing bottom tile, respecting passable and layer options
-          const decoVal = this.selectedTileColor
-            ? `${this.selectedAssetKey}|${this.selectedTileColor}`
-            : this.selectedAssetKey;
+          const decoVal = this.selectedAssetKey;
 
           const isSingleClick = minCol === maxCol && minRow === maxRow;
           const updates: Record<string, string> = {};
@@ -3056,7 +3188,7 @@ export class GameScene extends Phaser.Scene {
             comp: ReturnType<GameScene["parseTileComponents"]>,
             allowToggleRemove: boolean
           ) => {
-            const isBaseWall = isWallAsset(comp.basePart.split("|")[0]);
+            const isBaseWall = isWallAsset(this.parseLayerPart(comp.basePart, false).assetKey);
             const existingIdx = comp.decoParts.findIndex(
               (d) => d.assetKey === this.selectedAssetKey && d.layer === this.placementLayer
             );
@@ -3076,11 +3208,19 @@ export class GameScene extends Phaser.Scene {
               // Replace any item on the exact same layer, or add as a new layer
               const sameLayerIdx = comp.decoParts.findIndex((d) => d.layer === this.placementLayer);
               const newItem: GridDecoItem = {
-                rawPart: decoVal,
+                rawPart: this.formatLayerPart(
+                  this.selectedAssetKey,
+                  null,
+                  this.placementLayer,
+                  this.decorationOntop,
+                  null,
+                  this.placementFlipX
+                ),
                 assetKey: this.selectedAssetKey,
-                color: this.selectedTileColor,
+                color: null,
                 layer: this.placementLayer,
                 isOntop: this.decorationOntop,
+                flipX: this.placementFlipX,
               };
               if (sameLayerIdx !== -1) {
                 comp.decoParts[sameLayerIdx] = newItem;
@@ -3128,12 +3268,9 @@ export class GameScene extends Phaser.Scene {
         } else {
           // Normal tile flooring / overlay floor / wall update:
           // Wall tiles come together with the obstacle tile
-          const isWall = isWallAsset(this.selectedAssetKey);
           const isOverlayWall = isOverlayWallAsset(this.selectedAssetKey);
           const isOverlayFloor = isOverlayFloorAsset(this.selectedAssetKey);
-          const tileVal = this.selectedTileColor
-            ? `${this.selectedAssetKey}|${this.selectedTileColor}`
-            : this.selectedAssetKey;
+          const tileVal = this.selectedAssetKey;
 
           const isSingleClick = minCol === maxCol && minRow === maxRow;
           const updates: Record<string, string> = {};
@@ -3144,7 +3281,6 @@ export class GameScene extends Phaser.Scene {
               const comp = this.parseTileComponents(existing);
 
               if (isOverlayFloor) {
-                // Overlay plain floor tile (color_tile_overlay) renders on top of existing floor tile without replacing it:
                 const existingOverlayKey = comp.overlayFloorPart
                   ? comp.overlayFloorPart.split("|")[0]
                   : null;
@@ -3155,14 +3291,19 @@ export class GameScene extends Phaser.Scene {
                 ) {
                   comp.overlayFloorPart = null;
                   comp.overlayFloorLayer = 0;
+                  comp.overlayFloorOntop = false;
+                  comp.overlayFloorFlipX = false;
                 } else {
                   comp.overlayFloorPart = tileVal;
                   comp.overlayFloorLayer = this.placementLayer;
+                  comp.overlayFloorOntop = this.decorationOntop;
+                  comp.overlayFloorFlipX = this.placementFlipX;
+                  comp.hasObstacle = this.isObstacleEnabled;
                 }
                 updates[`${c},${r}`] = this.buildTileString(comp);
               } else if (isOverlayWall) {
                 // Overlay wall (glass_2, glass_3, glass_4, wood_wall_2) is rendered on top of existing floor tiles:
-                if (isWallAsset(comp.basePart.split("|")[0])) {
+                if (isWallAsset(this.parseLayerPart(comp.basePart, false).assetKey)) {
                   comp.basePart = "grass_4";
                 }
                 const existingIdx = comp.decoParts.findIndex(
@@ -3173,7 +3314,7 @@ export class GameScene extends Phaser.Scene {
                   if (comp.decoParts.length === 0) {
                     comp.decoPart = null;
                     comp.isOntop = false;
-                    comp.hasObstacle = isWallAsset(comp.basePart.split("|")[0]);
+                    comp.hasObstacle = isWallAsset(this.parseLayerPart(comp.basePart, false).assetKey);
                   } else {
                     const top = comp.decoParts[comp.decoParts.length - 1];
                     comp.decoPart = top.rawPart;
@@ -3184,11 +3325,19 @@ export class GameScene extends Phaser.Scene {
                     (d) => d.layer === this.placementLayer
                   );
                   const newItem: GridDecoItem = {
-                    rawPart: tileVal,
+                    rawPart: this.formatLayerPart(
+                      this.selectedAssetKey,
+                      null,
+                      this.placementLayer,
+                      this.decorationOntop,
+                      null,
+                      this.placementFlipX
+                    ),
                     assetKey: this.selectedAssetKey,
-                    color: this.selectedTileColor,
+                    color: null,
                     layer: this.placementLayer,
-                    isOntop: false,
+                    isOntop: this.decorationOntop,
+                    flipX: this.placementFlipX,
                   };
                   if (sameLayerIdx !== -1) {
                     comp.decoParts[sameLayerIdx] = newItem;
@@ -3207,12 +3356,19 @@ export class GameScene extends Phaser.Scene {
                 }
                 updates[`${c},${r}`] = this.buildTileString(comp);
               } else {
-                const oldBaseWasWall = isWallAsset(comp.basePart.split("|")[0]);
                 const decoIsWall = comp.decoParts.some((d) => isWallAsset(d.assetKey));
-                comp.basePart = tileVal;
-                comp.hasObstacle = isWall
-                  ? this.isObstacleEnabled
-                  : (decoIsWall ? comp.hasObstacle : false);
+                comp.basePart =
+                  this.placementLayer === 0 && !this.decorationOntop && !this.placementFlipX
+                    ? tileVal
+                    : this.formatLayerPart(
+                        tileVal,
+                        null,
+                        this.placementLayer,
+                        this.decorationOntop,
+                        null,
+                        this.placementFlipX
+                      );
+                comp.hasObstacle = this.isObstacleEnabled || decoIsWall;
                 updates[`${c},${r}`] = this.buildTileString(comp);
               }
             }
@@ -3333,10 +3489,8 @@ export class GameScene extends Phaser.Scene {
       );
     } else if (this.activeEditorTool === "decoration") {
       const passableText = this.decorationPassable ? "Passable" : "Solid";
-      const defaultFill = this.decorationPassable ? 0x10b981 : 0xef4444;
-      const defaultStroke = this.decorationPassable ? 0x34d399 : 0xf87171;
-      const fillColor = this.selectedTileColor ? this.parseColor(this.selectedTileColor) : defaultFill;
-      const strokeColor = this.selectedTileColor ? this.parseColor(this.selectedTileColor) : defaultStroke;
+      const fillColor = this.decorationPassable ? 0x10b981 : 0xef4444;
+      const strokeColor = this.decorationPassable ? 0x34d399 : 0xf87171;
 
       this.editorSelectionGraphics.fillStyle(fillColor, 0.32);
       this.editorSelectionGraphics.fillRect(rx, ry, rw, rh);
@@ -3368,24 +3522,21 @@ export class GameScene extends Phaser.Scene {
       else if (normDecoKey === "office_chair_1_front") labelName = "Office Chair 1 Front";
       else if (normDecoKey === "office_chair_1_back") labelName = "Office Chair 1 Back";
       else if (normDecoKey === "jukebox_1") labelName = "Jukebox 1";
-      const colorBadge = this.selectedTileColor ? ` • ${this.selectedTileColor.toUpperCase()}` : "";
       const layerText = this.decorationOntop ? "On Top" : "Behind";
       this.editorOverlayText.setText(
-        `🪴 ${cols} × ${rows} (${totalTiles} ${totalTiles === 1 ? "tile" : "tiles"}) • ${labelName} (${passableText} • ${layerText} • Layer ${this.placementLayer} ↑/↓)${colorBadge} • Esc when done`
+        `🪴 ${cols} × ${rows} (${totalTiles} ${totalTiles === 1 ? "tile" : "tiles"}) • ${labelName} (${passableText} • ${layerText} • Layer ${this.placementLayer} ↑/↓) • Esc when done`
       );
     } else {
       const isWall = isWallAsset(this.selectedAssetKey) || isWallTile(this.selectedAssetKey);
       const isOverlay =
         isOverlayFloorAsset(this.selectedAssetKey) || isOverlayWallAsset(this.selectedAssetKey);
-      const defaultFill = isWall ? 0xdb5b47 : 0x3b8282;
-      const defaultStroke = isWall ? 0xff6b55 : 0xeca239;
-      const fillColor = this.selectedTileColor ? this.parseColor(this.selectedTileColor) : defaultFill;
+      const fillColor = isWall ? 0xdb5b47 : 0x3b8282;
+      const strokeColor = isWall ? 0xff6b55 : 0xeca239;
       // Fill
       this.editorSelectionGraphics.fillStyle(fillColor, 0.32);
       this.editorSelectionGraphics.fillRect(rx, ry, rw, rh);
 
       // Outer border
-      const strokeColor = this.selectedTileColor ? this.parseColor(this.selectedTileColor) : defaultStroke;
       this.editorSelectionGraphics.lineStyle(2.5, strokeColor, 1);
       this.editorSelectionGraphics.strokeRect(rx, ry, rw, rh);
 
@@ -3428,10 +3579,9 @@ export class GameScene extends Phaser.Scene {
       else if (this.selectedAssetKey === "glass_3") labelName = "Glass Wall 3 (on top of floor + Obstacle)";
       else if (this.selectedAssetKey === "glass_4") labelName = "Glass Wall 4 (on top of floor + Obstacle)";
 
-      const colorBadge = this.selectedTileColor ? ` • ${this.selectedTileColor.toUpperCase()}` : "";
-      const layerBadge = isOverlay ? ` • Layer ${this.placementLayer} (↑/↓)` : "";
+      const layerBadge = ` • Layer ${this.placementLayer} (↑/↓)`;
       this.editorOverlayText.setText(
-        `📐 ${cols} × ${rows} (${totalTiles} ${totalTiles === 1 ? "tile" : "tiles"}) • ${labelName}${layerBadge}${colorBadge} • Esc when done`
+        `📐 ${cols} × ${rows} (${totalTiles} ${totalTiles === 1 ? "tile" : "tiles"}) • ${labelName}${layerBadge} • Esc when done`
       );
     }
 
@@ -3488,12 +3638,13 @@ export class GameScene extends Phaser.Scene {
         this.game.canvas.style.cursor = "default";
       }
 
-      this.cameras.main.setBounds(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
+      this.cameras.main.removeBounds();
       this.cameras.main.setZoom(1.0);
       if (this.localPlayerId) {
         const localVisual = this.playerVisuals.get(this.localPlayerId);
         if (localVisual) {
-          this.cameras.main.startFollow(localVisual.container, true, 0.12, 0.12);
+          this.cameras.main.centerOn(localVisual.container.x, localVisual.container.y);
+          this.cameras.main.startFollow(localVisual.container, true, 0.15, 0.15);
         }
       }
     }
@@ -3501,10 +3652,6 @@ export class GameScene extends Phaser.Scene {
 
   public setSelectedAsset(assetKey: string) {
     this.selectedAssetKey = assetKey;
-  }
-
-  public setSelectedColor(color: string | null) {
-    this.selectedTileColor = color;
   }
 
   public setObstacleEnabled(enabled: boolean) {
@@ -3546,6 +3693,7 @@ export class GameScene extends Phaser.Scene {
   public getSolidBoxes(): SolidBox[] {
     const boxes: SolidBox[] = [];
     for (const visual of this.jukeboxVisuals.values()) {
+      if (visual.isVirtual) continue;
       const jb = visual.state;
       if (jb.passable === false || (!jb.passable && (jb as any).isSolid)) {
         boxes.push({
@@ -3609,14 +3757,15 @@ export class GameScene extends Phaser.Scene {
     color?: string | null,
     passable: boolean = true,
     ontop: boolean = false,
-    layer: number = this.placementLayer
+    layer: number = this.placementLayer,
+    flipX: boolean = this.placementFlipX
   ) {
     const id =
       "freeform:deco_" +
       Date.now() +
       "_" +
       Math.random().toString(36).substring(2, 7);
-    const serialized = serializeFreeformTile(assetKey, x, y, color, passable, ontop, layer);
+    const serialized = serializeFreeformTile(assetKey, x, y, color, passable, ontop, layer, null, flipX);
     this.currentTilesMap.set(id, serialized);
     this.updateFreeformDecoration(id, serialized);
     if (this.multiplayer) {
@@ -3635,10 +3784,11 @@ export class GameScene extends Phaser.Scene {
       existing.container.setPosition(data.x, data.y);
       existing.container.setDepth(this.computeLayerDepth(data.layer ?? 0, data.ontop));
       const normAssetKey = normalizeDecorationAssetKey(data.assetKey);
-      const textureKey = this.textures.exists(normAssetKey)
-        ? normAssetKey
-        : "office_chair_1_front";
-      existing.sprite.setTexture(textureKey);
+      const tex = this.resolveDecorationTexture(normAssetKey, "office_chair_1_front");
+      existing.sprite.setTexture(tex.key, tex.frame);
+      this.fitSpriteToBox(existing.sprite, normAssetKey);
+      existing.sprite.setFlipX(!!data.flipX);
+      existing.hitZone.setSize(existing.sprite.displayWidth, existing.sprite.displayHeight);
       if (data.color) {
         existing.sprite.setTint(this.parseColor(data.color));
         existing.sprite.setAlpha(this.parseAlpha(data.color));
@@ -3652,13 +3802,68 @@ export class GameScene extends Phaser.Scene {
     this.drawObstacles();
   }
 
+  private resolveAtlasTexture(
+    assetKey: string,
+    fallback: { key: string; frame?: string } = { key: "decoration_free_atlas", frame: "office_chair_1_front" }
+  ): { key: string; frame?: string } {
+    if (assetKey.startsWith("office_one/")) {
+      const frame = assetKey.slice("office_one/".length);
+      if (this.textures.exists("office_one_atlas") && this.textures.get("office_one_atlas").has(frame)) {
+        return { key: "office_one_atlas", frame };
+      }
+      return fallback;
+    }
+    if (assetKey.startsWith("office_two/")) {
+      const frame = assetKey.slice("office_two/".length);
+      if (this.textures.exists("office_two_atlas") && this.textures.get("office_two_atlas").has(frame)) {
+        return { key: "office_two_atlas", frame };
+      }
+      return fallback;
+    }
+
+    if (assetKey.startsWith("wood_wall_") || assetKey.startsWith("wall_wood_")) {
+      const frame = `wood_${assetKey.replace(/^(wood_wall_|wall_wood_)/, "")}`;
+      if (this.textures.exists("wall_free_atlas") && this.textures.get("wall_free_atlas").has(frame)) {
+        return { key: "wall_free_atlas", frame };
+      }
+    }
+
+    for (const atlasKey of ["floor_free_atlas", "wall_free_atlas", "decoration_free_atlas"]) {
+      if (this.textures.exists(atlasKey) && this.textures.get(atlasKey).has(assetKey)) {
+        return { key: atlasKey, frame: assetKey };
+      }
+    }
+
+    return this.textures.exists(assetKey) ? { key: assetKey } : fallback;
+  }
+
+  private resolveDecorationTexture(
+    assetKey: string,
+    fallback: string = "office_chair_1_front"
+  ): { key: string; frame?: string } {
+    return this.resolveAtlasTexture(assetKey, { key: "decoration_free_atlas", frame: fallback });
+  }
+
+  private fitSpriteToBox(
+    sprite: Phaser.GameObjects.Image,
+    assetKey: string = "",
+    maxSize: number = TILE_SIZE
+  ) {
+    const srcW = sprite.width || maxSize;
+    const srcH = sprite.height || maxSize;
+    const scale =
+      assetKey.startsWith("office_one/") || assetKey.startsWith("office_two/")
+        ? TILE_SIZE / 48
+        : maxSize / Math.max(srcW, srcH);
+    sprite.setDisplaySize(Math.round(srcW * scale), Math.round(srcH * scale));
+  }
+
   private createFreeformVisual(data: FreeformDecorationData) {
     const normAssetKey = normalizeDecorationAssetKey(data.assetKey);
-    const textureKey = this.textures.exists(normAssetKey)
-      ? normAssetKey
-      : "office_chair_1_front";
-    const sprite = this.add.image(0, 0, textureKey);
-    sprite.setDisplaySize(50, 50);
+    const tex = this.resolveDecorationTexture(normAssetKey, "office_chair_1_front");
+    const sprite = this.add.image(0, 0, tex.key, tex.frame);
+    this.fitSpriteToBox(sprite, normAssetKey);
+    sprite.setFlipX(!!data.flipX);
     if (data.color) {
       sprite.setTint(this.parseColor(data.color));
       sprite.setAlpha(this.parseAlpha(data.color));
@@ -3667,7 +3872,14 @@ export class GameScene extends Phaser.Scene {
       sprite.setAlpha(1);
     }
 
-    const hitZone = this.add.rectangle(0, 0, 50, 50, 0x000000, 0);
+    const hitZone = this.add.rectangle(
+      0,
+      0,
+      sprite.displayWidth,
+      sprite.displayHeight,
+      0x000000,
+      0
+    );
     hitZone.setInteractive({ useHandCursor: this.isEditMode });
     hitZone.on(
       "pointerdown",
@@ -3678,19 +3890,42 @@ export class GameScene extends Phaser.Scene {
         event: Phaser.Types.Input.EventData
       ) => {
         if (!pointer.leftButtonDown()) return;
-        if (!this.isEditMode) return;
+        if (!this.isCanvasPointerEvent(pointer)) return;
+        if (!this.isEditMode) {
+          if (data.interactable && data.interaction && this.localPlayerId) {
+            const localVis = this.playerVisuals.get(this.localPlayerId);
+            if (localVis) {
+              const dist = Phaser.Math.Distance.Between(
+                localVis.container.x,
+                localVis.container.y,
+                data.x,
+                data.y
+              );
+              if (dist <= 1.5 * TILE_SIZE) {
+                event.stopPropagation();
+                this.triggerInteraction(data.id, data.interaction);
+              }
+            }
+          }
+          return;
+        }
         event.stopPropagation();
 
         if (this.activeEditorTool === "cursor") {
-          this.openEditorItemMenu({
-            kind: "freeform_decoration",
-            id: data.id,
-            label: this.formatAssetDisplayName(data.assetKey),
-            categoryLabel: "Decoration",
-            worldX: data.x,
-            worldY: data.y - 25,
-            bounds: { x: data.x - 25, y: data.y - 25, width: 50, height: 50 },
-          });
+          const { width, height } = getAssetDimensions(data.assetKey);
+          const originX = data.x - width / 2;
+          const originY = data.y - height / 2;
+          const rawRects = getAssetRects(data.assetKey, !!data.flipX);
+          if (rawRects.length > 0 && !isAssetPixelSolid(data.assetKey, pointer.worldX - originX, pointer.worldY - originY, !!data.flipX)) {
+            const inspected = this.getInspectableItemAt(pointer.worldX, pointer.worldY);
+            if (inspected && inspected.bounds) {
+              this.openEditorItemMenu(inspected);
+            } else {
+              this.closeEditorItemMenu();
+            }
+            return;
+          }
+          this.openEditorItemMenu(this.getFreeformInspectInfo(data));
           return;
         }
 
@@ -3758,7 +3993,7 @@ export class GameScene extends Phaser.Scene {
               this.selectedAssetKey,
               fx,
               fy,
-              this.selectedTileColor,
+              null,
               this.decorationPassable,
               this.decorationOntop,
               this.placementLayer
@@ -3839,33 +4074,43 @@ export class GameScene extends Phaser.Scene {
           this.obstacleTiles.delete(key);
         }
 
-        if (img) {
-          let assetKey = "wood_5";
-          let tintColor: number | null = null;
-          let tintAlpha: number = 1;
+        const topInteractable = [...comp.decoParts]
+          .reverse()
+          .find((d) => d.interaction && isValidInteractionType(d.interaction));
+        if (topInteractable && topInteractable.interaction) {
+          this.interactableGridDecos.set(key, {
+            id: `tile_deco_${col}_${row}`,
+            x: col * TILE_SIZE + TILE_SIZE / 2,
+            y: row * TILE_SIZE + TILE_SIZE / 2,
+            interaction: topInteractable.interaction,
+          });
+        } else {
+          this.interactableGridDecos.delete(key);
+        }
 
-          if (baseStr.includes("|")) {
-            const [parsedAsset, colorPart] = baseStr.split("|");
-            assetKey = parsedAsset || "wood_5";
-            if (colorPart && colorPart !== "none") {
-              tintColor = this.parseColor(colorPart);
-              tintAlpha = this.parseAlpha(colorPart);
-            }
-          } else if (baseStr.startsWith("#")) {
+        if (img) {
+          const baseParsed = this.parseLayerPart(baseStr, false);
+          let assetKey = baseParsed.assetKey || "wood_5";
+          let tintColor: number | null = baseParsed.color ? this.parseColor(baseParsed.color) : null;
+          let tintAlpha: number = baseParsed.color ? this.parseAlpha(baseParsed.color) : 1;
+
+          if (baseStr.startsWith("#")) {
             assetKey = "color_tile";
             tintColor = this.parseColor(baseStr);
             tintAlpha = this.parseAlpha(baseStr);
-          } else {
-            assetKey = baseStr;
           }
 
           assetKey = normalizeFloorAssetKey(assetKey);
 
-          const textureKey = this.textures.exists(assetKey) ? assetKey : "grass_4";
-          img.setTexture(textureKey);
+          const tex = this.resolveAtlasTexture(assetKey, { key: "floor_free_atlas", frame: "grass_4" });
+          img.setTexture(tex.key, tex.frame);
           img.setDisplaySize(TILE_SIZE, TILE_SIZE);
-          // Floor assets are always strictly at the bottom of everything
-          img.setDepth(0.1);
+          img.setFlipX(!!baseParsed.flipX);
+          if (!baseParsed.isOntop && baseParsed.layer === 0) {
+            img.setDepth(0.1);
+          } else {
+            img.setDepth(this.computeLayerDepth(baseParsed.layer, baseParsed.isOntop));
+          }
 
           if (tintColor !== null) {
             img.setTint(tintColor);
@@ -3890,21 +4135,21 @@ export class GameScene extends Phaser.Scene {
             } else {
               overlayAssetKey = overlayFloorStr;
             }
-            const overlayTexture = this.textures.exists(overlayAssetKey)
-              ? overlayAssetKey
-              : "color_tile";
-            overlayImg.setTexture(overlayTexture);
+            const overlayTex = this.resolveAtlasTexture(overlayAssetKey, { key: "color_tile" });
+            overlayImg.setTexture(overlayTex.key, overlayTex.frame);
             overlayImg.setDisplaySize(TILE_SIZE, TILE_SIZE);
+            overlayImg.setFlipX(!!comp.overlayFloorFlipX);
             if (overlayTintColor !== null) {
               overlayImg.setTint(overlayTintColor);
             } else {
               overlayImg.clearTint();
             }
             overlayImg.setAlpha(overlayTintAlpha);
-            overlayImg.setDepth(this.computeLayerDepth(comp.overlayFloorLayer, false));
+            overlayImg.setDepth(this.computeLayerDepth(comp.overlayFloorLayer, comp.overlayFloorOntop));
             overlayImg.setVisible(true);
           } else {
             overlayImg.setVisible(false);
+            overlayImg.setFlipX(false);
             overlayImg.clearTint();
             overlayImg.setAlpha(1);
           }
@@ -3929,9 +4174,10 @@ export class GameScene extends Phaser.Scene {
             decoTintAlpha = this.parseAlpha(decoItem.color);
           }
           decoAssetKey = normalizeDecorationAssetKey(decoAssetKey);
-          const decoTexture = this.textures.exists(decoAssetKey) ? decoAssetKey : "table_1_left";
-          targetImg.setTexture(decoTexture);
-          targetImg.setDisplaySize(TILE_SIZE, TILE_SIZE);
+          const decoTex = this.resolveDecorationTexture(decoAssetKey, "table_1_left");
+          targetImg.setTexture(decoTex.key, decoTex.frame);
+          this.fitSpriteToBox(targetImg, decoAssetKey);
+          targetImg.setFlipX(!!decoItem.flipX);
           if (decoTintColor !== null) {
             targetImg.setTint(decoTintColor);
           } else {
@@ -3958,6 +4204,7 @@ export class GameScene extends Phaser.Scene {
             }
           } else {
             decoImg.setVisible(false);
+            decoImg.setFlipX(false);
             decoImg.clearTint();
             decoImg.setAlpha(1);
           }
@@ -3993,26 +4240,26 @@ export class GameScene extends Phaser.Scene {
       if (comp.decoParts.length > 0) {
         hasDeco = true;
         for (const d of comp.decoParts) {
-          const rects = getAssetRects(d.assetKey);
+          const rects = getAssetRects(d.assetKey, !!d.flipX);
           for (const [rx, ry, rw, rh] of rects) {
             this.obstaclesGraphics.fillRect(x + rx, y + ry, rw, rh);
           }
         }
       } else if (comp.decoPart) {
         hasDeco = true;
-        const decoKey = comp.decoPart.includes("|") ? comp.decoPart.split("|")[0] : comp.decoPart;
-        const rects = getAssetRects(decoKey);
+        const parsedDeco = this.parseLayerPart(comp.decoPart, !!comp.isOntop);
+        const rects = getAssetRects(parsedDeco.assetKey, !!parsedDeco.flipX);
         for (const [rx, ry, rw, rh] of rects) {
           this.obstaclesGraphics.fillRect(x + rx, y + ry, rw, rh);
         }
       }
 
       if (!hasDeco) {
-        const baseKey = comp.basePart
-          ? (comp.basePart.includes("|") ? comp.basePart.split("|")[0] : comp.basePart)
-          : "";
-        if (baseKey && isWallAsset(baseKey)) {
-          const rects = getAssetRects(baseKey);
+        const baseParsed = comp.basePart
+          ? this.parseLayerPart(comp.basePart, false)
+          : null;
+        if (baseParsed && isWallAsset(baseParsed.assetKey)) {
+          const rects = getAssetRects(baseParsed.assetKey, !!baseParsed.flipX);
           for (const [rx, ry, rw, rh] of rects) {
             this.obstaclesGraphics.fillRect(x + rx, y + ry, rw, rh);
           }
@@ -4025,6 +4272,7 @@ export class GameScene extends Phaser.Scene {
 
     // Highlight solid jukeboxes in edit mode
     for (const visual of this.jukeboxVisuals.values()) {
+      if (visual.isVirtual) continue;
       if (
         visual.state.passable === false ||
         (!visual.state.passable && (visual.state as any).isSolid)
@@ -4077,9 +4325,10 @@ export class GameScene extends Phaser.Scene {
     // Highlight solid freeform decorations in edit mode
     for (const visual of this.freeformVisuals.values()) {
       if (!visual.data.passable) {
-        const bx = visual.data.x - 25;
-        const by = visual.data.y - 25;
-        const rects = getAssetRects(visual.data.assetKey);
+        const { width, height } = getAssetDimensions(visual.data.assetKey);
+        const bx = visual.data.x - width / 2;
+        const by = visual.data.y - height / 2;
+        const rects = getAssetRects(visual.data.assetKey, !!visual.data.flipX);
         for (const [rx, ry, rw, rh] of rects) {
           this.obstaclesGraphics.fillRect(bx + rx, by + ry, rw, rh);
         }
@@ -4137,77 +4386,6 @@ export class GameScene extends Phaser.Scene {
     this.spawnPointText.setVisible(true);
   }
 
-  public getTileColorAt(worldX: number, worldY: number): string | null {
-    // 1. Check freeform visuals near this point first (top layer down)
-    for (const visual of this.freeformVisuals.values()) {
-      const dx = Math.abs(visual.data.x - worldX);
-      const dy = Math.abs(visual.data.y - worldY);
-      if (dx <= 25 && dy <= 25) {
-        if (visual.data.color) {
-          return visual.data.color;
-        }
-      }
-    }
-
-    const col = Math.max(0, Math.min(GRID_COLS - 1, Math.floor(worldX / TILE_SIZE)));
-    const row = Math.max(0, Math.min(GRID_ROWS - 1, Math.floor(worldY / TILE_SIZE)));
-    const raw = this.currentTilesMap.get(`${col},${row}`);
-
-    if (raw) {
-      const comp = this.parseTileComponents(raw);
-      // Check decoration part first if present
-      if (comp.decoPart && comp.decoPart.includes("|")) {
-        const c = comp.decoPart.split("|")[1];
-        if (c && c !== "none") return c;
-      }
-
-      // Check overlay floor part if present
-      if (comp.overlayFloorPart) {
-        if (comp.overlayFloorPart.includes("|")) {
-          const c = comp.overlayFloorPart.split("|")[1];
-          if (c && c !== "none") return c;
-        } else {
-          return "#FFFFFF";
-        }
-      }
-
-      // Check base part
-      const basePart = comp.basePart;
-      if (basePart) {
-        if (basePart.includes("|")) {
-          const c = basePart.split("|")[1];
-          if (c && c !== "none") return c;
-        } else if (basePart.startsWith("#")) {
-          return basePart;
-        } else if (basePart === "color_tile") {
-          return "#FFFFFF";
-        }
-      }
-    }
-
-    // 2. If no explicit tint, sample texture pixel color from the base tile image
-    try {
-      const baseRaw = raw ? raw.split("::")[0].split("|")[0] : "grass_4";
-      const normalizedBase = normalizeFloorAssetKey(baseRaw);
-      const textureKey = this.textures.exists(normalizedBase) ? normalizedBase : "grass_4";
-      const texture = this.textures.get(textureKey);
-      if (texture && texture.source && texture.source[0]) {
-        const imgWidth = texture.source[0].width || 96;
-        const imgHeight = texture.source[0].height || 96;
-        const relX = (((worldX % TILE_SIZE) + TILE_SIZE) % TILE_SIZE) / TILE_SIZE;
-        const relY = (((worldY % TILE_SIZE) + TILE_SIZE) % TILE_SIZE) / TILE_SIZE;
-        const px = Math.floor(relX * imgWidth);
-        const py = Math.floor(relY * imgHeight);
-        const color = this.textures.getPixel(px, py, textureKey);
-        if (color && color.alpha > 10) {
-          return Phaser.Display.Color.RGBToString(color.red, color.green, color.blue, 0, "#");
-        }
-      }
-    } catch {}
-
-    return null;
-  }
-
   public resetTiles() {
     this.currentTilesMap.clear();
     this.obstacleTiles.clear();
@@ -4219,7 +4397,7 @@ export class GameScene extends Phaser.Scene {
       for (let c = 0; c < GRID_COLS; c++) {
         const img = this.tileImages[r]?.[c];
         if (img) {
-          img.setTexture("grass_4");
+          img.setTexture("floor_free_atlas", "grass_4");
           img.setDisplaySize(TILE_SIZE, TILE_SIZE);
           img.setDepth(0.1);
           img.clearTint();
@@ -4265,7 +4443,6 @@ export class GameScene extends Phaser.Scene {
       | "aquarium"
       | "freeform_decoration"
       | "spawn_point"
-      | "color_dropper"
   ) {
     this.activeEditorTool = tool;
     if (tool !== "cursor") {
@@ -4279,8 +4456,6 @@ export class GameScene extends Phaser.Scene {
     if (this.game.canvas) {
       if (tool === "clear_decoration" || tool === "cursor") {
         this.game.canvas.style.cursor = "pointer";
-      } else if (tool === "color_dropper") {
-        this.game.canvas.style.cursor = "crosshair";
       } else {
         this.game.canvas.style.cursor = "default";
       }
@@ -4333,6 +4508,78 @@ export class GameScene extends Phaser.Scene {
     if (norm.startsWith("stone_")) return `Stone ${norm.replace("stone_", "")}`;
     if (norm.startsWith("marble_")) return `Marble ${norm.replace("marble_", "")}`;
     return norm;
+  }
+
+  private isCanvasPointerEvent(pointer: Phaser.Input.Pointer): boolean {
+    const target = pointer.event?.target as HTMLElement | null;
+    return !target || target.tagName === "CANVAS";
+  }
+
+  private drawInspectHighlight(
+    item: InspectableMapItem,
+    color: number,
+    fillAlpha: number,
+    lineWidth: number,
+    lineAlpha: number
+  ) {
+    if (item.pixelRects && item.pixelRects.length > 0) {
+      this.editorHoverGraphics.fillStyle(color, fillAlpha);
+      for (const r of item.pixelRects) {
+        this.editorHoverGraphics.fillRect(r.x, r.y, r.width, r.height);
+      }
+      if (item.bounds) {
+        this.editorHoverGraphics.lineStyle(1.5, color, lineAlpha * 0.45);
+        this.editorHoverGraphics.strokeRect(
+          item.bounds.x,
+          item.bounds.y,
+          item.bounds.width,
+          item.bounds.height
+        );
+      }
+      return;
+    }
+    if (item.bounds) {
+      this.editorHoverGraphics.lineStyle(lineWidth, color, lineAlpha);
+      this.editorHoverGraphics.strokeRect(
+        item.bounds.x,
+        item.bounds.y,
+        item.bounds.width,
+        item.bounds.height
+      );
+      this.editorHoverGraphics.fillStyle(color, fillAlpha);
+      this.editorHoverGraphics.fillRect(
+        item.bounds.x,
+        item.bounds.y,
+        item.bounds.width,
+        item.bounds.height
+      );
+    }
+  }
+
+  private getFreeformInspectInfo(d: FreeformDecorationData): InspectableMapItem {
+    const { width, height } = getAssetDimensions(d.assetKey);
+    const originX = d.x - width / 2;
+    const originY = d.y - height / 2;
+    const rawRects = getAssetRects(d.assetKey, !!d.flipX);
+    const pixelRects =
+      rawRects.length > 0
+        ? rawRects.map(([rx, ry, rw, rh]) => ({
+            x: originX + rx,
+            y: originY + ry,
+            width: rw,
+            height: rh,
+          }))
+        : undefined;
+    return {
+      kind: "freeform_decoration",
+      id: d.id,
+      label: this.formatAssetDisplayName(d.assetKey),
+      categoryLabel: "Decoration",
+      worldX: d.x,
+      worldY: originY,
+      bounds: { x: originX, y: originY, width, height },
+      pixelRects,
+    };
   }
 
   public getInspectableItemAt(worldX: number, worldY: number): InspectableMapItem | null {
@@ -4402,6 +4649,7 @@ export class GameScene extends Phaser.Scene {
 
     // 2. Check Jukeboxes (freeform)
     for (const vis of this.jukeboxVisuals.values()) {
+      if (vis.isVirtual) continue;
       const jb = vis.state;
       if (Math.abs(worldX - jb.x) <= 26 && Math.abs(worldY - jb.y) <= 26) {
         return {
@@ -4416,19 +4664,22 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    // 3. Check Freeform Decorations (Chairs, etc.)
+    // 3. Check Freeform Decorations (Chairs, desks, Office One/Two, etc.)
     for (const vis of this.freeformVisuals.values()) {
       const d = vis.data;
-      if (Math.abs(worldX - d.x) <= 25 && Math.abs(worldY - d.y) <= 25) {
-        return {
-          kind: "freeform_decoration",
-          id: d.id,
-          label: this.formatAssetDisplayName(d.assetKey),
-          categoryLabel: "Decoration",
-          worldX: d.x,
-          worldY: d.y - 25,
-          bounds: { x: d.x - 25, y: d.y - 25, width: 50, height: 50 },
-        };
+      const { width, height } = getAssetDimensions(d.assetKey);
+      const originX = d.x - width / 2;
+      const originY = d.y - height / 2;
+      if (
+        worldX >= originX &&
+        worldX < originX + width &&
+        worldY >= originY &&
+        worldY < originY + height
+      ) {
+        const rawRects = getAssetRects(d.assetKey, !!d.flipX);
+        if (rawRects.length === 0 || isAssetPixelSolid(d.assetKey, worldX - originX, worldY - originY, !!d.flipX)) {
+          return this.getFreeformInspectInfo(d);
+        }
       }
     }
 
@@ -4481,7 +4732,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     // 4b. Base Wall on this tile
-    const baseKey = comp.basePart.includes("|") ? comp.basePart.split("|")[0] : comp.basePart;
+    const baseKey = this.parseLayerPart(comp.basePart, false).assetKey;
     if (isWallAsset(baseKey) || isWallTile(comp.basePart)) {
       return {
         kind: "wall",
@@ -4665,9 +4916,7 @@ export class GameScene extends Phaser.Scene {
         comp.decoParts = [];
         comp.decoPart = null;
         comp.isOntop = false;
-        const baseAssetOnly = comp.basePart.includes("|")
-          ? comp.basePart.split("|")[0]
-          : comp.basePart;
+        const baseAssetOnly = this.parseLayerPart(comp.basePart, false).assetKey;
         comp.hasObstacle = isWallAsset(baseAssetOnly);
       }
       const nextVal = this.buildTileString(comp);
@@ -4733,6 +4982,7 @@ export class GameScene extends Phaser.Scene {
       item.kind === "wall" ||
       item.kind === "overlay_wall" ||
       item.kind === "grid_decoration" ||
+      item.kind === "overlay_floor" ||
       item.kind === "floor"
     ) {
       const raw = this.currentTilesMap.get(item.id);
@@ -4775,6 +5025,7 @@ export class GameScene extends Phaser.Scene {
       item.kind === "wall" ||
       item.kind === "overlay_wall" ||
       item.kind === "grid_decoration" ||
+      item.kind === "overlay_floor" ||
       item.kind === "floor"
     ) {
       const key = item.id;
@@ -4802,7 +5053,9 @@ export class GameScene extends Phaser.Scene {
         vis.data.color,
         vis.data.passable,
         vis.data.ontop,
-        vis.data.layer
+        vis.data.layer,
+        vis.data.interaction,
+        !!vis.data.flipX
       );
       this.currentTilesMap.set(item.id, serialized);
       if (this.multiplayer) {
@@ -4880,6 +5133,249 @@ export class GameScene extends Phaser.Scene {
       return false;
     }
     return false;
+  }
+
+  public getItemTileOptions(
+    item: InspectableMapItem | null
+  ): { passable: boolean; ontop: boolean; layer: number; flipX: boolean } | null {
+    if (!item) return null;
+    if (item.kind === "floor" || item.kind === "wall") {
+      const comp = this.parseTileComponents(this.currentTilesMap.get(item.id));
+      const baseParsed = this.parseLayerPart(comp.basePart, false);
+      return {
+        passable: !comp.hasObstacle,
+        ontop: baseParsed.isOntop,
+        layer: baseParsed.layer,
+        flipX: !!baseParsed.flipX,
+      };
+    }
+    if (item.kind === "overlay_floor") {
+      const comp = this.parseTileComponents(this.currentTilesMap.get(item.id));
+      return {
+        passable: !comp.hasObstacle,
+        ontop: comp.overlayFloorOntop,
+        layer: comp.overlayFloorLayer,
+        flipX: !!comp.overlayFloorFlipX,
+      };
+    }
+    if (item.kind === "overlay_wall" || item.kind === "grid_decoration") {
+      const comp = this.parseTileComponents(this.currentTilesMap.get(item.id));
+      const topDeco =
+        comp.decoParts.length > 0 ? comp.decoParts[comp.decoParts.length - 1] : null;
+      return {
+        passable: !comp.hasObstacle,
+        ontop: topDeco ? topDeco.isOntop : comp.isOntop,
+        layer: topDeco ? topDeco.layer : comp.decoLayer,
+        flipX: !!topDeco?.flipX,
+      };
+    }
+    if (item.kind === "freeform_decoration") {
+      const vis = this.freeformVisuals.get(item.id);
+      if (!vis) return null;
+      return {
+        passable: vis.data.passable,
+        ontop: vis.data.ontop,
+        layer: vis.data.layer,
+        flipX: !!vis.data.flipX,
+      };
+    }
+    if (item.kind === "jukebox") {
+      const vis = this.jukeboxVisuals.get(item.id);
+      const jb = vis?.state;
+      if (!jb) return null;
+      return {
+        passable: jb.passable !== false && !((jb as any).isSolid && !jb.passable),
+        ontop: !!jb.ontop,
+        layer: jb.layer ?? 0,
+        flipX: !!vis?.sprite?.flipX,
+      };
+    }
+    if (item.kind === "typewriter") {
+      const vis = this.typewriterVisuals.get(item.id);
+      const tw = vis?.state;
+      if (!tw) return null;
+      return { passable: tw.passable !== false, ontop: !!tw.ontop, layer: tw.layer ?? 0, flipX: !!vis?.sprite?.flipX };
+    }
+    if (item.kind === "ashtray") {
+      const vis = this.ashtrayVisuals.get(item.id);
+      const at = vis?.state;
+      if (!at) return null;
+      return { passable: at.passable !== false, ontop: !!at.ontop, layer: at.layer ?? 0, flipX: !!vis?.sprite?.flipX };
+    }
+    if (item.kind === "aquarium") {
+      const vis = this.aquariumVisuals.get(item.id);
+      const aq = vis?.state;
+      if (!aq) return null;
+      return { passable: aq.passable !== false, ontop: !!aq.ontop, layer: aq.layer ?? 0, flipX: !!vis?.sprite?.flipX };
+    }
+    if (item.kind === "chess_board") {
+      const vis = this.chessBoardVisuals.get(item.id);
+      const cb = vis?.state;
+      if (!cb) return null;
+      return { passable: cb.passable !== false, ontop: !!cb.ontop, layer: cb.layer ?? 0, flipX: !!vis?.sprite?.flipX };
+    }
+    return null;
+  }
+
+  public setItemPassable(item: InspectableMapItem, passable: boolean): void {
+    if (!item) return;
+    const isCurrentlyObstacle = this.isItemObstacle(item);
+    const desiredObstacle = !passable;
+    if (isCurrentlyObstacle !== desiredObstacle) {
+      this.toggleItemObstacle(item);
+    }
+  }
+
+  public setItemRenderLayer(item: InspectableMapItem, ontop: boolean): void {
+    this.updateItemLayerAndOntop(item, { ontop });
+  }
+
+  public setItemLayerLevel(item: InspectableMapItem, layer: number): void {
+    const clamped = Math.max(-150, Math.min(150, Math.round(layer)));
+    this.updateItemLayerAndOntop(item, { layer: clamped });
+  }
+
+  public setItemFlipX(item: InspectableMapItem, flipX: boolean): void {
+    this.updateItemLayerAndOntop(item, { flipX });
+  }
+
+  private updateItemLayerAndOntop(
+    item: InspectableMapItem,
+    patch: { ontop?: boolean; layer?: number; flipX?: boolean }
+  ): void {
+    if (!item) return;
+    if (item.kind === "floor" || item.kind === "wall") {
+      const key = item.id;
+      const comp = this.parseTileComponents(this.currentTilesMap.get(key));
+      const baseParsed = this.parseLayerPart(comp.basePart, false);
+      const nextLayer = patch.layer !== undefined ? patch.layer : baseParsed.layer;
+      const nextOntop = patch.ontop !== undefined ? patch.ontop : baseParsed.isOntop;
+      const nextFlipX = patch.flipX !== undefined ? patch.flipX : !!baseParsed.flipX;
+      comp.basePart =
+        nextLayer === 0 && !nextOntop && !nextFlipX
+          ? baseParsed.color
+            ? `${baseParsed.assetKey}|${baseParsed.color}`
+            : baseParsed.assetKey
+          : this.formatLayerPart(baseParsed.assetKey, baseParsed.color, nextLayer, nextOntop, baseParsed.interaction, nextFlipX);
+      const nextVal = this.buildTileString(comp);
+      this.applyTileUpdates({ [key]: nextVal });
+      if (this.multiplayer) {
+        this.multiplayer.sendUpdateTiles({ [key]: nextVal });
+      }
+      return;
+    }
+    if (item.kind === "overlay_floor") {
+      const key = item.id;
+      const comp = this.parseTileComponents(this.currentTilesMap.get(key));
+      if (!comp.overlayFloorPart) return;
+      if (patch.layer !== undefined) comp.overlayFloorLayer = patch.layer;
+      if (patch.ontop !== undefined) comp.overlayFloorOntop = patch.ontop;
+      if (patch.flipX !== undefined) comp.overlayFloorFlipX = patch.flipX;
+      const nextVal = this.buildTileString(comp);
+      this.applyTileUpdates({ [key]: nextVal });
+      if (this.multiplayer) {
+        this.multiplayer.sendUpdateTiles({ [key]: nextVal });
+      }
+      return;
+    }
+    if (item.kind === "overlay_wall" || item.kind === "grid_decoration") {
+      const key = item.id;
+      const comp = this.parseTileComponents(this.currentTilesMap.get(key));
+      if (comp.decoParts.length === 0) return;
+      const topDeco = comp.decoParts[comp.decoParts.length - 1];
+      if (patch.layer !== undefined) topDeco.layer = patch.layer;
+      if (patch.ontop !== undefined) topDeco.isOntop = patch.ontop;
+      if (patch.flipX !== undefined) topDeco.flipX = patch.flipX;
+      topDeco.rawPart = this.formatLayerPart(
+        topDeco.assetKey,
+        topDeco.color,
+        topDeco.layer,
+        topDeco.isOntop,
+        topDeco.interaction,
+        !!topDeco.flipX
+      );
+      comp.decoLayer = topDeco.layer;
+      comp.isOntop = topDeco.isOntop;
+      const nextVal = this.buildTileString(comp);
+      this.applyTileUpdates({ [key]: nextVal });
+      if (this.multiplayer) {
+        this.multiplayer.sendUpdateTiles({ [key]: nextVal });
+      }
+      return;
+    }
+    if (item.kind === "freeform_decoration") {
+      const vis = this.freeformVisuals.get(item.id);
+      if (!vis) return;
+      if (patch.layer !== undefined) vis.data.layer = patch.layer;
+      if (patch.ontop !== undefined) vis.data.ontop = patch.ontop;
+      if (patch.flipX !== undefined) {
+        vis.data.flipX = patch.flipX;
+        vis.sprite.setFlipX(patch.flipX);
+        this.drawObstacles();
+        this.openEditorItemMenu(this.getFreeformInspectInfo(vis.data));
+      }
+      vis.container.setDepth(this.computeLayerDepth(vis.data.layer, vis.data.ontop));
+      const serialized = serializeFreeformTile(
+        vis.data.assetKey,
+        vis.data.x,
+        vis.data.y,
+        vis.data.color,
+        vis.data.passable,
+        vis.data.ontop,
+        vis.data.layer,
+        vis.data.interaction,
+        !!vis.data.flipX
+      );
+      this.currentTilesMap.set(item.id, serialized);
+      if (this.multiplayer) {
+        this.multiplayer.sendUpdateTiles({ [item.id]: serialized });
+      }
+      return;
+    }
+    if (item.kind === "jukebox") {
+      const vis = this.jukeboxVisuals.get(item.id);
+      if (!vis) return;
+      if (patch.layer !== undefined) vis.state.layer = patch.layer;
+      if (patch.ontop !== undefined) vis.state.ontop = patch.ontop;
+      if (patch.flipX !== undefined && vis.sprite) vis.sprite.setFlipX(patch.flipX);
+      vis.container.setDepth(this.computeLayerDepth(vis.state.layer ?? 0, !!vis.state.ontop));
+      return;
+    }
+    if (item.kind === "typewriter") {
+      const vis = this.typewriterVisuals.get(item.id);
+      if (!vis) return;
+      if (patch.layer !== undefined) vis.state.layer = patch.layer;
+      if (patch.ontop !== undefined) vis.state.ontop = patch.ontop;
+      if (patch.flipX !== undefined && vis.sprite) vis.sprite.setFlipX(patch.flipX);
+      vis.container.setDepth(this.computeLayerDepth(vis.state.layer ?? 0, !!vis.state.ontop));
+      return;
+    }
+    if (item.kind === "ashtray") {
+      const vis = this.ashtrayVisuals.get(item.id);
+      if (!vis) return;
+      if (patch.layer !== undefined) vis.state.layer = patch.layer;
+      if (patch.ontop !== undefined) vis.state.ontop = patch.ontop;
+      if (patch.flipX !== undefined && vis.sprite) vis.sprite.setFlipX(patch.flipX);
+      vis.container.setDepth(this.computeLayerDepth(vis.state.layer ?? 0, !!vis.state.ontop));
+      return;
+    }
+    if (item.kind === "aquarium") {
+      const vis = this.aquariumVisuals.get(item.id);
+      if (!vis) return;
+      if (patch.layer !== undefined) vis.state.layer = patch.layer;
+      if (patch.ontop !== undefined) vis.state.ontop = patch.ontop;
+      if (patch.flipX !== undefined && vis.sprite) vis.sprite.setFlipX(patch.flipX);
+      vis.container.setDepth(this.computeLayerDepth(vis.state.layer ?? 0, !!vis.state.ontop));
+      return;
+    }
+    if (item.kind === "chess_board") {
+      const vis = this.chessBoardVisuals.get(item.id);
+      if (!vis) return;
+      if (patch.layer !== undefined) vis.state.layer = patch.layer;
+      if (patch.ontop !== undefined) vis.state.ontop = patch.ontop;
+      if (patch.flipX !== undefined && vis.sprite) vis.sprite.setFlipX(patch.flipX);
+      vis.container.setDepth(this.computeLayerDepth(vis.state.layer ?? 0, !!vis.state.ontop));
+    }
   }
 
   public applyPrivateZones(zones: PrivateZone[]) {
@@ -5052,24 +5548,24 @@ export class GameScene extends Phaser.Scene {
     const zh = (zone.bounds.maxRow - zone.bounds.minRow + 1) * TILE_SIZE;
 
     // Darken everything outside this private zone like a modal backdrop
+    // Include padding outside world bounds so the unbounded camera viewport is darkened too
+    const pad = 4000;
+    const minX = -pad;
+    const minY = -pad;
+    const maxX = WORLD_WIDTH + pad;
+    const maxY = WORLD_HEIGHT + pad;
+    const totalW = maxX - minX;
+
     this.outsideDarkGraphics.fillStyle(0x060b0d, this.darknessAlpha);
 
     // 1. Top region
-    if (zy > 0) {
-      this.outsideDarkGraphics.fillRect(0, 0, WORLD_WIDTH, zy);
-    }
+    this.outsideDarkGraphics.fillRect(minX, minY, totalW, zy - minY);
     // 2. Bottom region
-    if (zy + zh < WORLD_HEIGHT) {
-      this.outsideDarkGraphics.fillRect(0, zy + zh, WORLD_WIDTH, WORLD_HEIGHT - (zy + zh));
-    }
+    this.outsideDarkGraphics.fillRect(minX, zy + zh, totalW, maxY - (zy + zh));
     // 3. Left region
-    if (zx > 0) {
-      this.outsideDarkGraphics.fillRect(0, zy, zx, zh);
-    }
+    this.outsideDarkGraphics.fillRect(minX, zy, zx - minX, zh);
     // 4. Right region
-    if (zx + zw < WORLD_WIDTH) {
-      this.outsideDarkGraphics.fillRect(zx + zw, zy, WORLD_WIDTH - (zx + zw), zh);
-    }
+    this.outsideDarkGraphics.fillRect(zx + zw, zy, maxX - (zx + zw), zh);
 
     // Luminous glowing spotlight border around the bright private area
     this.privateSpotlightGraphics.lineStyle(2.5, 0xa78bfa, Math.min(1, this.darknessAlpha * 1.3));
@@ -5133,7 +5629,29 @@ export class GameScene extends Phaser.Scene {
   }
 
   private createJukeboxVisual(jb: JukeboxState) {
-    const sprite = this.add.image(0, 0, "jukebox_1");
+    const isVirtual =
+      jb.id.startsWith("freeform:") ||
+      jb.id.startsWith("tile_deco_") ||
+      this.typewriterVisuals.has(jb.id) ||
+      this.ashtrayVisuals.has(jb.id) ||
+      this.chessBoardVisuals.has(jb.id) ||
+      this.aquariumVisuals.has(jb.id);
+
+    if (isVirtual) {
+      const container = this.add.container(jb.x, jb.y, []);
+      this.jukeboxVisuals.set(jb.id, {
+        container,
+        sprite: null,
+        hitZone: null,
+        promptText: null,
+        notesTimer: 0,
+        state: jb,
+        isVirtual: true,
+      });
+      return;
+    }
+
+    const sprite = this.add.image(0, 0, "decoration_free_atlas", "jukebox_1");
     sprite.setDisplaySize(48, 48);
 
     const hitZone = this.add.rectangle(0, 0, 52, 52, 0x000000, 0);
@@ -5147,6 +5665,7 @@ export class GameScene extends Phaser.Scene {
         event: Phaser.Types.Input.EventData
       ) => {
         if (!pointer.leftButtonDown()) return;
+        if (!this.isCanvasPointerEvent(pointer)) return;
         event.stopPropagation();
 
         if (this.isEditMode) {
@@ -5213,7 +5732,7 @@ export class GameScene extends Phaser.Scene {
               this.selectedAssetKey,
               fx,
               fy,
-              this.selectedTileColor,
+              null,
               this.decorationPassable,
               this.decorationOntop,
               this.placementLayer
@@ -5227,8 +5746,9 @@ export class GameScene extends Phaser.Scene {
           this.selectionCurrentTile = { x: col, y: row };
           this.updateSelectionVisuals();
         } else {
-          if (this.onJukeboxClick) {
-            this.onJukeboxClick(jb.id);
+          const effective = this.getEffectiveEntityInteraction(jb, "jukebox");
+          if (effective) {
+            this.triggerInteraction(jb.id, effective);
           }
         }
       }
@@ -5333,7 +5853,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private createTypewriterVisual(tw: TypewriterState) {
-    const sprite = this.add.image(0, 0, "typewriter_1");
+    const sprite = this.add.image(0, 0, "decoration_free_atlas", "typewriter_1");
     sprite.setDisplaySize(48, 48);
 
     const hitZone = this.add.rectangle(0, 0, 52, 52, 0x000000, 0);
@@ -5347,6 +5867,7 @@ export class GameScene extends Phaser.Scene {
         event: Phaser.Types.Input.EventData
       ) => {
         if (!pointer.leftButtonDown()) return;
+        if (!this.isCanvasPointerEvent(pointer)) return;
         event.stopPropagation();
 
         if (this.isEditMode) {
@@ -5413,7 +5934,7 @@ export class GameScene extends Phaser.Scene {
               this.selectedAssetKey,
               fx,
               fy,
-              this.selectedTileColor,
+              null,
               this.decorationPassable,
               this.decorationOntop,
               this.placementLayer
@@ -5427,14 +5948,15 @@ export class GameScene extends Phaser.Scene {
           this.selectionCurrentTile = { x: col, y: row };
           this.updateSelectionVisuals();
         } else {
-          if (this.onTypewriterClick) {
-            this.onTypewriterClick(tw.id);
+          const effective = this.getEffectiveEntityInteraction(tw, "type_race");
+          if (effective) {
+            this.triggerInteraction(tw.id, effective);
           }
         }
       }
     );
 
-    const promptText = this.add.text(0, -32, "Press E to Race", {
+    const promptText = this.add.text(0, -32, "Press E", {
       fontFamily: "Outfit, sans-serif",
       fontSize: "11px",
       fontStyle: "bold",
@@ -5502,7 +6024,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private createAshtrayVisual(at: AshtrayState) {
-    const sprite = this.add.image(0, 0, "ashtray_1");
+    const sprite = this.add.image(0, 0, "decoration_free_atlas", "ashtray_1");
     sprite.setDisplaySize(48, 48);
 
     const hitZone = this.add.rectangle(0, 0, 52, 52, 0x000000, 0);
@@ -5516,6 +6038,7 @@ export class GameScene extends Phaser.Scene {
         event: Phaser.Types.Input.EventData
       ) => {
         if (!pointer.leftButtonDown()) return;
+        if (!this.isCanvasPointerEvent(pointer)) return;
         event.stopPropagation();
 
         if (this.isEditMode) {
@@ -5582,7 +6105,7 @@ export class GameScene extends Phaser.Scene {
               this.selectedAssetKey,
               fx,
               fy,
-              this.selectedTileColor,
+              null,
               this.decorationPassable,
               this.decorationOntop,
               this.placementLayer
@@ -5596,14 +6119,15 @@ export class GameScene extends Phaser.Scene {
           this.selectionCurrentTile = { x: col, y: row };
           this.updateSelectionVisuals();
         } else {
-          if (this.onAshtrayClick) {
-            this.onAshtrayClick(at.id);
+          const effective = this.getEffectiveEntityInteraction(at, "smoke_duel");
+          if (effective) {
+            this.triggerInteraction(at.id, effective);
           }
         }
       }
     );
 
-    const promptText = this.add.text(0, -32, "Press E to Smoke", {
+    const promptText = this.add.text(0, -32, "Press E", {
       fontFamily: "Outfit, sans-serif",
       fontSize: "11px",
       fontStyle: "bold",
@@ -5671,7 +6195,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private createChessBoardVisual(cb: ChessBoardState) {
-    const sprite = this.add.image(0, 0, "chess_board_1");
+    const sprite = this.add.image(0, 0, "decoration_free_atlas", "chess_board_1");
     sprite.setDisplaySize(50, 50);
 
     const hitZone = this.add.rectangle(0, 0, 54, 54, 0x000000, 0);
@@ -5685,6 +6209,7 @@ export class GameScene extends Phaser.Scene {
         event: Phaser.Types.Input.EventData
       ) => {
         if (!pointer.leftButtonDown()) return;
+        if (!this.isCanvasPointerEvent(pointer)) return;
         event.stopPropagation();
 
         if (this.isEditMode) {
@@ -5763,7 +6288,7 @@ export class GameScene extends Phaser.Scene {
               this.selectedAssetKey,
               fx,
               fy,
-              this.selectedTileColor,
+              null,
               this.decorationPassable,
               this.decorationOntop,
               this.placementLayer
@@ -5777,14 +6302,15 @@ export class GameScene extends Phaser.Scene {
           this.selectionCurrentTile = { x: col, y: row };
           this.updateSelectionVisuals();
         } else {
-          if (this.onChessBoardClick) {
-            this.onChessBoardClick(cb.id);
+          const effective = this.getEffectiveEntityInteraction(cb, "chess");
+          if (effective) {
+            this.triggerInteraction(cb.id, effective);
           }
         }
       }
     );
 
-    const promptText = this.add.text(0, -32, "Press E to Play Chess", {
+    const promptText = this.add.text(0, -32, "Press E", {
       fontFamily: "Outfit, sans-serif",
       fontSize: "11px",
       fontStyle: "bold",
@@ -5850,7 +6376,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private createAquariumVisual(aq: AquariumState) {
-    const sprite = this.add.image(0, 0, "aquarium_1");
+    const sprite = this.add.image(0, 0, "decoration_free_atlas", "aquarium_1");
     sprite.setDisplaySize(50, 50);
 
     const hitZone = this.add.rectangle(0, 0, 54, 54, 0x000000, 0);
@@ -5864,6 +6390,7 @@ export class GameScene extends Phaser.Scene {
         event: Phaser.Types.Input.EventData
       ) => {
         if (!pointer.leftButtonDown()) return;
+        if (!this.isCanvasPointerEvent(pointer)) return;
         event.stopPropagation();
 
         if (this.isEditMode) {
@@ -5954,7 +6481,7 @@ export class GameScene extends Phaser.Scene {
               this.selectedAssetKey,
               fx,
               fy,
-              this.selectedTileColor,
+              null,
               this.decorationPassable,
               this.decorationOntop,
               this.placementLayer
@@ -5968,14 +6495,15 @@ export class GameScene extends Phaser.Scene {
           this.selectionCurrentTile = { x: col, y: row };
           this.updateSelectionVisuals();
         } else {
-          if (this.onAquariumClick) {
-            this.onAquariumClick(aq.id);
+          const effective = this.getEffectiveEntityInteraction(aq, "fishing");
+          if (effective) {
+            this.triggerInteraction(aq.id, effective);
           }
         }
       }
     );
 
-    const promptText = this.add.text(0, -32, "Press E to Fish", {
+    const promptText = this.add.text(0, -32, "Press E", {
       fontFamily: "Outfit, sans-serif",
       fontSize: "11px",
       fontStyle: "bold",
@@ -5997,5 +6525,192 @@ export class GameScene extends Phaser.Scene {
       state: aq,
     };
     this.aquariumVisuals.set(aq.id, visual);
+  }
+
+  private getEffectiveEntityInteraction(
+    entity: { interactable?: boolean; interaction?: DecorationInteractionType | null },
+    defaultInteraction: DecorationInteractionType
+  ): DecorationInteractionType | null {
+    if (entity.interactable === false) return null;
+    if (entity.interaction && isValidInteractionType(entity.interaction)) {
+      return entity.interaction;
+    }
+    return defaultInteraction;
+  }
+
+  public triggerInteraction(id: string, interaction: DecorationInteractionType) {
+    if (interaction === "type_race") {
+      this.onTypewriterClick?.(id);
+    } else if (interaction === "smoke_duel") {
+      this.onAshtrayClick?.(id);
+    } else if (interaction === "chess") {
+      this.onChessBoardClick?.(id);
+    } else if (interaction === "jukebox") {
+      this.onJukeboxClick?.(id);
+    } else if (interaction === "fishing") {
+      this.onAquariumClick?.(id);
+    }
+  }
+
+  public isItemInteractableSupported(item: InspectableMapItem | null): boolean {
+    if (!item) return false;
+    return (
+      item.kind === "grid_decoration" ||
+      item.kind === "freeform_decoration" ||
+      item.kind === "jukebox" ||
+      item.kind === "typewriter" ||
+      item.kind === "ashtray" ||
+      item.kind === "chess_board" ||
+      item.kind === "aquarium"
+    );
+  }
+
+  public getItemInteractionState(item: InspectableMapItem): {
+    interactable: boolean;
+    interaction: DecorationInteractionType | null;
+  } {
+    if (!item) return { interactable: false, interaction: null };
+    if (item.kind === "grid_decoration") {
+      const comp = this.parseTileComponents(this.currentTilesMap.get(item.id));
+      const topDeco = comp.decoParts[comp.decoParts.length - 1];
+      const inter = topDeco?.interaction ?? null;
+      return { interactable: Boolean(inter), interaction: inter };
+    }
+    if (item.kind === "freeform_decoration") {
+      const vis = this.freeformVisuals.get(item.id);
+      const inter = vis?.data.interaction ?? null;
+      return {
+        interactable: Boolean(vis?.data.interactable && inter),
+        interaction: inter,
+      };
+    }
+    if (item.kind === "jukebox") {
+      const jb = this.jukeboxVisuals.get(item.id)?.state;
+      if (!jb) return { interactable: false, interaction: null };
+      const inter = this.getEffectiveEntityInteraction(jb, "jukebox");
+      return { interactable: inter !== null, interaction: inter ?? jb.interaction ?? "jukebox" };
+    }
+    if (item.kind === "typewriter") {
+      const tw = this.typewriterVisuals.get(item.id)?.state;
+      if (!tw) return { interactable: false, interaction: null };
+      const inter = this.getEffectiveEntityInteraction(tw, "type_race");
+      return { interactable: inter !== null, interaction: inter ?? tw.interaction ?? "type_race" };
+    }
+    if (item.kind === "ashtray") {
+      const at = this.ashtrayVisuals.get(item.id)?.state;
+      if (!at) return { interactable: false, interaction: null };
+      const inter = this.getEffectiveEntityInteraction(at, "smoke_duel");
+      return { interactable: inter !== null, interaction: inter ?? at.interaction ?? "smoke_duel" };
+    }
+    if (item.kind === "chess_board") {
+      const cb = this.chessBoardVisuals.get(item.id)?.state;
+      if (!cb) return { interactable: false, interaction: null };
+      const inter = this.getEffectiveEntityInteraction(cb, "chess");
+      return { interactable: inter !== null, interaction: inter ?? cb.interaction ?? "chess" };
+    }
+    if (item.kind === "aquarium") {
+      const aq = this.aquariumVisuals.get(item.id)?.state;
+      if (!aq) return { interactable: false, interaction: null };
+      const inter = this.getEffectiveEntityInteraction(aq, "fishing");
+      return { interactable: inter !== null, interaction: inter ?? aq.interaction ?? "fishing" };
+    }
+    return { interactable: false, interaction: null };
+  }
+
+  public setItemInteraction(
+    item: InspectableMapItem,
+    interactable: boolean,
+    interaction: DecorationInteractionType | null
+  ) {
+    if (!item) return;
+    const effectiveInteraction =
+      interactable && interaction && isValidInteractionType(interaction)
+        ? interaction
+        : null;
+
+    if (item.kind === "grid_decoration") {
+      const key = item.id;
+      const comp = this.parseTileComponents(this.currentTilesMap.get(key));
+      if (comp.decoParts.length > 0) {
+        comp.decoParts[comp.decoParts.length - 1].interaction = effectiveInteraction;
+        const nextVal = this.buildTileString(comp);
+        this.applyTileUpdates({ [key]: nextVal });
+        if (this.multiplayer) {
+          this.multiplayer.sendUpdateTiles({ [key]: nextVal });
+        }
+      }
+      return;
+    }
+
+    if (item.kind === "freeform_decoration") {
+      const vis = this.freeformVisuals.get(item.id);
+      if (!vis) return;
+      vis.data.interactable = Boolean(effectiveInteraction);
+      vis.data.interaction = effectiveInteraction;
+      const serialized = serializeFreeformTile(
+        vis.data.assetKey,
+        vis.data.x,
+        vis.data.y,
+        vis.data.color,
+        vis.data.passable,
+        vis.data.ontop,
+        vis.data.layer,
+        effectiveInteraction,
+        !!vis.data.flipX
+      );
+      this.currentTilesMap.set(item.id, serialized);
+      if (this.multiplayer) {
+        this.multiplayer.sendUpdateTiles({ [item.id]: serialized });
+      }
+      return;
+    }
+
+    if (
+      item.kind === "jukebox" ||
+      item.kind === "typewriter" ||
+      item.kind === "ashtray" ||
+      item.kind === "chess_board" ||
+      item.kind === "aquarium"
+    ) {
+      if (item.kind === "jukebox") {
+        const jb = this.jukeboxVisuals.get(item.id)?.state;
+        if (jb) {
+          jb.interactable = interactable;
+          jb.interaction = effectiveInteraction;
+        }
+      } else if (item.kind === "typewriter") {
+        const tw = this.typewriterVisuals.get(item.id)?.state;
+        if (tw) {
+          tw.interactable = interactable;
+          tw.interaction = effectiveInteraction;
+        }
+      } else if (item.kind === "ashtray") {
+        const at = this.ashtrayVisuals.get(item.id)?.state;
+        if (at) {
+          at.interactable = interactable;
+          at.interaction = effectiveInteraction;
+        }
+      } else if (item.kind === "chess_board") {
+        const cb = this.chessBoardVisuals.get(item.id)?.state;
+        if (cb) {
+          cb.interactable = interactable;
+          cb.interaction = effectiveInteraction;
+        }
+      } else if (item.kind === "aquarium") {
+        const aq = this.aquariumVisuals.get(item.id)?.state;
+        if (aq) {
+          aq.interactable = interactable;
+          aq.interaction = effectiveInteraction;
+        }
+      }
+      if (this.multiplayer) {
+        this.multiplayer.setEntityInteraction(
+          item.kind,
+          item.id,
+          interactable,
+          effectiveInteraction
+        );
+      }
+    }
   }
 }

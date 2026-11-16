@@ -3,6 +3,9 @@
  * Collision logic checks rendered non-transparent pixels only. Transparent pixels have no collision.
  */
 
+import { OFFICE_ONE_MASKS } from "./officeOneBitmaps";
+import { OFFICE_TWO_MASKS, SpriteMaskEntry } from "./officeTwoBitmaps";
+
 export interface AssetBitmap {
   width: number;
   height: number;
@@ -363,15 +366,43 @@ export function getAssetBitmap(key: string | undefined | null): AssetBitmap | nu
   return null;
 }
 
+function getOfficeMask(normKey: string): SpriteMaskEntry | undefined {
+  return OFFICE_ONE_MASKS[normKey] ?? OFFICE_TWO_MASKS[normKey];
+}
+
+export function getAssetDimensions(key: string | undefined | null): { width: number; height: number } {
+  if (!key) return { width: 50, height: 50 };
+  const normKey = normalizeAssetKey(key);
+  const mask = getOfficeMask(normKey);
+  if (mask) return { width: mask.w, height: mask.h };
+  const bmp = getAssetBitmap(key);
+  return bmp ? { width: bmp.width, height: bmp.height } : { width: 50, height: 50 };
+}
+
 export function isAssetPixelSolid(
   key: string | undefined | null,
   localX: number,
-  localY: number
+  localY: number,
+  flipX: boolean = false
 ): boolean {
   if (!key) return false;
+  const normKey = normalizeAssetKey(key);
+  const mask = getOfficeMask(normKey);
+  if (mask) {
+    const rawLx = Math.floor(localX);
+    const lx = flipX ? mask.w - 1 - rawLx : rawLx;
+    const ly = Math.floor(localY);
+    for (const [rx, ry, rw, rh] of mask.rects) {
+      if (lx >= rx && lx < rx + rw && ly >= ry && ly < ry + rh) {
+        return true;
+      }
+    }
+    return false;
+  }
   const bmp = getAssetBitmap(key);
   if (!bmp) return false;
-  const lx = Math.floor(localX);
+  const rawLx = Math.floor(localX);
+  const lx = flipX ? bmp.width - 1 - rawLx : rawLx;
   const ly = Math.floor(localY);
   if (lx < 0 || lx >= bmp.width || ly < 0 || ly >= bmp.height) {
     return false;
@@ -379,8 +410,16 @@ export function isAssetPixelSolid(
   return bmp.data[ly * bmp.width + lx] === 1;
 }
 
-export function getAssetRects(key: string | undefined | null): Array<[number, number, number, number]> {
+export function getAssetRects(
+  key: string | undefined | null,
+  flipX: boolean = false
+): Array<[number, number, number, number]> {
   if (!key) return [];
-  const bmp = getAssetBitmap(key);
-  return bmp ? bmp.rects : [];
+  const normKey = normalizeAssetKey(key);
+  const mask = getOfficeMask(normKey);
+  const bmp = mask ? null : getAssetBitmap(key);
+  const rects = mask ? mask.rects : bmp ? bmp.rects : [];
+  if (!flipX || rects.length === 0) return rects;
+  const width = mask ? mask.w : bmp!.width;
+  return rects.map(([rx, ry, rw, rh]) => [width - rx - rw, ry, rw, rh]);
 }
