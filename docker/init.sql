@@ -2,6 +2,7 @@
 CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,
     username VARCHAR(50) UNIQUE NOT NULL,
+    email VARCHAR(255),
     display_name VARCHAR(50),
     password_hash VARCHAR(255) NOT NULL,
     role VARCHAR(20) DEFAULT 'user' NOT NULL,
@@ -10,6 +11,7 @@ CREATE TABLE IF NOT EXISTS users (
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username_lower ON users (LOWER(username));
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_lower ON users (LOWER(email)) WHERE email IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS players (
     id VARCHAR(64) PRIMARY KEY,
@@ -31,6 +33,7 @@ CREATE TABLE IF NOT EXISTS spaces (
     is_public BOOLEAN DEFAULT TRUE,
     is_superadmin_space BOOLEAN DEFAULT FALSE,
     whitelist JSONB DEFAULT '[]'::jsonb,
+    shared_owners JSONB DEFAULT '[]'::jsonb,
     tiles JSONB DEFAULT '{}'::jsonb,
     private_zones JSONB DEFAULT '[]'::jsonb,
     jukeboxes JSONB DEFAULT '[]'::jsonb,
@@ -60,3 +63,20 @@ CREATE TABLE IF NOT EXISTS chat_messages (
 );
 
 CREATE INDEX IF NOT EXISTS idx_chat_messages_room ON chat_messages (room_type, room_id, timestamp ASC);
+
+CREATE TABLE IF NOT EXISTS notes (
+    id SERIAL PRIMARY KEY,
+    type VARCHAR(20) NOT NULL,
+    title VARCHAR(200) NOT NULL,
+    content TEXT NOT NULL DEFAULT '',
+    author_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    space_id VARCHAR(64) REFERENCES spaces(id) ON DELETE CASCADE,
+    organisation_id INT,
+    images JSONB NOT NULL DEFAULT '[]',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_notes_type_author ON notes (type, author_id);
+CREATE INDEX IF NOT EXISTS idx_notes_space ON notes (space_id);
+CREATE INDEX IF NOT EXISTS idx_notes_org ON notes (organisation_id);

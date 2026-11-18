@@ -7,7 +7,7 @@ interface AtlasJson {
   frames: AtlasFrameEntry[];
 }
 
-type AtlasKey = "floor_free" | "wall_free" | "decoration_free" | "office_one" | "office_two";
+type AtlasKey = "floor_free" | "wall_free" | "decoration_free" | "office_one" | "office_two" | "pet_shop" | "living_room_one";
 
 const ATLAS_PATHS: Record<AtlasKey, { png: string; json: string }> = {
   floor_free: {
@@ -29,6 +29,14 @@ const ATLAS_PATHS: Record<AtlasKey, { png: string; json: string }> = {
   office_two: {
     png: "/assets/decoration/office_spritesheet_2.png",
     json: "/assets/decoration/office_sprites_2.json",
+  },
+  pet_shop: {
+    png: "/assets/decoration/cat_shop_spritesheet.png",
+    json: "/assets/decoration/cat_shop_sprites.json",
+  },
+  living_room_one: {
+    png: "/assets/decoration/living_room_one_spritesheet.png",
+    json: "/assets/decoration/living_room_one_sprites.json",
   },
 };
 
@@ -98,6 +106,12 @@ function resolveAtlasTarget(assetId: string): { atlas: AtlasKey; frame: string }
   }
   if (normalized.startsWith("office_two/")) {
     return { atlas: "office_two", frame: normalized.slice("office_two/".length) };
+  }
+  if (normalized.startsWith("pet_shop/")) {
+    return { atlas: "pet_shop", frame: normalized.slice("pet_shop/".length) };
+  }
+  if (normalized.startsWith("living_room_one/")) {
+    return { atlas: "living_room_one", frame: normalized.slice("living_room_one/".length) };
   }
   return null;
 }

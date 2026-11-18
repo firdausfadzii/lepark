@@ -5,6 +5,7 @@ import {
   PlayerInputPayload,
   PlayerJoinOptions,
   PlayerAvatars,
+  normalizeFrames,
   TILE_SIZE,
   GRID_COLS,
   GRID_ROWS,
@@ -100,11 +101,13 @@ import {
   EntitySetInteractionPayload,
   isValidInteractionType,
   parseFreeformTile,
+  isPaidAssetId,
 } from "shared";
 import { Chess } from "chess.js";
 import {
   upsertPlayer,
   updatePlayerPosition,
+  updateUserLastLocation,
   getSpaceById,
   getSpaceTiles,
   updateSpaceTiles,
@@ -125,6 +128,7 @@ import {
   ensureUserPersonalSpace,
   saveChatMessage,
   getRecentChatMessages,
+  getOrganisationById,
   migrateTileString,
 } from "../db";
 import { verifyToken } from "../auth";
@@ -132,9 +136,18 @@ import { extractPlaylistId, fetchPlaylistVideos } from "../services/youtubePlayl
 import { QuoteService } from "../services/QuoteService";
 
 export const activeSpaceCounts = new Map<string, number>();
+const activeRoomsBySpace = new Map<string, Set<GameRoom>>();
 
 export function getSpacePlayerCount(spaceId: string): number {
   return activeSpaceCounts.get(spaceId) || 0;
+}
+
+export function notifySpaceSettingsUpdated(spaceId: string, sharedOwners: string[]) {
+  const rooms = activeRoomsBySpace.get(spaceId);
+  if (!rooms) return;
+  for (const room of rooms) {
+    room.updateSpaceSharedOwners(sharedOwners);
+  }
 }
 
 export class GameRoom extends Room<GameState> {
@@ -144,6 +157,13 @@ export class GameRoom extends Room<GameState> {
   private playerInputs: Map<string, PlayerInputPayload> = new Map();
   private playerInputSyncTimes: Map<string, number> = new Map();
   private playerAvatars: Map<string, PlayerAvatars> = new Map();
+
+  public getPlayerAvatar(sessionId: string): string | null {
+    const avatars = this.playerAvatars.get(sessionId);
+    if (!avatars || !avatars.idle) return null;
+    const frames = normalizeFrames(avatars.idle);
+    return frames.length > 0 ? frames[0] : null;
+  }
   private tiles: Record<string, string> = {};
   private privateZones: PrivateZone[] = [];
   private jukeboxes: Map<string, JukeboxState> = new Map();
@@ -233,7 +253,26 @@ export class GameRoom extends Room<GameState> {
   > = new Map(); // targetSessionId -> challenge info
   private voiceParticipants: Set<string> = new Set();
   private spaceOwnerId: number | null = null;
+  private spaceSharedOwners: string[] = [];
   private clientAuthMap: Map<string, any> = new Map();
+
+  public updateSpaceSharedOwners(sharedOwners: string[]) {
+    this.spaceSharedOwners = Array.isArray(sharedOwners) ? [...sharedOwners] : [];
+  }
+
+  private isSpaceOwnerOrCoOwner(
+    user: { id: number; username?: string; role?: string } | null | undefined,
+  ): boolean {
+    if (!user) return false;
+    if (this.spaceOwnerId !== null && user.id === this.spaceOwnerId) {
+      return true;
+    }
+    if (user.username && this.spaceSharedOwners.length > 0) {
+      const lower = user.username.toLowerCase();
+      return this.spaceSharedOwners.some((u) => u.toLowerCase() === lower);
+    }
+    return false;
+  }
   private recentChatMessages: ChatMessage[] = [];
   private dbSyncCounter: number = 0;
   private cachedPixelCollisionChecker: PixelCollisionOptions | null = null;
@@ -358,6 +397,9 @@ export class GameRoom extends Room<GameState> {
             displayName: userExists.display_name,
             role: userExists.role,
             parkingPoints: userExists.parking_points || 0,
+            lastSpaceId: userExists.last_space_id || null,
+            lastX: userExists.last_x ?? null,
+            lastY: userExists.last_y ?? null,
           };
         }
       }
@@ -373,6 +415,11 @@ export class GameRoom extends Room<GameState> {
           );
         }
         const isOwner = user.id === space.owner_id;
+        const isSharedOwner =
+          Array.isArray(space.shared_owners) &&
+          space.shared_owners.some(
+            (w) => w.toLowerCase() === user.username.toLowerCase(),
+          );
         const isSuperadmin = user.role === "superadmin";
         const isWhitelisted =
           Array.isArray(space.whitelist) &&
@@ -380,7 +427,7 @@ export class GameRoom extends Room<GameState> {
             (w) => w.toLowerCase() === user.username.toLowerCase(),
           );
 
-        if (!isOwner && !isSuperadmin && !isWhitelisted) {
+        if (!isOwner && !isSharedOwner && !isSuperadmin && !isWhitelisted) {
           throw new ServerError(
             403,
             "Access denied: This space is private and requires permission.",
@@ -398,12 +445,17 @@ export class GameRoom extends Room<GameState> {
           "Authentication required to join private space.",
         );
       }
+      const isSharedOwner =
+        Array.isArray(space.shared_owners) &&
+        space.shared_owners.some(
+          (w) => w.toLowerCase() === user.username.toLowerCase(),
+        );
       const isWhitelisted =
         Array.isArray(space.whitelist) &&
         space.whitelist.some(
           (w) => w.toLowerCase() === user.username.toLowerCase(),
         );
-      if (!isWhitelisted && user.role !== "superadmin") {
+      if (!isWhitelisted && !isSharedOwner && user.role !== "superadmin") {
         throw new ServerError(
           403,
           "Access denied: This space is private and requires an invitation.",
@@ -418,6 +470,11 @@ export class GameRoom extends Room<GameState> {
     this.spaceId = options.spaceId || "space_central_plaza";
     this.setMetadata({ spaceId: this.spaceId });
     this.setState(new GameState());
+
+    if (!activeRoomsBySpace.has(this.spaceId)) {
+      activeRoomsBySpace.set(this.spaceId, new Set());
+    }
+    activeRoomsBySpace.get(this.spaceId)!.add(this);
 
     // 20 Hz tick loop
     this.setSimulationInterval(
@@ -553,6 +610,7 @@ export class GameRoom extends Room<GameState> {
       this.tiles = loadedTiles || {};
       if (space) {
         this.spaceOwnerId = space.owner_id;
+        this.spaceSharedOwners = Array.isArray(space.shared_owners) ? [...space.shared_owners] : [];
       }
       this.privateZones = loadedZones || [];
       if (loadedJukeboxes && Array.isArray(loadedJukeboxes)) {
@@ -621,8 +679,7 @@ export class GameRoom extends Room<GameState> {
         const auth = this.clientAuthMap.get(client.sessionId);
         const user = auth?.user;
         const isSuperadmin = user?.role === "superadmin";
-        const isOwner =
-          user && this.spaceOwnerId !== null && user.id === this.spaceOwnerId;
+        const isOwner = this.isSpaceOwnerOrCoOwner(user);
 
         if (!isSuperadmin && !isOwner) {
           console.warn(
@@ -637,14 +694,48 @@ export class GameRoom extends Room<GameState> {
 
         if (data && data.updates && typeof data.updates === "object") {
           const migratedUpdates: Record<string, string> = {};
+          const newlyPlacedPaidAssets = new Set<string>();
+
           for (const [k, v] of Object.entries(data.updates)) {
             if (v === "" || v === null || v === undefined) {
-              delete this.tiles[k];
               migratedUpdates[k] = "";
             } else {
               const migratedVal = migrateTileString(String(v));
-              this.tiles[k] = migratedVal;
+              if (!isSuperadmin && k.startsWith("freeform:")) {
+                const nextParsed = parseFreeformTile(migratedVal);
+                const prevParsed = this.tiles[k] ? parseFreeformTile(this.tiles[k]) : null;
+                if (
+                  nextParsed &&
+                  isPaidAssetId(nextParsed.assetKey) &&
+                  prevParsed?.assetKey !== nextParsed.assetKey
+                ) {
+                  newlyPlacedPaidAssets.add(nextParsed.assetKey);
+                }
+              }
               migratedUpdates[k] = migratedVal;
+            }
+          }
+
+          if (!isSuperadmin && newlyPlacedPaidAssets.size > 0) {
+            const dbUser = user?.id ? await findUserById(user.id) : null;
+            const unlockedSet = new Set<string>(
+              Array.isArray(dbUser?.unlocked_assets) ? dbUser.unlocked_assets : []
+            );
+            for (const assetId of newlyPlacedPaidAssets) {
+              if (!unlockedSet.has(assetId)) {
+                client.send("ERROR", {
+                  message: "Asset locked: Purchase this sprite (5 Parking Points) before placing it.",
+                });
+                return;
+              }
+            }
+          }
+
+          for (const [k, migratedVal] of Object.entries(migratedUpdates)) {
+            if (migratedVal === "") {
+              delete this.tiles[k];
+            } else {
+              this.tiles[k] = migratedVal;
             }
           }
           this.invalidatePixelCollisionChecker();
@@ -662,8 +753,7 @@ export class GameRoom extends Room<GameState> {
         const auth = this.clientAuthMap.get(client.sessionId);
         const user = auth?.user;
         const isSuperadmin = user?.role === "superadmin";
-        const isOwner =
-          user && this.spaceOwnerId !== null && user.id === this.spaceOwnerId;
+        const isOwner = this.isSpaceOwnerOrCoOwner(user);
 
         if (!isSuperadmin && !isOwner) {
           client.send("ERROR", {
@@ -738,8 +828,7 @@ export class GameRoom extends Room<GameState> {
         const auth = this.clientAuthMap.get(client.sessionId);
         const user = auth?.user;
         const isSuperadmin = user?.role === "superadmin";
-        const isOwner =
-          user && this.spaceOwnerId !== null && user.id === this.spaceOwnerId;
+        const isOwner = this.isSpaceOwnerOrCoOwner(user);
 
         if (!isSuperadmin && !isOwner) {
           console.warn(
@@ -795,8 +884,7 @@ export class GameRoom extends Room<GameState> {
         const auth = this.clientAuthMap.get(client.sessionId);
         const user = auth?.user;
         const isSuperadmin = user?.role === "superadmin";
-        const isOwner =
-          user && this.spaceOwnerId !== null && user.id === this.spaceOwnerId;
+        const isOwner = this.isSpaceOwnerOrCoOwner(user);
 
         if (!isSuperadmin && !isOwner) {
           client.send("ERROR", {
@@ -833,8 +921,7 @@ export class GameRoom extends Room<GameState> {
         const auth = this.clientAuthMap.get(client.sessionId);
         const user = auth?.user;
         const isSuperadmin = user?.role === "superadmin";
-        const isOwner =
-          user && this.spaceOwnerId !== null && user.id === this.spaceOwnerId;
+        const isOwner = this.isSpaceOwnerOrCoOwner(user);
 
         if (!isSuperadmin && !isOwner) {
           client.send("ERROR", {
@@ -860,8 +947,7 @@ export class GameRoom extends Room<GameState> {
         const auth = this.clientAuthMap.get(client.sessionId);
         const user = auth?.user;
         const isSuperadmin = user?.role === "superadmin";
-        const isOwner =
-          user && this.spaceOwnerId !== null && user.id === this.spaceOwnerId;
+        const isOwner = this.isSpaceOwnerOrCoOwner(user);
 
         if (!isSuperadmin && !isOwner) {
           client.send("ERROR", {
@@ -885,8 +971,7 @@ export class GameRoom extends Room<GameState> {
         const auth = this.clientAuthMap.get(client.sessionId);
         const user = auth?.user;
         const isSuperadmin = user?.role === "superadmin";
-        const isOwner =
-          user && this.spaceOwnerId !== null && user.id === this.spaceOwnerId;
+        const isOwner = this.isSpaceOwnerOrCoOwner(user);
 
         if (!isSuperadmin && !isOwner) {
           client.send("ERROR", {
@@ -1372,8 +1457,7 @@ export class GameRoom extends Room<GameState> {
         const auth = this.clientAuthMap.get(client.sessionId);
         const user = auth?.user;
         const isSuperadmin = user?.role === "superadmin";
-        const isOwner =
-          user && this.spaceOwnerId !== null && user.id === this.spaceOwnerId;
+        const isOwner = this.isSpaceOwnerOrCoOwner(user);
 
         if (!isSuperadmin && !isOwner) {
           client.send("ERROR", {
@@ -1414,8 +1498,7 @@ export class GameRoom extends Room<GameState> {
         const auth = this.clientAuthMap.get(client.sessionId);
         const user = auth?.user;
         const isSuperadmin = user?.role === "superadmin";
-        const isOwner =
-          user && this.spaceOwnerId !== null && user.id === this.spaceOwnerId;
+        const isOwner = this.isSpaceOwnerOrCoOwner(user);
 
         if (!isSuperadmin && !isOwner) {
           client.send("ERROR", {
@@ -1442,8 +1525,7 @@ export class GameRoom extends Room<GameState> {
         const auth = this.clientAuthMap.get(client.sessionId);
         const user = auth?.user;
         const isSuperadmin = user?.role === "superadmin";
-        const isOwner =
-          user && this.spaceOwnerId !== null && user.id === this.spaceOwnerId;
+        const isOwner = this.isSpaceOwnerOrCoOwner(user);
 
         if (!isSuperadmin && !isOwner) {
           client.send("ERROR", {
@@ -1476,8 +1558,7 @@ export class GameRoom extends Room<GameState> {
         const auth = this.clientAuthMap.get(client.sessionId);
         const user = auth?.user;
         const isSuperadmin = user?.role === "superadmin";
-        const isOwner =
-          user && this.spaceOwnerId !== null && user.id === this.spaceOwnerId;
+        const isOwner = this.isSpaceOwnerOrCoOwner(user);
 
         if (!isSuperadmin && !isOwner) {
           client.send("ERROR", {
@@ -1707,8 +1788,7 @@ export class GameRoom extends Room<GameState> {
         const auth = this.clientAuthMap.get(client.sessionId);
         const user = auth?.user;
         const isSuperadmin = user?.role === "superadmin";
-        const isOwner =
-          user && this.spaceOwnerId !== null && user.id === this.spaceOwnerId;
+        const isOwner = this.isSpaceOwnerOrCoOwner(user);
 
         if (!isSuperadmin && !isOwner) {
           client.send("ERROR", {
@@ -1749,8 +1829,7 @@ export class GameRoom extends Room<GameState> {
         const auth = this.clientAuthMap.get(client.sessionId);
         const user = auth?.user;
         const isSuperadmin = user?.role === "superadmin";
-        const isOwner =
-          user && this.spaceOwnerId !== null && user.id === this.spaceOwnerId;
+        const isOwner = this.isSpaceOwnerOrCoOwner(user);
 
         if (!isSuperadmin && !isOwner) {
           client.send("ERROR", {
@@ -1778,8 +1857,7 @@ export class GameRoom extends Room<GameState> {
         const auth = this.clientAuthMap.get(client.sessionId);
         const user = auth?.user;
         const isSuperadmin = user?.role === "superadmin";
-        const isOwner =
-          user && this.spaceOwnerId !== null && user.id === this.spaceOwnerId;
+        const isOwner = this.isSpaceOwnerOrCoOwner(user);
 
         if (!isSuperadmin && !isOwner) {
           client.send("ERROR", {
@@ -1812,8 +1890,7 @@ export class GameRoom extends Room<GameState> {
         const auth = this.clientAuthMap.get(client.sessionId);
         const user = auth?.user;
         const isSuperadmin = user?.role === "superadmin";
-        const isOwner =
-          user && this.spaceOwnerId !== null && user.id === this.spaceOwnerId;
+        const isOwner = this.isSpaceOwnerOrCoOwner(user);
 
         if (!isSuperadmin && !isOwner) {
           client.send("ERROR", {
@@ -2055,8 +2132,7 @@ export class GameRoom extends Room<GameState> {
         const auth = this.clientAuthMap.get(client.sessionId);
         const user = auth?.user;
         const isSuperadmin = user?.role === "superadmin";
-        const isOwner =
-          user && this.spaceOwnerId !== null && user.id === this.spaceOwnerId;
+        const isOwner = this.isSpaceOwnerOrCoOwner(user);
 
         if (!isSuperadmin && !isOwner) {
           client.send("ERROR", {
@@ -2094,8 +2170,7 @@ export class GameRoom extends Room<GameState> {
         const auth = this.clientAuthMap.get(client.sessionId);
         const user = auth?.user;
         const isSuperadmin = user?.role === "superadmin";
-        const isOwner =
-          user && this.spaceOwnerId !== null && user.id === this.spaceOwnerId;
+        const isOwner = this.isSpaceOwnerOrCoOwner(user);
 
         if (!isSuperadmin && !isOwner) {
           client.send("ERROR", {
@@ -2123,8 +2198,7 @@ export class GameRoom extends Room<GameState> {
         const auth = this.clientAuthMap.get(client.sessionId);
         const user = auth?.user;
         const isSuperadmin = user?.role === "superadmin";
-        const isOwner =
-          user && this.spaceOwnerId !== null && user.id === this.spaceOwnerId;
+        const isOwner = this.isSpaceOwnerOrCoOwner(user);
 
         if (!isSuperadmin && !isOwner) {
           client.send("ERROR", {
@@ -2159,8 +2233,7 @@ export class GameRoom extends Room<GameState> {
         const auth = this.clientAuthMap.get(client.sessionId);
         const user = auth?.user;
         const isSuperadmin = user?.role === "superadmin";
-        const isOwner =
-          user && this.spaceOwnerId !== null && user.id === this.spaceOwnerId;
+        const isOwner = this.isSpaceOwnerOrCoOwner(user);
 
         if (!isSuperadmin && !isOwner) {
           client.send("ERROR", {
@@ -2191,8 +2264,7 @@ export class GameRoom extends Room<GameState> {
         const auth = this.clientAuthMap.get(client.sessionId);
         const user = auth?.user;
         const isSuperadmin = user?.role === "superadmin";
-        const isOwner =
-          user && this.spaceOwnerId !== null && user.id === this.spaceOwnerId;
+        const isOwner = this.isSpaceOwnerOrCoOwner(user);
 
         if (!isSuperadmin && !isOwner) {
           client.send("ERROR", {
@@ -2230,8 +2302,7 @@ export class GameRoom extends Room<GameState> {
         const auth = this.clientAuthMap.get(client.sessionId);
         const user = auth?.user;
         const isSuperadmin = user?.role === "superadmin";
-        const isOwner =
-          user && this.spaceOwnerId !== null && user.id === this.spaceOwnerId;
+        const isOwner = this.isSpaceOwnerOrCoOwner(user);
 
         if (!isSuperadmin && !isOwner) {
           client.send("ERROR", {
@@ -2259,8 +2330,7 @@ export class GameRoom extends Room<GameState> {
         const auth = this.clientAuthMap.get(client.sessionId);
         const user = auth?.user;
         const isSuperadmin = user?.role === "superadmin";
-        const isOwner =
-          user && this.spaceOwnerId !== null && user.id === this.spaceOwnerId;
+        const isOwner = this.isSpaceOwnerOrCoOwner(user);
 
         if (!isSuperadmin && !isOwner) {
           client.send("ERROR", {
@@ -2287,8 +2357,7 @@ export class GameRoom extends Room<GameState> {
         const auth = this.clientAuthMap.get(client.sessionId);
         const user = auth?.user;
         const isSuperadmin = user?.role === "superadmin";
-        const isOwner =
-          user && this.spaceOwnerId !== null && user.id === this.spaceOwnerId;
+        const isOwner = this.isSpaceOwnerOrCoOwner(user);
 
         if (!isSuperadmin && !isOwner) {
           client.send("ERROR", {
@@ -3148,7 +3217,7 @@ export class GameRoom extends Room<GameState> {
     // Handle chat messages from clients
     this.onMessage(
       "SEND_CHAT_MESSAGE",
-      (client: Client, data: SendChatMessagePayload) => {
+      async (client: Client, data: SendChatMessagePayload) => {
         if (!data || typeof data.text !== "string") return;
         const cleanText = data.text.trim().slice(0, 300);
         if (!cleanText) return;
@@ -3168,10 +3237,19 @@ export class GameRoom extends Room<GameState> {
           const targetSessionId = data.roomId;
           if (!targetSessionId) return;
 
-          const targetPlayer = this.state.players.get(targetSessionId);
-          const targetClient = this.clients.find(
+          let targetPlayer = this.state.players.get(targetSessionId);
+          let targetClient = this.clients.find(
             (c) => c.sessionId === targetSessionId,
           );
+
+          // Cross-room whisper lookup if target is in another space
+          if (!targetPlayer || !targetClient) {
+            const remoteSession = parkingPointsService.findSessionBySessionId(targetSessionId);
+            if (remoteSession) {
+              targetPlayer = remoteSession.playerState;
+              targetClient = remoteSession.client;
+            }
+          }
 
           if (!targetPlayer || !targetClient) {
             client.send("CHAT_MESSAGE", {
@@ -3184,7 +3262,7 @@ export class GameRoom extends Room<GameState> {
               roomName: data.targetName || "Player",
               targetId: targetSessionId,
               targetName: data.targetName || "Player",
-              text: `Player "${data.targetName || "User"}" is no longer in this space.`,
+              text: `Player "${data.targetName || "User"}" is no longer online.`,
               timestamp,
             });
             return;
@@ -3279,6 +3357,44 @@ export class GameRoom extends Room<GameState> {
           // Persist zone chat message to DB
           saveChatMessage(chatMsg).catch((err) =>
             console.error("Error saving zone message to DB:", err)
+          );
+        } else if (data.roomType === "org") {
+          const userId = auth?.user?.id;
+          const orgId = Number(data.roomId);
+          if (!userId || !Number.isInteger(orgId) || orgId <= 0) return;
+
+          const org = await getOrganisationById(orgId);
+          if (!org || !org.members.some((m) => m.userId === userId)) {
+            return;
+          }
+
+          const chatMsg: ChatMessage = {
+            id: msgId,
+            senderId: client.sessionId,
+            senderName: player.name,
+            senderColor: player.color,
+            isSuperadmin,
+            roomType: "org",
+            roomId: String(org.id),
+            roomName: org.name,
+            text: cleanText,
+            timestamp,
+          };
+
+          const deliveredSessionIds = new Set<string>();
+          for (const member of org.members) {
+            const session = parkingPointsService.getOnlineSessionForUser(member.userId);
+            if (session && session.client && !deliveredSessionIds.has(session.sessionId)) {
+              deliveredSessionIds.add(session.sessionId);
+              session.client.send("CHAT_MESSAGE", chatMsg);
+            }
+          }
+          if (!deliveredSessionIds.has(client.sessionId)) {
+            client.send("CHAT_MESSAGE", chatMsg);
+          }
+
+          saveChatMessage(chatMsg).catch((err) =>
+            console.error("Error saving org message to DB:", err)
           );
         } else {
           // Default: Map / Area chat
@@ -3438,32 +3554,73 @@ export class GameRoom extends Room<GameState> {
         console.warn("Could not ensure personal space on join:", err);
       });
     }
-    let preferredTileX = Math.floor(GRID_COLS / 2);
-    let preferredTileY = Math.floor(GRID_ROWS / 2);
-    if (this.tiles["spawn_point"]) {
-      const [sc, sr] = this.tiles["spawn_point"].split(",");
-      const parsedCol = parseInt(sc, 10);
-      const parsedRow = parseInt(sr, 10);
-      if (
-        !isNaN(parsedCol) &&
-        !isNaN(parsedRow) &&
-        parsedCol >= 0 &&
-        parsedCol < GRID_COLS &&
-        parsedRow >= 0 &&
-        parsedRow < GRID_ROWS
-      ) {
-        preferredTileX = parsedCol;
-        preferredTileY = parsedRow;
-      }
-    }
-    const spawnCenter = findSafeSpawnCenter(
-      preferredTileX,
-      preferredTileY,
-      (c, r) => isWallTile(this.tiles[`${c},${r}`]),
-    );
+    const savedUser = auth && auth.user;
+    const hasSavedPosInThisSpace =
+      savedUser &&
+      savedUser.lastSpaceId === this.spaceId &&
+      typeof savedUser.lastX === "number" &&
+      typeof savedUser.lastY === "number" &&
+      Number.isFinite(savedUser.lastX) &&
+      Number.isFinite(savedUser.lastY);
 
-    player.x = spawnCenter.x;
-    player.y = spawnCenter.y;
+    if (hasSavedPosInThisSpace) {
+      const clampedX = Math.max(
+        PLAYER_HITBOX_HALF_WIDTH,
+        Math.min(WORLD_WIDTH - PLAYER_HITBOX_HALF_WIDTH, savedUser.lastX),
+      );
+      const clampedY = Math.max(
+        TILE_SIZE / 2,
+        Math.min(WORLD_HEIGHT - PLAYER_FEET_BOTTOM_OFFSET, savedUser.lastY),
+      );
+      const savedCol = Math.max(0, Math.min(GRID_COLS - 1, Math.floor(clampedX / TILE_SIZE)));
+      const savedRow = Math.max(0, Math.min(GRID_ROWS - 1, Math.floor(clampedY / TILE_SIZE)));
+
+      if (!isWallTile(this.tiles[`${savedCol},${savedRow}`])) {
+        player.x = clampedX;
+        player.y = clampedY;
+      } else {
+        const safeSpawn = findSafeSpawnCenter(
+          savedCol,
+          savedRow,
+          (c, r) => isWallTile(this.tiles[`${c},${r}`]),
+        );
+        player.x = safeSpawn.x;
+        player.y = safeSpawn.y;
+      }
+    } else {
+      let preferredTileX = Math.floor(GRID_COLS / 2);
+      let preferredTileY = Math.floor(GRID_ROWS / 2);
+      if (this.tiles["spawn_point"]) {
+        const [sc, sr] = this.tiles["spawn_point"].split(",");
+        const parsedCol = parseInt(sc, 10);
+        const parsedRow = parseInt(sr, 10);
+        if (
+          !isNaN(parsedCol) &&
+          !isNaN(parsedRow) &&
+          parsedCol >= 0 &&
+          parsedCol < GRID_COLS &&
+          parsedRow >= 0 &&
+          parsedRow < GRID_ROWS
+        ) {
+          preferredTileX = parsedCol;
+          preferredTileY = parsedRow;
+        }
+      }
+      const spawnCenter = findSafeSpawnCenter(
+        preferredTileX,
+        preferredTileY,
+        (c, r) => isWallTile(this.tiles[`${c},${r}`]),
+      );
+
+      player.x = spawnCenter.x;
+      player.y = spawnCenter.y;
+    }
+
+    if (player.userId > 0) {
+      updateUserLastLocation(player.userId, this.spaceId, player.x, player.y).catch((err) => {
+        console.warn("Could not persist initial user location:", err);
+      });
+    }
 
     this.state.players.set(client.sessionId, player);
     this.playerInputs.set(client.sessionId, {
@@ -3474,7 +3631,7 @@ export class GameRoom extends Room<GameState> {
     });
 
     console.log(
-      ` Player joined space [${this.spaceId}]: ${name} (${color}) [${client.sessionId}] at spawn tile (${preferredTileX}, ${preferredTileY})`,
+      ` Player joined space [${this.spaceId}]: ${name} (${color}) [${client.sessionId}] at tile (${Math.floor(player.x / TILE_SIZE)}, ${Math.floor(player.y / TILE_SIZE)})`,
     );
 
     upsertPlayer({
@@ -3505,6 +3662,9 @@ export class GameRoom extends Room<GameState> {
     this.clientAuthMap.set(client.sessionId, auth);
     if (auth?.space?.owner_id !== undefined) {
       this.spaceOwnerId = auth.space.owner_id;
+    }
+    if (Array.isArray(auth?.space?.shared_owners)) {
+      this.spaceSharedOwners = [...auth.space.shared_owners];
     }
 
     // Send current space tiles to joining client
@@ -3566,6 +3726,11 @@ export class GameRoom extends Room<GameState> {
         ` Player left space [${this.spaceId}]: ${player.name} [${client.sessionId}]`,
       );
       updatePlayerPosition(client.sessionId, player.x, player.y);
+      if (player.userId > 0) {
+        updateUserLastLocation(player.userId, this.spaceId, player.x, player.y).catch((err) => {
+          console.warn("Could not persist user last location on leave:", err);
+        });
+      }
       this.state.players.delete(client.sessionId);
     }
     this.playerInputs.delete(client.sessionId);
@@ -4453,6 +4618,20 @@ export class GameRoom extends Room<GameState> {
   }
 
   onDispose() {
+    this.state.players.forEach((player) => {
+      if (player.userId > 0) {
+        updateUserLastLocation(player.userId, this.spaceId, player.x, player.y).catch((err) => {
+          console.warn("Could not persist user last location on dispose:", err);
+        });
+      }
+    });
+    const rooms = activeRoomsBySpace.get(this.spaceId);
+    if (rooms) {
+      rooms.delete(this);
+      if (rooms.size === 0) {
+        activeRoomsBySpace.delete(this.spaceId);
+      }
+    }
     if (this.jukeboxTimer) {
       clearInterval(this.jukeboxTimer);
       this.jukeboxTimer = null;

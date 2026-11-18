@@ -5,6 +5,8 @@
 
 import { OFFICE_ONE_MASKS } from "./officeOneBitmaps";
 import { OFFICE_TWO_MASKS, SpriteMaskEntry } from "./officeTwoBitmaps";
+import { PET_SHOP_MASKS } from "./petShopBitmaps";
+import { LIVING_ROOM_ONE_MASKS } from "./livingRoomOneBitmaps";
 
 export interface AssetBitmap {
   width: number;
@@ -367,7 +369,12 @@ export function getAssetBitmap(key: string | undefined | null): AssetBitmap | nu
 }
 
 function getOfficeMask(normKey: string): SpriteMaskEntry | undefined {
-  return OFFICE_ONE_MASKS[normKey] ?? OFFICE_TWO_MASKS[normKey];
+  return (
+    OFFICE_ONE_MASKS[normKey] ??
+    OFFICE_TWO_MASKS[normKey] ??
+    PET_SHOP_MASKS[normKey] ??
+    LIVING_ROOM_ONE_MASKS[normKey]
+  );
 }
 
 export function getAssetDimensions(key: string | undefined | null): { width: number; height: number } {

@@ -239,6 +239,7 @@ export class GameScene extends Phaser.Scene {
   public placementLayer: number = 0;
   public placementFlipX: boolean = false;
   public onPlacementLayerChange?: (layer: number) => void;
+  public onDismissPopups?: () => void;
   private isSelectingArea: boolean = false;
   private selectionStartTile: { x: number; y: number } | null = null;
   private selectionCurrentTile: { x: number; y: number } | null = null;
@@ -277,6 +278,11 @@ export class GameScene extends Phaser.Scene {
   // Aquarium State & Fishing Game Objects
   private aquariumVisuals: Map<string, AquariumVisual> = new Map();
   public onAquariumClick?: (aquariumId: string) => void;
+  public onOrganisationClick?: (entityId: string) => void;
+  public onNotesClick?: (entityId: string) => void;
+  public onCalendarClick?: (entityId: string) => void;
+  public onMealsClick?: (entityId: string) => void;
+  public onInventoryClick?: (entityId: string) => void;
   private nearbyAquariumId: string | null = null;
   private editorAquariumGhost: Phaser.GameObjects.Image | null = null;
 
@@ -299,6 +305,10 @@ export class GameScene extends Phaser.Scene {
     id: string;
     interaction: DecorationInteractionType;
   } | null = null;
+  public onNearbyInteractableChange?: (
+    nearby: { id: string; interaction: DecorationInteractionType } | null
+  ) => void;
+  private lastReportedNearbyInteractableKey: string | null = null;
   private editorFreeformGhost: Phaser.GameObjects.Image | null = null;
 
   // Private Zones State & Effects
@@ -400,6 +410,16 @@ export class GameScene extends Phaser.Scene {
       "office_two_atlas",
       "/assets/decoration/office_spritesheet_2.png",
       "/assets/decoration/office_sprites_2.json"
+    );
+    this.load.atlas(
+      "pet_shop_atlas",
+      "/assets/decoration/cat_shop_spritesheet.png",
+      "/assets/decoration/cat_shop_sprites.json"
+    );
+    this.load.atlas(
+      "living_room_one_atlas",
+      "/assets/decoration/living_room_one_spritesheet.png",
+      "/assets/decoration/living_room_one_sprites.json"
     );
 
     // Default character avatar atlas & frames
@@ -638,9 +658,20 @@ export class GameScene extends Phaser.Scene {
         }
       });
 
+      const authEl = document.getElementById("auth-modal");
+      const linkEmailEl = document.getElementById("link-email-modal");
+      if (
+        (authEl && !authEl.classList.contains("hidden")) ||
+        (linkEmailEl && !linkEmailEl.classList.contains("hidden"))
+      ) {
+        this.controlsActive = false;
+      }
+
       if (this.controlsActive) {
         this.registerKeyCaptures();
       } else {
+        this.input.keyboard.clearCaptures();
+        this.input.keyboard.resetKeys();
         this.input.keyboard.enabled = false;
       }
     }
@@ -744,37 +775,13 @@ export class GameScene extends Phaser.Scene {
 
     if (this.input.keyboard) {
       this.keyE = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.E);
+      if (!this.controlsActive) {
+        this.input.keyboard.clearCaptures();
+        this.input.keyboard.resetKeys();
+        this.input.keyboard.enabled = false;
+      }
       this.keyE.on("down", () => {
-        if (this.isTyperaceModalOpen() || this.isSmokingGameModalOpen() || this.isChessModalOpen() || this.isFishingModalOpen()) return;
-        if (this.isEditMode) return;
-        if (this.nearbyCustomInteraction) {
-          this.triggerInteraction(
-            this.nearbyCustomInteraction.id,
-            this.nearbyCustomInteraction.interaction
-          );
-          return;
-        }
-        if (this.nearbyAquariumId) {
-          const aq = this.aquariumVisuals.get(this.nearbyAquariumId)?.state;
-          const inter = aq ? this.getEffectiveEntityInteraction(aq, "fishing") : "fishing";
-          if (inter) this.triggerInteraction(this.nearbyAquariumId, inter);
-        } else if (this.nearbyChessBoardId) {
-          const cb = this.chessBoardVisuals.get(this.nearbyChessBoardId)?.state;
-          const inter = cb ? this.getEffectiveEntityInteraction(cb, "chess") : "chess";
-          if (inter) this.triggerInteraction(this.nearbyChessBoardId, inter);
-        } else if (this.nearbyAshtrayId) {
-          const at = this.ashtrayVisuals.get(this.nearbyAshtrayId)?.state;
-          const inter = at ? this.getEffectiveEntityInteraction(at, "smoke_duel") : "smoke_duel";
-          if (inter) this.triggerInteraction(this.nearbyAshtrayId, inter);
-        } else if (this.nearbyTypewriterId) {
-          const tw = this.typewriterVisuals.get(this.nearbyTypewriterId)?.state;
-          const inter = tw ? this.getEffectiveEntityInteraction(tw, "type_race") : "type_race";
-          if (inter) this.triggerInteraction(this.nearbyTypewriterId, inter);
-        } else if (this.nearbyJukeboxId) {
-          const jb = this.jukeboxVisuals.get(this.nearbyJukeboxId)?.state;
-          const inter = jb ? this.getEffectiveEntityInteraction(jb, "jukebox") : "jukebox";
-          if (inter) this.triggerInteraction(this.nearbyJukeboxId, inter);
-        }
+        this.triggerNearbyInteraction();
       });
     }
 
@@ -1278,8 +1285,10 @@ export class GameScene extends Phaser.Scene {
     const hitZone = this.add.rectangle(0, -10, 54, 76, 0x000000, 0);
     hitZone.setInteractive({ useHandCursor: true });
 
-    hitZone.on("pointerover", () => {
+    hitZone.on("pointerover", (pointer: Phaser.Input.Pointer) => {
       if (this.isEditMode) return;
+      if (!this.isCanvasPointerEvent(pointer)) return;
+      if (this.isAnyModalOpen() || this.isAnyPopupOpen()) return;
       if (this.activeMenuSessionId === sessionId) return;
       nameTagContainer.setVisible(true);
     });
@@ -1297,6 +1306,12 @@ export class GameScene extends Phaser.Scene {
         event: Phaser.Types.Input.EventData,
       ) => {
         if (!pointer.leftButtonDown()) return;
+        if (!this.isCanvasPointerEvent(pointer)) return;
+        if (this.isAnyModalOpen()) return;
+        if (this.dismissOpenPopups()) {
+          event.stopPropagation();
+          return;
+        }
         if (this.isEditMode) return;
         event.stopPropagation();
         this.lastPlayerClickTime = Date.now();
@@ -1867,8 +1882,28 @@ export class GameScene extends Phaser.Scene {
     return !!(el && !el.classList.contains("hidden"));
   }
 
+  public isOrganisationModalOpen(): boolean {
+    const el = document.getElementById("organisation-modal");
+    return !!(el && !el.classList.contains("hidden"));
+  }
+
+  public isNotesModalOpen(): boolean {
+    const el = document.getElementById("notes-modal");
+    return !!(el && !el.classList.contains("hidden"));
+  }
+
+  public isCalendarModalOpen(): boolean {
+    const el = document.getElementById("calendar-modal");
+    return !!(el && !el.classList.contains("hidden"));
+  }
+
+  public isInventoryModalOpen(): boolean {
+    const el = document.getElementById("space-inventory-modal");
+    return !!(el && !el.classList.contains("hidden"));
+  }
+
   public setControlsActive(active: boolean) {
-    if (active && (this.isTyperaceModalOpen() || this.isSmokingGameModalOpen() || this.isChessModalOpen() || this.isFishingModalOpen())) {
+    if (active && this.isAnyModalOpen()) {
       active = false;
     }
     this.controlsActive = active;
@@ -1988,7 +2023,10 @@ export class GameScene extends Phaser.Scene {
       this.isTyperaceModalOpen() ||
       this.isSmokingGameModalOpen() ||
       this.isChessModalOpen() ||
-      this.isFishingModalOpen()
+      this.isFishingModalOpen() ||
+      this.isOrganisationModalOpen() ||
+      this.isNotesModalOpen() ||
+      this.isCalendarModalOpen()
     ) {
       if (this.controlsActive) {
         this.setControlsActive(false);
@@ -2480,11 +2518,7 @@ export class GameScene extends Phaser.Scene {
           }
         });
 
-        const isAnyModalOpen =
-          this.isTyperaceModalOpen() ||
-          this.isSmokingGameModalOpen() ||
-          this.isChessModalOpen() ||
-          this.isFishingModalOpen();
+        const isAnyModalOpen = this.isAnyInteractionModalOpen();
 
         if (closestCustomDeco && !this.isEditMode && !isAnyModalOpen) {
           const targetDeco = closestCustomDeco as {
@@ -2506,6 +2540,15 @@ export class GameScene extends Phaser.Scene {
           if (this.nearbyDecoPromptText) {
             this.nearbyDecoPromptText.setVisible(false);
           }
+        }
+
+        const activeNearby = this.getActiveNearbyInteractable();
+        const nextNearbyKey = activeNearby
+          ? `${activeNearby.id}:${activeNearby.interaction}`
+          : null;
+        if (nextNearbyKey !== this.lastReportedNearbyInteractableKey) {
+          this.lastReportedNearbyInteractableKey = nextNearbyKey;
+          this.onNearbyInteractableChange?.(activeNearby);
         }
 
         // Apply audio attenuation to JukeboxManager
@@ -2592,6 +2635,8 @@ export class GameScene extends Phaser.Scene {
     this.input.on(
       "pointerdown",
       (pointer: Phaser.Input.Pointer, currentlyOver: Phaser.GameObjects.GameObject[]) => {
+        if (!this.isCanvasPointerEvent(pointer)) return;
+        if (this.isAnyModalOpen()) return;
         // If a player or interactive object was just clicked, do not close the menu
         if (Date.now() - this.lastPlayerClickTime < 200) {
           return;
@@ -2599,8 +2644,10 @@ export class GameScene extends Phaser.Scene {
         if (currentlyOver && currentlyOver.length > 0) {
           return;
         }
-        // Whenever user clicks on empty canvas, close any active player menu
-        this.closePlayerMenu();
+        // Whenever user clicks on empty canvas while a popup/menu/dropdown is open, close it and consume the click
+        if (this.dismissOpenPopups()) {
+          return;
+        }
 
       // Whenever user clicks on canvas, blur any active input element so WASD works immediately
       if (document.activeElement && document.activeElement !== document.body) {
@@ -2609,14 +2656,11 @@ export class GameScene extends Phaser.Scene {
           el.blur();
         }
       }
-      const anyModalOpen = document.querySelector(".modal-overlay:not(.hidden)");
-      if (!anyModalOpen && !this.controlsActive && !this.isTyperaceModalOpen() && !this.isSmokingGameModalOpen() && !this.isChessModalOpen() && !this.isFishingModalOpen()) {
+      if (!this.controlsActive && !this.isAnyModalOpen()) {
         this.setControlsActive(true);
       }
 
       if (!this.isEditMode) return;
-      const target = pointer.event.target as HTMLElement;
-      if (target && target.tagName !== "CANVAS") return;
 
       if (pointer.leftButtonDown()) {
         if (this.movingEditorItem) {
@@ -2759,6 +2803,7 @@ export class GameScene extends Phaser.Scene {
 
     this.input.on("pointermove", (pointer: Phaser.Input.Pointer) => {
       if (!this.isEditMode) return;
+      if (this.isAnyModalOpen()) return;
 
       if (this.isRightMouseDown && this.panStartPoint) {
         const dx = (pointer.x - this.panStartPoint.x) / this.cameras.main.zoom;
@@ -3407,16 +3452,32 @@ export class GameScene extends Phaser.Scene {
     });
 
     this.input.on("wheel", (pointer: Phaser.Input.Pointer, _objs: any, _dx: number, dy: number) => {
-      if (!this.isEditMode) return;
+      if (!this.isCanvasPointerEvent(pointer)) return;
+      if (this.isAnyModalOpen() || this.isAnyPopupOpen()) return;
       const cam = this.cameras.main;
       const currentZoom = cam.zoom;
       const newZoom = Phaser.Math.Clamp(currentZoom - dy * 0.001, 0.35, 2.2);
       if (newZoom !== currentZoom) {
-        cam.scrollX += (pointer.x - cam.width * 0.5) * (1 / currentZoom - 1 / newZoom);
-        cam.scrollY += (pointer.y - cam.height * 0.5) * (1 / currentZoom - 1 / newZoom);
+        if (this.isEditMode) {
+          cam.scrollX += (pointer.x - cam.width * 0.5) * (1 / currentZoom - 1 / newZoom);
+          cam.scrollY += (pointer.y - cam.height * 0.5) * (1 / currentZoom - 1 / newZoom);
+        }
         cam.setZoom(newZoom);
       }
     });
+  }
+
+  public setPinchZoom(newZoom: number, focalScreenX?: number, focalScreenY?: number) {
+    const cam = this.cameras.main;
+    const currentZoom = cam.zoom;
+    const clampedZoom = Phaser.Math.Clamp(newZoom, 0.35, 2.2);
+    if (clampedZoom !== currentZoom) {
+      if (this.isEditMode && focalScreenX !== undefined && focalScreenY !== undefined) {
+        cam.scrollX += (focalScreenX - cam.width * 0.5) * (1 / currentZoom - 1 / clampedZoom);
+        cam.scrollY += (focalScreenY - cam.height * 0.5) * (1 / currentZoom - 1 / clampedZoom);
+      }
+      cam.setZoom(clampedZoom);
+    }
   }
 
   private updateSelectionVisuals() {
@@ -3625,9 +3686,19 @@ export class GameScene extends Phaser.Scene {
     this.drawObstacles();
     this.drawSpawnPoint();
 
-    for (const visual of this.freeformVisuals.values()) {
-      if (visual.hitZone && visual.hitZone.input) {
-        visual.hitZone.input.cursor = enabled ? "pointer" : "default";
+    const entityMaps: Array<Iterable<{ hitZone?: Phaser.GameObjects.Rectangle | null }>> = [
+      this.freeformVisuals.values(),
+      this.jukeboxVisuals.values(),
+      this.typewriterVisuals.values(),
+      this.ashtrayVisuals.values(),
+      this.chessBoardVisuals.values(),
+      this.aquariumVisuals.values(),
+    ];
+    for (const visuals of entityMaps) {
+      for (const visual of visuals) {
+        if (visual.hitZone && visual.hitZone.input) {
+          visual.hitZone.input.cursor = enabled ? "pointer" : "default";
+        }
       }
     }
 
@@ -3838,6 +3909,20 @@ export class GameScene extends Phaser.Scene {
       }
       return fallback;
     }
+    if (assetKey.startsWith("pet_shop/")) {
+      const frame = assetKey.slice("pet_shop/".length);
+      if (this.textures.exists("pet_shop_atlas") && this.textures.get("pet_shop_atlas").has(frame)) {
+        return { key: "pet_shop_atlas", frame };
+      }
+      return fallback;
+    }
+    if (assetKey.startsWith("living_room_one/")) {
+      const frame = assetKey.slice("living_room_one/".length);
+      if (this.textures.exists("living_room_one_atlas") && this.textures.get("living_room_one_atlas").has(frame)) {
+        return { key: "living_room_one_atlas", frame };
+      }
+      return fallback;
+    }
 
     if (assetKey.startsWith("wood_wall_") || assetKey.startsWith("wall_wood_")) {
       const frame = `wood_${assetKey.replace(/^(wood_wall_|wall_wood_)/, "")}`;
@@ -3870,7 +3955,10 @@ export class GameScene extends Phaser.Scene {
     const srcW = sprite.width || maxSize;
     const srcH = sprite.height || maxSize;
     const scale =
-      assetKey.startsWith("office_one/") || assetKey.startsWith("office_two/")
+      assetKey.startsWith("office_one/") ||
+      assetKey.startsWith("office_two/") ||
+      assetKey.startsWith("pet_shop/") ||
+      assetKey.startsWith("living_room_one/")
         ? TILE_SIZE / 48
         : maxSize / Math.max(srcW, srcH);
     sprite.setDisplaySize(Math.round(srcW * scale), Math.round(srcH * scale));
@@ -3909,24 +3997,12 @@ export class GameScene extends Phaser.Scene {
       ) => {
         if (!pointer.leftButtonDown()) return;
         if (!this.isCanvasPointerEvent(pointer)) return;
-        if (!this.isEditMode) {
-          if (data.interactable && data.interaction && this.localPlayerId) {
-            const localVis = this.playerVisuals.get(this.localPlayerId);
-            if (localVis) {
-              const dist = Phaser.Math.Distance.Between(
-                localVis.container.x,
-                localVis.container.y,
-                data.x,
-                data.y
-              );
-              if (dist <= 1.5 * TILE_SIZE) {
-                event.stopPropagation();
-                this.triggerInteraction(data.id, data.interaction);
-              }
-            }
-          }
+        if (this.isAnyModalOpen()) return;
+        if (this.dismissOpenPopups()) {
+          event.stopPropagation();
           return;
         }
+        if (!this.isEditMode) return;
         event.stopPropagation();
 
         if (this.movingEditorItem) {
@@ -4574,7 +4650,41 @@ export class GameScene extends Phaser.Scene {
 
   private isCanvasPointerEvent(pointer: Phaser.Input.Pointer): boolean {
     const target = pointer.event?.target as HTMLElement | null;
-    return !target || target.tagName === "CANVAS";
+    return Boolean(target && target === this.game.canvas);
+  }
+
+  private isAnyModalOpen(): boolean {
+    return (
+      document.querySelector(
+        ".modal-overlay:not(.hidden), #calendar-image-lightbox:not(.hidden)"
+      ) !== null ||
+      this.isTyperaceModalOpen() ||
+      this.isSmokingGameModalOpen() ||
+      this.isChessModalOpen() ||
+      this.isFishingModalOpen() ||
+      this.isOrganisationModalOpen() ||
+      this.isNotesModalOpen() ||
+      this.isCalendarModalOpen()
+    );
+  }
+
+  private isAnyPopupOpen(): boolean {
+    if (this.activeMenuSessionId !== null || this.activeEditorMenuItem !== null) {
+      return true;
+    }
+    return (
+      document.querySelector(
+        "#player-context-menu:not(.hidden), #editor-item-context-menu:not(.hidden), #editor-interaction-dropdown-panel:not(.hidden), #user-profile-dropdown:not(.hidden), #audio-settings-dropdown:not(.hidden)"
+      ) !== null
+    );
+  }
+
+  private dismissOpenPopups(): boolean {
+    if (!this.isAnyPopupOpen()) return false;
+    this.closePlayerMenu();
+    this.closeEditorItemMenu();
+    this.onDismissPopups?.();
+    return true;
   }
 
   private drawInspectHighlight(
@@ -6161,7 +6271,7 @@ export class GameScene extends Phaser.Scene {
     sprite.setDisplaySize(48, 48);
 
     const hitZone = this.add.rectangle(0, 0, 52, 52, 0x000000, 0);
-    hitZone.setInteractive({ useHandCursor: true });
+    hitZone.setInteractive({ useHandCursor: this.isEditMode });
     hitZone.on(
       "pointerdown",
       (
@@ -6172,24 +6282,23 @@ export class GameScene extends Phaser.Scene {
       ) => {
         if (!pointer.leftButtonDown()) return;
         if (!this.isCanvasPointerEvent(pointer)) return;
+        if (this.isAnyModalOpen()) return;
+        if (this.dismissOpenPopups()) {
+          event.stopPropagation();
+          return;
+        }
+        if (!this.isEditMode) return;
         event.stopPropagation();
 
-        if (this.isEditMode) {
-          this.handleSpecialEntityEditPointerDown(pointer, "jukebox", jb.layer, {
-            kind: "jukebox",
-            id: jb.id,
-            label: "Jukebox",
-            categoryLabel: "Music",
-            worldX: jb.x,
-            worldY: jb.y - 24,
-            bounds: { x: jb.x - 24, y: jb.y - 24, width: 48, height: 48 },
-          });
-        } else {
-          const effective = this.getEffectiveEntityInteraction(jb, "jukebox");
-          if (effective) {
-            this.triggerInteraction(jb.id, effective);
-          }
-        }
+        this.handleSpecialEntityEditPointerDown(pointer, "jukebox", jb.layer, {
+          kind: "jukebox",
+          id: jb.id,
+          label: "Jukebox",
+          categoryLabel: "Music",
+          worldX: jb.x,
+          worldY: jb.y - 24,
+          bounds: { x: jb.x - 24, y: jb.y - 24, width: 48, height: 48 },
+        });
       }
     );
 
@@ -6296,7 +6405,7 @@ export class GameScene extends Phaser.Scene {
     sprite.setDisplaySize(48, 48);
 
     const hitZone = this.add.rectangle(0, 0, 52, 52, 0x000000, 0);
-    hitZone.setInteractive({ useHandCursor: true });
+    hitZone.setInteractive({ useHandCursor: this.isEditMode });
     hitZone.on(
       "pointerdown",
       (
@@ -6307,24 +6416,23 @@ export class GameScene extends Phaser.Scene {
       ) => {
         if (!pointer.leftButtonDown()) return;
         if (!this.isCanvasPointerEvent(pointer)) return;
+        if (this.isAnyModalOpen()) return;
+        if (this.dismissOpenPopups()) {
+          event.stopPropagation();
+          return;
+        }
+        if (!this.isEditMode) return;
         event.stopPropagation();
 
-        if (this.isEditMode) {
-          this.handleSpecialEntityEditPointerDown(pointer, "typewriter", tw.layer, {
-            kind: "typewriter",
-            id: tw.id,
-            label: "Typewriter",
-            categoryLabel: "Game",
-            worldX: tw.x,
-            worldY: tw.y - 24,
-            bounds: { x: tw.x - 24, y: tw.y - 24, width: 48, height: 48 },
-          });
-        } else {
-          const effective = this.getEffectiveEntityInteraction(tw, "type_race");
-          if (effective) {
-            this.triggerInteraction(tw.id, effective);
-          }
-        }
+        this.handleSpecialEntityEditPointerDown(pointer, "typewriter", tw.layer, {
+          kind: "typewriter",
+          id: tw.id,
+          label: "Typewriter",
+          categoryLabel: "Game",
+          worldX: tw.x,
+          worldY: tw.y - 24,
+          bounds: { x: tw.x - 24, y: tw.y - 24, width: 48, height: 48 },
+        });
       }
     );
 
@@ -6400,7 +6508,7 @@ export class GameScene extends Phaser.Scene {
     sprite.setDisplaySize(48, 48);
 
     const hitZone = this.add.rectangle(0, 0, 52, 52, 0x000000, 0);
-    hitZone.setInteractive({ useHandCursor: true });
+    hitZone.setInteractive({ useHandCursor: this.isEditMode });
     hitZone.on(
       "pointerdown",
       (
@@ -6411,24 +6519,23 @@ export class GameScene extends Phaser.Scene {
       ) => {
         if (!pointer.leftButtonDown()) return;
         if (!this.isCanvasPointerEvent(pointer)) return;
+        if (this.isAnyModalOpen()) return;
+        if (this.dismissOpenPopups()) {
+          event.stopPropagation();
+          return;
+        }
+        if (!this.isEditMode) return;
         event.stopPropagation();
 
-        if (this.isEditMode) {
-          this.handleSpecialEntityEditPointerDown(pointer, "ashtray", at.layer, {
-            kind: "ashtray",
-            id: at.id,
-            label: "Ashtray",
-            categoryLabel: "Game",
-            worldX: at.x,
-            worldY: at.y - 24,
-            bounds: { x: at.x - 24, y: at.y - 24, width: 48, height: 48 },
-          });
-        } else {
-          const effective = this.getEffectiveEntityInteraction(at, "smoke_duel");
-          if (effective) {
-            this.triggerInteraction(at.id, effective);
-          }
-        }
+        this.handleSpecialEntityEditPointerDown(pointer, "ashtray", at.layer, {
+          kind: "ashtray",
+          id: at.id,
+          label: "Ashtray",
+          categoryLabel: "Game",
+          worldX: at.x,
+          worldY: at.y - 24,
+          bounds: { x: at.x - 24, y: at.y - 24, width: 48, height: 48 },
+        });
       }
     );
 
@@ -6504,7 +6611,7 @@ export class GameScene extends Phaser.Scene {
     sprite.setDisplaySize(50, 50);
 
     const hitZone = this.add.rectangle(0, 0, 54, 54, 0x000000, 0);
-    hitZone.setInteractive({ useHandCursor: true });
+    hitZone.setInteractive({ useHandCursor: this.isEditMode });
     hitZone.on(
       "pointerdown",
       (
@@ -6515,24 +6622,23 @@ export class GameScene extends Phaser.Scene {
       ) => {
         if (!pointer.leftButtonDown()) return;
         if (!this.isCanvasPointerEvent(pointer)) return;
+        if (this.isAnyModalOpen()) return;
+        if (this.dismissOpenPopups()) {
+          event.stopPropagation();
+          return;
+        }
+        if (!this.isEditMode) return;
         event.stopPropagation();
 
-        if (this.isEditMode) {
-          this.handleSpecialEntityEditPointerDown(pointer, "chess_board", cb.layer, {
-            kind: "chess_board",
-            id: cb.id,
-            label: "Chess Board",
-            categoryLabel: "Game",
-            worldX: cb.x,
-            worldY: cb.y - 25,
-            bounds: { x: cb.x - 25, y: cb.y - 25, width: 50, height: 50 },
-          });
-        } else {
-          const effective = this.getEffectiveEntityInteraction(cb, "chess");
-          if (effective) {
-            this.triggerInteraction(cb.id, effective);
-          }
-        }
+        this.handleSpecialEntityEditPointerDown(pointer, "chess_board", cb.layer, {
+          kind: "chess_board",
+          id: cb.id,
+          label: "Chess Board",
+          categoryLabel: "Game",
+          worldX: cb.x,
+          worldY: cb.y - 25,
+          bounds: { x: cb.x - 25, y: cb.y - 25, width: 50, height: 50 },
+        });
       }
     );
 
@@ -6606,7 +6712,7 @@ export class GameScene extends Phaser.Scene {
     sprite.setDisplaySize(50, 50);
 
     const hitZone = this.add.rectangle(0, 0, 54, 54, 0x000000, 0);
-    hitZone.setInteractive({ useHandCursor: true });
+    hitZone.setInteractive({ useHandCursor: this.isEditMode });
     hitZone.on(
       "pointerdown",
       (
@@ -6617,24 +6723,23 @@ export class GameScene extends Phaser.Scene {
       ) => {
         if (!pointer.leftButtonDown()) return;
         if (!this.isCanvasPointerEvent(pointer)) return;
+        if (this.isAnyModalOpen()) return;
+        if (this.dismissOpenPopups()) {
+          event.stopPropagation();
+          return;
+        }
+        if (!this.isEditMode) return;
         event.stopPropagation();
 
-        if (this.isEditMode) {
-          this.handleSpecialEntityEditPointerDown(pointer, "aquarium", aq.layer, {
-            kind: "aquarium",
-            id: aq.id,
-            label: "Aquarium",
-            categoryLabel: "Fishing",
-            worldX: aq.x,
-            worldY: aq.y - 25,
-            bounds: { x: aq.x - 25, y: aq.y - 25, width: 50, height: 50 },
-          });
-        } else {
-          const effective = this.getEffectiveEntityInteraction(aq, "fishing");
-          if (effective) {
-            this.triggerInteraction(aq.id, effective);
-          }
-        }
+        this.handleSpecialEntityEditPointerDown(pointer, "aquarium", aq.layer, {
+          kind: "aquarium",
+          id: aq.id,
+          label: "Aquarium",
+          categoryLabel: "Fishing",
+          worldX: aq.x,
+          worldY: aq.y - 25,
+          bounds: { x: aq.x - 25, y: aq.y - 25, width: 50, height: 50 },
+        });
       }
     );
 
@@ -6673,6 +6778,57 @@ export class GameScene extends Phaser.Scene {
     return defaultInteraction;
   }
 
+  private isAnyInteractionModalOpen(): boolean {
+    return this.isAnyModalOpen();
+  }
+
+  public getActiveNearbyInteractable(): {
+    id: string;
+    interaction: DecorationInteractionType;
+  } | null {
+    if (this.isEditMode || this.isAnyInteractionModalOpen()) return null;
+
+    if (this.nearbyCustomInteraction) {
+      return {
+        id: this.nearbyCustomInteraction.id,
+        interaction: this.nearbyCustomInteraction.interaction,
+      };
+    }
+    if (this.nearbyAquariumId) {
+      const aq = this.aquariumVisuals.get(this.nearbyAquariumId)?.state;
+      const inter = aq ? this.getEffectiveEntityInteraction(aq, "fishing") : "fishing";
+      if (inter) return { id: this.nearbyAquariumId, interaction: inter };
+    }
+    if (this.nearbyChessBoardId) {
+      const cb = this.chessBoardVisuals.get(this.nearbyChessBoardId)?.state;
+      const inter = cb ? this.getEffectiveEntityInteraction(cb, "chess") : "chess";
+      if (inter) return { id: this.nearbyChessBoardId, interaction: inter };
+    }
+    if (this.nearbyAshtrayId) {
+      const at = this.ashtrayVisuals.get(this.nearbyAshtrayId)?.state;
+      const inter = at ? this.getEffectiveEntityInteraction(at, "smoke_duel") : "smoke_duel";
+      if (inter) return { id: this.nearbyAshtrayId, interaction: inter };
+    }
+    if (this.nearbyTypewriterId) {
+      const tw = this.typewriterVisuals.get(this.nearbyTypewriterId)?.state;
+      const inter = tw ? this.getEffectiveEntityInteraction(tw, "type_race") : "type_race";
+      if (inter) return { id: this.nearbyTypewriterId, interaction: inter };
+    }
+    if (this.nearbyJukeboxId) {
+      const jb = this.jukeboxVisuals.get(this.nearbyJukeboxId)?.state;
+      const inter = jb ? this.getEffectiveEntityInteraction(jb, "jukebox") : "jukebox";
+      if (inter) return { id: this.nearbyJukeboxId, interaction: inter };
+    }
+    return null;
+  }
+
+  public triggerNearbyInteraction(): boolean {
+    const active = this.getActiveNearbyInteractable();
+    if (!active) return false;
+    this.triggerInteraction(active.id, active.interaction);
+    return true;
+  }
+
   public triggerInteraction(id: string, interaction: DecorationInteractionType) {
     if (interaction === "type_race") {
       this.onTypewriterClick?.(id);
@@ -6684,6 +6840,16 @@ export class GameScene extends Phaser.Scene {
       this.onJukeboxClick?.(id);
     } else if (interaction === "fishing") {
       this.onAquariumClick?.(id);
+    } else if (interaction === "organisation") {
+      this.onOrganisationClick?.(id);
+    } else if (interaction === "notes") {
+      this.onNotesClick?.(id);
+    } else if (interaction === "calendar") {
+      this.onCalendarClick?.(id);
+    } else if (interaction === "meals") {
+      this.onMealsClick?.(id);
+    } else if (interaction === "inventory") {
+      this.onInventoryClick?.(id);
     }
   }
 

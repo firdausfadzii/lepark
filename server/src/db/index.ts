@@ -10,6 +10,17 @@ import {
   AquariumState,
   ChatMessage,
   ChatRoomType,
+  Organisation,
+  OrganisationMember,
+  ORGANISATION_CREATION_COST,
+  NoteType,
+  NoteDto,
+  AccessibleNoteSpace,
+  CalendarType,
+  CalendarRepeatUnit,
+  CalendarAssigneeDto,
+  CalendarEventDto,
+  CalendarMealDto,
 } from "shared";
 
 dotenv.config();
@@ -41,11 +52,16 @@ pool.on("error", (err) => {
 export interface UserRecord {
   id: number;
   username: string;
+  email: string | null;
   display_name: string | null;
   password_hash: string;
   role: "user" | "superadmin";
   parking_points: number;
   unlocked_skins?: string[];
+  unlocked_assets?: string[];
+  last_space_id?: string | null;
+  last_x?: number | null;
+  last_y?: number | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -59,6 +75,7 @@ export interface SpaceRecord {
   is_public: boolean;
   is_superadmin_space: boolean;
   whitelist: string[]; // usernames allowed if private
+  shared_owners: string[]; // usernames of co-owners / housemates
   tiles?: Record<string, string>;
   private_zones?: PrivateZone[];
   jukeboxes?: JukeboxState[];
@@ -74,6 +91,81 @@ export interface SpaceRecord {
 const inMemoryUsers: Map<string, UserRecord> = new Map();
 const inMemorySpaces: Map<string, SpaceRecord> = new Map();
 const inMemoryChats: ChatMessage[] = [];
+const inMemoryFriendships: Array<{
+  id: number;
+  requester_id: number;
+  addressee_id: number;
+  status: "pending" | "accepted";
+  created_at: Date;
+  updated_at: Date;
+}> = [];
+const inMemoryOrganisations: Array<{
+  id: number;
+  name: string;
+  logo: string | null;
+  creator_id: number;
+  created_at: Date;
+  updated_at: Date;
+}> = [];
+const inMemoryOrganisationMembers: Array<{
+  id: number;
+  organisation_id: number;
+  user_id: number;
+  role: "leader" | "member";
+  joined_at: Date;
+}> = [];
+const inMemoryNotes: Array<{
+  id: number;
+  type: NoteType;
+  title: string;
+  content: string;
+  author_id: number;
+  space_id: string | null;
+  organisation_id: number | null;
+  images: string[];
+  created_at: Date;
+  updated_at: Date;
+}> = [];
+const inMemorySpaceInventories: Array<{
+  id: number;
+  space_id: string;
+  name: string;
+  bought: boolean;
+  created_by: number | null;
+  created_at: Date;
+  updated_at: Date;
+}> = [];
+let nextInMemorySpaceInventoryId = 1;
+const inMemoryCalendarEvents: Array<{
+  id: number;
+  type: CalendarType;
+  title: string;
+  description: string;
+  start_date: string;
+  end_date: string;
+  is_all_day: boolean;
+  start_time: string | null;
+  end_time: string | null;
+  repeat_interval: number | null;
+  repeat_unit: CalendarRepeatUnit | null;
+  assignee_ids: number[];
+  rotate_assignees: boolean;
+  images: string[];
+  author_id: number;
+  space_id: string | null;
+  organisation_id: number | null;
+  created_at: Date;
+  updated_at: Date;
+}> = [];
+const inMemoryCalendarMeals = new Map<
+  string,
+  {
+    space_id: string;
+    day_of_week: number;
+    meal_name: string;
+    updated_at: Date;
+  }
+>();
 let inMemoryIdCounter = 1;
 
 /**
@@ -108,11 +200,13 @@ async function seedDefaultData(isPostgres: boolean, client?: PoolClient) {
         const record: UserRecord = {
           id: inMemoryIdCounter++,
           username: adminData.username,
+          email: null,
           display_name: adminData.displayName,
           password_hash: passwordHash,
           role: "superadmin",
           parking_points: 0,
           unlocked_skins: [],
+          unlocked_assets: [],
           created_at: new Date(),
           updated_at: new Date(),
         };
@@ -171,6 +265,7 @@ async function seedDefaultData(isPostgres: boolean, client?: PoolClient) {
           is_public: s.is_public,
           is_superadmin_space: s.is_superadmin_space,
           whitelist: s.whitelist,
+          shared_owners: [],
           created_at: new Date(),
           updated_at: new Date(),
         });
@@ -188,6 +283,7 @@ async function setupDatabaseSchema(client: PoolClient) {
     CREATE TABLE IF NOT EXISTS users (
       id SERIAL PRIMARY KEY,
       username VARCHAR(50) UNIQUE NOT NULL,
+      email VARCHAR(255),
       display_name VARCHAR(50),
       password_hash VARCHAR(255) NOT NULL,
       role VARCHAR(20) DEFAULT 'user' NOT NULL,
@@ -195,9 +291,15 @@ async function setupDatabaseSchema(client: PoolClient) {
       updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     );
     CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username_lower ON users (LOWER(username));
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS email VARCHAR(255);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_lower ON users (LOWER(email)) WHERE email IS NOT NULL;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(20) DEFAULT 'user';
     ALTER TABLE users ADD COLUMN IF NOT EXISTS parking_points INT DEFAULT 0 NOT NULL;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS unlocked_skins JSONB DEFAULT '[]'::jsonb;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS unlocked_assets JSONB DEFAULT '[]'::jsonb;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS last_space_id VARCHAR(64);
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS last_x DOUBLE PRECISION;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS last_y DOUBLE PRECISION;
   `);
 
   // 2. Players table
@@ -224,6 +326,7 @@ async function setupDatabaseSchema(client: PoolClient) {
       is_public BOOLEAN DEFAULT TRUE,
       is_superadmin_space BOOLEAN DEFAULT FALSE,
       whitelist JSONB DEFAULT '[]'::jsonb,
+      shared_owners JSONB DEFAULT '[]'::jsonb,
       tiles JSONB DEFAULT '{}'::jsonb,
       private_zones JSONB DEFAULT '[]'::jsonb,
       jukeboxes JSONB DEFAULT '[]'::jsonb,
@@ -234,6 +337,7 @@ async function setupDatabaseSchema(client: PoolClient) {
       created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     );
+    ALTER TABLE spaces ADD COLUMN IF NOT EXISTS shared_owners JSONB DEFAULT '[]'::jsonb;
     ALTER TABLE spaces ADD COLUMN IF NOT EXISTS tiles JSONB DEFAULT '{}'::jsonb;
     ALTER TABLE spaces ADD COLUMN IF NOT EXISTS private_zones JSONB DEFAULT '[]'::jsonb;
     ALTER TABLE spaces ADD COLUMN IF NOT EXISTS jukeboxes JSONB DEFAULT '[]'::jsonb;
@@ -280,6 +384,132 @@ async function setupDatabaseSchema(client: PoolClient) {
     );
     CREATE INDEX IF NOT EXISTS idx_chat_messages_room ON chat_messages (room_type, room_id, timestamp ASC);
   `);
+
+  // 5. Friendships table
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS friendships (
+      id SERIAL PRIMARY KEY,
+      requester_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      addressee_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      status VARCHAR(20) NOT NULL DEFAULT 'pending',
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE (requester_id, addressee_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_friendships_requester ON friendships (requester_id, status);
+    CREATE INDEX IF NOT EXISTS idx_friendships_addressee ON friendships (addressee_id, status);
+  `);
+
+  // 6. Organisations & Organisation Members tables
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS organisations (
+      id SERIAL PRIMARY KEY,
+      name VARCHAR(100) NOT NULL,
+      logo TEXT,
+      creator_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_organisations_name_lower ON organisations (LOWER(name));
+
+    CREATE TABLE IF NOT EXISTS organisation_members (
+      id SERIAL PRIMARY KEY,
+      organisation_id INT NOT NULL REFERENCES organisations(id) ON DELETE CASCADE,
+      user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      role VARCHAR(20) NOT NULL DEFAULT 'member',
+      joined_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE (organisation_id, user_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_org_members_user ON organisation_members (user_id);
+  `);
+
+  // 7. Notes table
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS notes (
+      id SERIAL PRIMARY KEY,
+      type VARCHAR(20) NOT NULL,
+      title VARCHAR(200) NOT NULL,
+      content TEXT NOT NULL DEFAULT '',
+      author_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      space_id VARCHAR(64) REFERENCES spaces(id) ON DELETE CASCADE,
+      organisation_id INT REFERENCES organisations(id) ON DELETE CASCADE,
+      images JSONB NOT NULL DEFAULT '[]',
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+    ALTER TABLE notes ADD COLUMN IF NOT EXISTS images JSONB NOT NULL DEFAULT '[]';
+    CREATE INDEX IF NOT EXISTS idx_notes_type_author ON notes (type, author_id);
+    CREATE INDEX IF NOT EXISTS idx_notes_space ON notes (space_id);
+    CREATE INDEX IF NOT EXISTS idx_notes_org ON notes (organisation_id);
+  `);
+
+  // 7b. Space Inventories table
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS space_inventories (
+      id SERIAL PRIMARY KEY,
+      space_id VARCHAR(64) NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+      name VARCHAR(200) NOT NULL,
+      bought BOOLEAN NOT NULL DEFAULT FALSE,
+      created_by INT REFERENCES users(id) ON DELETE SET NULL,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_space_inventories_space ON space_inventories (space_id, bought, updated_at DESC);
+  `);
+
+  // 8. Calendar events table
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS calendar_events (
+      id SERIAL PRIMARY KEY,
+      type VARCHAR(20) NOT NULL,
+      title VARCHAR(200) NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      start_date VARCHAR(10) NOT NULL,
+      end_date VARCHAR(10) NOT NULL,
+      is_all_day BOOLEAN NOT NULL DEFAULT TRUE,
+      start_time VARCHAR(5),
+      end_time VARCHAR(5),
+      repeat_interval INT,
+      repeat_unit VARCHAR(10),
+      assignee_ids JSONB NOT NULL DEFAULT '[]',
+      rotate_assignees BOOLEAN NOT NULL DEFAULT FALSE,
+      images JSONB NOT NULL DEFAULT '[]',
+      author_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      space_id VARCHAR(64) REFERENCES spaces(id) ON DELETE CASCADE,
+      organisation_id INT REFERENCES organisations(id) ON DELETE CASCADE,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+    ALTER TABLE calendar_events ADD COLUMN IF NOT EXISTS repeat_interval INT;
+    ALTER TABLE calendar_events ADD COLUMN IF NOT EXISTS repeat_unit VARCHAR(10);
+    ALTER TABLE calendar_events ADD COLUMN IF NOT EXISTS assignee_ids JSONB NOT NULL DEFAULT '[]';
+    ALTER TABLE calendar_events ADD COLUMN IF NOT EXISTS rotate_assignees BOOLEAN NOT NULL DEFAULT FALSE;
+    ALTER TABLE calendar_events ADD COLUMN IF NOT EXISTS images JSONB NOT NULL DEFAULT '[]';
+    CREATE INDEX IF NOT EXISTS idx_cal_events_type_author ON calendar_events (type, author_id);
+    CREATE INDEX IF NOT EXISTS idx_cal_events_space ON calendar_events (space_id);
+    CREATE INDEX IF NOT EXISTS idx_cal_events_org ON calendar_events (organisation_id);
+    CREATE INDEX IF NOT EXISTS idx_cal_events_dates ON calendar_events (start_date, end_date);
+  `);
+
+  // 9. Calendar weekly meals rotation table (per space)
+  await client.query(`
+    DO $$
+    BEGIN
+      IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'calendar_meals' AND column_name = 'user_id'
+      ) THEN
+        DROP TABLE calendar_meals;
+      END IF;
+    END $$;
+    CREATE TABLE IF NOT EXISTS calendar_meals (
+      space_id VARCHAR(64) NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+      day_of_week SMALLINT NOT NULL CHECK (day_of_week >= 0 AND day_of_week <= 6),
+      meal_name VARCHAR(200) NOT NULL DEFAULT '',
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (space_id, day_of_week)
+    );
+  `);
 }
 
 /**
@@ -296,10 +526,10 @@ async function syncInMemoryToPostgres(client: PoolClient) {
       );
       if (existing.rows.length === 0) {
         await client.query(
-          `INSERT INTO users (username, display_name, password_hash, role, parking_points, unlocked_skins)
-           VALUES ($1, $2, $3, $4, $5, $6)
+          `INSERT INTO users (username, display_name, password_hash, role, parking_points, unlocked_skins, unlocked_assets)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)
            ON CONFLICT (username) DO NOTHING`,
-          [user.username, user.display_name, user.password_hash, user.role, user.parking_points || 0, JSON.stringify(user.unlocked_skins || [])]
+          [user.username, user.display_name, user.password_hash, user.role, user.parking_points || 0, JSON.stringify(user.unlocked_skins || []), JSON.stringify(user.unlocked_assets || [])]
         );
       }
     } catch (err) {
@@ -320,6 +550,7 @@ async function syncInMemoryToPostgres(client: PoolClient) {
         is_public: row.is_public,
         is_superadmin_space: row.is_superadmin_space,
         whitelist: parseWhitelist(row.whitelist),
+        shared_owners: parseWhitelist(row.shared_owners),
         tiles: typeof row.tiles === "string" ? JSON.parse(row.tiles) : (row.tiles || {}),
         private_zones: parsePrivateZones(row.private_zones),
         jukeboxes: parseJukeboxes(row.jukeboxes),
@@ -466,7 +697,7 @@ export async function findUserByUsername(username: string): Promise<UserRecord |
   if (isDbConnected) {
     try {
       const res = await pool.query(
-        "SELECT id, username, display_name, password_hash, role, COALESCE(parking_points, 0) as parking_points, COALESCE(unlocked_skins, '[]'::jsonb) as unlocked_skins, created_at, updated_at FROM users WHERE LOWER(username) = LOWER($1) LIMIT 1",
+        "SELECT id, username, email, display_name, password_hash, role, COALESCE(parking_points, 0) as parking_points, COALESCE(unlocked_skins, '[]'::jsonb) as unlocked_skins, COALESCE(unlocked_assets, '[]'::jsonb) as unlocked_assets, last_space_id, last_x, last_y, created_at, updated_at FROM users WHERE LOWER(username) = LOWER($1) LIMIT 1",
         [cleanUsername]
       );
       if (res.rows[0]) {
@@ -491,11 +722,39 @@ export async function findUserByUsername(username: string): Promise<UserRecord |
   return null;
 }
 
+export async function findUserByEmail(email: string): Promise<UserRecord | null> {
+  const cleanEmail = email.trim().toLowerCase();
+  if (isDbConnected) {
+    try {
+      const res = await pool.query(
+        "SELECT id, username, email, display_name, password_hash, role, COALESCE(parking_points, 0) as parking_points, COALESCE(unlocked_skins, '[]'::jsonb) as unlocked_skins, COALESCE(unlocked_assets, '[]'::jsonb) as unlocked_assets, last_space_id, last_x, last_y, created_at, updated_at FROM users WHERE LOWER(email) = LOWER($1) LIMIT 1",
+        [cleanEmail]
+      );
+      if (res.rows[0]) {
+        return {
+          ...res.rows[0],
+          role: res.rows[0].role === "superadmin" ? "superadmin" : "user",
+        };
+      }
+      return null;
+    } catch (err) {
+      handleDbQueryError("Error finding user by email", err);
+    }
+  }
+
+  for (const user of inMemoryUsers.values()) {
+    if (user.email && user.email.toLowerCase() === cleanEmail) {
+      return user;
+    }
+  }
+  return null;
+}
+
 export async function findUserById(id: number): Promise<UserRecord | null> {
   if (isDbConnected) {
     try {
       const res = await pool.query(
-        "SELECT id, username, display_name, password_hash, role, COALESCE(parking_points, 0) as parking_points, COALESCE(unlocked_skins, '[]'::jsonb) as unlocked_skins, created_at, updated_at FROM users WHERE id = $1 LIMIT 1",
+        "SELECT id, username, email, display_name, password_hash, role, COALESCE(parking_points, 0) as parking_points, COALESCE(unlocked_skins, '[]'::jsonb) as unlocked_skins, COALESCE(unlocked_assets, '[]'::jsonb) as unlocked_assets, last_space_id, last_x, last_y, created_at, updated_at FROM users WHERE id = $1 LIMIT 1",
         [id]
       );
       if (res.rows[0]) {
@@ -518,13 +777,45 @@ export async function findUserById(id: number): Promise<UserRecord | null> {
   return null;
 }
 
+export async function updateUserLastLocation(
+  userId: number,
+  spaceId: string,
+  x: number,
+  y: number
+): Promise<void> {
+  if (!userId || userId <= 0) return;
+
+  if (isDbConnected) {
+    try {
+      await pool.query(
+        "UPDATE users SET last_space_id = $1, last_x = $2, last_y = $3, updated_at = CURRENT_TIMESTAMP WHERE id = $4",
+        [spaceId, x, y, userId]
+      );
+      return;
+    } catch (err) {
+      handleDbQueryError("Error updating user last location", err);
+    }
+  }
+
+  for (const user of inMemoryUsers.values()) {
+    if (user.id === userId) {
+      user.last_space_id = spaceId;
+      user.last_x = x;
+      user.last_y = y;
+      break;
+    }
+  }
+}
+
 export async function createUser(
   username: string,
   passwordHash: string,
   displayName?: string | null,
-  role: "user" | "superadmin" = "user"
+  role: "user" | "superadmin" = "user",
+  email?: string | null
 ): Promise<UserRecord> {
   const cleanUsername = username.trim();
+  const cleanEmail = email && email.trim() ? email.trim().toLowerCase() : null;
   const cleanDisplayName = displayName && displayName.trim() ? displayName.trim().slice(0, 30) : null;
 
   let createdUser: UserRecord;
@@ -532,10 +823,10 @@ export async function createUser(
   if (isDbConnected) {
     try {
       const res = await pool.query(
-        `INSERT INTO users (username, display_name, password_hash, role, parking_points, unlocked_skins)
-         VALUES ($1, $2, $3, $4, 0, '[]'::jsonb)
-         RETURNING id, username, display_name, password_hash, role, COALESCE(parking_points, 0) as parking_points, COALESCE(unlocked_skins, '[]'::jsonb) as unlocked_skins, created_at, updated_at`,
-        [cleanUsername, cleanDisplayName, passwordHash, role]
+        `INSERT INTO users (username, email, display_name, password_hash, role, parking_points, unlocked_skins, unlocked_assets)
+         VALUES ($1, $2, $3, $4, $5, 0, '[]'::jsonb, '[]'::jsonb)
+         RETURNING id, username, email, display_name, password_hash, role, COALESCE(parking_points, 0) as parking_points, COALESCE(unlocked_skins, '[]'::jsonb) as unlocked_skins, COALESCE(unlocked_assets, '[]'::jsonb) as unlocked_assets, created_at, updated_at`,
+        [cleanUsername, cleanEmail, cleanDisplayName, passwordHash, role]
       );
       createdUser = {
         ...res.rows[0],
@@ -551,11 +842,13 @@ export async function createUser(
       const record: UserRecord = {
         id: inMemoryIdCounter++,
         username: cleanUsername,
+        email: cleanEmail,
         display_name: cleanDisplayName,
         password_hash: passwordHash,
         role,
         parking_points: 0,
         unlocked_skins: [],
+        unlocked_assets: [],
         created_at: new Date(),
         updated_at: new Date(),
       };
@@ -566,10 +859,13 @@ export async function createUser(
     const record: UserRecord = {
       id: inMemoryIdCounter++,
       username: cleanUsername,
+      email: cleanEmail,
       display_name: cleanDisplayName,
       password_hash: passwordHash,
       role,
       parking_points: 0,
+      unlocked_skins: [],
+      unlocked_assets: [],
       created_at: new Date(),
       updated_at: new Date(),
     };
@@ -595,7 +891,7 @@ export async function updateUserDisplayName(
         `UPDATE users
          SET display_name = $2, updated_at = CURRENT_TIMESTAMP
          WHERE id = $1
-         RETURNING id, username, display_name, password_hash, role, COALESCE(parking_points, 0) as parking_points, COALESCE(unlocked_skins, '[]'::jsonb) as unlocked_skins, created_at, updated_at`,
+         RETURNING id, username, email, display_name, password_hash, role, COALESCE(parking_points, 0) as parking_points, COALESCE(unlocked_skins, '[]'::jsonb) as unlocked_skins, COALESCE(unlocked_assets, '[]'::jsonb) as unlocked_assets, created_at, updated_at`,
         [id, cleanDisplayName]
       );
       if (res.rows[0]) {
@@ -622,6 +918,79 @@ export async function updateUserDisplayName(
   return null;
 }
 
+export async function updateUserEmail(id: number, email: string): Promise<UserRecord | null> {
+  const cleanEmail = email.trim().toLowerCase();
+
+  if (isDbConnected) {
+    try {
+      const res = await pool.query(
+        `UPDATE users
+         SET email = $2, updated_at = CURRENT_TIMESTAMP
+         WHERE id = $1
+         RETURNING id, username, email, display_name, password_hash, role, COALESCE(parking_points, 0) as parking_points, COALESCE(unlocked_skins, '[]'::jsonb) as unlocked_skins, COALESCE(unlocked_assets, '[]'::jsonb) as unlocked_assets, created_at, updated_at`,
+        [id, cleanEmail]
+      );
+      if (res.rows[0]) {
+        const updated = {
+          ...res.rows[0],
+          role: res.rows[0].role === "superadmin" ? "superadmin" : "user",
+        };
+        inMemoryUsers.set(updated.username.toLowerCase(), updated);
+        return updated;
+      }
+      return null;
+    } catch (err: any) {
+      if (err?.code === "23505") {
+        throw new Error("Email is already linked to another account.");
+      }
+      handleDbQueryError("Error updating user email", err);
+    }
+  }
+
+  for (const user of inMemoryUsers.values()) {
+    if (user.id === id) {
+      user.email = cleanEmail;
+      user.updated_at = new Date();
+      return user;
+    }
+  }
+  return null;
+}
+
+export async function updateUserPassword(id: number, passwordHash: string): Promise<boolean> {
+  if (isDbConnected) {
+    try {
+      const res = await pool.query(
+        `UPDATE users
+         SET password_hash = $2, updated_at = CURRENT_TIMESTAMP
+         WHERE id = $1`,
+        [id, passwordHash]
+      );
+      if ((res.rowCount ?? 0) > 0) {
+        for (const user of inMemoryUsers.values()) {
+          if (user.id === id) {
+            user.password_hash = passwordHash;
+            user.updated_at = new Date();
+          }
+        }
+        return true;
+      }
+      return false;
+    } catch (err) {
+      handleDbQueryError("Error updating user password", err);
+    }
+  }
+
+  for (const user of inMemoryUsers.values()) {
+    if (user.id === id) {
+      user.password_hash = passwordHash;
+      user.updated_at = new Date();
+      return true;
+    }
+  }
+  return false;
+}
+
 export async function getUserParkingPoints(userId: number): Promise<number> {
   if (isDbConnected) {
     try {
@@ -645,23 +1014,33 @@ export async function getUserParkingPoints(userId: number): Promise<number> {
 }
 
 
-export async function unlockSkinForUser(
+async function unlockUserFeatureItem(
   userId: number,
-  skinId: string,
-  cost: number
-): Promise<{ success: boolean; newPoints: number; unlockedSkins: string[]; error?: string }> {
+  column: "unlocked_skins" | "unlocked_assets",
+  itemId: string,
+  cost: number,
+  freeForSuperadmin = false
+): Promise<{ success: boolean; newPoints: number; items: string[]; error?: string }> {
   const user = await findUserById(userId);
   if (!user) {
-    return { success: false, newPoints: 0, unlockedSkins: [], error: "User not found." };
+    return { success: false, newPoints: 0, items: [], error: "User not found." };
   }
 
-  const currentSkins: string[] = Array.isArray(user.unlocked_skins) ? user.unlocked_skins : [];
+  const currentItems: string[] = Array.isArray(user[column]) ? user[column]! : [];
 
-  if (currentSkins.includes(skinId)) {
+  if (freeForSuperadmin && user.role === "superadmin") {
     return {
       success: true,
       newPoints: user.parking_points || 0,
-      unlockedSkins: currentSkins,
+      items: currentItems,
+    };
+  }
+
+  if (currentItems.includes(itemId)) {
+    return {
+      success: true,
+      newPoints: user.parking_points || 0,
+      items: currentItems,
     };
   }
 
@@ -670,68 +1049,96 @@ export async function unlockSkinForUser(
     return {
       success: false,
       newPoints: currentPoints,
-      unlockedSkins: currentSkins,
+      items: currentItems,
       error: `Requires ${cost} parking points (you have ${currentPoints}).`,
     };
   }
 
-  const newSkins = [...currentSkins, skinId];
+  const newItems = [...currentItems, itemId];
 
   if (isDbConnected) {
     try {
       const res = await pool.query(
         `UPDATE users
          SET parking_points = parking_points - $2,
-             unlocked_skins = $3::jsonb,
+             ${column} = $3::jsonb,
              updated_at = CURRENT_TIMESTAMP
          WHERE id = $1 AND parking_points >= $2
-         RETURNING COALESCE(parking_points, 0) as parking_points, COALESCE(unlocked_skins, '[]'::jsonb) as unlocked_skins`,
-        [userId, cost, JSON.stringify(newSkins)]
+         RETURNING COALESCE(parking_points, 0) as parking_points, COALESCE(${column}, '[]'::jsonb) as items`,
+        [userId, cost, JSON.stringify(newItems)]
       );
 
       if (res.rows.length === 0) {
         return {
           success: false,
           newPoints: currentPoints,
-          unlockedSkins: currentSkins,
+          items: currentItems,
           error: "Insufficient parking points.",
         };
       }
 
       const updatedPoints = Number(res.rows[0].parking_points) || 0;
-      const updatedSkins = Array.isArray(res.rows[0].unlocked_skins) ? res.rows[0].unlocked_skins : newSkins;
+      const updatedItems = Array.isArray(res.rows[0].items) ? res.rows[0].items : newItems;
 
       for (const u of inMemoryUsers.values()) {
         if (u.id === userId) {
           u.parking_points = updatedPoints;
-          u.unlocked_skins = updatedSkins;
+          u[column] = updatedItems;
         }
       }
 
       return {
         success: true,
         newPoints: updatedPoints,
-        unlockedSkins: updatedSkins,
+        items: updatedItems,
       };
     } catch (err) {
-      handleDbQueryError("Error unlocking skin", err);
+      handleDbQueryError(`Error unlocking ${column} item`, err);
     }
   }
 
   // In-memory fallback
   user.parking_points = (user.parking_points || 0) - cost;
-  user.unlocked_skins = newSkins;
+  user[column] = newItems;
   for (const u of inMemoryUsers.values()) {
     if (u.id === userId) {
       u.parking_points = user.parking_points;
-      u.unlocked_skins = newSkins;
+      u[column] = newItems;
     }
   }
 
   return {
     success: true,
     newPoints: user.parking_points,
-    unlockedSkins: newSkins,
+    items: newItems,
+  };
+}
+
+export async function unlockSkinForUser(
+  userId: number,
+  skinId: string,
+  cost: number
+): Promise<{ success: boolean; newPoints: number; unlockedSkins: string[]; error?: string }> {
+  const result = await unlockUserFeatureItem(userId, "unlocked_skins", skinId, cost, false);
+  return {
+    success: result.success,
+    newPoints: result.newPoints,
+    unlockedSkins: result.items,
+    error: result.error,
+  };
+}
+
+export async function unlockAssetForUser(
+  userId: number,
+  assetId: string,
+  cost: number
+): Promise<{ success: boolean; newPoints: number; unlockedAssets: string[]; error?: string }> {
+  const result = await unlockUserFeatureItem(userId, "unlocked_assets", assetId, cost, true);
+  return {
+    success: result.success,
+    newPoints: result.newPoints,
+    unlockedAssets: result.items,
+    error: result.error,
   };
 }
 
@@ -851,7 +1258,7 @@ export async function getSuperadminSpaces(): Promise<SpaceRecord[]> {
   if (isDbConnected) {
     try {
       const res = await pool.query(`
-        SELECT s.id, s.name, s.category, s.owner_id, s.is_public, s.is_superadmin_space, s.whitelist, s.created_at, s.updated_at,
+        SELECT s.id, s.name, s.category, s.owner_id, s.is_public, s.is_superadmin_space, s.whitelist, s.shared_owners, s.created_at, s.updated_at,
                u.username as owner_username
         FROM spaces s
         LEFT JOIN users u ON s.owner_id = u.id
@@ -867,6 +1274,7 @@ export async function getSuperadminSpaces(): Promise<SpaceRecord[]> {
         is_public: row.is_public,
         is_superadmin_space: true,
         whitelist: parseWhitelist(row.whitelist),
+        shared_owners: parseWhitelist(row.shared_owners),
         created_at: row.created_at,
         updated_at: row.updated_at,
       }));
@@ -879,7 +1287,7 @@ export async function getSuperadminSpaces(): Promise<SpaceRecord[]> {
   const results: SpaceRecord[] = [];
   for (const space of inMemorySpaces.values()) {
     if (space.is_superadmin_space) {
-      results.push({ ...space, whitelist: [...space.whitelist] });
+      results.push({ ...space, whitelist: [...space.whitelist], shared_owners: [...(space.shared_owners || [])] });
     }
   }
   return results.sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name));
@@ -889,7 +1297,7 @@ export async function getSpaceById(id: string): Promise<SpaceRecord | null> {
   if (isDbConnected) {
     try {
       const res = await pool.query(
-        `SELECT s.id, s.name, s.category, s.owner_id, s.is_public, s.is_superadmin_space, s.whitelist, s.private_zones, s.jukeboxes, s.typewriters, s.ashtrays, s.chess_boards, s.aquariums, s.created_at, s.updated_at,
+        `SELECT s.id, s.name, s.category, s.owner_id, s.is_public, s.is_superadmin_space, s.whitelist, s.shared_owners, s.private_zones, s.jukeboxes, s.typewriters, s.ashtrays, s.chess_boards, s.aquariums, s.created_at, s.updated_at,
                 u.username as owner_username
          FROM spaces s
          LEFT JOIN users u ON s.owner_id = u.id
@@ -907,6 +1315,7 @@ export async function getSpaceById(id: string): Promise<SpaceRecord | null> {
           is_public: row.is_public,
           is_superadmin_space: row.is_superadmin_space,
           whitelist: parseWhitelist(row.whitelist),
+          shared_owners: parseWhitelist(row.shared_owners),
           private_zones: parsePrivateZones(row.private_zones),
           jukeboxes: parseJukeboxes(row.jukeboxes),
           typewriters: parseTypewriters(row.typewriters),
@@ -928,6 +1337,7 @@ export async function getSpaceById(id: string): Promise<SpaceRecord | null> {
     ? {
         ...space,
         whitelist: [...space.whitelist],
+        shared_owners: [...(space.shared_owners || [])],
         private_zones: space.private_zones ? [...space.private_zones] : [],
         jukeboxes: space.jukeboxes ? [...space.jukeboxes] : [],
         typewriters: space.typewriters ? [...space.typewriters] : [],
@@ -942,7 +1352,7 @@ export async function getUserPersonalSpace(userId: number): Promise<SpaceRecord 
   if (isDbConnected) {
     try {
       const res = await pool.query(
-        `SELECT s.id, s.name, s.category, s.owner_id, s.is_public, s.is_superadmin_space, s.whitelist, s.created_at, s.updated_at,
+        `SELECT s.id, s.name, s.category, s.owner_id, s.is_public, s.is_superadmin_space, s.whitelist, s.shared_owners, s.created_at, s.updated_at,
                 u.username as owner_username
          FROM spaces s
          LEFT JOIN users u ON s.owner_id = u.id
@@ -961,6 +1371,7 @@ export async function getUserPersonalSpace(userId: number): Promise<SpaceRecord 
           is_public: row.is_public,
           is_superadmin_space: false,
           whitelist: parseWhitelist(row.whitelist),
+          shared_owners: parseWhitelist(row.shared_owners),
           created_at: row.created_at,
           updated_at: row.updated_at,
         };
@@ -972,10 +1383,63 @@ export async function getUserPersonalSpace(userId: number): Promise<SpaceRecord 
 
   for (const space of inMemorySpaces.values()) {
     if (space.owner_id === userId && !space.is_superadmin_space) {
-      return { ...space, whitelist: [...space.whitelist] };
+      return { ...space, whitelist: [...space.whitelist], shared_owners: [...(space.shared_owners || [])] };
     }
   }
   return null;
+}
+
+export async function getSharedSpacesForUser(userId: number, username: string): Promise<SpaceRecord[]> {
+  if (isDbConnected) {
+    try {
+      const res = await pool.query(
+        `SELECT s.id, s.name, s.category, s.owner_id, s.is_public, s.is_superadmin_space, s.whitelist, s.shared_owners, s.created_at, s.updated_at,
+                u.username as owner_username
+         FROM spaces s
+         LEFT JOIN users u ON s.owner_id = u.id
+         WHERE s.owner_id != $1
+           AND EXISTS (
+             SELECT 1
+             FROM jsonb_array_elements_text(COALESCE(s.shared_owners, '[]'::jsonb)) AS elem
+             WHERE LOWER(elem) = LOWER($2)
+           )
+         ORDER BY s.name ASC`,
+        [userId, username]
+      );
+      return res.rows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        category: row.is_superadmin_space ? (row.category || "General") : "Personal",
+        owner_id: row.owner_id,
+        owner_username: row.owner_username || "User",
+        is_public: row.is_public,
+        is_superadmin_space: row.is_superadmin_space,
+        whitelist: parseWhitelist(row.whitelist),
+        shared_owners: parseWhitelist(row.shared_owners),
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+      }));
+    } catch (err) {
+      handleDbQueryError("Error getting shared spaces for user", err);
+    }
+  }
+
+  const results: SpaceRecord[] = [];
+  const lower = username.toLowerCase();
+  for (const space of inMemorySpaces.values()) {
+    if (
+      space.owner_id !== userId &&
+      Array.isArray(space.shared_owners) &&
+      space.shared_owners.some((u) => u.toLowerCase() === lower)
+    ) {
+      results.push({
+        ...space,
+        whitelist: [...space.whitelist],
+        shared_owners: [...space.shared_owners],
+      });
+    }
+  }
+  return results.sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export async function ensureUserPersonalSpace(userId: number, username: string): Promise<SpaceRecord | null> {
@@ -998,10 +1462,10 @@ export async function ensureUserPersonalSpace(userId: number, username: string):
   if (isDbConnected) {
     try {
       const res = await pool.query(
-        `INSERT INTO spaces (id, name, category, owner_id, is_public, is_superadmin_space, whitelist)
-         VALUES ($1, $2, 'Personal', $3, $4, false, $5)
+        `INSERT INTO spaces (id, name, category, owner_id, is_public, is_superadmin_space, whitelist, shared_owners)
+         VALUES ($1, $2, 'Personal', $3, $4, false, $5, '[]'::jsonb)
          ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, owner_id = EXCLUDED.owner_id
-         RETURNING id, name, category, owner_id, is_public, is_superadmin_space, whitelist, created_at, updated_at`,
+         RETURNING id, name, category, owner_id, is_public, is_superadmin_space, whitelist, shared_owners, created_at, updated_at`,
         [spaceId, spaceName, userId, isPublic, JSON.stringify(whitelist)]
       );
       const row = res.rows[0];
@@ -1014,6 +1478,7 @@ export async function ensureUserPersonalSpace(userId: number, username: string):
         is_public: row.is_public,
         is_superadmin_space: false,
         whitelist,
+        shared_owners: parseWhitelist(row.shared_owners),
         created_at: row.created_at,
         updated_at: row.updated_at,
       };
@@ -1037,6 +1502,7 @@ export async function ensureUserPersonalSpace(userId: number, username: string):
       is_public: isPublic,
       is_superadmin_space: false,
       whitelist,
+      shared_owners: [],
       created_at: new Date(),
       updated_at: new Date(),
     };
@@ -1053,19 +1519,21 @@ export async function createSuperadminSpace(params: {
   isPublic: boolean;
   ownerId: number;
   whitelist?: string[];
+  sharedOwners?: string[];
 }): Promise<SpaceRecord> {
   const id = `space_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
   const cleanName = params.name.trim().slice(0, 50);
   const cleanCategory = params.category.trim().slice(0, 40) || "General";
   const whitelist = params.whitelist || [];
+  const sharedOwners = params.sharedOwners || [];
 
   if (isDbConnected) {
     try {
       const res = await pool.query(
-        `INSERT INTO spaces (id, name, category, owner_id, is_public, is_superadmin_space, whitelist)
-         VALUES ($1, $2, $3, $4, $5, true, $6)
-         RETURNING id, name, category, owner_id, is_public, is_superadmin_space, whitelist, created_at, updated_at`,
-        [id, cleanName, cleanCategory, params.ownerId, params.isPublic, JSON.stringify(whitelist)]
+        `INSERT INTO spaces (id, name, category, owner_id, is_public, is_superadmin_space, whitelist, shared_owners)
+         VALUES ($1, $2, $3, $4, $5, true, $6, $7)
+         RETURNING id, name, category, owner_id, is_public, is_superadmin_space, whitelist, shared_owners, created_at, updated_at`,
+        [id, cleanName, cleanCategory, params.ownerId, params.isPublic, JSON.stringify(whitelist), JSON.stringify(sharedOwners)]
       );
       const row = res.rows[0];
       const record: SpaceRecord = {
@@ -1076,6 +1544,7 @@ export async function createSuperadminSpace(params: {
         is_public: row.is_public,
         is_superadmin_space: true,
         whitelist: parseWhitelist(row.whitelist),
+        shared_owners: parseWhitelist(row.shared_owners),
         created_at: row.created_at,
         updated_at: row.updated_at,
       };
@@ -1094,6 +1563,7 @@ export async function createSuperadminSpace(params: {
     is_public: params.isPublic,
     is_superadmin_space: true,
     whitelist,
+    shared_owners: sharedOwners,
     created_at: new Date(),
     updated_at: new Date(),
   };
@@ -1108,6 +1578,7 @@ export async function updateSpace(
     category?: string;
     isPublic?: boolean;
     whitelist?: string[];
+    sharedOwners?: string[];
   }
 ): Promise<SpaceRecord | null> {
   const existing = await getSpaceById(spaceId);
@@ -1117,15 +1588,16 @@ export async function updateSpace(
   const newCategory = updates.category !== undefined ? updates.category.trim().slice(0, 40) : existing.category;
   const newIsPublic = updates.isPublic !== undefined ? !!updates.isPublic : existing.is_public;
   const newWhitelist = updates.whitelist !== undefined ? updates.whitelist : existing.whitelist;
+  const newSharedOwners = updates.sharedOwners !== undefined ? updates.sharedOwners : (existing.shared_owners || []);
 
   if (isDbConnected) {
     try {
       const res = await pool.query(
         `UPDATE spaces
-         SET name = $2, category = $3, is_public = $4, whitelist = $5, updated_at = CURRENT_TIMESTAMP
+         SET name = $2, category = $3, is_public = $4, whitelist = $5, shared_owners = $6, updated_at = CURRENT_TIMESTAMP
          WHERE id = $1
-         RETURNING id, name, category, owner_id, is_public, is_superadmin_space, whitelist, created_at, updated_at`,
-        [spaceId, newName, newCategory, newIsPublic, JSON.stringify(newWhitelist)]
+         RETURNING id, name, category, owner_id, is_public, is_superadmin_space, whitelist, shared_owners, created_at, updated_at`,
+        [spaceId, newName, newCategory, newIsPublic, JSON.stringify(newWhitelist), JSON.stringify(newSharedOwners)]
       );
       if (res.rows[0]) {
         const row = res.rows[0];
@@ -1134,9 +1606,11 @@ export async function updateSpace(
           name: row.name,
           category: row.category,
           owner_id: row.owner_id,
+          owner_username: existing.owner_username,
           is_public: row.is_public,
           is_superadmin_space: row.is_superadmin_space,
           whitelist: parseWhitelist(row.whitelist),
+          shared_owners: parseWhitelist(row.shared_owners),
           created_at: row.created_at,
           updated_at: row.updated_at,
         };
@@ -1154,8 +1628,9 @@ export async function updateSpace(
     inMem.category = newCategory;
     inMem.is_public = newIsPublic;
     inMem.whitelist = newWhitelist;
+    inMem.shared_owners = newSharedOwners;
     inMem.updated_at = new Date();
-    return { ...inMem, whitelist: [...inMem.whitelist] };
+    return { ...inMem, whitelist: [...inMem.whitelist], shared_owners: [...inMem.shared_owners] };
   }
   return null;
 }
@@ -1268,6 +1743,7 @@ export async function updateSpaceTiles(
       is_public: true,
       is_superadmin_space: false,
       whitelist: [],
+      shared_owners: [],
       created_at: new Date(),
       updated_at: new Date(),
     };
@@ -1345,6 +1821,7 @@ export async function updateSpacePrivateZones(
       is_public: true,
       is_superadmin_space: false,
       whitelist: [],
+      shared_owners: [],
       created_at: new Date(),
       updated_at: new Date(),
     };
@@ -1795,5 +2272,2379 @@ export async function getAllSavedPlayers() {
   } catch (err) {
     console.error("Error fetching players from DB:", err);
     return [];
+  }
+}
+
+export interface FriendshipWithUserRow {
+  id: number;
+  requester_id: number;
+  addressee_id: number;
+  status: "pending" | "accepted";
+  created_at: Date;
+  other_user_id: number;
+  other_username: string;
+  other_display_name: string | null;
+}
+
+export async function sendFriendRequest(
+  requesterId: number,
+  addresseeId: number
+): Promise<{ success: boolean; status?: "pending" | "accepted"; friendshipId?: number; error?: string }> {
+  if (requesterId === addresseeId) {
+    return { success: false, error: "You cannot add yourself as a friend." };
+  }
+
+  if (!isDbConnected) {
+    const existing = inMemoryFriendships.find(
+      (f) =>
+        (f.requester_id === requesterId && f.addressee_id === addresseeId) ||
+        (f.requester_id === addresseeId && f.addressee_id === requesterId)
+    );
+    if (existing) {
+      if (existing.status === "accepted") {
+        return { success: false, error: "You are already friends." };
+      }
+      if (existing.requester_id === requesterId) {
+        return { success: false, error: "Friend request already sent." };
+      }
+      existing.status = "accepted";
+      existing.updated_at = new Date();
+      return { success: true, status: "accepted", friendshipId: existing.id };
+    }
+    const newRow = {
+      id: inMemoryIdCounter++,
+      requester_id: requesterId,
+      addressee_id: addresseeId,
+      status: "pending" as const,
+      created_at: new Date(),
+      updated_at: new Date(),
+    };
+    inMemoryFriendships.push(newRow);
+    return { success: true, status: "pending", friendshipId: newRow.id };
+  }
+
+  try {
+    const existingRes = await pool.query(
+      `SELECT id, requester_id, addressee_id, status
+       FROM friendships
+       WHERE (requester_id = $1 AND addressee_id = $2)
+          OR (requester_id = $2 AND addressee_id = $1)`,
+      [requesterId, addresseeId]
+    );
+
+    if (existingRes.rows.length > 0) {
+      const row = existingRes.rows[0];
+      if (row.status === "accepted") {
+        return { success: false, error: "You are already friends." };
+      }
+      if (row.requester_id === requesterId) {
+        return { success: false, error: "Friend request already sent." };
+      }
+      await pool.query(
+        `UPDATE friendships SET status = 'accepted', updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
+        [row.id]
+      );
+      return { success: true, status: "accepted", friendshipId: row.id };
+    }
+
+    const insertRes = await pool.query(
+      `INSERT INTO friendships (requester_id, addressee_id, status)
+       VALUES ($1, $2, 'pending')
+       RETURNING id`,
+      [requesterId, addresseeId]
+    );
+    return { success: true, status: "pending", friendshipId: insertRes.rows[0].id };
+  } catch (err) {
+    console.error("Error sending friend request:", err);
+    return { success: false, error: "Failed to send friend request." };
+  }
+}
+
+export async function acceptFriendRequest(
+  userId: number,
+  friendshipId: number
+): Promise<{ success: boolean; requesterId?: number; error?: string }> {
+  if (!isDbConnected) {
+    const row = inMemoryFriendships.find(
+      (f) => f.id === friendshipId && f.addressee_id === userId && f.status === "pending"
+    );
+    if (!row) {
+      return { success: false, error: "Friend request not found." };
+    }
+    row.status = "accepted";
+    row.updated_at = new Date();
+    return { success: true, requesterId: row.requester_id };
+  }
+
+  try {
+    const res = await pool.query(
+      `UPDATE friendships
+       SET status = 'accepted', updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1 AND addressee_id = $2 AND status = 'pending'
+       RETURNING requester_id`,
+      [friendshipId, userId]
+    );
+    if (res.rows.length === 0) {
+      return { success: false, error: "Friend request not found." };
+    }
+    return { success: true, requesterId: res.rows[0].requester_id };
+  } catch (err) {
+    console.error("Error accepting friend request:", err);
+    return { success: false, error: "Failed to accept friend request." };
+  }
+}
+
+export async function rejectOrCancelFriendRequest(
+  userId: number,
+  friendshipId: number
+): Promise<{ success: boolean; otherUserId?: number; error?: string }> {
+  if (!isDbConnected) {
+    const idx = inMemoryFriendships.findIndex(
+      (f) =>
+        f.id === friendshipId &&
+        f.status === "pending" &&
+        (f.addressee_id === userId || f.requester_id === userId)
+    );
+    if (idx === -1) {
+      return { success: false, error: "Friend request not found." };
+    }
+    const row = inMemoryFriendships[idx];
+    const otherUserId = row.requester_id === userId ? row.addressee_id : row.requester_id;
+    inMemoryFriendships.splice(idx, 1);
+    return { success: true, otherUserId };
+  }
+
+  try {
+    const res = await pool.query(
+      `DELETE FROM friendships
+       WHERE id = $1 AND status = 'pending' AND (addressee_id = $2 OR requester_id = $2)
+       RETURNING requester_id, addressee_id`,
+      [friendshipId, userId]
+    );
+    if (res.rows.length === 0) {
+      return { success: false, error: "Friend request not found." };
+    }
+    const row = res.rows[0];
+    const otherUserId = row.requester_id === userId ? row.addressee_id : row.requester_id;
+    return { success: true, otherUserId };
+  } catch (err) {
+    console.error("Error rejecting/canceling friend request:", err);
+    return { success: false, error: "Failed to update friend request." };
+  }
+}
+
+export async function removeFriend(
+  userId: number,
+  friendUserId: number
+): Promise<boolean> {
+  if (!isDbConnected) {
+    const idx = inMemoryFriendships.findIndex(
+      (f) =>
+        f.status === "accepted" &&
+        ((f.requester_id === userId && f.addressee_id === friendUserId) ||
+          (f.requester_id === friendUserId && f.addressee_id === userId))
+    );
+    if (idx !== -1) {
+      inMemoryFriendships.splice(idx, 1);
+      return true;
+    }
+    return false;
+  }
+
+  try {
+    const res = await pool.query(
+      `DELETE FROM friendships
+       WHERE status = 'accepted'
+         AND ((requester_id = $1 AND addressee_id = $2)
+           OR (requester_id = $2 AND addressee_id = $1))`,
+      [userId, friendUserId]
+    );
+    return (res.rowCount || 0) > 0;
+  } catch (err) {
+    console.error("Error removing friend:", err);
+    return false;
+  }
+}
+
+export async function getFriendshipsForUser(
+  userId: number
+): Promise<FriendshipWithUserRow[]> {
+  if (!isDbConnected) {
+    const result: FriendshipWithUserRow[] = [];
+    for (const f of inMemoryFriendships) {
+      if (f.requester_id !== userId && f.addressee_id !== userId) continue;
+      const otherId = f.requester_id === userId ? f.addressee_id : f.requester_id;
+      let otherUser: UserRecord | undefined;
+      for (const u of inMemoryUsers.values()) {
+        if (u.id === otherId) {
+          otherUser = u;
+          break;
+        }
+      }
+      if (!otherUser) continue;
+      result.push({
+        id: f.id,
+        requester_id: f.requester_id,
+        addressee_id: f.addressee_id,
+        status: f.status,
+        created_at: f.created_at,
+        other_user_id: otherUser.id,
+        other_username: otherUser.username,
+        other_display_name: otherUser.display_name,
+      });
+    }
+    return result;
+  }
+
+  try {
+    const res = await pool.query(
+      `SELECT f.id,
+              f.requester_id,
+              f.addressee_id,
+              f.status,
+              f.created_at,
+              u.id AS other_user_id,
+              u.username AS other_username,
+              u.display_name AS other_display_name
+       FROM friendships f
+       JOIN users u
+         ON u.id = CASE WHEN f.requester_id = $1 THEN f.addressee_id ELSE f.requester_id END
+       WHERE f.requester_id = $1 OR f.addressee_id = $1
+       ORDER BY f.updated_at DESC`,
+      [userId]
+    );
+    return res.rows;
+  } catch (err) {
+    console.error("Error fetching friendships:", err);
+    return [];
+  }
+}
+
+// ==========================================
+// Organisation Database Operations
+// ==========================================
+
+export async function areUsersFriends(userA: number, userB: number): Promise<boolean> {
+  if (userA === userB) return false;
+  if (!isDbConnected) {
+    return inMemoryFriendships.some(
+      (f) =>
+        f.status === "accepted" &&
+        ((f.requester_id === userA && f.addressee_id === userB) ||
+          (f.requester_id === userB && f.addressee_id === userA))
+    );
+  }
+
+  try {
+    const res = await pool.query(
+      `SELECT 1 FROM friendships
+       WHERE status = 'accepted'
+         AND ((requester_id = $1 AND addressee_id = $2)
+           OR (requester_id = $2 AND addressee_id = $1))
+       LIMIT 1`,
+      [userA, userB]
+    );
+    return res.rows.length > 0;
+  } catch (err) {
+    console.error("Error checking friendship:", err);
+    return false;
+  }
+}
+
+function findInMemoryUserById(userId: number): UserRecord | undefined {
+  for (const u of inMemoryUsers.values()) {
+    if (u.id === userId) return u;
+  }
+  return undefined;
+}
+
+export async function createOrganisation(
+  creatorId: number,
+  name: string,
+  memberUserIds: number[],
+  logo: string | null,
+  cost: number = ORGANISATION_CREATION_COST
+): Promise<{
+  success: boolean;
+  organisation?: Organisation;
+  newPoints?: number;
+  error?: string;
+}> {
+  const trimmedName = name.trim();
+  if (trimmedName.length < 2 || trimmedName.length > 60) {
+    return { success: false, error: "Organisation name must be between 2 and 60 characters." };
+  }
+
+  const creator = await findUserById(creatorId);
+  if (!creator) {
+    return { success: false, error: "User not found." };
+  }
+
+  const isSuperadmin = creator.role === "superadmin";
+  const effectiveCost = isSuperadmin ? 0 : cost;
+
+  // Deduplicate and exclude creator from invited member IDs
+  const uniqueFriendIds = Array.from(
+    new Set(memberUserIds.filter((id) => Number.isInteger(id) && id > 0 && id !== creatorId))
+  );
+
+  // Regular players can only add accepted friends; superadmin can add any existing player
+  if (!isSuperadmin) {
+    for (const friendId of uniqueFriendIds) {
+      const isFriend = await areUsersFriends(creatorId, friendId);
+      if (!isFriend) {
+        return {
+          success: false,
+          error: "You can only add players who are in your friend list.",
+        };
+      }
+    }
+  } else {
+    for (const targetId of uniqueFriendIds) {
+      const targetUser = await findUserById(targetId);
+      if (!targetUser) {
+        return {
+          success: false,
+          error: `Player #${targetId} not found.`,
+        };
+      }
+    }
+  }
+
+  if (isDbConnected) {
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+
+      // Check duplicate organisation name (case-insensitive)
+      const dupRes = await client.query(
+        "SELECT id FROM organisations WHERE LOWER(name) = LOWER($1) LIMIT 1",
+        [trimmedName]
+      );
+      if (dupRes.rows.length > 0) {
+        await client.query("ROLLBACK");
+        return { success: false, error: "An organisation with that name already exists." };
+      }
+
+      // Atomically deduct parking points (skip if effectiveCost <= 0, e.g. superadmin)
+      let updatedPoints = await getUserParkingPoints(creatorId);
+      if (effectiveCost > 0) {
+        const pointsRes = await client.query(
+          `UPDATE users
+           SET parking_points = parking_points - $2,
+               updated_at = CURRENT_TIMESTAMP
+           WHERE id = $1 AND COALESCE(parking_points, 0) >= $2
+           RETURNING COALESCE(parking_points, 0) as parking_points`,
+          [creatorId, effectiveCost]
+        );
+        if (pointsRes.rows.length === 0) {
+          await client.query("ROLLBACK");
+          return {
+            success: false,
+            newPoints: updatedPoints,
+            error: `Requires ${effectiveCost} parking points (you have ${updatedPoints}).`,
+          };
+        }
+        updatedPoints = Number(pointsRes.rows[0].parking_points) || 0;
+      }
+
+      // Insert organisation
+      const orgRes = await client.query(
+        `INSERT INTO organisations (name, logo, creator_id)
+         VALUES ($1, $2, $3)
+         RETURNING id, name, logo, creator_id, created_at, updated_at`,
+        [trimmedName, logo, creatorId]
+      );
+      const orgRow = orgRes.rows[0];
+
+      // Insert creator as leader
+      await client.query(
+        `INSERT INTO organisation_members (organisation_id, user_id, role)
+         VALUES ($1, $2, 'leader')`,
+        [orgRow.id, creatorId]
+      );
+
+      // Insert friend members
+      for (const friendId of uniqueFriendIds) {
+        await client.query(
+          `INSERT INTO organisation_members (organisation_id, user_id, role)
+           VALUES ($1, $2, 'member')
+           ON CONFLICT (organisation_id, user_id) DO NOTHING`,
+          [orgRow.id, friendId]
+        );
+      }
+
+      await client.query("COMMIT");
+
+      // Sync in-memory user cache
+      for (const u of inMemoryUsers.values()) {
+        if (u.id === creatorId) {
+          u.parking_points = updatedPoints;
+        }
+      }
+
+      const org = await getOrganisationById(orgRow.id);
+      return {
+        success: true,
+        organisation: org || undefined,
+        newPoints: updatedPoints,
+      };
+    } catch (err: any) {
+      try {
+        await client.query("ROLLBACK");
+      } catch {}
+      if (err?.code === "23505") {
+        return { success: false, error: "An organisation with that name already exists." };
+      }
+      handleDbQueryError("Error creating organisation", err);
+      return { success: false, error: "Failed to create organisation." };
+    } finally {
+      client.release();
+    }
+  }
+
+  // In-memory fallback
+  const existingOrg = inMemoryOrganisations.find(
+    (o) => o.name.toLowerCase() === trimmedName.toLowerCase()
+  );
+  if (existingOrg) {
+    return { success: false, error: "An organisation with that name already exists." };
+  }
+
+  const currentPoints = creator.parking_points || 0;
+  if (effectiveCost > 0 && currentPoints < effectiveCost) {
+    return {
+      success: false,
+      newPoints: currentPoints,
+      error: `Requires ${effectiveCost} parking points (you have ${currentPoints}).`,
+    };
+  }
+
+  if (effectiveCost > 0) {
+    creator.parking_points = currentPoints - effectiveCost;
+    for (const u of inMemoryUsers.values()) {
+      if (u.id === creatorId) {
+        u.parking_points = creator.parking_points;
+      }
+    }
+  }
+
+  const now = new Date();
+  const orgId = inMemoryIdCounter++;
+  inMemoryOrganisations.push({
+    id: orgId,
+    name: trimmedName,
+    logo,
+    creator_id: creatorId,
+    created_at: now,
+    updated_at: now,
+  });
+
+  inMemoryOrganisationMembers.push({
+    id: inMemoryIdCounter++,
+    organisation_id: orgId,
+    user_id: creatorId,
+    role: "leader",
+    joined_at: now,
+  });
+
+  for (const friendId of uniqueFriendIds) {
+    inMemoryOrganisationMembers.push({
+      id: inMemoryIdCounter++,
+      organisation_id: orgId,
+      user_id: friendId,
+      role: "member",
+      joined_at: now,
+    });
+  }
+
+  const org = await getOrganisationById(orgId);
+  return {
+    success: true,
+    organisation: org || undefined,
+    newPoints: creator.parking_points,
+  };
+}
+
+export async function getOrganisationById(orgId: number): Promise<Organisation | null> {
+  if (!isDbConnected) {
+    const org = inMemoryOrganisations.find((o) => o.id === orgId);
+    if (!org) return null;
+    const creator = findInMemoryUserById(org.creator_id);
+    const members: OrganisationMember[] = inMemoryOrganisationMembers
+      .filter((m) => m.organisation_id === org.id)
+      .map((m) => {
+        const u = findInMemoryUserById(m.user_id);
+        return {
+          userId: m.user_id,
+          username: u?.username || `user_${m.user_id}`,
+          displayName: u?.display_name || null,
+          name: u?.display_name || u?.username || `user_${m.user_id}`,
+          role: m.role,
+          joinedAt: m.joined_at.toISOString(),
+        };
+      });
+    return {
+      id: org.id,
+      name: org.name,
+      logo: org.logo,
+      creatorId: org.creator_id,
+      creatorUsername: creator?.username || `user_${org.creator_id}`,
+      creatorDisplayName: creator?.display_name || null,
+      members,
+      createdAt: org.created_at.toISOString(),
+      updatedAt: org.updated_at.toISOString(),
+    };
+  }
+
+  try {
+    const orgRes = await pool.query(
+      `SELECT o.id, o.name, o.logo, o.creator_id, o.created_at, o.updated_at,
+              u.username AS creator_username, u.display_name AS creator_display_name
+       FROM organisations o
+       JOIN users u ON u.id = o.creator_id
+       WHERE o.id = $1
+       LIMIT 1`,
+      [orgId]
+    );
+    if (orgRes.rows.length === 0) return null;
+    const row = orgRes.rows[0];
+
+    const memRes = await pool.query(
+      `SELECT om.user_id, om.role, om.joined_at, u.username, u.display_name
+       FROM organisation_members om
+       JOIN users u ON u.id = om.user_id
+       WHERE om.organisation_id = $1
+       ORDER BY (om.role = 'leader') DESC, om.joined_at ASC`,
+      [orgId]
+    );
+
+    const members: OrganisationMember[] = memRes.rows.map((m) => ({
+      userId: m.user_id,
+      username: m.username,
+      displayName: m.display_name,
+      name: m.display_name || m.username,
+      role: m.role === "leader" ? "leader" : "member",
+      joinedAt: new Date(m.joined_at).toISOString(),
+    }));
+
+    return {
+      id: row.id,
+      name: row.name,
+      logo: row.logo || null,
+      creatorId: row.creator_id,
+      creatorUsername: row.creator_username,
+      creatorDisplayName: row.creator_display_name,
+      members,
+      createdAt: new Date(row.created_at).toISOString(),
+      updatedAt: new Date(row.updated_at).toISOString(),
+    };
+  } catch (err) {
+    console.error("Error fetching organisation by ID:", err);
+    return null;
+  }
+}
+
+export async function getOrganisationsForUser(userId: number): Promise<Organisation[]> {
+  if (!isDbConnected) {
+    const orgIds = new Set(
+      inMemoryOrganisationMembers
+        .filter((m) => m.user_id === userId)
+        .map((m) => m.organisation_id)
+    );
+    const result: Organisation[] = [];
+    for (const orgId of orgIds) {
+      const org = await getOrganisationById(orgId);
+      if (org) result.push(org);
+    }
+    return result.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
+  try {
+    const res = await pool.query(
+      `SELECT DISTINCT o.id, o.created_at
+       FROM organisations o
+       JOIN organisation_members om ON om.organisation_id = o.id
+       WHERE om.user_id = $1
+       ORDER BY o.created_at DESC`,
+      [userId]
+    );
+    const orgs: Organisation[] = [];
+    for (const row of res.rows) {
+      const org = await getOrganisationById(row.id);
+      if (org) orgs.push(org);
+    }
+    return orgs;
+  } catch (err) {
+    console.error("Error fetching user organisations:", err);
+    return [];
+  }
+}
+
+export async function addOrganisationMember(
+  organisationId: number,
+  requesterId: number,
+  targetUserId: number
+): Promise<{ success: boolean; organisation?: Organisation; error?: string }> {
+  const org = await getOrganisationById(organisationId);
+  if (!org) return { success: false, error: "Organisation not found." };
+  if (org.creatorId !== requesterId) {
+    return { success: false, error: "Only the organisation leader can add members." };
+  }
+  if (targetUserId === requesterId || org.members.some((m) => m.userId === targetUserId)) {
+    return { success: false, error: "Player is already a member of this organisation." };
+  }
+
+  const requester = await findUserById(requesterId);
+  const isSuperadmin = requester?.role === "superadmin";
+
+  if (!isSuperadmin) {
+    const isFriend = await areUsersFriends(requesterId, targetUserId);
+    if (!isFriend) {
+      return { success: false, error: "You can only add players who are in your friend list." };
+    }
+  } else {
+    const targetUser = await findUserById(targetUserId);
+    if (!targetUser) {
+      return { success: false, error: "Player not found." };
+    }
+  }
+
+  if (!isDbConnected) {
+    inMemoryOrganisationMembers.push({
+      id: inMemoryIdCounter++,
+      organisation_id: organisationId,
+      user_id: targetUserId,
+      role: "member",
+      joined_at: new Date(),
+    });
+    const updated = await getOrganisationById(organisationId);
+    return { success: true, organisation: updated || undefined };
+  }
+
+  try {
+    await pool.query(
+      `INSERT INTO organisation_members (organisation_id, user_id, role)
+       VALUES ($1, $2, 'member')
+       ON CONFLICT (organisation_id, user_id) DO NOTHING`,
+      [organisationId, targetUserId]
+    );
+    const updated = await getOrganisationById(organisationId);
+    return { success: true, organisation: updated || undefined };
+  } catch (err) {
+    console.error("Error adding organisation member:", err);
+    return { success: false, error: "Failed to add member." };
+  }
+}
+
+export async function removeOrganisationMember(
+  organisationId: number,
+  requesterId: number,
+  targetUserId: number
+): Promise<{ success: boolean; organisation?: Organisation; error?: string }> {
+  const org = await getOrganisationById(organisationId);
+  if (!org) return { success: false, error: "Organisation not found." };
+
+  const isLeader = org.creatorId === requesterId;
+  const isSelf = requesterId === targetUserId;
+  if (!isLeader && !isSelf) {
+    return { success: false, error: "Not authorized to remove this member." };
+  }
+  if (targetUserId === org.creatorId) {
+    return { success: false, error: "Leader cannot leave without disbanding the organisation." };
+  }
+
+  if (!isDbConnected) {
+    const idx = inMemoryOrganisationMembers.findIndex(
+      (m) => m.organisation_id === organisationId && m.user_id === targetUserId
+    );
+    if (idx === -1) return { success: false, error: "Member not found." };
+    inMemoryOrganisationMembers.splice(idx, 1);
+    const updated = await getOrganisationById(organisationId);
+    return { success: true, organisation: updated || undefined };
+  }
+
+  try {
+    await pool.query(
+      `DELETE FROM organisation_members
+       WHERE organisation_id = $1 AND user_id = $2`,
+      [organisationId, targetUserId]
+    );
+    const updated = await getOrganisationById(organisationId);
+    return { success: true, organisation: updated || undefined };
+  } catch (err) {
+    console.error("Error removing organisation member:", err);
+    return { success: false, error: "Failed to remove member." };
+  }
+}
+
+export async function deleteOrganisation(
+  organisationId: number,
+  requesterId: number
+): Promise<{ success: boolean; error?: string }> {
+  const org = await getOrganisationById(organisationId);
+  if (!org) return { success: false, error: "Organisation not found." };
+  if (org.creatorId !== requesterId) {
+    return { success: false, error: "Only the organisation leader can disband it." };
+  }
+
+  if (!isDbConnected) {
+    const orgIdx = inMemoryOrganisations.findIndex((o) => o.id === organisationId);
+    if (orgIdx !== -1) inMemoryOrganisations.splice(orgIdx, 1);
+    for (let i = inMemoryOrganisationMembers.length - 1; i >= 0; i--) {
+      if (inMemoryOrganisationMembers[i].organisation_id === organisationId) {
+        inMemoryOrganisationMembers.splice(i, 1);
+      }
+    }
+    return { success: true };
+  }
+
+  try {
+    await pool.query("DELETE FROM organisations WHERE id = $1 AND creator_id = $2", [
+      organisationId,
+      requesterId,
+    ]);
+    return { success: true };
+  } catch (err) {
+    console.error("Error deleting organisation:", err);
+    return { success: false, error: "Failed to disband organisation." };
+  }
+}
+
+export async function getAllUsersBasic(): Promise<
+  Array<{ userId: number; username: string; displayName: string | null; name: string }>
+> {
+  if (!isDbConnected) {
+    return Array.from(inMemoryUsers.values())
+      .map((u) => ({
+        userId: u.id,
+        username: u.username,
+        displayName: u.display_name,
+        name: u.display_name || u.username,
+      }))
+      .sort((a, b) => a.username.localeCompare(b.username));
+  }
+
+  try {
+    const res = await pool.query(
+      `SELECT id, username, display_name
+       FROM users
+       ORDER BY LOWER(username) ASC`
+    );
+    return res.rows.map((r) => ({
+      userId: r.id,
+      username: r.username,
+      displayName: r.display_name,
+      name: r.display_name || r.username,
+    }));
+  } catch (err) {
+    console.error("Error fetching users list:", err);
+    return [];
+  }
+}
+
+// ==========================================
+// Notes System Helpers
+// ==========================================
+
+async function hasSpaceNoteAccess(
+  spaceId: string,
+  userId: number,
+  username: string
+): Promise<{ allowed: boolean; spaceName?: string }> {
+  const space = await getSpaceById(spaceId);
+  if (!space || space.is_superadmin_space) {
+    return { allowed: false };
+  }
+  const isOwner = space.owner_id === userId;
+  const isSpaceMate = (space.shared_owners || []).some(
+    (u) => u.toLowerCase() === username.toLowerCase()
+  );
+  if (!isOwner && !isSpaceMate) {
+    return { allowed: false };
+  }
+  return { allowed: true, spaceName: space.name };
+}
+
+async function hasOrganisationNoteAccess(
+  organisationId: number,
+  userId: number
+): Promise<{ allowed: boolean; orgName?: string }> {
+  const org = await getOrganisationById(organisationId);
+  if (!org) return { allowed: false };
+  const isMember = org.members.some((m) => m.userId === userId);
+  return isMember ? { allowed: true, orgName: org.name } : { allowed: false };
+}
+
+export async function getAccessibleSpacesForNotes(
+  userId: number,
+  username: string
+): Promise<AccessibleNoteSpace[]> {
+  const lowerUser = username.toLowerCase();
+  if (!isDbConnected) {
+    return Array.from(inMemorySpaces.values())
+      .filter(
+        (s) =>
+          !s.is_superadmin_space &&
+          (s.owner_id === userId ||
+            (s.shared_owners || []).some((u) => u.toLowerCase() === lowerUser))
+      )
+      .map((s) => ({
+        id: s.id,
+        name: s.name,
+        isOwner: s.owner_id === userId,
+      }))
+      .sort((a, b) => (a.isOwner === b.isOwner ? a.name.localeCompare(b.name) : a.isOwner ? -1 : 1));
+  }
+
+  try {
+    const res = await pool.query(
+      `SELECT id, name, owner_id
+       FROM spaces
+       WHERE is_superadmin_space = FALSE
+         AND (
+           owner_id = $1
+           OR EXISTS (
+             SELECT 1
+             FROM jsonb_array_elements_text(COALESCE(shared_owners, '[]'::jsonb)) AS elem
+             WHERE LOWER(elem) = LOWER($2)
+           )
+         )
+       ORDER BY (owner_id = $1) DESC, name ASC`,
+      [userId, username]
+    );
+    return res.rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      isOwner: Number(r.owner_id) === userId,
+    }));
+  } catch (err) {
+    console.error("Error fetching accessible spaces for notes:", err);
+    return [];
+  }
+}
+
+export async function getNotesForUser(
+  userId: number,
+  username: string,
+  type: NoteType,
+  spaceId?: string,
+  organisationId?: number
+): Promise<{ success: boolean; notes: NoteDto[]; error?: string }> {
+  if (type === "space" && spaceId) {
+    const access = await hasSpaceNoteAccess(spaceId, userId, username);
+    if (!access.allowed) {
+      return { success: false, notes: [], error: "You do not have access to notes in this space." };
+    }
+  }
+  if (type === "organisation" && organisationId !== undefined) {
+    const access = await hasOrganisationNoteAccess(organisationId, userId);
+    if (!access.allowed) {
+      return {
+        success: false,
+        notes: [],
+        error: "You do not have access to notes in this organisation.",
+      };
+    }
+  }
+
+  if (!isDbConnected) {
+    const accessibleSpaces = await getAccessibleSpacesForNotes(userId, username);
+    const accessibleSpaceMap = new Map(accessibleSpaces.map((s) => [s.id, s.name]));
+    const userOrgs = await getOrganisationsForUser(userId);
+    const userOrgMap = new Map(userOrgs.map((o) => [o.id, o.name]));
+
+    const filtered = inMemoryNotes.filter((n) => {
+      if (n.type !== type) return false;
+      if (type === "personal") return n.author_id === userId;
+      if (type === "space") {
+        if (!n.space_id || !accessibleSpaceMap.has(n.space_id)) return false;
+        return spaceId ? n.space_id === spaceId : true;
+      }
+      if (type === "organisation") {
+        if (!n.organisation_id || !userOrgMap.has(n.organisation_id)) return false;
+        return organisationId !== undefined ? n.organisation_id === organisationId : true;
+      }
+      return false;
+    });
+
+    const userList = Array.from(inMemoryUsers.values());
+    const userById = new Map(userList.map((u) => [u.id, u]));
+
+    const notes: NoteDto[] = filtered
+      .sort((a, b) => b.updated_at.getTime() - a.updated_at.getTime())
+      .map((n) => {
+        const author = userById.get(n.author_id);
+        return {
+          id: n.id,
+          type: n.type,
+          title: n.title,
+          content: n.content,
+          authorId: n.author_id,
+          authorUsername: author?.username || "unknown",
+          authorName: author?.display_name || author?.username || "Unknown",
+          spaceId: n.space_id,
+          spaceName: n.space_id ? accessibleSpaceMap.get(n.space_id) || null : null,
+          organisationId: n.organisation_id,
+          organisationName: n.organisation_id ? userOrgMap.get(n.organisation_id) || null : null,
+          images: Array.isArray(n.images) ? n.images : [],
+          createdAt: n.created_at.toISOString(),
+          updatedAt: n.updated_at.toISOString(),
+        };
+      });
+
+    return { success: true, notes };
+  }
+
+  try {
+    let query = "";
+    let params: any[] = [];
+
+    if (type === "personal") {
+      query = `
+        SELECT n.*, u.username AS author_username, u.display_name AS author_display_name,
+               NULL::text AS space_name, NULL::text AS organisation_name
+        FROM notes n
+        JOIN users u ON u.id = n.author_id
+        WHERE n.type = 'personal' AND n.author_id = $1
+        ORDER BY n.updated_at DESC, n.id DESC
+      `;
+      params = [userId];
+    } else if (type === "space") {
+      if (spaceId) {
+        query = `
+          SELECT n.*, u.username AS author_username, u.display_name AS author_display_name,
+                 s.name AS space_name, NULL::text AS organisation_name
+          FROM notes n
+          JOIN users u ON u.id = n.author_id
+          JOIN spaces s ON s.id = n.space_id
+          WHERE n.type = 'space' AND n.space_id = $1
+          ORDER BY n.updated_at DESC, n.id DESC
+        `;
+        params = [spaceId];
+      } else {
+        query = `
+          SELECT n.*, u.username AS author_username, u.display_name AS author_display_name,
+                 s.name AS space_name, NULL::text AS organisation_name
+          FROM notes n
+          JOIN users u ON u.id = n.author_id
+          JOIN spaces s ON s.id = n.space_id
+          WHERE n.type = 'space'
+            AND s.is_superadmin_space = FALSE
+            AND (
+              s.owner_id = $1
+              OR EXISTS (
+                SELECT 1
+                FROM jsonb_array_elements_text(COALESCE(s.shared_owners, '[]'::jsonb)) AS elem
+                WHERE LOWER(elem) = LOWER($2)
+              )
+            )
+          ORDER BY n.updated_at DESC, n.id DESC
+        `;
+        params = [userId, username];
+      }
+    } else {
+      if (organisationId !== undefined) {
+        query = `
+          SELECT n.*, u.username AS author_username, u.display_name AS author_display_name,
+                 NULL::text AS space_name, o.name AS organisation_name
+          FROM notes n
+          JOIN users u ON u.id = n.author_id
+          JOIN organisations o ON o.id = n.organisation_id
+          WHERE n.type = 'organisation' AND n.organisation_id = $1
+          ORDER BY n.updated_at DESC, n.id DESC
+        `;
+        params = [organisationId];
+      } else {
+        query = `
+          SELECT n.*, u.username AS author_username, u.display_name AS author_display_name,
+                 NULL::text AS space_name, o.name AS organisation_name
+          FROM notes n
+          JOIN users u ON u.id = n.author_id
+          JOIN organisations o ON o.id = n.organisation_id
+          JOIN organisation_members om ON om.organisation_id = o.id AND om.user_id = $1
+          WHERE n.type = 'organisation'
+          ORDER BY n.updated_at DESC, n.id DESC
+        `;
+        params = [userId];
+      }
+    }
+
+    const res = await pool.query(query, params);
+    const notes: NoteDto[] = res.rows.map((r) => ({
+      id: r.id,
+      type: r.type as NoteType,
+      title: r.title,
+      content: r.content,
+      authorId: r.author_id,
+      authorUsername: r.author_username,
+      authorName: r.author_display_name || r.author_username,
+      spaceId: r.space_id,
+      spaceName: r.space_name,
+      organisationId: r.organisation_id,
+      organisationName: r.organisation_name,
+      images: Array.isArray(r.images) ? r.images : [],
+      createdAt: new Date(r.created_at).toISOString(),
+      updatedAt: new Date(r.updated_at).toISOString(),
+    }));
+    return { success: true, notes };
+  } catch (err) {
+    console.error("Error fetching notes:", err);
+    return { success: false, notes: [], error: "Failed to load notes." };
+  }
+}
+
+export async function createNote(params: {
+  userId: number;
+  username: string;
+  type: NoteType;
+  title: string;
+  content: string;
+  spaceId?: string | null;
+  organisationId?: number | null;
+  images?: string[];
+}): Promise<{ success: boolean; note?: NoteDto; error?: string }> {
+  const { userId, username, type, title, content } = params;
+  const images = Array.isArray(params.images) ? params.images : [];
+  let spaceId: string | null = null;
+  let spaceName: string | null = null;
+  let organisationId: number | null = null;
+  let organisationName: string | null = null;
+
+  if (type === "space") {
+    if (!params.spaceId) {
+      return { success: false, error: "Space is required for a space note." };
+    }
+    const access = await hasSpaceNoteAccess(params.spaceId, userId, username);
+    if (!access.allowed) {
+      return { success: false, error: "Only the space owner or space-mates can create space notes." };
+    }
+    spaceId = params.spaceId;
+    spaceName = access.spaceName || null;
+  } else if (type === "organisation") {
+    if (!params.organisationId) {
+      return { success: false, error: "Organisation is required for an organisation note." };
+    }
+    const access = await hasOrganisationNoteAccess(params.organisationId, userId);
+    if (!access.allowed) {
+      return {
+        success: false,
+        error: "Only members of this organisation can create organisation notes.",
+      };
+    }
+    organisationId = params.organisationId;
+    organisationName = access.orgName || null;
+  }
+
+  if (!isDbConnected) {
+    const now = new Date();
+    const record = {
+      id: inMemoryIdCounter++,
+      type,
+      title,
+      content,
+      author_id: userId,
+      space_id: spaceId,
+      organisation_id: organisationId,
+      images,
+      created_at: now,
+      updated_at: now,
+    };
+    inMemoryNotes.push(record);
+    const author = Array.from(inMemoryUsers.values()).find((u) => u.id === userId);
+    return {
+      success: true,
+      note: {
+        id: record.id,
+        type,
+        title,
+        content,
+        authorId: userId,
+        authorUsername: author?.username || username,
+        authorName: author?.display_name || author?.username || username,
+        spaceId,
+        spaceName,
+        organisationId,
+        organisationName,
+        images,
+        createdAt: now.toISOString(),
+        updatedAt: now.toISOString(),
+      },
+    };
+  }
+
+  try {
+    const res = await pool.query(
+      `INSERT INTO notes (type, title, content, author_id, space_id, organisation_id, images)
+       VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
+       RETURNING *`,
+      [type, title, content, userId, spaceId, organisationId, JSON.stringify(images)]
+    );
+    const r = res.rows[0];
+    const author = await findUserById(userId);
+    return {
+      success: true,
+      note: {
+        id: r.id,
+        type: r.type as NoteType,
+        title: r.title,
+        content: r.content,
+        authorId: r.author_id,
+        authorUsername: author?.username || username,
+        authorName: author?.display_name || author?.username || username,
+        spaceId: r.space_id,
+        spaceName,
+        organisationId: r.organisation_id,
+        organisationName,
+        images: Array.isArray(r.images) ? r.images : [],
+        createdAt: new Date(r.created_at).toISOString(),
+        updatedAt: new Date(r.updated_at).toISOString(),
+      },
+    };
+  } catch (err) {
+    console.error("Error creating note:", err);
+    return { success: false, error: "Failed to create note." };
+  }
+}
+
+async function canModifyNote(
+  note: { type: NoteType | CalendarType; author_id: number; space_id: string | null; organisation_id: number | null },
+  userId: number,
+  username: string
+): Promise<boolean> {
+  if (note.type === "personal") {
+    return note.author_id === userId;
+  }
+  if (note.type === "space") {
+    if (!note.space_id) return false;
+    const access = await hasSpaceNoteAccess(note.space_id, userId, username);
+    return access.allowed;
+  }
+  if (note.type === "organisation") {
+    if (!note.organisation_id) return false;
+    const access = await hasOrganisationNoteAccess(note.organisation_id, userId);
+    return access.allowed;
+  }
+  return false;
+}
+
+export async function updateNote(
+  noteId: number,
+  userId: number,
+  username: string,
+  title: string,
+  content: string,
+  images?: string[]
+): Promise<{ success: boolean; note?: NoteDto; error?: string }> {
+  if (!isDbConnected) {
+    const existing = inMemoryNotes.find((n) => n.id === noteId);
+    if (!existing) return { success: false, error: "Note not found." };
+    const allowed = await canModifyNote(existing, userId, username);
+    if (!allowed) return { success: false, error: "You do not have permission to edit this note." };
+    existing.title = title;
+    existing.content = content;
+    if (Array.isArray(images)) existing.images = images;
+    existing.updated_at = new Date();
+    const author = Array.from(inMemoryUsers.values()).find((u) => u.id === existing.author_id);
+    return {
+      success: true,
+      note: {
+        id: existing.id,
+        type: existing.type,
+        title: existing.title,
+        content: existing.content,
+        authorId: existing.author_id,
+        authorUsername: author?.username || username,
+        authorName: author?.display_name || author?.username || username,
+        spaceId: existing.space_id,
+        organisationId: existing.organisation_id,
+        images: Array.isArray(existing.images) ? existing.images : [],
+        createdAt: existing.created_at.toISOString(),
+        updatedAt: existing.updated_at.toISOString(),
+      },
+    };
+  }
+
+  try {
+    const findRes = await pool.query("SELECT * FROM notes WHERE id = $1", [noteId]);
+    if (findRes.rows.length === 0) {
+      return { success: false, error: "Note not found." };
+    }
+    const existing = findRes.rows[0];
+    const allowed = await canModifyNote(existing, userId, username);
+    if (!allowed) {
+      return { success: false, error: "You do not have permission to edit this note." };
+    }
+
+    const nextImages = Array.isArray(images)
+      ? images
+      : Array.isArray(existing.images)
+      ? existing.images
+      : [];
+
+    const updRes = await pool.query(
+      `UPDATE notes
+       SET title = $1, content = $2, images = $3::jsonb, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $4
+       RETURNING *`,
+      [title, content, JSON.stringify(nextImages), noteId]
+    );
+    const r = updRes.rows[0];
+    const author = await findUserById(r.author_id);
+    return {
+      success: true,
+      note: {
+        id: r.id,
+        type: r.type as NoteType,
+        title: r.title,
+        content: r.content,
+        authorId: r.author_id,
+        authorUsername: author?.username || "unknown",
+        authorName: author?.display_name || author?.username || "Unknown",
+        spaceId: r.space_id,
+        organisationId: r.organisation_id,
+        images: Array.isArray(r.images) ? r.images : [],
+        createdAt: new Date(r.created_at).toISOString(),
+        updatedAt: new Date(r.updated_at).toISOString(),
+      },
+    };
+  } catch (err) {
+    console.error("Error updating note:", err);
+    return { success: false, error: "Failed to update note." };
+  }
+}
+
+export async function deleteNote(
+  noteId: number,
+  userId: number,
+  username: string
+): Promise<{ success: boolean; error?: string }> {
+  if (!isDbConnected) {
+    const idx = inMemoryNotes.findIndex((n) => n.id === noteId);
+    if (idx === -1) return { success: false, error: "Note not found." };
+    const allowed = await canModifyNote(inMemoryNotes[idx], userId, username);
+    if (!allowed) return { success: false, error: "You do not have permission to delete this note." };
+    inMemoryNotes.splice(idx, 1);
+    return { success: true };
+  }
+
+  try {
+    const findRes = await pool.query("SELECT * FROM notes WHERE id = $1", [noteId]);
+    if (findRes.rows.length === 0) {
+      return { success: false, error: "Note not found." };
+    }
+    const existing = findRes.rows[0];
+    const allowed = await canModifyNote(existing, userId, username);
+    if (!allowed) {
+      return { success: false, error: "You do not have permission to delete this note." };
+    }
+    await pool.query("DELETE FROM notes WHERE id = $1", [noteId]);
+    return { success: true };
+  } catch (err) {
+    console.error("Error deleting note:", err);
+    return { success: false, error: "Failed to delete note." };
+  }
+}
+
+// ==========================================
+// Calendar Events CRUD
+// ==========================================
+
+function normalizeEventImages(raw: unknown): string[] {
+  let arr: unknown[] = [];
+  if (Array.isArray(raw)) {
+    arr = raw;
+  } else if (typeof raw === "string") {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) arr = parsed;
+    } catch {
+      arr = [];
+    }
+  }
+  const result: string[] = [];
+  for (const item of arr) {
+    if (
+      typeof item === "string" &&
+      /^data:image\/(jpeg|jpg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(item) &&
+      item.length <= 2_000_000
+    ) {
+      result.push(item);
+      if (result.length >= 10) break;
+    }
+  }
+  return result;
+}
+
+function normalizeAssigneeIds(raw: unknown): number[] {
+  let arr: unknown[] = [];
+  if (Array.isArray(raw)) {
+    arr = raw;
+  } else if (typeof raw === "string") {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) arr = parsed;
+    } catch {
+      arr = [];
+    }
+  }
+  const seen = new Set<number>();
+  const result: number[] = [];
+  for (const item of arr) {
+    const id = Number(item);
+    if (Number.isInteger(id) && id > 0 && !seen.has(id)) {
+      seen.add(id);
+      result.push(id);
+    }
+  }
+  return result;
+}
+
+async function fetchUserLookupMap(
+  userIds: number[]
+): Promise<Map<number, { username: string; display_name: string | null }>> {
+  const map = new Map<number, { username: string; display_name: string | null }>();
+  if (userIds.length === 0) return map;
+
+  if (!isDbConnected) {
+    for (const u of inMemoryUsers.values()) {
+      if (userIds.includes(u.id)) {
+        map.set(u.id, { username: u.username, display_name: u.display_name });
+      }
+    }
+    return map;
+  }
+
+  const res = await pool.query(
+    `SELECT id, username, display_name FROM users WHERE id = ANY($1::int[])`,
+    [userIds]
+  );
+  for (const r of res.rows) {
+    map.set(Number(r.id), { username: r.username, display_name: r.display_name });
+  }
+  return map;
+}
+
+function resolveCalendarAssigneesFromMap(
+  assigneeIds: number[],
+  userMap: Map<number, { username: string; display_name: string | null }>
+): CalendarAssigneeDto[] {
+  const result: CalendarAssigneeDto[] = [];
+  for (const id of assigneeIds) {
+    const u = userMap.get(id);
+    if (u) {
+      result.push({
+        userId: id,
+        username: u.username,
+        name: u.display_name || u.username,
+      });
+    }
+  }
+  return result;
+}
+
+export async function getAssignableCalendarMembers(
+  type: CalendarType,
+  spaceId?: string | null,
+  organisationId?: number | null
+): Promise<CalendarAssigneeDto[]> {
+  if (type === "personal") return [];
+
+  if (type === "organisation") {
+    if (!organisationId) return [];
+    const org = await getOrganisationById(organisationId);
+    if (!org) return [];
+    return org.members.map((m) => ({
+      userId: m.userId,
+      username: m.username,
+      name: m.name,
+    }));
+  }
+
+  if (type === "space") {
+    if (!spaceId) return [];
+    const space = await getSpaceById(spaceId);
+    if (!space || space.is_superadmin_space) return [];
+    const sharedLower = (space.shared_owners || []).map((u) => u.toLowerCase());
+
+    if (!isDbConnected) {
+      const members: CalendarAssigneeDto[] = [];
+      const seen = new Set<number>();
+      for (const u of inMemoryUsers.values()) {
+        if (u.id === space.owner_id || sharedLower.includes(u.username.toLowerCase())) {
+          if (!seen.has(u.id)) {
+            seen.add(u.id);
+            members.push({
+              userId: u.id,
+              username: u.username,
+              name: u.display_name || u.username,
+            });
+          }
+        }
+      }
+      members.sort((a, b) => {
+        if (a.userId === space.owner_id) return -1;
+        if (b.userId === space.owner_id) return 1;
+        return a.name.localeCompare(b.name);
+      });
+      return members;
+    }
+
+    try {
+      const res = await pool.query(
+        `SELECT id, username, display_name
+         FROM users
+         WHERE id = $1 OR LOWER(username) = ANY($2::text[])
+         ORDER BY (id = $1) DESC, LOWER(COALESCE(display_name, username)) ASC`,
+        [space.owner_id, sharedLower]
+      );
+      return res.rows.map((r) => ({
+        userId: Number(r.id),
+        username: r.username,
+        name: r.display_name || r.username,
+      }));
+    } catch (err) {
+      console.error("Error loading space assignable members:", err);
+      return [];
+    }
+  }
+
+  return [];
+}
+
+export async function getCalendarEventsForUser(
+  userId: number,
+  username: string,
+  type: CalendarType,
+  spaceId?: string,
+  organisationId?: number
+): Promise<{ success: boolean; events: CalendarEventDto[]; error?: string }> {
+  if (type === "space" && spaceId) {
+    const access = await hasSpaceNoteAccess(spaceId, userId, username);
+    if (!access.allowed) {
+      return { success: false, events: [], error: "You do not have access to calendar in this space." };
+    }
+  }
+  if (type === "organisation" && organisationId !== undefined) {
+    const access = await hasOrganisationNoteAccess(organisationId, userId);
+    if (!access.allowed) {
+      return {
+        success: false,
+        events: [],
+        error: "You do not have access to calendar in this organisation.",
+      };
+    }
+  }
+
+  if (!isDbConnected) {
+    const accessibleSpaces = await getAccessibleSpacesForNotes(userId, username);
+    const accessibleSpaceMap = new Map(accessibleSpaces.map((s) => [s.id, s.name]));
+    const userOrgs = await getOrganisationsForUser(userId);
+    const userOrgMap = new Map(userOrgs.map((o) => [o.id, o.name]));
+
+    const filtered = inMemoryCalendarEvents.filter((ev) => {
+      if (ev.type !== type) return false;
+      if (type === "personal") return ev.author_id === userId;
+      if (type === "space") {
+        if (!ev.space_id || !accessibleSpaceMap.has(ev.space_id)) return false;
+        return spaceId ? ev.space_id === spaceId : true;
+      }
+      if (type === "organisation") {
+        if (!ev.organisation_id || !userOrgMap.has(ev.organisation_id)) return false;
+        return organisationId !== undefined ? ev.organisation_id === organisationId : true;
+      }
+      return false;
+    });
+
+    const userById = new Map(Array.from(inMemoryUsers.values()).map((u) => [u.id, { username: u.username, display_name: u.display_name }]));
+    const events: CalendarEventDto[] = filtered
+      .sort((a, b) => a.start_date.localeCompare(b.start_date) || (a.start_time || "").localeCompare(b.start_time || ""))
+      .map((ev) => {
+        const author = userById.get(ev.author_id);
+        const assigneeIds = normalizeAssigneeIds(ev.assignee_ids);
+        return {
+          id: ev.id,
+          type: ev.type,
+          title: ev.title,
+          description: ev.description,
+          startDate: ev.start_date,
+          endDate: ev.end_date,
+          isAllDay: ev.is_all_day,
+          startTime: ev.start_time,
+          endTime: ev.end_time,
+          repeatInterval: ev.repeat_interval,
+          repeatUnit: ev.repeat_unit,
+          assigneeIds,
+          assignees: resolveCalendarAssigneesFromMap(assigneeIds, userById),
+          rotateAssignees: Boolean(ev.rotate_assignees),
+          images: normalizeEventImages(ev.images),
+          authorId: ev.author_id,
+          authorUsername: author?.username || "unknown",
+          authorName: author?.display_name || author?.username || "Unknown",
+          spaceId: ev.space_id,
+          spaceName: ev.space_id ? accessibleSpaceMap.get(ev.space_id) || null : null,
+          organisationId: ev.organisation_id,
+          organisationName: ev.organisation_id ? userOrgMap.get(ev.organisation_id) || null : null,
+          createdAt: ev.created_at.toISOString(),
+          updatedAt: ev.updated_at.toISOString(),
+        };
+      });
+
+    return { success: true, events };
+  }
+
+  try {
+    let query = "";
+    let params: any[] = [];
+
+    if (type === "personal") {
+      query = `
+        SELECT e.*, u.username AS author_username, u.display_name AS author_name,
+               NULL::text AS space_name, NULL::text AS organisation_name
+        FROM calendar_events e
+        JOIN users u ON u.id = e.author_id
+        WHERE e.type = 'personal' AND e.author_id = $1
+        ORDER BY e.start_date ASC, e.start_time ASC NULLS FIRST, e.id ASC
+      `;
+      params = [userId];
+    } else if (type === "space") {
+      if (spaceId) {
+        query = `
+          SELECT e.*, u.username AS author_username, u.display_name AS author_name,
+                 s.name AS space_name, NULL::text AS organisation_name
+          FROM calendar_events e
+          JOIN users u ON u.id = e.author_id
+          JOIN spaces s ON s.id = e.space_id
+          WHERE e.type = 'space' AND e.space_id = $1
+          ORDER BY e.start_date ASC, e.start_time ASC NULLS FIRST, e.id ASC
+        `;
+        params = [spaceId];
+      } else {
+        query = `
+          SELECT e.*, u.username AS author_username, u.display_name AS author_name,
+                 s.name AS space_name, NULL::text AS organisation_name
+          FROM calendar_events e
+          JOIN users u ON u.id = e.author_id
+          JOIN spaces s ON s.id = e.space_id
+          WHERE e.type = 'space'
+            AND s.is_superadmin_space = FALSE
+            AND (
+              s.owner_id = $1
+              OR EXISTS (
+                SELECT 1
+                FROM jsonb_array_elements_text(COALESCE(s.shared_owners, '[]'::jsonb)) AS elem
+                WHERE LOWER(elem) = LOWER($2)
+              )
+            )
+          ORDER BY e.start_date ASC, e.start_time ASC NULLS FIRST, e.id ASC
+        `;
+        params = [userId, username];
+      }
+    } else {
+      if (organisationId !== undefined) {
+        query = `
+          SELECT e.*, u.username AS author_username, u.display_name AS author_name,
+                 NULL::text AS space_name, o.name AS organisation_name
+          FROM calendar_events e
+          JOIN users u ON u.id = e.author_id
+          JOIN organisations o ON o.id = e.organisation_id
+          WHERE e.type = 'organisation' AND e.organisation_id = $1
+          ORDER BY e.start_date ASC, e.start_time ASC NULLS FIRST, e.id ASC
+        `;
+        params = [organisationId];
+      } else {
+        query = `
+          SELECT e.*, u.username AS author_username, u.display_name AS author_name,
+                 NULL::text AS space_name, o.name AS organisation_name
+          FROM calendar_events e
+          JOIN users u ON u.id = e.author_id
+          JOIN organisations o ON o.id = e.organisation_id
+          JOIN organisation_members om ON om.organisation_id = o.id
+          WHERE e.type = 'organisation' AND om.user_id = $1
+          ORDER BY e.start_date ASC, e.start_time ASC NULLS FIRST, e.id ASC
+        `;
+        params = [userId];
+      }
+    }
+
+    const res = await pool.query(query, params);
+    const allAssigneeIds = Array.from(
+      new Set(res.rows.flatMap((r) => normalizeAssigneeIds(r.assignee_ids)))
+    );
+    const assigneeUserMap = await fetchUserLookupMap(allAssigneeIds);
+
+    const events: CalendarEventDto[] = res.rows.map((r) => {
+      const assigneeIds = normalizeAssigneeIds(r.assignee_ids);
+      return {
+        id: Number(r.id),
+        type: r.type as CalendarType,
+        title: r.title,
+        description: r.description,
+        startDate: r.start_date,
+        endDate: r.end_date,
+        isAllDay: Boolean(r.is_all_day),
+        startTime: r.start_time || null,
+        endTime: r.end_time || null,
+        repeatInterval: r.repeat_interval !== null && r.repeat_interval !== undefined ? Number(r.repeat_interval) : null,
+        repeatUnit: (r.repeat_unit as CalendarRepeatUnit) || null,
+        assigneeIds,
+        assignees: resolveCalendarAssigneesFromMap(assigneeIds, assigneeUserMap),
+        rotateAssignees: Boolean(r.rotate_assignees),
+        images: normalizeEventImages(r.images),
+        authorId: Number(r.author_id),
+        authorUsername: r.author_username,
+        authorName: r.author_name || r.author_username,
+        spaceId: r.space_id || null,
+        spaceName: r.space_name || null,
+        organisationId: r.organisation_id !== null && r.organisation_id !== undefined ? Number(r.organisation_id) : null,
+        organisationName: r.organisation_name || null,
+        createdAt: new Date(r.created_at).toISOString(),
+        updatedAt: new Date(r.updated_at).toISOString(),
+      };
+    });
+
+    return { success: true, events };
+  } catch (err) {
+    console.error("Error loading calendar events:", err);
+    return { success: false, events: [], error: "Failed to load calendar events." };
+  }
+}
+
+export async function createCalendarEvent(params: {
+  userId: number;
+  username: string;
+  type: CalendarType;
+  title: string;
+  description: string;
+  startDate: string;
+  endDate: string;
+  isAllDay: boolean;
+  startTime: string | null;
+  endTime: string | null;
+  repeatInterval: number | null;
+  repeatUnit: CalendarRepeatUnit | null;
+  assigneeIds?: number[];
+  rotateAssignees?: boolean;
+  images?: string[];
+  spaceId?: string | null;
+  organisationId?: number | null;
+}): Promise<{ success: boolean; event?: CalendarEventDto; error?: string }> {
+  const {
+    userId,
+    username,
+    type,
+    title,
+    description,
+    startDate,
+    endDate,
+    isAllDay,
+    startTime,
+    endTime,
+    repeatInterval,
+    repeatUnit,
+    assigneeIds: rawAssigneeIds,
+    rotateAssignees: rawRotateAssignees,
+    images: rawImages,
+    spaceId,
+    organisationId,
+  } = params;
+
+  let spaceName: string | null = null;
+  let organisationName: string | null = null;
+
+  if (type === "space") {
+    if (!spaceId) return { success: false, error: "Space is required for space calendar events." };
+    const access = await hasSpaceNoteAccess(spaceId, userId, username);
+    if (!access.allowed) {
+      return { success: false, error: "You do not have permission to add events to this space." };
+    }
+    spaceName = access.spaceName || null;
+  } else if (type === "organisation") {
+    if (!organisationId) return { success: false, error: "Organisation is required for organisation calendar events." };
+    const access = await hasOrganisationNoteAccess(organisationId, userId);
+    if (!access.allowed) {
+      return { success: false, error: "You do not have permission to add events to this organisation." };
+    }
+    organisationName = access.orgName || null;
+  }
+
+  const normalizedSpaceId = type === "space" ? spaceId || null : null;
+  const normalizedOrgId = type === "organisation" ? organisationId || null : null;
+
+  let finalAssigneeIds: number[] = [];
+  let finalAssignees: CalendarAssigneeDto[] = [];
+  if (type !== "personal") {
+    const requestedIds = normalizeAssigneeIds(rawAssigneeIds);
+    if (requestedIds.length > 0) {
+      const assignable = await getAssignableCalendarMembers(type, normalizedSpaceId, normalizedOrgId);
+      const assignableMap = new Map(assignable.map((m) => [m.userId, m]));
+      for (const id of requestedIds) {
+        const member = assignableMap.get(id);
+        if (member) {
+          finalAssigneeIds.push(id);
+          finalAssignees.push(member);
+        }
+      }
+    }
+  }
+  const finalRotateAssignees =
+    type !== "personal" && Boolean(rawRotateAssignees) && Boolean(repeatInterval && repeatUnit);
+  const finalImages = normalizeEventImages(rawImages);
+
+  if (!isDbConnected) {
+    const now = new Date();
+    const author = Array.from(inMemoryUsers.values()).find((u) => u.id === userId);
+    const record = {
+      id: inMemoryIdCounter++,
+      type,
+      title,
+      description,
+      start_date: startDate,
+      end_date: endDate,
+      is_all_day: isAllDay,
+      start_time: startTime,
+      end_time: endTime,
+      repeat_interval: repeatInterval,
+      repeat_unit: repeatUnit,
+      assignee_ids: finalAssigneeIds,
+      rotate_assignees: finalRotateAssignees,
+      images: finalImages,
+      author_id: userId,
+      space_id: normalizedSpaceId,
+      organisation_id: normalizedOrgId,
+      created_at: now,
+      updated_at: now,
+    };
+    inMemoryCalendarEvents.push(record);
+    return {
+      success: true,
+      event: {
+        id: record.id,
+        type,
+        title,
+        description,
+        startDate,
+        endDate,
+        isAllDay,
+        startTime,
+        endTime,
+        repeatInterval,
+        repeatUnit,
+        assigneeIds: finalAssigneeIds,
+        assignees: finalAssignees,
+        rotateAssignees: finalRotateAssignees,
+        images: finalImages,
+        authorId: userId,
+        authorUsername: author?.username || username,
+        authorName: author?.display_name || author?.username || username,
+        spaceId: normalizedSpaceId,
+        spaceName,
+        organisationId: normalizedOrgId,
+        organisationName,
+        createdAt: now.toISOString(),
+        updatedAt: now.toISOString(),
+      },
+    };
+  }
+
+  try {
+    const res = await pool.query(
+      `INSERT INTO calendar_events
+         (type, title, description, start_date, end_date, is_all_day, start_time, end_time, repeat_interval, repeat_unit, assignee_ids, rotate_assignees, images, author_id, space_id, organisation_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, $13::jsonb, $14, $15, $16)
+       RETURNING *`,
+      [
+        type,
+        title,
+        description,
+        startDate,
+        endDate,
+        isAllDay,
+        startTime,
+        endTime,
+        repeatInterval,
+        repeatUnit,
+        JSON.stringify(finalAssigneeIds),
+        finalRotateAssignees,
+        JSON.stringify(finalImages),
+        userId,
+        normalizedSpaceId,
+        normalizedOrgId,
+      ]
+    );
+    const r = res.rows[0];
+    const userRes = await pool.query("SELECT username, display_name FROM users WHERE id = $1", [userId]);
+    const u = userRes.rows[0];
+
+    return {
+      success: true,
+      event: {
+        id: Number(r.id),
+        type: r.type as CalendarType,
+        title: r.title,
+        description: r.description,
+        startDate: r.start_date,
+        endDate: r.end_date,
+        isAllDay: Boolean(r.is_all_day),
+        startTime: r.start_time || null,
+        endTime: r.end_time || null,
+        repeatInterval: r.repeat_interval !== null && r.repeat_interval !== undefined ? Number(r.repeat_interval) : null,
+        repeatUnit: (r.repeat_unit as CalendarRepeatUnit) || null,
+        assigneeIds: finalAssigneeIds,
+        assignees: finalAssignees,
+        rotateAssignees: Boolean(r.rotate_assignees),
+        images: finalImages,
+        authorId: Number(r.author_id),
+        authorUsername: u?.username || username,
+        authorName: u?.display_name || u?.username || username,
+        spaceId: r.space_id || null,
+        spaceName,
+        organisationId: r.organisation_id !== null && r.organisation_id !== undefined ? Number(r.organisation_id) : null,
+        organisationName,
+        createdAt: new Date(r.created_at).toISOString(),
+        updatedAt: new Date(r.updated_at).toISOString(),
+      },
+    };
+  } catch (err) {
+    console.error("Error creating calendar event:", err);
+    return { success: false, error: "Failed to create calendar event." };
+  }
+}
+
+export async function updateCalendarEvent(
+  eventId: number,
+  userId: number,
+  username: string,
+  params: {
+    title: string;
+    description: string;
+    startDate: string;
+    endDate: string;
+    isAllDay: boolean;
+    startTime: string | null;
+    endTime: string | null;
+    repeatInterval: number | null;
+    repeatUnit: CalendarRepeatUnit | null;
+    assigneeIds?: number[];
+    rotateAssignees?: boolean;
+    images?: string[];
+  }
+): Promise<{ success: boolean; event?: CalendarEventDto; error?: string }> {
+  const {
+    title,
+    description,
+    startDate,
+    endDate,
+    isAllDay,
+    startTime,
+    endTime,
+    repeatInterval,
+    repeatUnit,
+    assigneeIds: rawAssigneeIds,
+    rotateAssignees: rawRotateAssignees,
+    images: rawImages,
+  } = params;
+  const finalImages = normalizeEventImages(rawImages);
+
+  const resolveForExisting = async (
+    evType: CalendarType,
+    evSpaceId: string | null,
+    evOrgId: number | null
+  ): Promise<{ finalIds: number[]; finalAssignees: CalendarAssigneeDto[]; finalRotate: boolean }> => {
+    const finalIds: number[] = [];
+    const finalAssignees: CalendarAssigneeDto[] = [];
+    if (evType !== "personal") {
+      const requestedIds = normalizeAssigneeIds(rawAssigneeIds);
+      if (requestedIds.length > 0) {
+        const assignable = await getAssignableCalendarMembers(evType, evSpaceId, evOrgId);
+        const assignableMap = new Map(assignable.map((m) => [m.userId, m]));
+        for (const id of requestedIds) {
+          const member = assignableMap.get(id);
+          if (member) {
+            finalIds.push(id);
+            finalAssignees.push(member);
+          }
+        }
+      }
+    }
+    const finalRotate =
+      evType !== "personal" && Boolean(rawRotateAssignees) && Boolean(repeatInterval && repeatUnit);
+    return { finalIds, finalAssignees, finalRotate };
+  };
+
+  if (!isDbConnected) {
+    const existing = inMemoryCalendarEvents.find((e) => e.id === eventId);
+    if (!existing) return { success: false, error: "Event not found." };
+    const allowed = await canModifyNote(existing, userId, username);
+    if (!allowed) return { success: false, error: "You do not have permission to edit this event." };
+
+    const { finalIds, finalAssignees, finalRotate } = await resolveForExisting(
+      existing.type,
+      existing.space_id,
+      existing.organisation_id
+    );
+
+    existing.title = title;
+    existing.description = description;
+    existing.start_date = startDate;
+    existing.end_date = endDate;
+    existing.is_all_day = isAllDay;
+    existing.start_time = startTime;
+    existing.end_time = endTime;
+    existing.repeat_interval = repeatInterval;
+    existing.repeat_unit = repeatUnit;
+    existing.assignee_ids = finalIds;
+    existing.rotate_assignees = finalRotate;
+    existing.images = finalImages;
+    existing.updated_at = new Date();
+
+    const author = Array.from(inMemoryUsers.values()).find((u) => u.id === existing.author_id);
+    return {
+      success: true,
+      event: {
+        id: existing.id,
+        type: existing.type,
+        title: existing.title,
+        description: existing.description,
+        startDate: existing.start_date,
+        endDate: existing.end_date,
+        isAllDay: existing.is_all_day,
+        startTime: existing.start_time,
+        endTime: existing.end_time,
+        repeatInterval: existing.repeat_interval,
+        repeatUnit: existing.repeat_unit,
+        assigneeIds: finalIds,
+        assignees: finalAssignees,
+        rotateAssignees: finalRotate,
+        images: finalImages,
+        authorId: existing.author_id,
+        authorUsername: author?.username || "unknown",
+        authorName: author?.display_name || author?.username || "Unknown",
+        spaceId: existing.space_id,
+        organisationId: existing.organisation_id,
+        createdAt: existing.created_at.toISOString(),
+        updatedAt: existing.updated_at.toISOString(),
+      },
+    };
+  }
+
+  try {
+    const findRes = await pool.query("SELECT * FROM calendar_events WHERE id = $1", [eventId]);
+    if (findRes.rows.length === 0) {
+      return { success: false, error: "Event not found." };
+    }
+    const existing = findRes.rows[0];
+    const allowed = await canModifyNote(existing, userId, username);
+    if (!allowed) {
+      return { success: false, error: "You do not have permission to edit this event." };
+    }
+
+    const { finalIds, finalAssignees, finalRotate } = await resolveForExisting(
+      existing.type as CalendarType,
+      existing.space_id || null,
+      existing.organisation_id !== null && existing.organisation_id !== undefined ? Number(existing.organisation_id) : null
+    );
+
+    const res = await pool.query(
+      `UPDATE calendar_events
+       SET title = $1, description = $2, start_date = $3, end_date = $4,
+           is_all_day = $5, start_time = $6, end_time = $7,
+           repeat_interval = $8, repeat_unit = $9,
+           assignee_ids = $10::jsonb, rotate_assignees = $11, images = $12::jsonb,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $13
+       RETURNING *`,
+      [
+        title,
+        description,
+        startDate,
+        endDate,
+        isAllDay,
+        startTime,
+        endTime,
+        repeatInterval,
+        repeatUnit,
+        JSON.stringify(finalIds),
+        finalRotate,
+        JSON.stringify(finalImages),
+        eventId,
+      ]
+    );
+    const r = res.rows[0];
+    const userRes = await pool.query("SELECT username, display_name FROM users WHERE id = $1", [r.author_id]);
+    const u = userRes.rows[0];
+
+    return {
+      success: true,
+      event: {
+        id: Number(r.id),
+        type: r.type as CalendarType,
+        title: r.title,
+        description: r.description,
+        startDate: r.start_date,
+        endDate: r.end_date,
+        isAllDay: Boolean(r.is_all_day),
+        startTime: r.start_time || null,
+        endTime: r.end_time || null,
+        repeatInterval: r.repeat_interval !== null && r.repeat_interval !== undefined ? Number(r.repeat_interval) : null,
+        repeatUnit: (r.repeat_unit as CalendarRepeatUnit) || null,
+        assigneeIds: finalIds,
+        assignees: finalAssignees,
+        rotateAssignees: Boolean(r.rotate_assignees),
+        images: finalImages,
+        authorId: Number(r.author_id),
+        authorUsername: u?.username || "unknown",
+        authorName: u?.display_name || u?.username || "Unknown",
+        spaceId: r.space_id || null,
+        organisationId: r.organisation_id !== null && r.organisation_id !== undefined ? Number(r.organisation_id) : null,
+        createdAt: new Date(r.created_at).toISOString(),
+        updatedAt: new Date(r.updated_at).toISOString(),
+      },
+    };
+  } catch (err) {
+    console.error("Error updating calendar event:", err);
+    return { success: false, error: "Failed to update calendar event." };
+  }
+}
+
+export async function deleteCalendarEvent(
+  eventId: number,
+  userId: number,
+  username: string
+): Promise<{ success: boolean; error?: string }> {
+  if (!isDbConnected) {
+    const idx = inMemoryCalendarEvents.findIndex((e) => e.id === eventId);
+    if (idx === -1) return { success: false, error: "Event not found." };
+    const allowed = await canModifyNote(inMemoryCalendarEvents[idx], userId, username);
+    if (!allowed) return { success: false, error: "You do not have permission to delete this event." };
+    inMemoryCalendarEvents.splice(idx, 1);
+    return { success: true };
+  }
+
+  try {
+    const findRes = await pool.query("SELECT * FROM calendar_events WHERE id = $1", [eventId]);
+    if (findRes.rows.length === 0) {
+      return { success: false, error: "Event not found." };
+    }
+    const existing = findRes.rows[0];
+    const allowed = await canModifyNote(existing, userId, username);
+    if (!allowed) {
+      return { success: false, error: "You do not have permission to delete this event." };
+    }
+    await pool.query("DELETE FROM calendar_events WHERE id = $1", [eventId]);
+    return { success: true };
+  } catch (err) {
+    console.error("Error deleting calendar event:", err);
+    return { success: false, error: "Failed to delete calendar event." };
+  }
+}
+
+export async function getCalendarMealsForSpace(
+  userId: number,
+  username: string,
+  spaceId: string
+): Promise<{ success: boolean; meals?: CalendarMealDto[]; error?: string }> {
+  const access = await hasSpaceNoteAccess(spaceId, userId, username);
+  if (!access.allowed) {
+    return { success: false, error: "You do not have access to this space's meals." };
+  }
+
+  if (!isDbConnected) {
+    const meals: CalendarMealDto[] = [];
+    for (let day = 0; day <= 6; day++) {
+      const rec = inMemoryCalendarMeals.get(`${spaceId}:${day}`);
+      if (rec && rec.meal_name) {
+        meals.push({
+          dayOfWeek: rec.day_of_week,
+          mealName: rec.meal_name,
+          updatedAt: rec.updated_at.toISOString(),
+        });
+      }
+    }
+    return { success: true, meals };
+  }
+
+  try {
+    const res = await pool.query(
+      `SELECT day_of_week, meal_name, updated_at
+       FROM calendar_meals
+       WHERE space_id = $1
+       ORDER BY day_of_week ASC`,
+      [spaceId]
+    );
+    const meals: CalendarMealDto[] = res.rows.map((r) => ({
+      dayOfWeek: Number(r.day_of_week),
+      mealName: r.meal_name || "",
+      updatedAt: r.updated_at instanceof Date ? r.updated_at.toISOString() : new Date(r.updated_at).toISOString(),
+    }));
+    return { success: true, meals };
+  } catch (err) {
+    console.error("Error fetching calendar meals:", err);
+    return { success: false, error: "Failed to load meals." };
+  }
+}
+
+export async function upsertCalendarMealForSpace(
+  userId: number,
+  username: string,
+  spaceId: string,
+  dayOfWeek: number,
+  mealName: string
+): Promise<{ success: boolean; meal?: CalendarMealDto; error?: string }> {
+  if (!Number.isInteger(dayOfWeek) || dayOfWeek < 0 || dayOfWeek > 6) {
+    return { success: false, error: "Invalid day of week." };
+  }
+  const access = await hasSpaceNoteAccess(spaceId, userId, username);
+  if (!access.allowed) {
+    return { success: false, error: "You do not have permission to edit this space's meals." };
+  }
+
+  const cleanName = mealName.trim().slice(0, 200);
+  const now = new Date();
+
+  if (!isDbConnected) {
+    const key = `${spaceId}:${dayOfWeek}`;
+    if (!cleanName) {
+      inMemoryCalendarMeals.delete(key);
+    } else {
+      inMemoryCalendarMeals.set(key, {
+        space_id: spaceId,
+        day_of_week: dayOfWeek,
+        meal_name: cleanName,
+        updated_at: now,
+      });
+    }
+    return {
+      success: true,
+      meal: { dayOfWeek, mealName: cleanName, updatedAt: now.toISOString() },
+    };
+  }
+
+  try {
+    if (!cleanName) {
+      await pool.query(
+        "DELETE FROM calendar_meals WHERE space_id = $1 AND day_of_week = $2",
+        [spaceId, dayOfWeek]
+      );
+      return {
+        success: true,
+        meal: { dayOfWeek, mealName: "", updatedAt: now.toISOString() },
+      };
+    }
+
+    const res = await pool.query(
+      `INSERT INTO calendar_meals (space_id, day_of_week, meal_name, updated_at)
+       VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
+       ON CONFLICT (space_id, day_of_week)
+       DO UPDATE SET meal_name = EXCLUDED.meal_name, updated_at = CURRENT_TIMESTAMP
+       RETURNING day_of_week, meal_name, updated_at`,
+      [spaceId, dayOfWeek, cleanName]
+    );
+    const r = res.rows[0];
+    return {
+      success: true,
+      meal: {
+        dayOfWeek: Number(r.day_of_week),
+        mealName: r.meal_name || "",
+        updatedAt: r.updated_at instanceof Date ? r.updated_at.toISOString() : new Date(r.updated_at).toISOString(),
+      },
+    };
+  } catch (err) {
+    console.error("Error saving calendar meal:", err);
+    return { success: false, error: "Failed to save meal." };
+  }
+}
+
+// ==========================================
+// Space Inventory Helpers
+// ==========================================
+
+export interface SpaceInventoryDto {
+  id: number;
+  spaceId: string;
+  name: string;
+  bought: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+function mapSpaceInventoryRow(row: {
+  id: number;
+  space_id: string;
+  name: string;
+  bought: boolean;
+  created_at: Date | string;
+  updated_at: Date | string;
+}): SpaceInventoryDto {
+  return {
+    id: Number(row.id),
+    spaceId: row.space_id,
+    name: row.name,
+    bought: Boolean(row.bought),
+    createdAt:
+      row.created_at instanceof Date
+        ? row.created_at.toISOString()
+        : new Date(row.created_at).toISOString(),
+    updatedAt:
+      row.updated_at instanceof Date
+        ? row.updated_at.toISOString()
+        : new Date(row.updated_at).toISOString(),
+  };
+}
+
+export async function getSpaceInventory(
+  spaceId: string,
+  userId: number,
+  username: string
+): Promise<{ success: boolean; items: SpaceInventoryDto[]; error?: string }> {
+  const access = await hasSpaceNoteAccess(spaceId, userId, username);
+  if (!access.allowed) {
+    return { success: false, items: [], error: "You do not have access to this space's inventory." };
+  }
+
+  if (!isDbConnected) {
+    const items = inMemorySpaceInventories
+      .filter((item) => item.space_id === spaceId)
+      .sort((a, b) => b.updated_at.getTime() - a.updated_at.getTime() || b.id - a.id)
+      .map(mapSpaceInventoryRow);
+    return { success: true, items };
+  }
+
+  try {
+    const res = await pool.query(
+      `SELECT id, space_id, name, bought, created_at, updated_at
+       FROM space_inventories
+       WHERE space_id = $1
+       ORDER BY updated_at DESC, id DESC`,
+      [spaceId]
+    );
+    return { success: true, items: res.rows.map(mapSpaceInventoryRow) };
+  } catch (err) {
+    console.error("Error fetching space inventory:", err);
+    return { success: false, items: [], error: "Failed to load space inventory." };
+  }
+}
+
+export async function createSpaceInventoryItem(params: {
+  spaceId: string;
+  userId: number;
+  username: string;
+  name: string;
+  bought: boolean;
+}): Promise<{ success: boolean; item?: SpaceInventoryDto; error?: string }> {
+  const access = await hasSpaceNoteAccess(params.spaceId, params.userId, params.username);
+  if (!access.allowed) {
+    return { success: false, error: "You do not have access to this space's inventory." };
+  }
+
+  if (!isDbConnected) {
+    const now = new Date();
+    const record = {
+      id: nextInMemorySpaceInventoryId++,
+      space_id: params.spaceId,
+      name: params.name,
+      bought: Boolean(params.bought),
+      created_by: params.userId,
+      created_at: now,
+      updated_at: now,
+    };
+    inMemorySpaceInventories.push(record);
+    return { success: true, item: mapSpaceInventoryRow(record) };
+  }
+
+  try {
+    const res = await pool.query(
+      `INSERT INTO space_inventories (space_id, name, bought, created_by)
+       VALUES ($1, $2, $3, $4)
+       RETURNING id, space_id, name, bought, created_at, updated_at`,
+      [params.spaceId, params.name, Boolean(params.bought), params.userId]
+    );
+    return { success: true, item: mapSpaceInventoryRow(res.rows[0]) };
+  } catch (err) {
+    console.error("Error creating space inventory item:", err);
+    return { success: false, error: "Failed to add inventory item." };
+  }
+}
+
+export async function updateSpaceInventoryItem(params: {
+  id: number;
+  spaceId: string;
+  userId: number;
+  username: string;
+  name: string;
+  bought: boolean;
+}): Promise<{ success: boolean; item?: SpaceInventoryDto; error?: string }> {
+  const access = await hasSpaceNoteAccess(params.spaceId, params.userId, params.username);
+  if (!access.allowed) {
+    return { success: false, error: "You do not have access to this space's inventory." };
+  }
+
+  if (!isDbConnected) {
+    const existing = inMemorySpaceInventories.find(
+      (item) => item.id === params.id && item.space_id === params.spaceId
+    );
+    if (!existing) {
+      return { success: false, error: "Inventory item not found." };
+    }
+    existing.name = params.name;
+    existing.bought = Boolean(params.bought);
+    existing.updated_at = new Date();
+    return { success: true, item: mapSpaceInventoryRow(existing) };
+  }
+
+  try {
+    const res = await pool.query(
+      `UPDATE space_inventories
+       SET name = $1, bought = $2, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $3 AND space_id = $4
+       RETURNING id, space_id, name, bought, created_at, updated_at`,
+      [params.name, Boolean(params.bought), params.id, params.spaceId]
+    );
+    if (res.rows.length === 0) {
+      return { success: false, error: "Inventory item not found." };
+    }
+    return { success: true, item: mapSpaceInventoryRow(res.rows[0]) };
+  } catch (err) {
+    console.error("Error updating space inventory item:", err);
+    return { success: false, error: "Failed to update inventory item." };
+  }
+}
+
+export async function deleteSpaceInventoryItem(params: {
+  id: number;
+  spaceId: string;
+  userId: number;
+  username: string;
+}): Promise<{ success: boolean; error?: string }> {
+  const access = await hasSpaceNoteAccess(params.spaceId, params.userId, params.username);
+  if (!access.allowed) {
+    return { success: false, error: "You do not have access to this space's inventory." };
+  }
+
+  if (!isDbConnected) {
+    const idx = inMemorySpaceInventories.findIndex(
+      (item) => item.id === params.id && item.space_id === params.spaceId
+    );
+    if (idx === -1) {
+      return { success: false, error: "Inventory item not found." };
+    }
+    inMemorySpaceInventories.splice(idx, 1);
+    return { success: true };
+  }
+
+  try {
+    const res = await pool.query(
+      `DELETE FROM space_inventories
+       WHERE id = $1 AND space_id = $2
+       RETURNING id`,
+      [params.id, params.spaceId]
+    );
+    if (res.rows.length === 0) {
+      return { success: false, error: "Inventory item not found." };
+    }
+    return { success: true };
+  } catch (err) {
+    console.error("Error deleting space inventory item:", err);
+    return { success: false, error: "Failed to delete inventory item." };
   }
 }

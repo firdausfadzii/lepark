@@ -38,6 +38,7 @@ export function generateToken(user: AuthUser): string {
     JSON.stringify({
       id: user.id,
       username: user.username,
+      email: user.email || null,
       displayName: user.displayName || null,
       role: user.role || "user",
       exp,
@@ -87,6 +88,7 @@ export function verifyToken(token: string): AuthUser | null {
     return {
       id: decoded.id,
       username: decoded.username,
+      email: decoded.email || null,
       displayName: decoded.displayName || null,
       role: decoded.role === "superadmin" ? "superadmin" : "user",
     };

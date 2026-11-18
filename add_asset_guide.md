@@ -427,64 +427,48 @@ In [`client/index.html`](file:///Users/firdausfadzi/Desktop/game/client/index.ht
 
 ---
 
-## 8. Adding an Interactive Entity (e.g., Jukebox, Arcade/Minigame Machine)
+## 8. Adding an Interactable Feature (Manual Asset Linking)
 
-Interactive entities are complex world objects with custom state sync, proximity interaction (pressing `[E]`), and UI modals. Examples in Lepark include the **YouTube Jukebox** and **Typerace Typewriter**.
+> [!IMPORTANT]
+> **Do NOT follow the legacy dedicated-entity pattern** (e.g., `aquarium`, `jukebox`, `typewriter`) for new interactable features. We no longer hardcode new features to a dedicated asset, Colyseus entity map, database JSONB column, or Map Editor tool card.
+>
+> Instead, **users manually link any placed asset to an interaction** using the **Interactable** menu in the Map Editor's asset inspector menu.
 
-### Architecture Pattern for Interactive Objects
+### Architecture Pattern for Interactable Features
 
 ```mermaid
 sequenceDiagram
-    participant User as Player
+    participant User as Player / Space Owner
+    participant Editor as Asset Inspector Menu
     participant Scene as GameScene (Phaser)
-    participant Net as MultiplayerManager
-    participant Room as GameRoom (Colyseus)
-    participant DB as PostgreSQL
+    participant Main as main.ts (UI Modal)
 
-    User->>Scene: Select tool & click to place at (X, Y)
-    Scene->>Net: sendPlaceEntity({ x, y })
-    Net->>Room: PLACE_ENTITY payload
-    Room->>DB: INSERT into spaces JSONB
-    Room->>Net: ENTITY_SYNC broadcast
-    Net->>Scene: Spawn interactive sprite with proximity trigger
-    User->>Scene: Walk within 1.5 tiles (72px) & press [E]
-    Scene->>User: Open HTML modal / minigame interface
+    User->>Editor: Select any placed asset & open Interactable menu
+    Editor->>Scene: setItemInteraction(item, true, "<interaction_id>")
+    User->>Scene: Walk within 1.5 tiles (72px) & press [E] (or tap Interact)
+    Scene->>Scene: triggerInteraction(id, "<interaction_id>")
+    Scene->>Main: on<Feature>Click(id)
+    Main->>User: Open HTML modal / feature UI
 ```
 
 ### Step-by-Step Implementation
 
-1. **Place Asset Image:**
-   - Save to `client/public/assets/decoration/<entity_name>_1.png`.
-2. **Preload in GameScene:**
-   - `this.load.image("<entity_name>_1", "/assets/decoration/<entity_name>_1.png");`
-3. **Define Shared State (`shared/src/types.ts`):**
-   - Define entity schema (e.g. `id`, `x`, `y`, `spaceId`, state attributes).
-   - Define payload types: `PlacePayload`, `UpdatePayload`, `DeletePayload`.
-4. **Create Placement Ghost & Proximity Zone (`GameScene.ts`):**
-   - Add ghost preview image (`setDisplaySize(48, 48)`, `setAlpha(0.65)`).
-   - Check proximity in the `update()` loop:
+1. **Register Interaction Type (`shared/src/types.ts`):**
+   - Add your interaction ID, label, and icon to `DECORATION_INTERACTIONS` (e.g. `{ id: "inventory", label: "Space's Inventory", icon: "📦" }`) and include it in `isValidInteractionType()`.
+   - Rebuild the shared package: `npm run build:shared`.
+2. **Handle Trigger in `GameScene` (`client/src/scenes/GameScene.ts`):**
+   - Add a callback property on `GameScene`: `public onMyFeatureClick?: (entityId: string) => void;`.
+   - Handle the interaction ID inside `triggerInteraction(id, interaction)`:
      ```typescript
-     const dist = Phaser.Math.Distance.Between(player.x, player.y, entity.x, entity.y);
-     if (dist <= 1.5 * TILE_SIZE) {
-       // Display [Press E] prompt
+     } else if (interaction === "my_feature") {
+       this.onMyFeatureClick?.(id);
      }
      ```
-5. **Colyseus Room State (`server/src/rooms/GameRoom.ts`):**
-   - Register Colyseus message handlers: `PLACE_<ENTITY>`, `UPDATE_<ENTITY>`, `DELETE_<ENTITY>`.
-   - Persist to PostgreSQL `spaces` table (`ALTER TABLE spaces ADD COLUMN IF NOT EXISTS <entity>s JSONB DEFAULT '[]'::jsonb;`).
-6. **Add UI Tool Card (`client/index.html`):**
-   ```html
-   <button
-     type="button"
-     class="editor-asset-card"
-     id="tool-<entity>"
-     data-tool-type="<entity>"
-     data-asset-id="<entity>_1"
-     data-tile-type="decoration"
-   >
-     ...
-   </button>
-   ```
+3. **Wire Modal Callback (`client/src/main.ts`):**
+   - Connect `scene.onMyFeatureClick` when initializing the scene so it opens your feature's modal/UI (e.g., for `currentSpaceId`).
+4. **Optional Visual Asset:**
+   - If you want to provide a new visual prop for users to place and link, add it as a regular **Grid Decoration** (Section 6) or **Freeform Decoration** (Section 7)—do not couple it to the interaction in code.
+   - Users can then place any decoration on the map, click it with the **Cursor** tool, open the **Interactable** menu in the asset menu, and link it to your new interaction.
 
 ---
 

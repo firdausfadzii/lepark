@@ -31,6 +31,18 @@ export const DEFAULT_PRESET_COLORS = [
 
 export const SERVER_TICK_RATE = 20; // 20 Hz tick loop
 
+export const ASSET_UNLOCK_COST = 5; // Parking points required per paid map editor sprite
+
+export function isPaidAssetId(assetId: string | undefined | null): boolean {
+  if (!assetId) return false;
+  return (
+    assetId.startsWith("office_one/") ||
+    assetId.startsWith("office_two/") ||
+    assetId.startsWith("pet_shop/") ||
+    assetId.startsWith("living_room_one/")
+  );
+}
+
 export function getTileCenter(tileX: number, tileY: number): { x: number; y: number } {
   return {
     x: tileX * TILE_SIZE + TILE_SIZE / 2,

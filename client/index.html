@@ -73,10 +73,38 @@
             </div>
             <div class="dropdown-divider mobile-only-dropdown-item"></div>
             <button type="button" id="dropdown-my-space-btn" class="dropdown-item">
-              <span class="dropdown-icon">🏠</span>
+              <span id="dropdown-my-space-icon" class="dropdown-icon">🏠</span>
               <div class="dropdown-text">
-                <span class="dropdown-title">Go to my space</span>
+                <span id="dropdown-my-space-title" class="dropdown-title">Go to my space</span>
                 <span id="dropdown-my-space-sub" class="dropdown-sub">Enter personal space</span>
+              </div>
+            </button>
+            <button type="button" id="dropdown-friends-btn" class="dropdown-item">
+              <span class="dropdown-icon">👥</span>
+              <div class="dropdown-text">
+                <span class="dropdown-title">Friends <span id="dropdown-friends-badge" class="friends-req-badge hidden">0</span></span>
+                <span class="dropdown-sub">View friends & requests</span>
+              </div>
+            </button>
+            <button type="button" id="dropdown-organisations-btn" class="dropdown-item">
+              <span class="dropdown-icon">🏢</span>
+              <div class="dropdown-text">
+                <span class="dropdown-title">Organisations</span>
+                <span class="dropdown-sub">Create & manage organisations</span>
+              </div>
+            </button>
+            <button type="button" id="dropdown-notes-btn" class="dropdown-item">
+              <span class="dropdown-icon">📝</span>
+              <div class="dropdown-text">
+                <span class="dropdown-title">Notes</span>
+                <span class="dropdown-sub">Personal, space & organisation notes</span>
+              </div>
+            </button>
+            <button type="button" id="dropdown-calendar-btn" class="dropdown-item">
+              <span class="dropdown-icon">📅</span>
+              <div class="dropdown-text">
+                <span class="dropdown-title">Calendar</span>
+                <span class="dropdown-sub">Personal, space & organisation calendar</span>
               </div>
             </button>
             <button type="button" id="dropdown-update-char-btn" class="dropdown-item">
@@ -126,7 +154,7 @@
       </button>
 
       <!-- Message Chat Bubble -->
-      <button type="button" id="btn-toggle-chat" class="topright-action-btn topright-chat-btn active" title="Toggle Chat Bar" aria-label="Toggle Chat">
+      <button type="button" id="btn-toggle-chat" class="topright-action-btn topright-chat-btn" title="Toggle Chat Bar" aria-label="Toggle Chat">
         <svg class="chat-bubble-svg" viewBox="0 0 24 24">
           <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H5.17L4 17.17V4h16v12z"/>
         </svg>
@@ -196,7 +224,7 @@
                   Speakers / Earphones (Output)
                 </label>
                 <button type="button" id="btn-test-audio-output" class="btn-test-output" title="Play test chime to verify output device">
-                  🔊 Test Sound
+                  Test Sound
                 </button>
               </div>
               <div class="select-wrapper">
@@ -1142,6 +1170,24 @@
             >
               Office Two
             </button>
+            <button
+              type="button"
+              class="editor-group-tab-btn"
+              data-asset-group-tab="Pet Shop"
+              role="tab"
+              aria-selected="false"
+            >
+              Pet Shop
+            </button>
+            <button
+              type="button"
+              class="editor-group-tab-btn"
+              data-asset-group-tab="Living Room One"
+              role="tab"
+              aria-selected="false"
+            >
+              Living Room One
+            </button>
           </div>
           <div class="editor-group-panel active-group-panel" data-asset-group-panel="Free">
           <div class="editor-assets-grid">
@@ -1451,6 +1497,12 @@
           </div>
           <div class="editor-group-panel" data-asset-group-panel="Office Two">
             <div class="editor-assets-grid" id="office-two-deco-grid"></div>
+          </div>
+          <div class="editor-group-panel" data-asset-group-panel="Pet Shop">
+            <div class="editor-assets-grid" id="pet-shop-deco-grid"></div>
+          </div>
+          <div class="editor-group-panel" data-asset-group-panel="Living Room One">
+            <div class="editor-assets-grid" id="living-room-one-deco-grid"></div>
           </div>
           </div>
         </div>
@@ -2048,8 +2100,8 @@
       </div>
     </aside>
 
-    <!-- Right-Side Chat Bar (Default Open) -->
-    <aside id="chat-sidebar" class="chat-sidebar" aria-label="Game Chat">
+    <!-- Right-Side Chat Bar (Default Hidden) -->
+    <aside id="chat-sidebar" class="chat-sidebar collapsed" aria-label="Game Chat">
       <!-- Chat Bar Header with Room Tabs -->
       <div class="chat-sidebar-header">
         <div class="chat-header-top-row">
@@ -2169,6 +2221,9 @@
           <button type="button" class="player-context-btn" id="btn-player-menu-throw-battle" title="Challenge player to Throw Battle">
             <span class="player-context-btn-label">Throw battle</span>
           </button>
+          <button type="button" class="player-context-btn" id="btn-player-menu-add-friend" title="Send friend request">
+            <span class="player-context-btn-label" id="player-menu-add-friend-label">Add Friend</span>
+          </button>
         </div>
       </div>
 
@@ -2228,6 +2283,17 @@
         </div>
       </div>
 
+      <!-- Mobile Interact Button (Bottom Right, shown when near an interactable asset) -->
+      <button
+        type="button"
+        id="mobile-interact-btn"
+        class="mobile-interact-btn hidden"
+        aria-label="Interact with nearby object"
+      >
+        <span id="mobile-interact-icon" class="mobile-interact-icon">✨</span>
+        <span id="mobile-interact-label" class="mobile-interact-label">Interact</span>
+      </button>
+
       <!-- Bottom HUD Controls Hint -->
       <div class="hud-footer" id="hud-footer">
         <div class="controls-hint">
@@ -2254,7 +2320,7 @@
         </div>
 
         <!-- Auth Tab Navigation -->
-        <div class="auth-tabs">
+        <div id="auth-tabs" class="auth-tabs">
           <button type="button" id="tab-login" class="auth-tab active" data-tab="login">
             Sign In
           </button>
@@ -2271,10 +2337,19 @@
 
         <!-- Login Form -->
         <form id="login-form" class="auth-form">
+          <div class="login-method-tabs">
+            <button type="button" id="login-tab-username" class="login-method-tab active" data-method="username">
+              Username
+            </button>
+            <button type="button" id="login-tab-email" class="login-method-tab" data-method="email">
+              Email
+            </button>
+          </div>
+
           <div class="form-group">
-            <label class="form-label" for="login-username">Username</label>
+            <label class="form-label" id="login-identifier-label" for="login-username">Username</label>
             <div class="input-with-icon">
-              <span class="input-icon">👤</span>
+              <span class="input-icon" id="login-identifier-icon">👤</span>
               <input
                 id="login-username"
                 class="form-input"
@@ -2287,7 +2362,12 @@
           </div>
 
           <div class="form-group">
-            <label class="form-label" for="login-password">Password</label>
+            <div class="form-label-row">
+              <label class="form-label" for="login-password">Password</label>
+              <button type="button" id="btn-forgot-password" class="auth-link-btn forgot-pwd-link">
+                Forgot Password?
+              </button>
+            </div>
             <div class="input-with-icon">
               <span class="input-icon">🔒</span>
               <input
@@ -2313,6 +2393,103 @@
           </div>
         </form>
 
+        <!-- Forgot Password Form -->
+        <form id="forgot-password-form" class="auth-form hidden">
+          <div class="forgot-header">
+            <h3 class="forgot-title">Reset Password</h3>
+            <p class="forgot-desc">Enter your registered email address to receive a 6-digit verification code.</p>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="forgot-email">
+              Email <span class="badge-required">Required</span>
+            </label>
+            <div class="input-with-icon">
+              <span class="input-icon">✉️</span>
+              <input
+                id="forgot-email"
+                class="form-input"
+                type="email"
+                placeholder="Enter your registered email..."
+                required
+                autocomplete="email"
+              />
+            </div>
+            <div class="otp-action-row">
+              <button type="button" id="btn-forgot-send-otp" class="btn-send-otp">
+                Send OTP
+              </button>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="forgot-otp">
+              OTP Code <span class="badge-required">Required</span>
+            </label>
+            <div class="input-with-icon">
+              <span class="input-icon">🔑</span>
+              <input
+                id="forgot-otp"
+                class="form-input"
+                type="text"
+                inputmode="numeric"
+                maxlength="6"
+                placeholder="Enter 6-digit OTP..."
+                required
+                autocomplete="one-time-code"
+              />
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="forgot-new-password">
+              New Password <span class="badge-required">Required</span>
+            </label>
+            <div class="input-with-icon">
+              <span class="input-icon">🔒</span>
+              <input
+                id="forgot-new-password"
+                class="form-input"
+                type="password"
+                placeholder="At least 6 characters..."
+                required
+                minlength="6"
+                autocomplete="new-password"
+              />
+              <button type="button" class="btn-toggle-pwd" data-target="forgot-new-password" title="Toggle password visibility">👁️</button>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="forgot-confirm-password">
+              Confirm Password <span class="badge-required">Confirm</span>
+            </label>
+            <div class="input-with-icon">
+              <span class="input-icon">🔐</span>
+              <input
+                id="forgot-confirm-password"
+                class="form-input"
+                type="password"
+                placeholder="Re-enter new password..."
+                required
+                minlength="6"
+                autocomplete="new-password"
+              />
+              <button type="button" class="btn-toggle-pwd" data-target="forgot-confirm-password" title="Toggle password visibility">👁️</button>
+            </div>
+          </div>
+
+          <button id="btn-submit-forgot" class="btn-primary auth-submit-btn" type="submit">
+            <span>Reset Password</span>
+            <span class="btn-arrow">→</span>
+          </button>
+
+          <div class="auth-switch-prompt">
+            Remember your password?
+            <button type="button" id="link-forgot-back-login" class="auth-link-btn">Back to Sign In</button>
+          </div>
+        </form>
+
         <!-- Register Form -->
         <form id="register-form" class="auth-form hidden">
           <div class="form-group">
@@ -2333,6 +2510,47 @@
               />
             </div>
             <span class="field-hint">Unique username required to log in.</span>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="reg-email">
+              Email <span class="badge-required">Required</span>
+            </label>
+            <div class="input-with-icon">
+              <span class="input-icon">✉️</span>
+              <input
+                id="reg-email"
+                class="form-input"
+                type="email"
+                placeholder="Enter your email address..."
+                required
+                autocomplete="email"
+              />
+            </div>
+            <div class="otp-action-row">
+              <button type="button" id="btn-reg-send-otp" class="btn-send-otp">
+                Send OTP
+              </button>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="reg-otp">
+              OTP Code <span class="badge-required">Verify</span>
+            </label>
+            <div class="input-with-icon">
+              <span class="input-icon">🔑</span>
+              <input
+                id="reg-otp"
+                class="form-input"
+                type="text"
+                inputmode="numeric"
+                maxlength="6"
+                placeholder="Enter 6-digit OTP from email..."
+                required
+                autocomplete="one-time-code"
+              />
+            </div>
           </div>
 
           <div class="form-group">
@@ -2405,6 +2623,68 @@
       </div>
     </div>
 
+    <!-- Persistent Modal for Existing Users Without Linked Email -->
+    <div id="link-email-modal" class="modal-overlay hidden">
+      <div class="modal-card auth-card">
+        <div class="modal-header">
+          <h2 class="modal-title">Link Your Email</h2>
+        </div>
+
+        <div id="link-email-alert" class="auth-alert hidden">
+          <span id="link-email-alert-icon">⚠️</span>
+          <span id="link-email-alert-msg"></span>
+        </div>
+
+        <form id="link-email-form" class="auth-form">
+          <div class="form-group">
+            <label class="form-label" for="link-email-input">
+              Email <span class="badge-required">Required</span>
+            </label>
+            <div class="input-with-icon">
+              <span class="input-icon">✉️</span>
+              <input
+                id="link-email-input"
+                class="form-input"
+                type="email"
+                placeholder="Enter your email address..."
+                required
+                autocomplete="email"
+              />
+            </div>
+            <div class="otp-action-row">
+              <button type="button" id="btn-link-send-otp" class="btn-send-otp">
+                Send OTP
+              </button>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="link-email-otp">
+              OTP Code <span class="badge-required">Verify</span>
+            </label>
+            <div class="input-with-icon">
+              <span class="input-icon">🔑</span>
+              <input
+                id="link-email-otp"
+                class="form-input"
+                type="text"
+                inputmode="numeric"
+                maxlength="6"
+                placeholder="Enter 6-digit OTP from email..."
+                required
+                autocomplete="one-time-code"
+              />
+            </div>
+          </div>
+
+          <button id="btn-submit-link-email" class="btn-primary auth-submit-btn" type="submit">
+            <span>Verify &amp; Link Email</span>
+            <span class="btn-arrow">→</span>
+          </button>
+        </form>
+      </div>
+    </div>
+
     <!-- Modal for Name and Appearance Customization -->
     <div id="onboarding-modal" class="modal-overlay hidden">
       <div class="modal-card">
@@ -2413,7 +2693,6 @@
             <h2 class="modal-title">Update Character</h2>
             <button type="button" id="btn-close-modal" class="btn-modal-close" title="Close">✕</button>
           </div>
-          <p class="modal-subtitle">Customize your display name and appearance</p>
         </div>
 
         <!-- Live Preview -->
@@ -2594,10 +2873,14 @@
             <h2 class="modal-title">⚙️ My Space Settings</h2>
             <button type="button" id="btn-close-my-space-settings" class="btn-modal-close" title="Close">✕</button>
           </div>
-          <p class="modal-subtitle">Manage your personal space privacy and whitelist</p>
         </div>
 
         <form id="my-space-settings-form">
+          <div id="my-space-owner-banner" class="shared-owner-banner hidden">
+            <span>🏠</span>
+            <span>Primary Owner: <strong id="my-space-owner-name">@owner</strong> (Shared House)</span>
+          </div>
+
           <div class="form-group">
             <label class="form-label" for="my-space-input-name">Space Name</label>
             <input
@@ -2658,6 +2941,36 @@
             </div>
           </div>
 
+          <!-- Space Sharing (Housemates / Co-Owners) -->
+          <div id="my-space-sharing-section" class="whitelist-manager-section space-sharing-section">
+            <div class="form-group">
+              <label class="form-label">
+                🏠 Space Sharing (Housemates) <span class="badge-coowner">Co-Owners</span>
+              </label>
+              <div class="whitelist-input-row">
+                <div class="input-with-icon flex-1">
+                  <span class="input-icon">🤝</span>
+                  <select id="my-space-share-friend-select" class="form-input">
+                    <option value="">Select a friend to share with...</option>
+                  </select>
+                </div>
+                <button type="button" id="btn-add-my-space-share" class="btn-secondary btn-add-invite">
+                  + Share
+                </button>
+              </div>
+              <span class="field-hint">Select friends from your friend list to share space ownership: they can enter anytime (even if private), edit the map, and manage settings.</span>
+            </div>
+
+            <div class="whitelist-tags-box">
+              <div class="tags-header">
+                <span>Housemates (<span id="my-space-share-tags-count">0</span>):</span>
+              </div>
+              <div id="my-space-share-tags-container" class="whitelist-tags-container">
+                <!-- shared owner tags populated via js -->
+              </div>
+            </div>
+          </div>
+
           <div class="modal-footer-actions">
             <button type="submit" id="btn-save-my-space" class="btn-primary">
               Save Space Settings
@@ -2675,7 +2988,6 @@
             <h2 id="admin-space-modal-title" class="modal-title">🌌 Create New Space</h2>
             <button type="button" id="btn-close-admin-space-modal" class="btn-modal-close" title="Close">✕</button>
           </div>
-          <p id="admin-space-modal-subtitle" class="modal-subtitle">Superadmin space directory manager</p>
         </div>
 
         <form id="admin-space-form">
@@ -2779,7 +3091,6 @@
             <h2 class="modal-title" id="private-zone-modal-title">🔒 Name Private Area</h2>
             <button type="button" id="btn-close-private-zone-modal" class="btn-modal-close" title="Close">✕</button>
           </div>
-          <p class="modal-subtitle" id="private-zone-modal-subtitle">Set a name for this private area (chat room, voice room, or video room)</p>
         </div>
 
         <form id="private-zone-name-form">
@@ -2861,7 +3172,6 @@
             </div>
             <button type="button" id="btn-close-space-error-modal" class="btn-modal-close" title="Close">✕</button>
           </div>
-          <p id="space-error-subtitle" class="modal-subtitle">Private Space</p>
         </div>
 
         <div class="space-error-body">
@@ -2889,6 +3199,52 @@
       </div>
     </div>
 
+    <!-- Modal: Friends List -->
+    <div id="friends-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="friends-modal-title">
+      <div class="modal-card friends-modal-card">
+        <div class="modal-header">
+          <div class="modal-header-row">
+            <h2 id="friends-modal-title" class="modal-title">Friends</h2>
+            <button type="button" id="btn-close-friends-modal" class="btn-modal-close" title="Close">✕</button>
+          </div>
+        </div>
+
+        <form id="friends-add-form" class="friends-add-form">
+          <input
+            type="text"
+            id="friends-add-input"
+            class="friends-add-input"
+            placeholder="Add friend by username..."
+            autocomplete="off"
+          />
+          <button type="submit" id="friends-add-btn" class="btn-primary friends-add-btn" title="Add friend" aria-label="Add friend">
+            <span class="friends-add-btn-text">Add</span>
+            <span class="friends-add-btn-icon" aria-hidden="true">+</span>
+          </button>
+        </form>
+        <div id="friends-add-feedback" class="friends-add-feedback hidden"></div>
+
+        <div class="friends-tabs" role="tablist">
+          <button type="button" class="friends-tab-btn active" data-tab="online" role="tab" aria-selected="true">
+            Online <span id="friends-count-online" class="friends-tab-count">0</span>
+          </button>
+          <button type="button" class="friends-tab-btn" data-tab="offline" role="tab" aria-selected="false">
+            Offline <span id="friends-count-offline" class="friends-tab-count">0</span>
+          </button>
+          <button type="button" class="friends-tab-btn" data-tab="pending" role="tab" aria-selected="false">
+            Pending <span id="friends-count-pending" class="friends-tab-count">0</span>
+          </button>
+          <button type="button" class="friends-tab-btn" data-tab="request" role="tab" aria-selected="false">
+            Request <span id="friends-count-request" class="friends-tab-count">0</span>
+          </button>
+        </div>
+
+        <div id="friends-list-container" class="friends-list-container">
+          <!-- Populated dynamically -->
+        </div>
+      </div>
+    </div>
+
     <!-- Modal: YouTube Jukebox -->
     <div id="jukebox-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="jukebox-modal-title">
       <div class="modal-card jukebox-modal-card">
@@ -2898,7 +3254,6 @@
               <span class="jukebox-header-icon">📻</span>
               <div>
                 <h2 id="jukebox-modal-title" class="modal-title">YouTube Jukebox</h2>
-                <span class="modal-subtitle">Collaborative looping playlist</span>
               </div>
             </div>
             <button type="button" id="btn-close-jukebox-modal" class="btn-modal-close" title="Close">✕</button>
@@ -3071,7 +3426,6 @@
               <span class="typerace-header-icon">⌨️</span>
               <div>
                 <h2 id="typerace-modal-title" class="modal-title">Type Racing Duel</h2>
-                <span class="modal-subtitle">Real-time multiplayer typerace showdown</span>
               </div>
             </div>
             <button type="button" id="btn-close-typerace-modal" class="btn-modal-close" title="Close">✕</button>
@@ -3237,7 +3591,6 @@
               <span class="ashtray-header-icon">🚬</span>
               <div>
                 <h2 id="ashtray-modal-title" class="modal-title">Cigarette Smoking Duel</h2>
-                <span class="modal-subtitle">Fast-paced button spamming competition</span>
               </div>
             </div>
             <div class="ashtray-header-actions">
@@ -3500,7 +3853,6 @@
               <span class="chess-header-icon">♟️</span>
               <div>
                 <h2 id="chess-modal-title" class="modal-title">Chess Arena</h2>
-                <span class="modal-subtitle">Live multiplayer chess & spectator lounge</span>
               </div>
             </div>
             <div class="chess-header-actions">
@@ -3671,7 +4023,6 @@
             <span class="aquarium-header-icon">🐟</span>
             <div>
               <h2 id="aquarium-modal-title" class="modal-title">Aquarium Fishing</h2>
-              <p class="modal-subtitle">Stardew Valley fishing mechanics • Catch rare freshwater &amp; saltwater species</p>
             </div>
           </div>
           <div class="aquarium-header-actions">
@@ -3998,7 +4349,6 @@
               <span class="tb-header-icon">⚔️</span>
               <div>
                 <h2 id="tb-arena-title" class="modal-title">Throw Battle</h2>
-                <span class="modal-subtitle">Fleabag vs Mutt style projectile duel</span>
               </div>
             </div>
             <button type="button" id="btn-close-throw-battle" class="btn-modal-close" title="Leave battle">✕</button>
@@ -4081,6 +4431,625 @@
             <span class="tb-step-chip" id="tb-step-throw">4. Throw!</span>
           </div>
           <div class="tb-hint-text" id="tb-hint-text">Move with ← → or A / D to take position. Press [SPACE] when ready to aim angle.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal: Organisation -->
+    <div id="organisation-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="organisation-modal-title">
+      <div class="modal-card organisation-modal-card">
+        <div class="modal-header">
+          <div class="modal-header-row">
+            <h2 id="organisation-modal-title" class="modal-title">🏢 Organisation</h2>
+            <button type="button" id="btn-close-organisation-modal" class="btn-modal-close" title="Close">✕</button>
+          </div>
+        </div>
+
+        <div class="org-tabs" role="tablist">
+          <button type="button" class="org-tab-btn active" data-org-tab="create" role="tab" aria-selected="true">
+            Create Organisation
+          </button>
+          <button type="button" class="org-tab-btn" data-org-tab="list" role="tab" aria-selected="false">
+            My Organisations
+          </button>
+        </div>
+
+        <!-- Tab 1: Create Organisation Form -->
+        <form id="org-create-form" class="org-create-form">
+          <div id="org-points-banner" class="org-points-banner">
+            <span>🅿️ Your Park Points: <strong id="org-current-points">0</strong></span>
+            <span class="org-cost-pill">Cost: 144 Points</span>
+          </div>
+
+          <div class="org-form-group">
+            <label for="org-name-input" class="org-label">Organisation Name <span class="org-required">*</span></label>
+            <input
+              type="text"
+              id="org-name-input"
+              class="org-input"
+              placeholder="Enter organisation name (2-60 chars)..."
+              maxlength="60"
+              autocomplete="off"
+              required
+            />
+          </div>
+
+          <div class="org-form-group">
+            <label class="org-label">Organisation Logo</label>
+            <div class="org-logo-row">
+              <div id="org-logo-preview-box" class="org-logo-preview-box" title="100x100px preview">
+                <img id="org-logo-preview-img" class="org-logo-preview-img hidden" alt="Organisation logo preview" />
+                <span id="org-logo-placeholder" class="org-logo-placeholder">100×100</span>
+              </div>
+              <div class="org-logo-controls">
+                <input type="file" id="org-logo-input" accept="image/png,image/jpeg,image/webp,image/gif" class="hidden" />
+                <button type="button" id="btn-org-upload-logo" class="btn-secondary org-logo-btn">📷 Choose Image</button>
+                <button type="button" id="btn-org-clear-logo" class="btn-secondary org-logo-btn hidden">✕ Remove</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="org-form-group">
+            <label class="org-label">Add People from Friend List</label>
+            <input
+              type="text"
+              id="org-friend-search-input"
+              class="org-input org-friend-search"
+              placeholder="Filter your friends..."
+              autocomplete="off"
+            />
+            <div id="org-selected-members" class="org-selected-members hidden"></div>
+            <div id="org-friends-picker" class="org-friends-picker">
+              <!-- Populated dynamically from friend list -->
+            </div>
+          </div>
+
+          <div id="org-create-feedback" class="org-feedback hidden"></div>
+
+          <div class="org-form-actions">
+            <button type="submit" id="btn-org-create-submit" class="btn-primary org-submit-btn">
+              Create Organisation (144 Park Points)
+            </button>
+          </div>
+        </form>
+
+        <!-- Tab 2: My Organisations List -->
+        <div id="org-list-panel" class="org-list-panel hidden">
+          <div id="org-list-container" class="org-list-container">
+            <!-- Populated dynamically -->
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal: Notes -->
+    <div id="notes-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="notes-modal-title">
+      <div class="modal-card notes-modal-card">
+        <div class="modal-header">
+          <div class="modal-header-row">
+            <h2 id="notes-modal-title" class="modal-title">📝 Notes</h2>
+            <button type="button" id="btn-close-notes-modal" class="btn-modal-close" title="Close">✕</button>
+          </div>
+        </div>
+
+        <div id="notes-feedback" class="notes-feedback hidden"></div>
+
+        <!-- View 1: Listing View -->
+        <div id="notes-list-view" class="notes-view">
+          <div class="notes-list-topbar">
+            <div class="notes-tabs" role="tablist">
+              <button type="button" class="notes-tab-btn active" data-note-tab="personal" role="tab" aria-selected="true">
+                🔒 Personal
+              </button>
+              <button type="button" class="notes-tab-btn" data-note-tab="space" role="tab" aria-selected="false">
+                🏠 Space
+              </button>
+              <button type="button" class="notes-tab-btn" data-note-tab="organisation" role="tab" aria-selected="false">
+                🏢 Organisation
+              </button>
+            </div>
+            <button type="button" id="btn-new-note" class="btn-primary notes-new-btn">+ Note</button>
+          </div>
+
+          <div id="notes-scope-bar" class="notes-scope-bar hidden">
+            <label id="notes-scope-label" for="notes-scope-select" class="notes-scope-label">Space:</label>
+            <select id="notes-scope-select" class="notes-scope-select"></select>
+          </div>
+
+          <div id="notes-list-container" class="notes-list-container">
+            <!-- Populated dynamically -->
+          </div>
+        </div>
+
+        <!-- View 2: Full Note Detail View -->
+        <div id="notes-detail-view" class="notes-view hidden">
+          <div class="notes-view-toolbar">
+            <button type="button" id="btn-notes-back-from-detail" class="notes-back-btn">← Back</button>
+            <div class="notes-detail-actions">
+              <button type="button" id="btn-note-edit" class="notes-action-btn">✏️ Edit</button>
+              <button type="button" id="btn-note-delete" class="notes-action-btn danger">🗑️ Delete</button>
+            </div>
+          </div>
+          <div class="notes-detail-body">
+            <div class="notes-detail-header">
+              <h3 id="note-detail-title" class="notes-detail-title"></h3>
+              <div id="note-detail-meta" class="notes-detail-meta"></div>
+            </div>
+            <div id="note-detail-content" class="notes-detail-content"></div>
+            <div id="note-detail-images" class="calendar-images-thumb-grid hidden"></div>
+          </div>
+        </div>
+
+        <!-- View 3: Create / Edit Note WYSIWYG View -->
+        <div id="notes-editor-view" class="notes-view hidden">
+          <div class="notes-view-toolbar">
+            <button type="button" id="btn-notes-back-from-editor" class="notes-back-btn">← Back</button>
+            <span id="notes-editor-heading" class="notes-editor-heading">New Note</span>
+          </div>
+          <div class="notes-editor-form">
+            <input
+              type="text"
+              id="note-editor-title"
+              class="notes-title-input"
+              placeholder="Note title..."
+              maxlength="200"
+              autocomplete="off"
+            />
+            <div id="note-wysiwyg-toolbar" class="note-wysiwyg-toolbar" role="toolbar" aria-label="Text formatting">
+              <button type="button" class="wysiwyg-btn" data-cmd="bold" title="Bold"><b>B</b></button>
+              <button type="button" class="wysiwyg-btn" data-cmd="italic" title="Italic"><i>I</i></button>
+              <button type="button" class="wysiwyg-btn" data-cmd="underline" title="Underline"><u>U</u></button>
+              <button type="button" class="wysiwyg-btn" data-cmd="strikeThrough" title="Strikethrough"><s>S</s></button>
+              <span class="wysiwyg-sep"></span>
+              <button type="button" class="wysiwyg-btn" data-cmd="formatBlock" data-val="H2" title="Heading">H2</button>
+              <button type="button" class="wysiwyg-btn" data-cmd="formatBlock" data-val="BLOCKQUOTE" title="Quote">❝</button>
+              <button type="button" class="wysiwyg-btn" data-cmd="insertUnorderedList" title="Bullet List">• List</button>
+              <button type="button" class="wysiwyg-btn" data-cmd="insertOrderedList" title="Numbered List">1. List</button>
+              <span class="wysiwyg-sep"></span>
+              <button type="button" class="wysiwyg-btn" data-cmd="createLink" title="Insert Link">🔗</button>
+              <button type="button" class="wysiwyg-btn" data-cmd="removeFormat" title="Clear Formatting">Tx</button>
+            </div>
+            <div
+              id="note-editor-content"
+              class="note-editor-content"
+              contenteditable="true"
+              data-placeholder="Write your note here..."
+            ></div>
+            <div class="calendar-form-images-row">
+              <div class="calendar-form-assignee-header">
+                <span class="calendar-form-label">Pictures</span>
+                <span class="calendar-assignee-hint">Pictures only (no video, compressed 60%)</span>
+              </div>
+              <label class="calendar-upload-btn">
+                <input
+                  type="file"
+                  id="note-editor-images-input"
+                  accept="image/*"
+                  multiple
+                  class="hidden"
+                />
+                <span>📷 Upload Pictures</span>
+              </label>
+              <div id="note-editor-images-list" class="calendar-images-thumb-grid hidden"></div>
+            </div>
+            <div class="notes-editor-actions">
+              <button type="button" id="btn-note-cancel" class="notes-action-btn">Cancel</button>
+              <button type="button" id="btn-note-save" class="btn-primary notes-save-btn">Save Note</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal: Space's Inventory -->
+    <div id="space-inventory-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="space-inventory-modal-title">
+      <div class="modal-card inventory-modal-card">
+        <div class="modal-header">
+          <div class="modal-header-row">
+            <h2 id="space-inventory-modal-title" class="modal-title">📦 Space's Inventory</h2>
+            <button type="button" id="btn-close-inventory-modal" class="btn-modal-close" title="Close" aria-label="Close">✕</button>
+          </div>
+        </div>
+
+        <div id="inventory-feedback" class="inventory-feedback hidden"></div>
+
+        <!-- View 1: Inventory List View -->
+        <div id="inventory-list-view" class="inventory-view">
+          <div class="inventory-action-bar">
+            <button type="button" id="btn-new-inventory" class="btn-primary inventory-new-btn">+ Inventory</button>
+          </div>
+
+          <div class="inventory-tabs" role="tablist">
+            <button type="button" id="inventory-tab-bought" class="inventory-tab-btn active" data-inventory-tab="bought" role="tab" aria-selected="true">
+              <span>Bought</span>
+              <span id="inventory-count-bought" class="inventory-tab-count">0</span>
+            </button>
+            <button type="button" id="inventory-tab-to-buy" class="inventory-tab-btn" data-inventory-tab="to-buy" role="tab" aria-selected="false">
+              <span>To Buy</span>
+              <span id="inventory-count-to-buy" class="inventory-tab-count">0</span>
+            </button>
+          </div>
+
+          <div id="inventory-list-container" class="inventory-list-container">
+            <!-- Populated dynamically -->
+          </div>
+        </div>
+
+        <!-- View 2: Add / Edit Inventory Form View -->
+        <div id="inventory-form-view" class="inventory-view hidden">
+          <div class="inventory-view-toolbar">
+            <button type="button" id="btn-inventory-back" class="inventory-back-btn">← Back</button>
+            <span id="inventory-form-heading" class="inventory-form-heading">Add Inventory</span>
+            <button type="button" id="btn-inventory-delete" class="inventory-delete-icon-btn hidden" title="Delete item" aria-label="Delete item">🗑️</button>
+          </div>
+
+          <form id="inventory-form" class="inventory-form">
+            <div class="form-group">
+              <label class="form-label" for="inventory-input-name">Inventory Name</label>
+              <input
+                type="text"
+                id="inventory-input-name"
+                class="form-input inventory-name-input"
+                placeholder="e.g. Dining Table, Dish Soap, Rice Cooker..."
+                maxlength="200"
+                autocomplete="off"
+                required
+              />
+            </div>
+
+            <div class="form-group switch-group">
+              <div id="inventory-bought-switch-row" class="switch-row inventory-switch-row">
+                <div class="switch-info">
+                  <label class="switch-title" for="inventory-switch-bought">Bought</label>
+                  <span id="inventory-bought-switch-desc" class="switch-desc">Off = To Buy, On = Bought</span>
+                </div>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="inventory-switch-bought" />
+                  <span class="slider"></span>
+                </label>
+              </div>
+            </div>
+
+            <div class="inventory-form-actions">
+              <div class="inventory-form-actions-right">
+                <button type="button" id="btn-inventory-cancel" class="inventory-action-btn">Cancel</button>
+                <button type="submit" id="btn-inventory-save" class="btn-primary inventory-save-btn">Save</button>
+              </div>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal: Calendar -->
+    <div id="calendar-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="calendar-modal-title">
+      <div class="modal-card calendar-modal-card">
+        <div class="modal-header">
+          <div class="modal-header-row">
+            <h2 id="calendar-modal-title" class="modal-title">📅 Calendar</h2>
+            <button type="button" id="btn-close-calendar-modal" class="btn-modal-close" title="Close">✕</button>
+          </div>
+        </div>
+
+        <div id="calendar-feedback" class="notes-feedback hidden"></div>
+
+        <!-- View 1: Month Grid View -->
+        <div id="calendar-month-view" class="calendar-view">
+          <div class="calendar-topbar">
+            <div class="calendar-tabs" role="tablist">
+              <button type="button" class="calendar-tab-btn active" data-calendar-tab="personal" role="tab" aria-selected="true">
+                🔒 Personal
+              </button>
+              <button type="button" class="calendar-tab-btn" data-calendar-tab="space" role="tab" aria-selected="false">
+                🏠 Space
+              </button>
+              <button type="button" class="calendar-tab-btn" data-calendar-tab="organisation" role="tab" aria-selected="false">
+                🏢 Organisation
+              </button>
+              <button type="button" class="calendar-tab-btn" data-calendar-tab="meals" role="tab" aria-selected="false">
+                🍽️ Meals
+              </button>
+            </div>
+            <button type="button" id="btn-new-calendar-event" class="btn-primary notes-new-btn">+ Event</button>
+          </div>
+
+          <div id="calendar-scope-bar" class="calendar-scope-bar hidden">
+            <label id="calendar-scope-label" for="calendar-scope-select" class="calendar-scope-label">Space:</label>
+            <select id="calendar-scope-select" class="calendar-scope-select"></select>
+          </div>
+
+          <div id="calendar-empty-state" class="calendar-empty-state hidden"></div>
+
+          <div id="calendar-body" class="calendar-body">
+            <div class="calendar-month-nav">
+              <div class="calendar-nav-controls">
+                <button type="button" id="btn-calendar-today" class="calendar-today-btn">Today</button>
+                <button type="button" id="btn-calendar-prev" class="calendar-nav-btn" title="Previous month" aria-label="Previous month">‹</button>
+                <button type="button" id="btn-calendar-next" class="calendar-nav-btn" title="Next month" aria-label="Next month">›</button>
+              </div>
+              <div class="calendar-period-picker">
+                <select id="calendar-month-select" class="calendar-month-select" aria-label="Select month">
+                  <option value="0">January</option>
+                  <option value="1">February</option>
+                  <option value="2">March</option>
+                  <option value="3">April</option>
+                  <option value="4">May</option>
+                  <option value="5">June</option>
+                  <option value="6">July</option>
+                  <option value="7">August</option>
+                  <option value="8">September</option>
+                  <option value="9">October</option>
+                  <option value="10">November</option>
+                  <option value="11">December</option>
+                </select>
+                <input
+                  type="number"
+                  id="calendar-year-input"
+                  class="calendar-year-input"
+                  aria-label="Year"
+                  min="1900"
+                  max="2100"
+                  step="1"
+                />
+              </div>
+            </div>
+
+            <div class="calendar-grid-wrapper">
+              <div class="calendar-weekdays" aria-hidden="true">
+                <div class="calendar-weekday">Sun</div>
+                <div class="calendar-weekday">Mon</div>
+                <div class="calendar-weekday">Tue</div>
+                <div class="calendar-weekday">Wed</div>
+                <div class="calendar-weekday">Thu</div>
+                <div class="calendar-weekday">Fri</div>
+                <div class="calendar-weekday">Sat</div>
+              </div>
+              <div id="calendar-days-grid" class="calendar-days-grid">
+                <!-- Populated dynamically -->
+              </div>
+            </div>
+          </div>
+
+          <div id="calendar-meals-body" class="calendar-meals-body hidden">
+            <div id="calendar-meals-grid" class="calendar-meals-grid">
+              <!-- Populated dynamically: Monday to Sunday -->
+            </div>
+          </div>
+        </div>
+
+        <!-- View 1c: Meal Day Input View -->
+        <div id="calendar-meal-editor-view" class="calendar-view hidden">
+          <div class="notes-view-toolbar">
+            <button type="button" id="btn-calendar-back-from-meal" class="notes-back-btn">← Back</button>
+            <span id="calendar-meal-editor-heading" class="notes-editor-heading">Monday</span>
+          </div>
+          <div class="calendar-meal-editor-form">
+            <input
+              type="text"
+              id="calendar-meal-input"
+              class="notes-title-input"
+              placeholder="Menu to be cooked..."
+              maxlength="200"
+              autocomplete="off"
+            />
+            <div class="calendar-meal-editor-actions">
+              <button type="button" id="btn-calendar-meal-save" class="btn-primary">Save</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- View 1b: Day Events List View -->
+        <div id="calendar-day-view" class="calendar-view hidden">
+          <div class="notes-view-toolbar">
+            <button type="button" id="btn-calendar-back-from-day" class="notes-back-btn">← Back</button>
+            <span id="calendar-day-view-heading" class="notes-editor-heading"></span>
+            <button type="button" id="btn-calendar-day-new-event" class="notes-action-btn primary">+ Event</button>
+          </div>
+          <div id="calendar-day-events-list" class="calendar-day-events-list">
+            <!-- Populated dynamically -->
+          </div>
+        </div>
+
+        <!-- View 2: Event Detail View -->
+        <div id="calendar-detail-view" class="calendar-view hidden">
+          <div class="notes-view-toolbar">
+            <button type="button" id="btn-calendar-back-from-detail" class="notes-back-btn">← Back</button>
+            <div class="notes-detail-actions">
+              <button type="button" id="btn-calendar-event-edit" class="notes-action-btn">✏️ Edit</button>
+              <button type="button" id="btn-calendar-event-delete" class="notes-action-btn danger">🗑️ Delete</button>
+            </div>
+          </div>
+          <div class="notes-detail-body">
+            <div class="notes-detail-header">
+              <h3 id="calendar-detail-title" class="notes-detail-title"></h3>
+              <div id="calendar-detail-when" class="calendar-detail-when"></div>
+              <div id="calendar-detail-assignees" class="calendar-detail-assignees hidden"></div>
+              <div id="calendar-detail-meta" class="notes-detail-meta"></div>
+            </div>
+            <div id="calendar-detail-description" class="notes-detail-content"></div>
+            <div id="calendar-detail-images" class="calendar-detail-images hidden"></div>
+          </div>
+        </div>
+
+        <!-- View 3: Create / Edit Event View -->
+        <div id="calendar-editor-view" class="calendar-view hidden">
+          <div class="notes-view-toolbar">
+            <button type="button" id="btn-calendar-back-from-editor" class="notes-back-btn">← Back</button>
+            <span id="calendar-editor-heading" class="notes-editor-heading">New Event</span>
+          </div>
+          <div class="notes-editor-form">
+            <input
+              type="text"
+              id="calendar-event-title"
+              class="notes-title-input"
+              placeholder="Event title..."
+              maxlength="200"
+              autocomplete="off"
+            />
+
+            <div class="calendar-form-dates-row">
+              <div class="calendar-form-field">
+                <label for="calendar-event-start-date" class="calendar-form-label">Start date</label>
+                <div class="calendar-date-wrap">
+                  <div id="calendar-event-start-date-display" class="calendar-form-input calendar-date-display">
+                    <span class="calendar-date-text">dd/mm/yyyy</span>
+                    <span class="calendar-date-icon" aria-hidden="true">📅</span>
+                  </div>
+                  <input type="date" id="calendar-event-start-date" class="calendar-date-native" lang="en-GB" />
+                </div>
+              </div>
+              <div class="calendar-form-field">
+                <label for="calendar-event-end-date" class="calendar-form-label">End date</label>
+                <div class="calendar-date-wrap">
+                  <div id="calendar-event-end-date-display" class="calendar-form-input calendar-date-display">
+                    <span class="calendar-date-text">dd/mm/yyyy</span>
+                    <span class="calendar-date-icon" aria-hidden="true">📅</span>
+                  </div>
+                  <input type="date" id="calendar-event-end-date" class="calendar-date-native" lang="en-GB" />
+                </div>
+              </div>
+            </div>
+
+            <div id="calendar-event-time-row" class="calendar-form-time-row">
+              <label class="calendar-allday-toggle">
+                <input type="checkbox" id="calendar-event-all-day" checked />
+                <span>All day</span>
+              </label>
+              <div id="calendar-event-time-inputs" class="calendar-form-time-inputs hidden">
+                <div class="calendar-form-field">
+                  <label for="calendar-event-start-time" class="calendar-form-label">Start time</label>
+                  <input type="time" id="calendar-event-start-time" class="calendar-form-input" value="09:00" />
+                </div>
+                <div class="calendar-form-field">
+                  <label for="calendar-event-end-time" class="calendar-form-label">End time</label>
+                  <input type="time" id="calendar-event-end-time" class="calendar-form-input" value="10:00" />
+                </div>
+              </div>
+            </div>
+
+            <div id="calendar-event-repeat-row" class="calendar-form-repeat-row">
+              <label class="calendar-allday-toggle">
+                <input type="checkbox" id="calendar-event-repeat-enabled" />
+                <span>Repeat</span>
+              </label>
+              <div id="calendar-event-repeat-inputs" class="calendar-form-repeat-inputs hidden">
+                <div class="calendar-form-field">
+                  <label for="calendar-event-repeat-interval" class="calendar-form-label">Repeat every</label>
+                  <input
+                    type="number"
+                    id="calendar-event-repeat-interval"
+                    class="calendar-form-input"
+                    min="1"
+                    max="365"
+                    step="1"
+                    value="1"
+                  />
+                </div>
+                <div class="calendar-form-field">
+                  <label for="calendar-event-repeat-unit" class="calendar-form-label">Format</label>
+                  <select id="calendar-event-repeat-unit" class="calendar-form-input">
+                    <option value="day">Day(s)</option>
+                    <option value="week">Week(s)</option>
+                    <option value="month">Month(s)</option>
+                    <option value="year">Year(s)</option>
+                  </select>
+                </div>
+              </div>
+              <div id="calendar-repeat-preview" class="calendar-repeat-preview hidden"></div>
+            </div>
+
+            <div id="calendar-event-assignee-row" class="calendar-form-assignee-row hidden">
+              <div class="calendar-form-assignee-header">
+                <span class="calendar-form-label">Assignee</span>
+                <span id="calendar-assignee-hint" class="calendar-assignee-hint">Select one or more</span>
+              </div>
+              <div id="calendar-event-assignee-list" class="calendar-assignee-list">
+                <!-- Populated dynamically -->
+              </div>
+              <label id="calendar-event-rotate-label" class="calendar-allday-toggle hidden">
+                <input type="checkbox" id="calendar-event-rotate-assignees" />
+                <span>Rotate assignee on each repeat</span>
+              </label>
+              <div id="calendar-assignee-rotation-preview" class="calendar-repeat-preview hidden"></div>
+            </div>
+
+            <div id="calendar-wysiwyg-toolbar" class="note-wysiwyg-toolbar" role="toolbar" aria-label="Description formatting">
+              <button type="button" class="wysiwyg-btn" data-cmd="bold" title="Bold"><b>B</b></button>
+              <button type="button" class="wysiwyg-btn" data-cmd="italic" title="Italic"><i>I</i></button>
+              <button type="button" class="wysiwyg-btn" data-cmd="underline" title="Underline"><u>U</u></button>
+              <button type="button" class="wysiwyg-btn" data-cmd="strikeThrough" title="Strikethrough"><s>S</s></button>
+              <span class="wysiwyg-sep"></span>
+              <button type="button" class="wysiwyg-btn" data-cmd="formatBlock" data-val="H2" title="Heading">H2</button>
+              <button type="button" class="wysiwyg-btn" data-cmd="formatBlock" data-val="BLOCKQUOTE" title="Quote">❝</button>
+              <button type="button" class="wysiwyg-btn" data-cmd="insertUnorderedList" title="Bullet List">• List</button>
+              <button type="button" class="wysiwyg-btn" data-cmd="insertOrderedList" title="Numbered List">1. List</button>
+              <span class="wysiwyg-sep"></span>
+              <button type="button" class="wysiwyg-btn" data-cmd="createLink" title="Insert Link">🔗</button>
+              <button type="button" class="wysiwyg-btn" data-cmd="removeFormat" title="Clear Formatting">Tx</button>
+            </div>
+            <div
+              id="calendar-event-description"
+              class="note-editor-content"
+              contenteditable="true"
+              data-placeholder="Event description (optional)..."
+            ></div>
+            <div class="calendar-form-images-row">
+              <div class="calendar-form-assignee-header">
+                <span class="calendar-form-label">Pictures</span>
+                <span class="calendar-assignee-hint">Pictures only (no video, compressed 60%)</span>
+              </div>
+              <label class="calendar-upload-btn">
+                <input
+                  type="file"
+                  id="calendar-event-images-input"
+                  accept="image/*"
+                  multiple
+                  class="hidden"
+                />
+                <span>📷 Upload Pictures</span>
+              </label>
+              <div id="calendar-event-images-list" class="calendar-images-thumb-grid hidden"></div>
+            </div>
+            <div class="notes-editor-actions">
+              <button type="button" id="btn-calendar-event-cancel" class="notes-action-btn">Cancel</button>
+              <button type="button" id="btn-calendar-event-save" class="btn-primary notes-save-btn">Save Event</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Lightbox: Calendar Image Preview -->
+    <div id="calendar-image-lightbox" class="calendar-image-lightbox hidden" role="dialog" aria-modal="true" aria-label="Picture preview">
+      <button type="button" id="btn-close-calendar-lightbox" class="calendar-lightbox-close" aria-label="Close preview">✕</button>
+      <img id="calendar-lightbox-img" class="calendar-lightbox-img" src="" alt="Event picture preview" />
+    </div>
+
+    <!-- Modal: Offline / Disconnected -->
+    <div id="offline-modal" class="modal-overlay offline-modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="offline-modal-title">
+      <div class="modal-card offline-modal-card">
+        <div class="modal-header">
+          <div class="modal-header-row">
+            <div class="space-error-header-title">
+              <span class="space-error-icon">📡</span>
+              <h2 id="offline-modal-title" class="modal-title">You Are Offline</h2>
+            </div>
+          </div>
+        </div>
+
+        <div class="space-error-body">
+          <div class="space-error-alert-box">
+            <span class="space-error-badge">Offline</span>
+            <p id="offline-modal-message" class="space-error-desc">
+              You are currently offline or disconnected from the server. Please check your connection and reload the page.
+            </p>
+          </div>
+        </div>
+
+        <div class="modal-footer-actions">
+          <button type="button" id="btn-offline-reload" class="btn-primary w-full">
+            Reload
+          </button>
         </div>
       </div>
     </div>

@@ -84,11 +84,13 @@ export class MultiplayerManager {
   private client!: Client;
   public room: Room | null = null;
   public si = new SnapshotInterpolation(SERVER_TICK_RATE);
+  private intentionallyLeftRooms = new WeakSet<Room>();
 
   private onPlayerAddCallbacks: PlayerChangeCallback[] = [];
   private onPlayerChangeCallbacks: PlayerChangeCallback[] = [];
   private onPlayerRemoveCallbacks: PlayerRemoveCallback[] = [];
   private onConnectionStatusCallbacks: ((connected: boolean) => void)[] = [];
+  private onUnexpectedDisconnectCallbacks: ((code?: number) => void)[] = [];
   private onPlayerCountCallbacks: ((count: number) => void)[] = [];
   private onPlayerAvatarCallbacks: PlayerAvatarCallback[] = [];
   private onNetworkStatsCallbacks: NetworkStatsCallback[] = [];
@@ -126,6 +128,7 @@ export class MultiplayerManager {
   private onChessGameStartCallbacks: ChessGameStartCallback[] = [];
   private onChessGameEndedCallbacks: ChessGameEndedCallback[] = [];
   private onParkingPointsAwardedCallbacks: ParkingPointsAwardedCallback[] = [];
+  private onFriendUpdateCallbacks: Array<() => void> = [];
   private onThrowBattleInviteCallbacks: ThrowBattleInviteCallback[] = [];
   private onThrowBattleChallengeSentCallbacks: ThrowBattleChallengeSentCallback[] = [];
   private onThrowBattleChallengeCancelledCallbacks: ThrowBattleChallengeCancelledCallback[] = [];
@@ -212,12 +215,14 @@ export class MultiplayerManager {
     this.currentTypewriters.clear();
     this.currentAshtrays.clear();
     if (this.room) {
+      const leavingRoom = this.room;
+      this.intentionallyLeftRooms.add(leavingRoom);
+      this.room = null;
       try {
-        this.room.leave();
+        leavingRoom.leave();
       } catch (err) {
         console.warn("Error leaving room:", err);
       }
-      this.room = null;
     }
     this.notifyConnectionStatus(false);
   }
@@ -255,6 +260,7 @@ export class MultiplayerManager {
 
   private setupRoomEvents() {
     if (!this.room) return;
+    const room = this.room;
 
     this.room.onMessage("PLAYER_AVATARS", (data: { sessionId: string; avatars: PlayerAvatars | null }) => {
       if (data && data.sessionId) {
@@ -634,12 +640,28 @@ export class MultiplayerManager {
       }
     });
 
+    this.room.onMessage("FRIEND_UPDATE", () => {
+      this.onFriendUpdateCallbacks.forEach((cb) => {
+        try {
+          cb();
+        } catch (err) {
+          console.error("Error in onFriendUpdate callback:", err);
+        }
+      });
+    });
+
     this.startPingLoop();
 
-    this.room.onLeave((code) => {
+    room.onLeave((code) => {
       console.warn("Left room with code:", code);
-      this.stopPingLoop();
-      this.notifyConnectionStatus(false);
+      if (this.room === room) {
+        this.stopPingLoop();
+        this.room = null;
+        this.notifyConnectionStatus(false);
+      }
+      if (!this.intentionallyLeftRooms.has(room)) {
+        this.onUnexpectedDisconnectCallbacks.forEach((cb) => cb(code));
+      }
     });
 
     this.room.onError((code, message) => {
@@ -734,6 +756,10 @@ export class MultiplayerManager {
 
   public onConnectionStatus(cb: (connected: boolean) => void) {
     this.onConnectionStatusCallbacks.push(cb);
+  }
+
+  public onUnexpectedDisconnect(cb: (code?: number) => void) {
+    this.onUnexpectedDisconnectCallbacks.push(cb);
   }
 
   public onPlayerCount(cb: (count: number) => void) {
@@ -1561,6 +1587,10 @@ export class MultiplayerManager {
 
   public onParkingPointsAwarded(cb: ParkingPointsAwardedCallback) {
     this.onParkingPointsAwardedCallbacks.push(cb);
+  }
+
+  public onFriendUpdate(cb: () => void) {
+    this.onFriendUpdateCallbacks.push(cb);
   }
 
   private notifyParkingPointsAwarded(data: { points: number; added: number }) {

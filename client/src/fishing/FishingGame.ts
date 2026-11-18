@@ -409,6 +409,11 @@ export class FishingGame {
 
   private bindEvents() {
     this.btnClose?.addEventListener("click", () => this.close());
+    this.modalEl?.addEventListener("click", (e) => {
+      if (e.target === this.modalEl) {
+        this.close();
+      }
+    });
 
     this.tabPlay?.addEventListener("click", () => this.switchTab("play"));
     this.tabCollection?.addEventListener("click", () => this.switchTab("collection"));

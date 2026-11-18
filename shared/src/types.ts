@@ -81,10 +81,15 @@ export interface PlayerDbRecord {
 export interface AuthUser {
   id: number;
   username: string;
+  email?: string | null;
   displayName?: string | null;
   role: "user" | "superadmin";
   parkingPoints?: number;
   unlockedSkins?: string[];
+  unlockedAssets?: string[];
+  lastSpaceId?: string | null;
+  lastX?: number | null;
+  lastY?: number | null;
 }
 
 export interface AuthResponse {
@@ -117,6 +122,7 @@ export interface Space {
   isPublic: boolean;
   isSuperadminSpace: boolean;
   whitelist: string[]; // usernames allowed if private
+  sharedOwners?: string[]; // co-owners / housemates with shared space ownership
   tiles?: Record<string, string>;
   privateZones?: PrivateZone[];
   jukeboxes?: JukeboxState[];
@@ -134,6 +140,7 @@ export interface SpacesListResponse {
   categories: string[];
   spaces: Space[];
   mySpace?: Space;
+  sharedSpaces?: Space[];
   error?: string;
 }
 
@@ -143,7 +150,7 @@ export interface SpaceResponse {
   error?: string;
 }
 
-export type ChatRoomType = "map" | "zone" | "whisper";
+export type ChatRoomType = "map" | "zone" | "whisper" | "org";
 
 export interface ChatMessage {
   id: string;
@@ -200,6 +207,11 @@ export const DECORATION_INTERACTIONS = [
   { id: "chess", label: "Chess", icon: "♟️" },
   { id: "jukebox", label: "Jukebox", icon: "🎵" },
   { id: "fishing", label: "Fishing", icon: "🎣" },
+  { id: "organisation", label: "Organisation", icon: "🏢" },
+  { id: "notes", label: "Notes", icon: "📝" },
+  { id: "calendar", label: "Calendar", icon: "📅" },
+  { id: "meals", label: "Meals", icon: "🍽️" },
+  { id: "inventory", label: "Space's Inventory", icon: "📦" },
 ] as const;
 
 export type DecorationInteractionType = (typeof DECORATION_INTERACTIONS)[number]["id"];
@@ -212,7 +224,12 @@ export function isValidInteractionType(
     val === "smoke_duel" ||
     val === "chess" ||
     val === "jukebox" ||
-    val === "fishing"
+    val === "fishing" ||
+    val === "organisation" ||
+    val === "notes" ||
+    val === "calendar" ||
+    val === "meals" ||
+    val === "inventory"
   );
 }
 
@@ -462,6 +479,7 @@ export interface AquariumPlacePayload {
   layer?: number;
 }
 
+// ==========================================
 export interface AquariumMovePayload {
   aquariumId: string;
   x: number;
@@ -719,6 +737,8 @@ export function isFreeformAsset(assetKey: string | undefined | null): boolean {
   return (
     baseKey.startsWith("office_one/") ||
     baseKey.startsWith("office_two/") ||
+    baseKey.startsWith("pet_shop/") ||
+    baseKey.startsWith("living_room_one/") ||
     baseKey.startsWith("table_") ||
     baseKey === "round_table_1" ||
     baseKey === "round_table_150" ||
@@ -901,5 +921,149 @@ export interface ThrowBattleRematchPayload {
 export interface ThrowBattleLeavePayload {
   matchId: string;
 }
+
+export interface FriendEntry {
+  friendshipId: number;
+  userId: number;
+  username: string;
+  displayName: string | null;
+  name: string;
+  color: string;
+  avatar: string | null;
+  isOnline: boolean;
+  sessionId: string | null;
+  spaceId: string | null;
+  spaceName: string | null;
+  isSuperadmin: boolean;
+}
+
+export interface FriendRequestEntry {
+  friendshipId: number;
+  userId: number;
+  username: string;
+  displayName: string | null;
+  name: string;
+  avatar: string | null;
+  createdAt: string;
+}
+
+export interface FriendsListResponse {
+  success: boolean;
+  online: FriendEntry[];
+  offline: FriendEntry[];
+  pending: FriendRequestEntry[];
+  requests: FriendRequestEntry[];
+  error?: string;
+}
+
+export const ORGANISATION_CREATION_COST = 144;
+
+export interface OrganisationMember {
+  userId: number;
+  username: string;
+  displayName: string | null;
+  name: string;
+  role: "leader" | "member";
+  joinedAt: string;
+}
+
+export interface Organisation {
+  id: number;
+  name: string;
+  logo: string | null; // Optional 100x100px data URL
+  creatorId: number;
+  creatorUsername: string;
+  creatorDisplayName: string | null;
+  members: OrganisationMember[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateOrganisationPayload {
+  name: string;
+  memberUserIds: number[];
+  logo?: string | null;
+}
+
+export interface CreateOrganisationResponse {
+  success: boolean;
+  organisation?: Organisation;
+  points?: number;
+  error?: string;
+}
+
+export interface OrganisationsListResponse {
+  success: boolean;
+  organisations: Organisation[];
+  error?: string;
+}
+
+export type NoteType = "personal" | "space" | "organisation";
+export type CalendarType = "personal" | "space" | "organisation" | "meals";
+export type CalendarRepeatUnit = "day" | "week" | "month" | "year";
+
+export interface CalendarMealDto {
+  dayOfWeek: number; // 0 = Monday ... 6 = Sunday
+  mealName: string;
+  updatedAt: string;
+}
+
+export interface CalendarAssigneeDto {
+  userId: number;
+  username: string;
+  name: string;
+}
+
+export interface CalendarEventDto {
+  id: number;
+  type: CalendarType;
+  title: string;
+  description: string;
+  startDate: string; // YYYY-MM-DD
+  endDate: string; // YYYY-MM-DD
+  isAllDay: boolean;
+  startTime?: string | null; // HH:mm
+  endTime?: string | null; // HH:mm
+  repeatInterval?: number | null;
+  repeatUnit?: CalendarRepeatUnit | null;
+  assigneeIds?: number[];
+  assignees?: CalendarAssigneeDto[];
+  rotateAssignees?: boolean;
+  images?: string[];
+  authorId: number;
+  authorUsername: string;
+  authorName: string;
+  spaceId?: string | null;
+  spaceName?: string | null;
+  organisationId?: number | null;
+  organisationName?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface NoteDto {
+  id: number;
+  type: NoteType;
+  title: string;
+  content: string;
+  authorId: number;
+  authorUsername: string;
+  authorName: string;
+  spaceId?: string | null;
+  spaceName?: string | null;
+  organisationId?: number | null;
+  organisationName?: string | null;
+  images?: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AccessibleNoteSpace {
+  id: string;
+  name: string;
+  isOwner: boolean;
+}
+
+
 
 

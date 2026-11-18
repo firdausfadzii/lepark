@@ -254,6 +254,58 @@ export class ParkingPointsService {
     const tracker = this.trackers.get(key);
     return tracker ? tracker.currentPoints : null;
   }
+
+  /**
+   * Get the latest active session for an authenticated user ID.
+   */
+  public getOnlineSessionForUser(userId: number): ConnectedPlayerSession | null {
+    if (!userId || userId <= 0) return null;
+    const tracker = this.trackers.get(`user_${userId}`);
+    if (!tracker || tracker.sessions.size === 0) return null;
+    let latest: ConnectedPlayerSession | null = null;
+    for (const session of tracker.sessions.values()) {
+      latest = session;
+    }
+    return latest;
+  }
+
+  /**
+   * Get online info (session, spaceId, name, color, avatar) for an authenticated user ID.
+   */
+  public getOnlineUserInfo(userId: number): {
+    sessionId: string;
+    spaceId: string;
+    name: string;
+    color: string;
+    isSuperadmin: boolean;
+    avatar: string | null;
+  } | null {
+    const session = this.getOnlineSessionForUser(userId);
+    if (!session) return null;
+    const avatar =
+      typeof session.room?.getPlayerAvatar === "function"
+        ? session.room.getPlayerAvatar(session.sessionId)
+        : null;
+    return {
+      sessionId: session.sessionId,
+      spaceId: session.room?.spaceId || "space_central_plaza",
+      name: session.playerState?.name || "Player",
+      color: session.playerState?.color || "#3b82f6",
+      isSuperadmin: !!session.playerState?.isSuperadmin,
+      avatar,
+    };
+  }
+
+  /**
+   * Find an active session across any room by sessionId.
+   */
+  public findSessionBySessionId(sessionId: string): ConnectedPlayerSession | null {
+    const key = this.sessionToKeyMap.get(sessionId);
+    if (!key) return null;
+    const tracker = this.trackers.get(key);
+    if (!tracker) return null;
+    return tracker.sessions.get(sessionId) || null;
+  }
 }
 
 export const parkingPointsService = ParkingPointsService.getInstance();

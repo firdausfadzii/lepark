@@ -3,6 +3,8 @@ import { MultiplayerManager } from "./network/MultiplayerManager";
 import { GameScene, InspectableMapItem } from "./scenes/GameScene";
 import { OFFICE_ONE_DECORATION_ASSETS } from "./officeOneAssets";
 import { OFFICE_TWO_DECORATION_ASSETS } from "./officeTwoAssets";
+import { PET_SHOP_DECORATION_ASSETS } from "./petShopAssets";
+import { LIVING_ROOM_ONE_DECORATION_ASSETS } from "./livingRoomOneAssets";
 import { hydrateEditorAssetThumbnails, resolveAssetThumbnailUrl } from "./atlasThumbnails";
 import {
   DEFAULT_PRESET_COLORS,
@@ -29,12 +31,29 @@ import {
   ChessGameState,
   ChessGameSummary,
   ThrowBattleState,
+  FriendEntry,
+  FriendRequestEntry,
+  FriendsListResponse,
   isWallAsset,
   isOverlayWallAsset,
   isOverlayFloorAsset,
   isFreeformAsset,
   DECORATION_INTERACTIONS,
   DecorationInteractionType,
+  Organisation,
+  OrganisationsListResponse,
+  CreateOrganisationResponse,
+  ORGANISATION_CREATION_COST,
+  ASSET_UNLOCK_COST,
+  isPaidAssetId,
+  NoteType,
+  NoteDto,
+  AccessibleNoteSpace,
+  CalendarType,
+  CalendarRepeatUnit,
+  CalendarAssigneeDto,
+  CalendarEventDto,
+  CalendarMealDto,
 } from "shared";
 import { VoiceManager, VoiceError } from "./network/VoiceManager";
 import { JukeboxManager } from "./audio/JukeboxManager";
@@ -78,22 +97,71 @@ function escapeHtml(str: string): string {
 
 // DOM Elements - Auth Modal
 const authModal = document.getElementById("auth-modal") as HTMLDivElement;
+const authTabs = document.getElementById("auth-tabs") as HTMLDivElement;
 const tabLogin = document.getElementById("tab-login") as HTMLButtonElement;
 const tabRegister = document.getElementById(
   "tab-register",
 ) as HTMLButtonElement;
 const loginForm = document.getElementById("login-form") as HTMLFormElement;
+const forgotPasswordForm = document.getElementById(
+  "forgot-password-form",
+) as HTMLFormElement;
 const registerForm = document.getElementById(
   "register-form",
 ) as HTMLFormElement;
+const loginTabUsername = document.getElementById(
+  "login-tab-username",
+) as HTMLButtonElement;
+const loginTabEmail = document.getElementById(
+  "login-tab-email",
+) as HTMLButtonElement;
+const loginIdentifierLabel = document.getElementById(
+  "login-identifier-label",
+) as HTMLLabelElement;
+const loginIdentifierIcon = document.getElementById(
+  "login-identifier-icon",
+) as HTMLSpanElement;
 const loginUsernameInput = document.getElementById(
   "login-username",
 ) as HTMLInputElement;
 const loginPasswordInput = document.getElementById(
   "login-password",
 ) as HTMLInputElement;
+const btnForgotPassword = document.getElementById(
+  "btn-forgot-password",
+) as HTMLButtonElement;
+const forgotEmailInput = document.getElementById(
+  "forgot-email",
+) as HTMLInputElement;
+const btnForgotSendOtp = document.getElementById(
+  "btn-forgot-send-otp",
+) as HTMLButtonElement;
+const forgotOtpInput = document.getElementById(
+  "forgot-otp",
+) as HTMLInputElement;
+const forgotNewPasswordInput = document.getElementById(
+  "forgot-new-password",
+) as HTMLInputElement;
+const forgotConfirmPasswordInput = document.getElementById(
+  "forgot-confirm-password",
+) as HTMLInputElement;
+const btnSubmitForgot = document.getElementById(
+  "btn-submit-forgot",
+) as HTMLButtonElement;
+const linkForgotBackLogin = document.getElementById(
+  "link-forgot-back-login",
+) as HTMLButtonElement;
 const regUsernameInput = document.getElementById(
   "reg-username",
+) as HTMLInputElement;
+const regEmailInput = document.getElementById(
+  "reg-email",
+) as HTMLInputElement;
+const btnRegSendOtp = document.getElementById(
+  "btn-reg-send-otp",
+) as HTMLButtonElement;
+const regOtpInput = document.getElementById(
+  "reg-otp",
 ) as HTMLInputElement;
 const regDisplayNameInput = document.getElementById(
   "reg-display-name",
@@ -119,6 +187,32 @@ const linkGoRegister = document.getElementById(
 ) as HTMLButtonElement;
 const linkGoLogin = document.getElementById(
   "link-go-login",
+) as HTMLButtonElement;
+
+// DOM Elements - Persistent Link Email Modal
+const linkEmailModal = document.getElementById(
+  "link-email-modal",
+) as HTMLDivElement;
+const linkEmailAlert = document.getElementById(
+  "link-email-alert",
+) as HTMLDivElement;
+const linkEmailAlertMsg = document.getElementById(
+  "link-email-alert-msg",
+) as HTMLSpanElement;
+const linkEmailForm = document.getElementById(
+  "link-email-form",
+) as HTMLFormElement;
+const linkEmailInput = document.getElementById(
+  "link-email-input",
+) as HTMLInputElement;
+const btnLinkSendOtp = document.getElementById(
+  "btn-link-send-otp",
+) as HTMLButtonElement;
+const linkEmailOtpInput = document.getElementById(
+  "link-email-otp",
+) as HTMLInputElement;
+const btnSubmitLinkEmail = document.getElementById(
+  "btn-submit-link-email",
 ) as HTMLButtonElement;
 
 // DOM Elements - Middle Top Bar & Profile Dropdown
@@ -151,12 +245,24 @@ const userProfileDropdown = document.getElementById(
 const dropdownMySpaceBtn = document.getElementById(
   "dropdown-my-space-btn",
 ) as HTMLButtonElement;
+const dropdownMySpaceIcon = document.getElementById(
+  "dropdown-my-space-icon",
+) as HTMLSpanElement | null;
+const dropdownMySpaceTitle = document.getElementById(
+  "dropdown-my-space-title",
+) as HTMLSpanElement | null;
 const dropdownMySpaceSub = document.getElementById(
   "dropdown-my-space-sub",
 ) as HTMLSpanElement;
 const dropdownUpdateCharBtn = document.getElementById(
   "dropdown-update-char-btn",
 ) as HTMLButtonElement;
+const dropdownFriendsBtn = document.getElementById(
+  "dropdown-friends-btn",
+) as HTMLButtonElement | null;
+const dropdownFriendsBadge = document.getElementById(
+  "dropdown-friends-badge",
+) as HTMLSpanElement | null;
 const dropdownEditSpaceBtn = document.getElementById(
   "dropdown-edit-space-btn",
 ) as HTMLButtonElement | null;
@@ -351,6 +457,24 @@ const mySpaceTagsCount = document.getElementById(
 const mySpaceTagsContainer = document.getElementById(
   "my-space-tags-container",
 ) as HTMLElement;
+const mySpaceOwnerBanner = document.getElementById(
+  "my-space-owner-banner",
+) as HTMLDivElement | null;
+const mySpaceOwnerName = document.getElementById(
+  "my-space-owner-name",
+) as HTMLElement | null;
+const mySpaceShareFriendSelect = document.getElementById(
+  "my-space-share-friend-select",
+) as HTMLSelectElement | null;
+const btnAddMySpaceShare = document.getElementById(
+  "btn-add-my-space-share",
+) as HTMLButtonElement | null;
+const mySpaceShareTagsCount = document.getElementById(
+  "my-space-share-tags-count",
+) as HTMLElement | null;
+const mySpaceShareTagsContainer = document.getElementById(
+  "my-space-share-tags-container",
+) as HTMLElement | null;
 
 // DOM Elements - Superadmin Space Modal
 const adminSpaceModal = document.getElementById(
@@ -402,9 +526,6 @@ const privateZoneNameModal = document.getElementById(
 ) as HTMLDivElement | null;
 const privateZoneModalTitle = document.getElementById(
   "private-zone-modal-title",
-) as HTMLElement | null;
-const privateZoneModalSubtitle = document.getElementById(
-  "private-zone-modal-subtitle",
 ) as HTMLElement | null;
 const privateZoneNameForm = document.getElementById(
   "private-zone-name-form",
@@ -463,6 +584,20 @@ const btnClosePlayerMenu = document.getElementById("btn-close-player-menu") as H
 const btnPlayerMenuWhisper = document.getElementById("btn-player-menu-whisper") as HTMLButtonElement | null;
 const btnPlayerMenuVisitSpace = document.getElementById("btn-player-menu-visit-space") as HTMLButtonElement | null;
 const btnPlayerMenuThrowBattle = document.getElementById("btn-player-menu-throw-battle") as HTMLButtonElement | null;
+const btnPlayerMenuAddFriend = document.getElementById("btn-player-menu-add-friend") as HTMLButtonElement | null;
+const playerMenuAddFriendLabel = document.getElementById("player-menu-add-friend-label") as HTMLSpanElement | null;
+
+// Friends Modal DOM Elements
+const friendsModal = document.getElementById("friends-modal") as HTMLDivElement | null;
+const btnCloseFriendsModal = document.getElementById("btn-close-friends-modal") as HTMLButtonElement | null;
+const friendsAddForm = document.getElementById("friends-add-form") as HTMLFormElement | null;
+const friendsAddInput = document.getElementById("friends-add-input") as HTMLInputElement | null;
+const friendsAddFeedback = document.getElementById("friends-add-feedback") as HTMLDivElement | null;
+const friendsListContainer = document.getElementById("friends-list-container") as HTMLDivElement | null;
+const friendsCountOnline = document.getElementById("friends-count-online");
+const friendsCountOffline = document.getElementById("friends-count-offline");
+const friendsCountPending = document.getElementById("friends-count-pending");
+const friendsCountRequest = document.getElementById("friends-count-request");
 
 // Throw Battle Modals & Canvas DOM Elements
 const throwBattleSetupModal = document.getElementById("throw-battle-setup-modal") as HTMLDivElement | null;
@@ -496,7 +631,6 @@ let pendingInviteChallengerSessionId: string | null = null;
 const spaceErrorModal = document.getElementById("space-error-modal");
 const spaceErrorIcon = document.getElementById("space-error-icon");
 const spaceErrorTitle = document.getElementById("space-error-title");
-const spaceErrorSubtitle = document.getElementById("space-error-subtitle");
 const spaceErrorMessage = document.getElementById("space-error-message");
 const spaceErrorReturnName = document.getElementById("space-error-return-name");
 const btnCloseSpaceErrorModal = document.getElementById("btn-close-space-error-modal") as HTMLButtonElement | null;
@@ -512,12 +646,22 @@ interface DmConversation {
   tabElement?: HTMLButtonElement;
 }
 
-let isChatOpen = true; // Default open as requested
-let activeChatRoom: string = "map"; // "map", "zone", or `dm_${sessionId}`
+interface OrgConversation {
+  orgId: number;
+  org: Organisation;
+  messages: ChatMessage[];
+  historyLoaded: boolean;
+  unreadCount: number;
+  tabElement?: HTMLButtonElement;
+}
+
+let isChatOpen = false; // Default hidden on login / game open
+let activeChatRoom: string = "map"; // "map", "zone", `dm_${sessionId}`, or `org_${orgId}`
 let currentInsideZone: PrivateZone | null = null;
 const chatMessagesMap: ChatMessage[] = [];
 const chatMessagesZone = new Map<string, ChatMessage[]>();
 const dmConversations = new Map<string, DmConversation>();
+const orgConversations = new Map<number, OrgConversation>();
 let unreadMapCount = 0;
 const unreadZoneCount = new Map<string, number>();
 let totalClosedUnreadCount = 0;
@@ -633,10 +777,45 @@ let currentSpaceName = "CO3";
 let loadedSpaces: Space[] = [];
 let loadedCategories: string[] = [];
 let myPersonalSpace: Space | null = null;
+let loadedSharedSpaces: Space[] = [];
+let editingTargetSpace: Space | null = null;
 let activeCategoryFilter = "All";
 let isSidePanelCollapsed = false;
 
+// Offline Modal Elements
+const offlineModal = document.getElementById("offline-modal") as HTMLDivElement | null;
+const offlineModalMessage = document.getElementById("offline-modal-message") as HTMLParagraphElement | null;
+const btnOfflineReload = document.getElementById("btn-offline-reload") as HTMLButtonElement | null;
+
+function showOfflineModal(message?: string) {
+  if (offlineModalMessage && message) {
+    offlineModalMessage.textContent = message;
+  }
+  if (offlineModal) {
+    offlineModal.classList.remove("hidden");
+  }
+}
+
+if (btnOfflineReload) {
+  btnOfflineReload.addEventListener("click", () => {
+    window.location.reload();
+  });
+}
+
+window.addEventListener("offline", () => {
+  showOfflineModal(
+    "You are currently offline. Please check your internet connection and reload the page.",
+  );
+});
+
+if (typeof navigator !== "undefined" && !navigator.onLine) {
+  showOfflineModal(
+    "You are currently offline. Please check your internet connection and reload the page.",
+  );
+}
+
 let tempMySpaceWhitelist: string[] = [];
+let tempMySpaceSharedOwners: string[] = [];
 let tempAdminSpaceWhitelist: string[] = [];
 let spacesRefreshTimer: number | null = null;
 
@@ -688,6 +867,12 @@ function getEffectivePlayerName(): string {
 
 function setGameControlsActive(active: boolean) {
   if (active) {
+    if (authModal && !authModal.classList.contains("hidden")) {
+      return;
+    }
+    if (linkEmailModal && !linkEmailModal.classList.contains("hidden")) {
+      return;
+    }
     const atModal = document.getElementById("ashtray-modal");
     if (atModal && !atModal.classList.contains("hidden")) {
       return;
@@ -717,6 +902,8 @@ function setGameControlsActive(active: boolean) {
 // Auth Modal & Tab Management
 // ==========================================
 
+let loginMethod: "username" | "email" = "username";
+
 function showAuthAlert(message: string, isSuccess = false) {
   authAlertMsg.textContent = message;
   authAlert.className = isSuccess ? "auth-alert success" : "auth-alert";
@@ -728,7 +915,18 @@ function hideAuthAlert() {
   authAlertMsg.textContent = "";
 }
 
-function openAuthModal(mode: "login" | "register" = "login") {
+function showLinkEmailAlert(message: string, isSuccess = false) {
+  linkEmailAlertMsg.textContent = message;
+  linkEmailAlert.className = isSuccess ? "auth-alert success" : "auth-alert";
+  linkEmailAlert.classList.remove("hidden");
+}
+
+function hideLinkEmailAlert() {
+  linkEmailAlert.classList.add("hidden");
+  linkEmailAlertMsg.textContent = "";
+}
+
+function openAuthModal(mode: "login" | "register" | "forgot" = "login") {
   authModal.classList.remove("hidden");
   hideAuthAlert();
   switchAuthTab(mode);
@@ -741,27 +939,190 @@ function closeAuthModal() {
   setGameControlsActive(true);
 }
 
-function switchAuthTab(tab: "login" | "register") {
+function switchAuthTab(tab: "login" | "register" | "forgot") {
   hideAuthAlert();
   if (tab === "login") {
+    authTabs.classList.remove("hidden");
     tabLogin.classList.add("active");
     tabRegister.classList.remove("active");
     loginForm.classList.remove("hidden");
     registerForm.classList.add("hidden");
+    forgotPasswordForm.classList.add("hidden");
     setTimeout(() => loginUsernameInput.focus(), 60);
-  } else {
+  } else if (tab === "register") {
+    authTabs.classList.remove("hidden");
     tabRegister.classList.add("active");
     tabLogin.classList.remove("active");
     registerForm.classList.remove("hidden");
     loginForm.classList.add("hidden");
+    forgotPasswordForm.classList.add("hidden");
     setTimeout(() => regUsernameInput.focus(), 60);
+  } else {
+    authTabs.classList.add("hidden");
+    loginForm.classList.add("hidden");
+    registerForm.classList.add("hidden");
+    forgotPasswordForm.classList.remove("hidden");
+    setTimeout(() => forgotEmailInput.focus(), 60);
   }
 }
+
+function setLoginMethod(method: "username" | "email") {
+  loginMethod = method;
+  hideAuthAlert();
+  if (method === "email") {
+    loginTabEmail.classList.add("active");
+    loginTabUsername.classList.remove("active");
+    loginIdentifierLabel.textContent = "Email";
+    loginIdentifierIcon.textContent = "✉️";
+    loginUsernameInput.type = "email";
+    loginUsernameInput.placeholder = "Enter your email...";
+    loginUsernameInput.autocomplete = "email";
+  } else {
+    loginTabUsername.classList.add("active");
+    loginTabEmail.classList.remove("active");
+    loginIdentifierLabel.textContent = "Username";
+    loginIdentifierIcon.textContent = "👤";
+    loginUsernameInput.type = "text";
+    loginUsernameInput.placeholder = "Enter your username...";
+    loginUsernameInput.autocomplete = "username";
+  }
+  loginUsernameInput.value = "";
+  setTimeout(() => loginUsernameInput.focus(), 30);
+}
+
+loginTabUsername.addEventListener("click", () => setLoginMethod("username"));
+loginTabEmail.addEventListener("click", () => setLoginMethod("email"));
 
 tabLogin.addEventListener("click", () => switchAuthTab("login"));
 tabRegister.addEventListener("click", () => switchAuthTab("register"));
 linkGoRegister.addEventListener("click", () => switchAuthTab("register"));
 linkGoLogin.addEventListener("click", () => switchAuthTab("login"));
+btnForgotPassword.addEventListener("click", () => switchAuthTab("forgot"));
+linkForgotBackLogin.addEventListener("click", () => switchAuthTab("login"));
+
+function setupOtpSender(
+  button: HTMLButtonElement,
+  emailInput: HTMLInputElement,
+  purpose: "register" | "forgot_password" | "link_email",
+  alertFn: (msg: string, isSuccess?: boolean) => void,
+  hideAlertFn: () => void,
+  withAuth = false,
+) {
+  let hasSentOnce = false;
+  let cooldownTimer: number | null = null;
+
+  const startCooldown = (seconds: number) => {
+    if (cooldownTimer !== null) {
+      window.clearInterval(cooldownTimer);
+    }
+    let remaining = seconds;
+    button.disabled = true;
+    button.textContent = `Resend OTP (${remaining}s)`;
+    cooldownTimer = window.setInterval(() => {
+      remaining -= 1;
+      if (remaining <= 0) {
+        if (cooldownTimer !== null) {
+          window.clearInterval(cooldownTimer);
+          cooldownTimer = null;
+        }
+        button.disabled = false;
+        button.textContent = "Resend OTP";
+      } else {
+        button.textContent = `Resend OTP (${remaining}s)`;
+      }
+    }, 1000);
+  };
+
+  button.addEventListener("click", async () => {
+    hideAlertFn();
+    const email = emailInput.value.trim();
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      alertFn("Please enter a valid email address first.");
+      emailInput.focus();
+      return;
+    }
+
+    button.disabled = true;
+    button.textContent = "Sending...";
+
+    try {
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+      if (withAuth && authToken) {
+        headers["Authorization"] = `Bearer ${authToken}`;
+      }
+
+      const res = await fetch(getApiUrl("/api/auth/send-otp"), {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ email, purpose }),
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        alertFn(data.error || "Failed to send OTP.");
+        if (data.cooldownRemaining && data.cooldownRemaining > 0) {
+          hasSentOnce = true;
+          startCooldown(data.cooldownRemaining);
+        } else {
+          button.disabled = false;
+          button.textContent = hasSentOnce ? "Resend OTP" : "Send OTP";
+        }
+        return;
+      }
+
+      hasSentOnce = true;
+      alertFn("OTP sent! Please check your email inbox (and spam folder).", true);
+      startCooldown(data.cooldownSeconds || 60);
+    } catch (err) {
+      console.error("Send OTP failed:", err);
+      alertFn("Network error while sending OTP. Please try again.");
+      button.disabled = false;
+      button.textContent = hasSentOnce ? "Resend OTP" : "Send OTP";
+    }
+  });
+}
+
+setupOtpSender(
+  btnRegSendOtp,
+  regEmailInput,
+  "register",
+  showAuthAlert,
+  hideAuthAlert,
+);
+setupOtpSender(
+  btnForgotSendOtp,
+  forgotEmailInput,
+  "forgot_password",
+  showAuthAlert,
+  hideAuthAlert,
+);
+setupOtpSender(
+  btnLinkSendOtp,
+  linkEmailInput,
+  "link_email",
+  showLinkEmailAlert,
+  hideLinkEmailAlert,
+  true,
+);
+
+function checkAndShowLinkEmailModal() {
+  if (currentUser && currentUser.role !== "superadmin" && !currentUser.email) {
+    hideLinkEmailAlert();
+    linkEmailModal.classList.remove("hidden");
+    setGameControlsActive(false);
+    setTimeout(() => linkEmailInput.focus(), 60);
+  } else {
+    linkEmailModal.classList.add("hidden");
+  }
+}
+
+(["keydown", "keyup", "keypress"] as const).forEach((evt) => {
+  linkEmailModal.addEventListener(evt, (e) => {
+    e.stopPropagation();
+  });
+});
 
 // Password visibility toggles
 document.querySelectorAll(".btn-toggle-pwd").forEach((btn) => {
@@ -787,12 +1148,22 @@ registerForm.addEventListener("submit", async (e) => {
   hideAuthAlert();
 
   const username = regUsernameInput.value.trim();
+  const email = regEmailInput.value.trim();
+  const otp = regOtpInput.value.trim();
   const displayName = regDisplayNameInput.value.trim();
   const password = regPasswordInput.value;
   const confirmPassword = regConfirmPasswordInput.value;
 
   if (!username) {
     showAuthAlert("Username is required.");
+    return;
+  }
+  if (!email) {
+    showAuthAlert("Email is required.");
+    return;
+  }
+  if (!otp) {
+    showAuthAlert("Please enter the OTP sent to your email.");
     return;
   }
   if (!password) {
@@ -815,6 +1186,8 @@ registerForm.addEventListener("submit", async (e) => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         username,
+        email,
+        otp,
         displayName: displayName || undefined,
         password,
         confirmPassword,
@@ -864,11 +1237,15 @@ loginForm.addEventListener("submit", async (e) => {
   e.preventDefault();
   hideAuthAlert();
 
-  const username = loginUsernameInput.value.trim();
+  const identifier = loginUsernameInput.value.trim();
   const password = loginPasswordInput.value;
 
-  if (!username || !password) {
-    showAuthAlert("Please enter both username and password.");
+  if (!identifier || !password) {
+    showAuthAlert(
+      loginMethod === "email"
+        ? "Please enter both email and password."
+        : "Please enter both username and password.",
+    );
     return;
   }
 
@@ -876,15 +1253,25 @@ loginForm.addEventListener("submit", async (e) => {
   btnSubmitLogin.innerHTML = `<span>Signing in...</span>`;
 
   try {
+    const payload =
+      loginMethod === "email"
+        ? { email: identifier, loginType: "email", password }
+        : { username: identifier, loginType: "username", password };
+
     const res = await fetch(getApiUrl("/api/auth/login"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, password }),
+      body: JSON.stringify(payload),
     });
 
     const data: AuthResponse = await res.json();
     if (!res.ok || !data.success || !data.token || !data.user) {
-      showAuthAlert(data.error || "Invalid username or password.");
+      showAuthAlert(
+        data.error ||
+          (loginMethod === "email"
+            ? "Invalid email or password."
+            : "Invalid username or password."),
+      );
       return;
     }
 
@@ -897,12 +1284,133 @@ loginForm.addEventListener("submit", async (e) => {
 
     closeAuthModal();
     await enterGameSession();
+    checkAndShowLinkEmailModal();
   } catch (err: any) {
     console.error("Login request failed:", err);
     showAuthAlert("Network error. Please check that the server is running.");
   } finally {
     btnSubmitLogin.disabled = false;
     btnSubmitLogin.innerHTML = `<span>Sign In</span><span class="btn-arrow">→</span>`;
+  }
+});
+
+// Forgot Password Form Submit
+forgotPasswordForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  hideAuthAlert();
+
+  const email = forgotEmailInput.value.trim();
+  const otp = forgotOtpInput.value.trim();
+  const newPassword = forgotNewPasswordInput.value;
+  const confirmPassword = forgotConfirmPasswordInput.value;
+
+  if (!email) {
+    showAuthAlert("Email is required.");
+    return;
+  }
+  if (!otp) {
+    showAuthAlert("Please enter the OTP code.");
+    return;
+  }
+  if (!newPassword || newPassword.length < 6) {
+    showAuthAlert("New password must be at least 6 characters long.");
+    return;
+  }
+  if (newPassword !== confirmPassword) {
+    showAuthAlert("Passwords do not match.");
+    return;
+  }
+
+  btnSubmitForgot.disabled = true;
+  btnSubmitForgot.innerHTML = `<span>Resetting...</span>`;
+
+  try {
+    const res = await fetch(getApiUrl("/api/auth/forgot-password"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, otp, newPassword, confirmPassword }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      showAuthAlert(data.error || "Failed to reset password.");
+      return;
+    }
+
+    forgotEmailInput.value = "";
+    forgotOtpInput.value = "";
+    forgotNewPasswordInput.value = "";
+    forgotConfirmPasswordInput.value = "";
+
+    switchAuthTab("login");
+    showAuthAlert(
+      data.message || "Password reset successfully. You can now sign in.",
+      true,
+    );
+  } catch (err) {
+    console.error("Forgot password request failed:", err);
+    showAuthAlert("Network error. Please check that the server is running.");
+  } finally {
+    btnSubmitForgot.disabled = false;
+    btnSubmitForgot.innerHTML = `<span>Reset Password</span><span class="btn-arrow">→</span>`;
+  }
+});
+
+// Persistent Link Email Form Submit
+linkEmailForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  hideLinkEmailAlert();
+
+  const email = linkEmailInput.value.trim();
+  const otp = linkEmailOtpInput.value.trim();
+
+  if (!email) {
+    showLinkEmailAlert("Please enter your email address.");
+    return;
+  }
+  if (!otp) {
+    showLinkEmailAlert("Please enter the OTP sent to your email.");
+    return;
+  }
+  if (!authToken) {
+    showLinkEmailAlert("Session expired. Please refresh and sign in again.");
+    return;
+  }
+
+  btnSubmitLinkEmail.disabled = true;
+  btnSubmitLinkEmail.innerHTML = `<span>Verifying...</span>`;
+
+  try {
+    const res = await fetch(getApiUrl("/api/auth/link-email"), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${authToken}`,
+      },
+      body: JSON.stringify({ email, otp }),
+    });
+    const data: AuthResponse = await res.json();
+    if (!res.ok || !data.success || !data.user) {
+      showLinkEmailAlert(data.error || "Failed to link email.");
+      return;
+    }
+
+    if (data.token) {
+      authToken = data.token;
+      localStorage.setItem("lepark_auth_token", authToken);
+    }
+    currentUser = data.user;
+    localStorage.setItem("lepark_auth_user", JSON.stringify(currentUser));
+
+    linkEmailInput.value = "";
+    linkEmailOtpInput.value = "";
+    linkEmailModal.classList.add("hidden");
+    setGameControlsActive(true);
+  } catch (err) {
+    console.error("Link email request failed:", err);
+    showLinkEmailAlert("Network error. Please check that the server is running.");
+  } finally {
+    btnSubmitLinkEmail.disabled = false;
+    btnSubmitLinkEmail.innerHTML = `<span>Verify &amp; Link Email</span><span class="btn-arrow">→</span>`;
   }
 });
 
@@ -933,7 +1441,10 @@ function handleLogout() {
   localStorage.removeItem("player_unlocked_skins");
   currentUser = null;
   authToken = null;
+  currentSpaceId = "space_central_plaza";
+  currentSpaceName = "CO3";
   myPersonalSpace = null;
+  loadedSharedSpaces = [];
   loadedSpaces = [];
   loadedCategories = [];
 
@@ -949,8 +1460,11 @@ function handleLogout() {
 
   // Reset inputs
   loginPasswordInput.value = "";
+  regEmailInput.value = "";
+  regOtpInput.value = "";
   regPasswordInput.value = "";
   regConfirmPasswordInput.value = "";
+  linkEmailModal.classList.add("hidden");
 
   openAuthModal("login");
 }
@@ -1685,6 +2199,12 @@ btnCloseModal.addEventListener("click", () => {
   closeUpdateCharacterModal();
 });
 
+modal.addEventListener("click", (e) => {
+  if (e.target === modal) {
+    closeUpdateCharacterModal();
+  }
+});
+
 function computeActiveAvatars(): PlayerAvatars | undefined {
   const isSwitchOn = switchUploadPictures ? switchUploadPictures.checked : false;
   if (isSwitchOn && uploadedFrames.idle.length > 0) {
@@ -1825,9 +2345,13 @@ document.addEventListener("click", (e) => {
   }
 });
 
-// Dropdown Action: Go to My Space
+// Dropdown Action: Go to My Space or Space's Inventory (when in own space)
 dropdownMySpaceBtn.addEventListener("click", () => {
   closeProfileDropdown();
+  if (myPersonalSpace && currentSpaceId === myPersonalSpace.id) {
+    openSpaceInventoryModal();
+    return;
+  }
   if (myPersonalSpace) {
     switchSpace(myPersonalSpace.id, myPersonalSpace.name);
   } else {
@@ -1840,7 +2364,14 @@ dropdownMySpaceBtn.addEventListener("click", () => {
 function openCurrentSpaceSettings() {
   // If in own personal space, open personal space settings modal
   if (myPersonalSpace && currentSpaceId === myPersonalSpace.id) {
-    openMySpaceSettingsModal();
+    openMySpaceSettingsModal(myPersonalSpace);
+    return;
+  }
+
+  // If in a shared space where current user is a housemate/co-owner
+  const sharedSpace = loadedSharedSpaces.find((s) => s.id === currentSpaceId);
+  if (sharedSpace) {
+    openMySpaceSettingsModal(sharedSpace);
     return;
   }
 
@@ -1849,8 +2380,8 @@ function openCurrentSpaceSettings() {
     const spaceToEdit = loadedSpaces.find((s) => s.id === currentSpaceId);
     if (spaceToEdit) {
       openAdminEditSpaceModal(spaceToEdit);
-    } else {
-      openMySpaceSettingsModal();
+    } else if (myPersonalSpace) {
+      openMySpaceSettingsModal(myPersonalSpace);
     }
   }
 }
@@ -1921,6 +2452,138 @@ function switchAssetGroupTab(categoryGroup: HTMLElement, groupName: string) {
     const isActive = panel.dataset.assetGroupPanel === groupName;
     panel.classList.toggle("active-group-panel", isActive);
   });
+}
+
+function isEditorAssetUnlocked(assetId: string): boolean {
+  if (!isPaidAssetId(assetId)) return true;
+  if (currentUser?.role === "superadmin") return true;
+  if (currentUser && Array.isArray(currentUser.unlockedAssets)) {
+    return currentUser.unlockedAssets.includes(assetId);
+  }
+  return false;
+}
+
+function updateEditorAssetLockStates() {
+  const cards = document.querySelectorAll<HTMLButtonElement>(
+    "#map-editor-sidebar .editor-asset-card[data-asset-id]"
+  );
+  cards.forEach((card) => {
+    const assetId = card.dataset.assetId;
+    if (!assetId) return;
+    const isPaid = isPaidAssetId(assetId);
+    const isLocked = isPaid && !isEditorAssetUnlocked(assetId);
+    card.classList.toggle("locked", isLocked);
+
+    const codeEl = card.querySelector<HTMLElement>(".asset-card-code");
+    if (codeEl && isPaid) {
+      if (!card.dataset.groupLabel) {
+        card.dataset.groupLabel = codeEl.textContent || "";
+      }
+      codeEl.textContent = isLocked
+        ? `🔒 ${ASSET_UNLOCK_COST} pts`
+        : card.dataset.groupLabel;
+    }
+
+    const baseName = card.dataset.assetName || assetId;
+    if (isLocked) {
+      card.title = `${baseName} (${assetId}) - Locked (${ASSET_UNLOCK_COST} Parking Points to unlock)`;
+    } else if (isPaid) {
+      card.title = `${baseName} (${assetId}) - ${card.dataset.groupLabel || "Unlocked"} decoration`;
+    }
+  });
+}
+
+async function handleUnlockEditorAsset(
+  card: HTMLButtonElement,
+  assetId: string,
+  assetName: string
+) {
+  if (!currentUser || !authToken) {
+    alert("Please sign in to unlock and use premium map editor sprites.");
+    return;
+  }
+
+  const cost = ASSET_UNLOCK_COST;
+  const currentPoints = currentUser.parkingPoints ?? 0;
+
+  if (currentPoints < cost) {
+    alert(
+      `🔒 ${assetName} requires ${cost} parking points to unlock.\n\nYou currently have ${currentPoints} parking points. Stay online in Lepark to earn more parking points!`
+    );
+    return;
+  }
+
+  const confirmed = confirm(
+    `✨ Unlock "${assetName}" for ${cost} parking points?\n\nYou currently have ${currentPoints} parking points. After unlocking, you will have ${currentPoints - cost} points remaining.`
+  );
+  if (!confirmed) return;
+
+  try {
+    const res = await fetch(getApiUrl("/api/assets/unlock"), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${authToken}`,
+      },
+      body: JSON.stringify({ assetId }),
+    });
+
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      alert(data.error || "Failed to unlock sprite.");
+      return;
+    }
+
+    const newPoints =
+      typeof data.points === "number" ? data.points : currentPoints - cost;
+    const unlockedAssets: string[] = Array.isArray(data.unlockedAssets)
+      ? data.unlockedAssets
+      : [...(currentUser.unlockedAssets || []), assetId];
+
+    currentUser.parkingPoints = newPoints;
+    currentUser.unlockedAssets = unlockedAssets;
+    try {
+      localStorage.setItem("lepark_auth_user", JSON.stringify(currentUser));
+    } catch {}
+
+    updateParkingPointsDisplay(newPoints);
+    updateEditorAssetLockStates();
+
+    if (card.dataset.tileType === "decoration") {
+      selectDecorationAsset(assetId, assetName);
+    } else {
+      selectEditorAsset(assetId, assetName);
+    }
+  } catch (err) {
+    console.error("Failed to unlock asset:", err);
+    alert("Network error while unlocking sprite.");
+  }
+}
+
+/**
+ * Show all map editor asset/sprite categories and update per-sprite lock states.
+ */
+function updateEditorAssetGroupVisibility() {
+  const categoryGroups = document.querySelectorAll<HTMLElement>(
+    "#map-editor-sidebar .editor-category-group"
+  );
+  categoryGroups.forEach((categoryGroup) => {
+    const groupBtns = categoryGroup.querySelectorAll<HTMLButtonElement>(
+      ".editor-group-tab-btn[data-asset-group-tab]"
+    );
+    groupBtns.forEach((btn) => {
+      btn.classList.remove("hidden");
+    });
+
+    const groupPanels = categoryGroup.querySelectorAll<HTMLElement>(
+      ".editor-group-panel[data-asset-group-panel]"
+    );
+    groupPanels.forEach((panel) => {
+      panel.classList.remove("hidden");
+    });
+  });
+
+  updateEditorAssetLockStates();
 }
 
 function setupMapEditorAccordions() {
@@ -1999,12 +2662,14 @@ function setupMapEditorAccordions() {
     });
   }
 
-  if (rightHeader) {
+    if (rightHeader) {
     rightHeader.addEventListener("click", () => {
       const isNowCollapsed = !mapEditorTileOptionsSidebar?.classList.contains("collapsed");
       setRightSidebarCollapsed(isNowCollapsed);
     });
   }
+
+  updateEditorAssetGroupVisibility();
 }
 
 function getSelectedPlacementTileInfo(): {
@@ -2201,30 +2866,12 @@ function setupMapEditorDecorationControls() {
 
   if (btnTileOptLayerDown) {
     btnTileOptLayerDown.addEventListener("click", () => {
-      if (activeEditorContextMenuItem && gameInstance) {
-        const scene = gameInstance.scene.getScene("GameScene") as GameScene;
-        const curr = scene?.getItemTileOptions?.(activeEditorContextMenuItem);
-        if (scene && curr) {
-          scene.setItemLayerLevel(activeEditorContextMenuItem, curr.layer - 1);
-          syncRightTileOptionsSidebar();
-        }
-        return;
-      }
       adjustPlacementLayer(-1);
     });
   }
 
   if (btnTileOptLayerUp) {
     btnTileOptLayerUp.addEventListener("click", () => {
-      if (activeEditorContextMenuItem && gameInstance) {
-        const scene = gameInstance.scene.getScene("GameScene") as GameScene;
-        const curr = scene?.getItemTileOptions?.(activeEditorContextMenuItem);
-        if (scene && curr) {
-          scene.setItemLayerLevel(activeEditorContextMenuItem, curr.layer + 1);
-          syncRightTileOptionsSidebar();
-        }
-        return;
-      }
       adjustPlacementLayer(1);
     });
   }
@@ -2390,6 +3037,17 @@ function adjustPlacementLayer(delta: number) {
   const now = performance.now();
   if (now - lastPlacementLayerAdjustTime < 25) return;
   lastPlacementLayerAdjustTime = now;
+
+  if (activeEditorContextMenuItem && gameInstance) {
+    const scene = gameInstance.scene.getScene("GameScene") as GameScene;
+    const curr = scene?.getItemTileOptions?.(activeEditorContextMenuItem);
+    if (scene && curr) {
+      scene.setItemLayerLevel(activeEditorContextMenuItem, curr.layer + delta);
+      syncRightTileOptionsSidebar();
+    }
+    return;
+  }
+
   setPlacementLayer(currentPlacementLayer + delta, true);
 }
 (window as any).adjustPlacementLayer = adjustPlacementLayer;
@@ -2638,6 +3296,7 @@ function enterEditMode() {
   if (chatSidebar) chatSidebar.classList.add("hidden");
 
   if (mapEditorSidebar) mapEditorSidebar.classList.remove("hidden");
+  updateEditorAssetGroupVisibility();
   if (mapEditorTileOptionsSidebar) mapEditorTileOptionsSidebar.classList.remove("hidden");
   if (mapEditBanner) mapEditBanner.classList.remove("hidden");
   if (btnEditMap) {
@@ -3261,10 +3920,6 @@ function openPrivateZoneNameModal(
     if (privateZoneModalTitle) {
       privateZoneModalTitle.textContent = "🔒 Name Private Area";
     }
-    if (privateZoneModalSubtitle) {
-      privateZoneModalSubtitle.textContent =
-        "Set a name for this private area (chat room, voice room, or video room)";
-    }
     if (btnSavePrivateZoneName) {
       btnSavePrivateZoneName.textContent = "Save Area Name";
     }
@@ -3276,10 +3931,6 @@ function openPrivateZoneNameModal(
     }
     if (privateZoneModalTitle) {
       privateZoneModalTitle.textContent = "✏️ Rename Private Area";
-    }
-    if (privateZoneModalSubtitle) {
-      privateZoneModalSubtitle.textContent =
-        "Change the name of this private room / channel";
     }
     if (btnSavePrivateZoneName) {
       btnSavePrivateZoneName.textContent = "Update Name";
@@ -3463,6 +4114,33 @@ function showPlayerContextMenu(player: {
   if (btnPlayerMenuThrowBattle) {
     btnPlayerMenuThrowBattle.style.display = isMe ? "none" : "flex";
   }
+  if (btnPlayerMenuAddFriend) {
+    btnPlayerMenuAddFriend.style.display = isMe ? "none" : "flex";
+    if (!isMe && playerMenuAddFriendLabel) {
+      const targetUid = player.userId || 0;
+      const isAlreadyFriend =
+        targetUid > 0 &&
+        (friendsCache.online.some((f) => f.userId === targetUid) ||
+          friendsCache.offline.some((f) => f.userId === targetUid));
+      const isPending =
+        targetUid > 0 && friendsCache.pending.some((f) => f.userId === targetUid);
+      const isIncoming =
+        targetUid > 0 && friendsCache.requests.some((f) => f.userId === targetUid);
+      if (isAlreadyFriend) {
+        playerMenuAddFriendLabel.textContent = "Friends ✓";
+        btnPlayerMenuAddFriend.disabled = true;
+      } else if (isPending) {
+        playerMenuAddFriendLabel.textContent = "Request Sent";
+        btnPlayerMenuAddFriend.disabled = true;
+      } else if (isIncoming) {
+        playerMenuAddFriendLabel.textContent = "Accept Friend";
+        btnPlayerMenuAddFriend.disabled = false;
+      } else {
+        playerMenuAddFriendLabel.textContent = "Add Friend";
+        btnPlayerMenuAddFriend.disabled = false;
+      }
+    }
+  }
 
   if (gameInstance) {
     const scene = gameInstance.scene.getScene("GameScene") as GameScene;
@@ -3483,7 +4161,7 @@ function showPlayerContextMenu(player: {
 function positionPlayerContextMenu(screenX: number, screenY: number) {
   if (!playerContextMenu) return;
   const menuWidth = 170;
-  const menuHeight = 160;
+  const menuHeight = 195;
   const padding = 12;
 
   const clampedX = Math.max(
@@ -3642,6 +4320,120 @@ function closeDmTab(sessionId: string) {
   }
 }
 
+function updateOrgTabBadge(orgId: number) {
+  const convo = orgConversations.get(orgId);
+  if (!convo || !convo.tabElement) return;
+  const badge = convo.tabElement.querySelector(".chat-tab-badge");
+  if (!badge) return;
+  if (convo.unreadCount > 0) {
+    badge.classList.remove("hidden");
+  } else {
+    badge.classList.add("hidden");
+  }
+}
+
+function renderOrgTabContent(tab: HTMLButtonElement, org: Organisation) {
+  const iconHtml = org.logo
+    ? `<img src="${escapeHtml(org.logo)}" alt="${escapeHtml(org.name)}" class="chat-tab-org-logo" />`
+    : `<span class="chat-tab-icon">🏢</span>`;
+  tab.title = `Organisation: ${org.name}`;
+  tab.innerHTML = `
+    ${iconHtml}
+    <span class="chat-tab-name">${escapeHtml(org.name)}</span>
+    <span class="chat-tab-badge hidden"></span>
+  `;
+}
+
+async function loadOrgChatHistory(orgId: number) {
+  if (!authToken) return;
+  const convo = orgConversations.get(orgId);
+  if (!convo || convo.historyLoaded) return;
+  convo.historyLoaded = true;
+  try {
+    const res = await fetch(getApiUrl(`/api/organisations/${orgId}/messages`), {
+      headers: { Authorization: `Bearer ${authToken}` },
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.success && Array.isArray(data.messages)) {
+      const existingIds = new Set(convo.messages.map((m) => m.id));
+      const merged = [...(data.messages as ChatMessage[]).filter((m) => !existingIds.has(m.id)), ...convo.messages];
+      merged.sort((a, b) => a.timestamp - b.timestamp);
+      convo.messages = merged;
+      if (activeChatRoom === `org_${orgId}`) {
+        renderCurrentChatMessages();
+        scrollChatToBottom();
+      }
+    }
+  } catch (err) {
+    console.warn("Failed to load org chat history:", err);
+  }
+}
+
+function syncOrgChatTabs(orgs: Organisation[]) {
+  const activeIds = new Set(orgs.map((o) => o.id));
+
+  // Remove tabs for organisations the player is no longer in
+  for (const [orgId, convo] of Array.from(orgConversations.entries())) {
+    if (!activeIds.has(orgId)) {
+      if (convo.tabElement) {
+        convo.tabElement.remove();
+      }
+      orgConversations.delete(orgId);
+      if (activeChatRoom === `org_${orgId}`) {
+        switchChatTab(currentInsideZone ? "zone" : "map");
+      }
+    }
+  }
+
+  if (!chatTabsContainer) return;
+
+  for (const org of orgs) {
+    let convo = orgConversations.get(org.id);
+    if (!convo) {
+      convo = {
+        orgId: org.id,
+        org,
+        messages: [],
+        historyLoaded: false,
+        unreadCount: 0,
+      };
+      orgConversations.set(org.id, convo);
+    } else {
+      convo.org = org;
+    }
+
+    let tab = convo.tabElement;
+    if (!tab || !document.getElementById(`chat-tab-org-${org.id}`)) {
+      tab = document.createElement("button");
+      tab.type = "button";
+      tab.id = `chat-tab-org-${org.id}`;
+      tab.className = "chat-tab chat-tab-org";
+      tab.setAttribute("role", "tab");
+      tab.setAttribute("aria-selected", activeChatRoom === `org_${org.id}` ? "true" : "false");
+      if (activeChatRoom === `org_${org.id}`) {
+        tab.classList.add("active");
+      }
+      tab.dataset.room = `org_${org.id}`;
+      renderOrgTabContent(tab, org);
+
+      tab.addEventListener("click", () => {
+        switchChatTab(`org_${org.id}`);
+      });
+
+      chatTabsContainer.appendChild(tab);
+      convo.tabElement = tab;
+    } else {
+      renderOrgTabContent(tab, org);
+      updateOrgTabBadge(org.id);
+    }
+
+    if (!convo.historyLoaded) {
+      loadOrgChatHistory(org.id);
+    }
+  }
+}
+
 function switchChatTab(target: string) {
   if (target === "zone" && !currentInsideZone) {
     target = "map";
@@ -3660,8 +4452,15 @@ function switchChatTab(target: string) {
     }
   });
 
+  orgConversations.forEach((convo) => {
+    if (convo.tabElement) {
+      convo.tabElement.classList.remove("active");
+      convo.tabElement.setAttribute("aria-selected", "false");
+    }
+  });
+
   if (chatChannelBanner) {
-    chatChannelBanner.classList.remove("private", "whisper");
+    chatChannelBanner.classList.remove("private", "whisper", "org");
   }
 
   if (target === "map") {
@@ -3716,6 +4515,30 @@ function switchChatTab(target: string) {
       if (chatActiveChannelLabel) chatActiveChannelLabel.textContent = `@${convo.userName}`;
       if (chatInputField) chatInputField.placeholder = `Message @${convo.userName} (Whisper)...`;
     }
+  } else if (target.startsWith("org_")) {
+    const orgId = Number(target.replace("org_", ""));
+    const convo = orgConversations.get(orgId);
+    if (convo) {
+      if (convo.tabElement) {
+        convo.tabElement.classList.add("active");
+        convo.tabElement.setAttribute("aria-selected", "true");
+      }
+      convo.unreadCount = 0;
+      updateOrgTabBadge(orgId);
+
+      if (chatChannelBanner) chatChannelBanner.classList.add("org");
+      if (chatChannelDot) {
+        chatChannelDot.style.backgroundColor = "";
+      }
+      if (chatChannelDesc) {
+        chatChannelDesc.textContent = `🏢 ${convo.org.name} • ${convo.org.members.length} member${convo.org.members.length === 1 ? "" : "s"}`;
+      }
+      if (chatActiveChannelLabel) chatActiveChannelLabel.textContent = convo.org.name;
+      if (chatInputField) chatInputField.placeholder = `Message ${convo.org.name}...`;
+      if (!convo.historyLoaded) {
+        loadOrgChatHistory(orgId);
+      }
+    }
   }
 
   renderCurrentChatMessages();
@@ -3734,6 +4557,10 @@ function renderCurrentChatMessages() {
     const targetSessionId = activeChatRoom.replace("dm_", "");
     const convo = dmConversations.get(targetSessionId);
     messagesToRender = convo ? convo.messages : [];
+  } else if (activeChatRoom.startsWith("org_")) {
+    const orgId = Number(activeChatRoom.replace("org_", ""));
+    const convo = orgConversations.get(orgId);
+    messagesToRender = convo ? convo.messages : [];
   }
 
   if (messagesToRender.length === 0) {
@@ -3743,7 +4570,14 @@ function renderCurrentChatMessages() {
     let sub = "";
     let icon = "💬";
 
-    if (activeChatRoom.startsWith("dm_")) {
+    if (activeChatRoom.startsWith("org_")) {
+      const orgId = Number(activeChatRoom.replace("org_", ""));
+      const convo = orgConversations.get(orgId);
+      const orgName = convo?.org.name || "Organisation";
+      icon = "🏢";
+      title = `${escapeHtml(orgName)}`;
+      sub = `Private organisation channel for ${escapeHtml(orgName)} members.`;
+    } else if (activeChatRoom.startsWith("dm_")) {
       const targetSessionId = activeChatRoom.replace("dm_", "");
       const convo = dmConversations.get(targetSessionId);
       const name = convo?.userName || "Player";
@@ -3879,6 +4713,38 @@ function handleIncomingChatMessage(msg: ChatMessage) {
       convo.unreadCount++;
       updateDmTabBadge(partnerSessionId);
     }
+  } else if (msg.roomType === "org") {
+    const orgId = Number(msg.roomId);
+    if (!Number.isInteger(orgId) || orgId <= 0) return;
+
+    let convo = orgConversations.get(orgId);
+    if (!convo) {
+      // Newly added to an organisation while online: refresh organisations list
+      fetchOrganisationsData().then(() => {
+        const refreshed = orgConversations.get(orgId);
+        if (refreshed && !refreshed.messages.some((m) => m.id === msg.id)) {
+          refreshed.messages.push(msg);
+          if (activeChatRoom === `org_${orgId}`) {
+            appendChatMessageElement(msg, true);
+          } else {
+            refreshed.unreadCount++;
+            updateOrgTabBadge(orgId);
+          }
+        }
+      });
+      return;
+    }
+
+    if (!convo.messages.some((m) => m.id === msg.id)) {
+      convo.messages.push(msg);
+    }
+
+    if (activeChatRoom === `org_${orgId}`) {
+      appendChatMessageElement(msg, true);
+    } else {
+      convo.unreadCount++;
+      updateOrgTabBadge(orgId);
+    }
   }
 
   if (!isChatOpen) {
@@ -3965,7 +4831,12 @@ function isAnyModalOpen(): boolean {
   if (twModal && !twModal.classList.contains("hidden")) return true;
   const jbModal = document.getElementById("jukebox-modal");
   if (jbModal && !jbModal.classList.contains("hidden")) return true;
+  if (notesModal && !notesModal.classList.contains("hidden")) return true;
+  if (spaceInventoryModal && !spaceInventoryModal.classList.contains("hidden")) return true;
+  if (calendarModal && !calendarModal.classList.contains("hidden")) return true;
+  if (organisationModal && !organisationModal.classList.contains("hidden")) return true;
   if (authModal && !authModal.classList.contains("hidden")) return true;
+  if (linkEmailModal && !linkEmailModal.classList.contains("hidden")) return true;
   if (mapModal && !mapModal.classList.contains("hidden")) return true;
   if (modal && !modal.classList.contains("hidden")) return true;
   if (mySpaceSettingsModal && !mySpaceSettingsModal.classList.contains("hidden")) return true;
@@ -4007,51 +4878,58 @@ if (btnPlayerMenuWhisper) {
   });
 }
 
+async function visitPlayerSpace(target: {
+  userId?: number | null;
+  name: string;
+  userSpaceId?: string | null;
+}) {
+  let targetSpaceId = target.userSpaceId;
+  if (!targetSpaceId && target.userId) {
+    targetSpaceId = `user_space_${target.userId}`;
+  }
+
+  let targetSpaceName = `${target.name}'s Space`;
+
+  // Attempt to resolve custom space name or ID from backend
+  try {
+    const identifier = target.userId ? String(target.userId) : target.name;
+    const res = await fetch(getApiUrl(`/api/spaces/user-space/${encodeURIComponent(identifier)}`), {
+      headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+    });
+    const data = await res.json();
+    if (data.success && data.space) {
+      targetSpaceId = data.space.id;
+      if (data.space.name) {
+        targetSpaceName = data.space.name;
+      }
+    }
+  } catch (err) {
+    console.warn("Could not fetch user space info:", err);
+  }
+
+  if (!targetSpaceId) {
+    showSpaceErrorModal(
+      "Space Not Found",
+      `Could not find personal space for ${target.name}.`,
+      currentSpaceName,
+      "❓"
+    );
+    return;
+  }
+
+  if (currentSpaceId === targetSpaceId) {
+    return;
+  }
+
+  await switchSpace(targetSpaceId, targetSpaceName);
+}
+
 if (btnPlayerMenuVisitSpace) {
   btnPlayerMenuVisitSpace.addEventListener("click", async () => {
     if (!activeMenuPlayer) return;
     const target = { ...activeMenuPlayer };
     closePlayerContextMenu();
-
-    let targetSpaceId = target.userSpaceId;
-    if (!targetSpaceId && target.userId) {
-      targetSpaceId = `user_space_${target.userId}`;
-    }
-
-    let targetSpaceName = `${target.name}'s Space`;
-
-    // Attempt to resolve custom space name or ID from backend
-    try {
-      const identifier = target.userId ? String(target.userId) : target.name;
-      const res = await fetch(getApiUrl(`/api/spaces/user-space/${encodeURIComponent(identifier)}`), {
-        headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
-      });
-      const data = await res.json();
-      if (data.success && data.space) {
-        targetSpaceId = data.space.id;
-        if (data.space.name) {
-          targetSpaceName = data.space.name;
-        }
-      }
-    } catch (err) {
-      console.warn("Could not fetch user space info:", err);
-    }
-
-    if (!targetSpaceId) {
-      showSpaceErrorModal(
-        "Space Not Found",
-        `Could not find personal space for ${target.name}.`,
-        currentSpaceName,
-        "❓"
-      );
-      return;
-    }
-
-    if (currentSpaceId === targetSpaceId) {
-      return;
-    }
-
-    await switchSpace(targetSpaceId, targetSpaceName);
+    await visitPlayerSpace(target);
   });
 }
 
@@ -4077,6 +4955,44 @@ if (btnPlayerMenuThrowBattle) {
 
     throwBattleSetupModal?.classList.remove("hidden");
     setGameControlsActive(false);
+  });
+}
+
+if (btnPlayerMenuAddFriend) {
+  btnPlayerMenuAddFriend.addEventListener("click", async () => {
+    if (!activeMenuPlayer) return;
+    const targetUserId = activeMenuPlayer.userId;
+    const targetName = activeMenuPlayer.name;
+    closePlayerContextMenu();
+
+    if (!authToken) {
+      alert("Please log in to add friends.");
+      return;
+    }
+    if (!targetUserId || targetUserId <= 0) {
+      alert(`${targetName} is playing as a guest and cannot be added as a friend.`);
+      return;
+    }
+
+    try {
+      const res = await fetch(getApiUrl("/api/friends/request"), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({ targetUserId }),
+      });
+      const data = await res.json();
+      if (!data.success) {
+        alert(data.error || "Failed to send friend request.");
+        return;
+      }
+      await fetchFriendsData();
+    } catch (err) {
+      console.error("Failed to send friend request:", err);
+      alert("Failed to send friend request.");
+    }
   });
 }
 
@@ -4108,6 +5024,16 @@ if (btnTbCancelSetup) {
     pendingChallengeTargetSessionId = null;
     throwBattleSetupModal?.classList.add("hidden");
     setGameControlsActive(true);
+  });
+}
+
+if (throwBattleSetupModal) {
+  throwBattleSetupModal.addEventListener("click", (e) => {
+    if (e.target === throwBattleSetupModal) {
+      pendingChallengeTargetSessionId = null;
+      throwBattleSetupModal.classList.add("hidden");
+      setGameControlsActive(true);
+    }
   });
 }
 
@@ -4202,10 +5128,6 @@ function showSpaceErrorModal(
   icon: string = "🔒"
 ) {
   if (spaceErrorTitle) spaceErrorTitle.textContent = title;
-  if (spaceErrorSubtitle) {
-    spaceErrorSubtitle.textContent =
-      title === "Access Denied" ? "Private Space" : "Space Notice";
-  }
   if (spaceErrorMessage) spaceErrorMessage.textContent = message;
   if (spaceErrorReturnName) spaceErrorReturnName.textContent = returnSpaceName;
   if (spaceErrorIcon) spaceErrorIcon.textContent = icon;
@@ -4261,6 +5183,14 @@ if (chatInputForm) {
         roomType: "whisper",
         roomId: targetSessionId,
         targetName: convo?.userName || "Player",
+        text,
+      });
+    } else if (activeChatRoom.startsWith("org_")) {
+      const orgId = Number(activeChatRoom.replace("org_", ""));
+      if (!Number.isInteger(orgId) || orgId <= 0) return;
+      multiplayer.sendChatMessage({
+        roomType: "org",
+        roomId: String(orgId),
         text,
       });
     } else if (activeChatRoom === "zone") {
@@ -4543,7 +5473,7 @@ window.addEventListener(
 if (btnTestAudioOutput) {
   btnTestAudioOutput.addEventListener("click", async () => {
     const origText = btnTestAudioOutput.textContent;
-    btnTestAudioOutput.textContent = "🔊 Playing...";
+    btnTestAudioOutput.textContent = "Playing...";
     btnTestAudioOutput.disabled = true;
 
     try {
@@ -4594,6 +5524,52 @@ document.addEventListener("click", (e) => {
     if (micGroup && !micGroup.contains(e.target as Node)) {
       closeAudioSettingsDropdown();
     }
+  }
+});
+
+// Close floating context menus & editor interaction dropdown on outside UI click
+document.addEventListener("click", (e) => {
+  const target = e.target as HTMLElement | null;
+  if (!target) return;
+  // Canvas clicks are handled by GameScene pointerdown (with player/item hit guards)
+  const isOnCanvas = Boolean(target.closest("#game-container"));
+
+  if (
+    !isOnCanvas &&
+    playerContextMenu &&
+    !playerContextMenu.classList.contains("hidden") &&
+    !playerContextMenu.contains(target)
+  ) {
+    closePlayerContextMenu();
+    if (gameInstance) {
+      const scene = gameInstance.scene.getScene("GameScene") as GameScene;
+      scene?.closePlayerMenu();
+    }
+  }
+
+  const editorMenuEl = document.getElementById("editor-item-context-menu");
+  if (
+    !isOnCanvas &&
+    editorMenuEl &&
+    !editorMenuEl.classList.contains("hidden") &&
+    !editorMenuEl.contains(target)
+  ) {
+    closeEditorItemContextMenu();
+    if (gameInstance) {
+      const scene = gameInstance.scene.getScene("GameScene") as GameScene;
+      scene?.closeEditorItemMenu();
+    }
+  }
+
+  const interactionPicker = document.getElementById("editor-item-interaction-picker");
+  const interactionPanel = document.getElementById("editor-interaction-dropdown-panel");
+  if (
+    interactionPanel &&
+    !interactionPanel.classList.contains("hidden") &&
+    interactionPicker &&
+    !interactionPicker.contains(target)
+  ) {
+    interactionPanel.classList.add("hidden");
   }
 });
 
@@ -4688,6 +5664,7 @@ async function toggleMic() {
     setupMultiplayerSmokingGameListeners(multiplayer);
     setupMultiplayerChessListeners(multiplayer);
     setupMultiplayerParkingPointsListeners(multiplayer);
+    setupMultiplayerFriendListeners(multiplayer);
     setupMultiplayerThrowBattleListeners(multiplayer);
     } else {
       showVoiceNotification({
@@ -6991,6 +7968,31 @@ function setupSceneAquariumEvents(scene: GameScene) {
   scene.onAquariumClick = (aqId: string) => {
     fishingGame?.open(aqId);
   };
+
+  scene.onOrganisationClick = () => {
+    openOrganisationModal();
+  };
+
+  scene.onNotesClick = () => {
+    openNotesModal();
+  };
+
+  scene.onInventoryClick = () => {
+    openSpaceInventoryModal(currentSpaceId || undefined);
+  };
+
+  scene.onCalendarClick = () => {
+    openCalendarModal();
+  };
+
+  scene.onMealsClick = () => {
+    openCalendarModal("meals");
+  };
+
+  scene.onNearbyInteractableChange = (nearby) => {
+    updateMobileInteractButton(nearby);
+  };
+  updateMobileInteractButton(scene.getActiveNearbyInteractable());
 }
 
 function openChessModal(chessBoardId: string) {
@@ -8074,7 +9076,11 @@ function populateOfficeDecorationGrid(
     check.className = "asset-card-check";
     check.textContent = "✓";
 
-    thumb.append(img, check);
+    const lockBadge = document.createElement("span");
+    lockBadge.className = "asset-card-lock-badge";
+    lockBadge.textContent = `🔒 ${ASSET_UNLOCK_COST}`;
+
+    thumb.append(img, check, lockBadge);
 
     const info = document.createElement("div");
     info.className = "asset-card-info";
@@ -8096,6 +9102,8 @@ function populateOfficeDecorationGrid(
 
 populateOfficeDecorationGrid("office-one-deco-grid", OFFICE_ONE_DECORATION_ASSETS, "office_one", "Office One");
 populateOfficeDecorationGrid("office-two-deco-grid", OFFICE_TWO_DECORATION_ASSETS, "office_two", "Office Two");
+populateOfficeDecorationGrid("pet-shop-deco-grid", PET_SHOP_DECORATION_ASSETS, "pet_shop", "Pet Shop");
+populateOfficeDecorationGrid("living-room-one-deco-grid", LIVING_ROOM_ONE_DECORATION_ASSETS, "living_room_one", "Living Room One");
 hydrateEditorAssetThumbnails();
 const defaultBrushPattern = document.querySelector<HTMLElement>(".brush-pattern-layer");
 if (defaultBrushPattern && !defaultBrushPattern.style.backgroundImage) {
@@ -8133,6 +9141,10 @@ editorAssetCards.forEach((card) => {
       const id = card.dataset.assetId || "wood_5";
       const name = card.dataset.assetName || "Wood 5";
       const tileType = card.dataset.tileType;
+      if (!isEditorAssetUnlocked(id)) {
+        void handleUnlockEditorAsset(card, id, name);
+        return;
+      }
       if (tileType === "decoration") {
         selectDecorationAsset(id, name);
       } else {
@@ -8395,6 +9407,26 @@ window.addEventListener("keydown", (e: KeyboardEvent) => {
       closeChessModal();
       return;
     }
+    if (calendarImageLightbox && !calendarImageLightbox.classList.contains("hidden")) {
+      closeCalendarImageLightbox();
+      return;
+    }
+    if (notesModal && !notesModal.classList.contains("hidden")) {
+      closeNotesModal();
+      return;
+    }
+    if (spaceInventoryModal && !spaceInventoryModal.classList.contains("hidden")) {
+      if (inventoryFormView && !inventoryFormView.classList.contains("hidden")) {
+        showInventoryView("list");
+      } else {
+        closeSpaceInventoryModal();
+      }
+      return;
+    }
+    if (calendarModal && !calendarModal.classList.contains("hidden")) {
+      closeCalendarModal();
+      return;
+    }
     if (
       privateZoneNameModal &&
       !privateZoneNameModal.classList.contains("hidden")
@@ -8435,10 +9467,18 @@ window.addEventListener("keydown", (e: KeyboardEvent) => {
     }
   }
 
+  const activeEl = document.activeElement as HTMLElement | null;
+  const isTypingInField =
+    activeEl === chatInputField ||
+    activeEl?.tagName === "INPUT" ||
+    activeEl?.tagName === "TEXTAREA" ||
+    activeEl?.tagName === "SELECT" ||
+    Boolean(activeEl?.isContentEditable);
+
   // Pressing Enter when not in an active input or modal focuses chat
   if (
     e.key === "Enter" &&
-    document.activeElement !== chatInputField &&
+    !isTypingInField &&
     !isEditModeActive &&
     !isAnyModalOpen() &&
     !isAudioSettingsOpen
@@ -8454,10 +9494,7 @@ window.addEventListener("keydown", (e: KeyboardEvent) => {
   // Pressing 'm' or 'M' when not typing in an input toggles mic
   if (
     e.key.toLowerCase() === "m" &&
-    document.activeElement !== chatInputField &&
-    document.activeElement?.tagName !== "INPUT" &&
-    document.activeElement?.tagName !== "TEXTAREA" &&
-    document.activeElement?.tagName !== "SELECT" &&
+    !isTypingInField &&
     !isEditModeActive &&
     !isAnyModalOpen() &&
     !isAudioSettingsOpen
@@ -8534,15 +9571,19 @@ function updateTopBarUI() {
   topbarAvatarImg.classList.remove("hidden");
   if (topbarAvatarDot) topbarAvatarDot.classList.add("hidden");
 
-  // Dropdown subtitle
-  if (myPersonalSpace) {
-    if (currentSpaceId === myPersonalSpace.id) {
-      dropdownMySpaceSub.textContent = "✓ Currently inside";
-    } else {
-      dropdownMySpaceSub.textContent = `${myPersonalSpace.name} (${myPersonalSpace.isPublic ? "Public" : "Private"})`;
-    }
+  // Dropdown title & subtitle
+  if (myPersonalSpace && currentSpaceId === myPersonalSpace.id) {
+    if (dropdownMySpaceIcon) dropdownMySpaceIcon.textContent = "📦";
+    if (dropdownMySpaceTitle) dropdownMySpaceTitle.textContent = "Space's Inventory";
+    dropdownMySpaceSub.textContent = "Manage house inventory";
   } else {
-    dropdownMySpaceSub.textContent = "Enter personal space";
+    if (dropdownMySpaceIcon) dropdownMySpaceIcon.textContent = "🏠";
+    if (dropdownMySpaceTitle) dropdownMySpaceTitle.textContent = "Go to my space";
+    if (myPersonalSpace) {
+      dropdownMySpaceSub.textContent = `${myPersonalSpace.name} (${myPersonalSpace.isPublic ? "Public" : "Private"})`;
+    } else {
+      dropdownMySpaceSub.textContent = "Enter personal space";
+    }
   }
 
   if (mapCurrentSpaceName) {
@@ -8563,7 +9604,12 @@ function canChangeCurrentSpaceSettings(): boolean {
     return true;
   }
 
-  // Case 2: Superadmin has control to configure any space
+  // Case 2: User is a shared housemate / co-owner of the current space
+  if (loadedSharedSpaces.some((s) => s.id === currentSpaceId)) {
+    return true;
+  }
+
+  // Case 3: Superadmin has control to configure any space
   if (currentUser.role === "superadmin") {
     return true;
   }
@@ -8573,6 +9619,7 @@ function canChangeCurrentSpaceSettings(): boolean {
 
 function updateMapSettingsVisibility() {
   const canEdit = canChangeCurrentSpaceSettings();
+  updateEditorAssetGroupVisibility();
 
   if (btnMapSettings) {
     if (canEdit) {
@@ -8617,6 +9664,7 @@ async function fetchSpaces() {
     if (res.ok && data.success) {
       loadedSpaces = data.spaces || [];
       loadedCategories = data.categories || [];
+      loadedSharedSpaces = data.sharedSpaces || [];
       if (data.mySpace) {
         myPersonalSpace = data.mySpace;
       }
@@ -8625,7 +9673,9 @@ async function fetchSpaces() {
       if (currentSpaceId === myPersonalSpace?.id) {
         currentSpaceName = myPersonalSpace.name;
       } else {
-        const found = loadedSpaces.find((s) => s.id === currentSpaceId);
+        const found =
+          loadedSpaces.find((s) => s.id === currentSpaceId) ||
+          loadedSharedSpaces.find((s) => s.id === currentSpaceId);
         if (found) currentSpaceName = found.name;
       }
 
@@ -8638,20 +9688,51 @@ async function fetchSpaces() {
   }
 }
 
+function getAllListedSpaces(): Space[] {
+  const seen = new Set<string>();
+  const combined: Space[] = [];
+  for (const s of loadedSpaces) {
+    seen.add(s.id);
+    combined.push(s);
+  }
+  for (const s of loadedSharedSpaces) {
+    if (!seen.has(s.id)) {
+      seen.add(s.id);
+      combined.push(s);
+    }
+  }
+  return combined;
+}
+
 function renderCategories() {
   mapCategoryTabs.innerHTML = "";
+  const allSpaces = getAllListedSpaces();
 
   // "All" Tab
   const allBtn = document.createElement("button");
   allBtn.type = "button";
   allBtn.className = `map-cat-tab ${activeCategoryFilter === "All" ? "active" : ""}`;
-  allBtn.innerHTML = `<span>All</span><span class="map-cat-count">${loadedSpaces.length}</span>`;
+  allBtn.innerHTML = `<span>All</span><span class="map-cat-count">${allSpaces.length}</span>`;
   allBtn.addEventListener("click", () => {
     activeCategoryFilter = "All";
     renderCategories();
     renderSpacesList();
   });
   mapCategoryTabs.appendChild(allBtn);
+
+  // "Shared With Me" Tab (only if user has shared spaces)
+  if (loadedSharedSpaces.length > 0) {
+    const sharedBtn = document.createElement("button");
+    sharedBtn.type = "button";
+    sharedBtn.className = `map-cat-tab ${activeCategoryFilter === "Shared With Me" ? "active" : ""}`;
+    sharedBtn.innerHTML = `<span>🏠 Shared With Me</span><span class="map-cat-count">${loadedSharedSpaces.length}</span>`;
+    sharedBtn.addEventListener("click", () => {
+      activeCategoryFilter = "Shared With Me";
+      renderCategories();
+      renderSpacesList();
+    });
+    mapCategoryTabs.appendChild(sharedBtn);
+  }
 
   // Each Category Tab
   loadedCategories.forEach((cat) => {
@@ -8674,8 +9755,10 @@ function renderSpacesList() {
 
   const filtered =
     activeCategoryFilter === "All"
-      ? loadedSpaces
-      : loadedSpaces.filter((s) => s.category === activeCategoryFilter);
+      ? getAllListedSpaces()
+      : activeCategoryFilter === "Shared With Me"
+        ? loadedSharedSpaces
+        : loadedSpaces.filter((s) => s.category === activeCategoryFilter);
 
   if (filtered.length === 0) {
     mapSpacesGrid.innerHTML = `
@@ -8694,7 +9777,12 @@ function renderSpacesList() {
           (w) => w.toLowerCase() === currentUser!.username.toLowerCase(),
         )
       : false;
-    const canJoin = space.isPublic || isSuperadmin || isWhitelisted;
+    const isHousemate = currentUser
+      ? (space.sharedOwners || []).some(
+          (u) => u.toLowerCase() === currentUser!.username.toLowerCase(),
+        )
+      : false;
+    const canJoin = space.isPublic || isSuperadmin || isWhitelisted || isHousemate;
 
     const card = document.createElement("div");
     card.className = `map-space-card ${isCurrent ? "current" : ""}`;
@@ -8707,10 +9795,11 @@ function renderSpacesList() {
             <span class="badge-privacy ${space.isPublic ? "public" : "private"}">
               ${space.isPublic ? "🌐 Public" : "🔒 Private"}
             </span>
-            ${!space.isPublic && isWhitelisted ? `<span class="badge-invited">✨ Invited</span>` : ""}
+            ${isHousemate ? `<span class="badge-housemate">🏠 Housemate</span>` : !space.isPublic && isWhitelisted ? `<span class="badge-invited">✨ Invited</span>` : ""}
           </div>
         </div>
         <h3 class="space-card-name-title">${escapeHtml(space.name)}</h3>
+        ${isHousemate && space.ownerUsername ? `<div class="space-online-count" style="margin-bottom: 2px;"><span>🔑</span><span>Owner: @${escapeHtml(space.ownerUsername)}</span></div>` : ""}
         <div class="space-online-count">
           <span>👥</span>
           <span>${space.playerCount || 0} online</span>
@@ -8823,6 +9912,7 @@ async function switchSpace(
 
     if (!multiplayer) {
       multiplayer = new MultiplayerManager();
+      bindMultiplayerLifecycleEvents(multiplayer);
       setupMultiplayerChatListeners(multiplayer);
     }
     initVoiceManager(multiplayer);
@@ -8831,6 +9921,7 @@ async function switchSpace(
     setupMultiplayerSmokingGameListeners(multiplayer);
     setupMultiplayerChessListeners(multiplayer);
     setupMultiplayerParkingPointsListeners(multiplayer);
+    setupMultiplayerFriendListeners(multiplayer);
     setupMultiplayerThrowBattleListeners(multiplayer);
 
     await multiplayer.joinGame({
@@ -8896,26 +9987,46 @@ async function switchSpace(
 // My Space Settings Modal & Whitelist
 // ==========================================
 
-function openMySpaceSettingsModal() {
-  if (!myPersonalSpace) return;
+function openMySpaceSettingsModal(targetSpace?: Space) {
+  const space = targetSpace || myPersonalSpace;
+  if (!space) return;
 
-  mySpaceInputName.value = myPersonalSpace.name;
-  mySpaceSwitchPublic.checked = myPersonalSpace.isPublic;
-  tempMySpaceWhitelist = [...myPersonalSpace.whitelist];
+  editingTargetSpace = space;
+  const isOwnSpace = !!(myPersonalSpace && space.id === myPersonalSpace.id);
 
-  if (myPersonalSpace.isPublic) {
+  if (mySpaceOwnerBanner && mySpaceOwnerName) {
+    if (!isOwnSpace && space.ownerUsername) {
+      mySpaceOwnerName.textContent = `@${space.ownerUsername}`;
+      mySpaceOwnerBanner.classList.remove("hidden");
+    } else {
+      mySpaceOwnerBanner.classList.add("hidden");
+    }
+  }
+
+  mySpaceInputName.value = space.name;
+  mySpaceSwitchPublic.checked = space.isPublic;
+  tempMySpaceWhitelist = [...(space.whitelist || [])];
+  tempMySpaceSharedOwners = [...(space.sharedOwners || [])];
+
+  if (space.isPublic) {
     mySpaceWhitelistSection.classList.add("hidden");
   } else {
     mySpaceWhitelistSection.classList.remove("hidden");
   }
 
   renderMySpaceWhitelistTags();
+  renderMySpaceShareTags();
+  populateMySpaceShareFriendDropdown();
+  fetchFriendsData().then(() => {
+    populateMySpaceShareFriendDropdown();
+  });
   mySpaceSettingsModal.classList.remove("hidden");
   setGameControlsActive(false);
 }
 
 function closeMySpaceSettingsModal() {
   mySpaceSettingsModal.classList.add("hidden");
+  editingTargetSpace = null;
   setGameControlsActive(true);
 }
 
@@ -8924,19 +10035,38 @@ mySpaceSwitchPublic.addEventListener("change", () => {
     mySpaceWhitelistSection.classList.add("hidden");
   } else {
     mySpaceWhitelistSection.classList.remove("hidden");
+    const existingLower = new Set(tempMySpaceWhitelist.map((u) => u.toLowerCase()));
+    const allFriends = [...friendsCache.online, ...friendsCache.offline];
+    let added = false;
+    for (const f of allFriends) {
+      if (f.username && !existingLower.has(f.username.toLowerCase())) {
+        existingLower.add(f.username.toLowerCase());
+        tempMySpaceWhitelist.push(f.username);
+        added = true;
+      }
+    }
+    if (added) {
+      renderMySpaceWhitelistTags();
+    }
   }
 });
 
-function renderMySpaceWhitelistTags() {
-  mySpaceTagsContainer.innerHTML = "";
-  mySpaceTagsCount.textContent = String(tempMySpaceWhitelist.length);
+function renderUsernameTagList(
+  container: HTMLElement,
+  countEl: HTMLElement,
+  usernames: string[],
+  emptyText: string,
+  onRemove: (username: string) => void,
+) {
+  container.innerHTML = "";
+  countEl.textContent = String(usernames.length);
 
-  if (tempMySpaceWhitelist.length === 0) {
-    mySpaceTagsContainer.innerHTML = `<span class="whitelist-empty-hint">No users invited yet.</span>`;
+  if (usernames.length === 0) {
+    container.innerHTML = `<span class="whitelist-empty-hint">${escapeHtml(emptyText)}</span>`;
     return;
   }
 
-  tempMySpaceWhitelist.forEach((username) => {
+  usernames.forEach((username) => {
     const chip = document.createElement("span");
     chip.className = "whitelist-tag-chip";
     chip.innerHTML = `
@@ -8947,15 +10077,90 @@ function renderMySpaceWhitelistTags() {
     const removeBtn = chip.querySelector(
       ".whitelist-tag-chip-remove",
     ) as HTMLElement;
-    removeBtn.addEventListener("click", () => {
+    removeBtn.addEventListener("click", () => onRemove(username));
+
+    container.appendChild(chip);
+  });
+}
+
+function renderMySpaceWhitelistTags() {
+  renderUsernameTagList(
+    mySpaceTagsContainer,
+    mySpaceTagsCount,
+    tempMySpaceWhitelist,
+    "No users invited yet.",
+    (username) => {
       tempMySpaceWhitelist = tempMySpaceWhitelist.filter(
         (u) => u.toLowerCase() !== username.toLowerCase(),
       );
       renderMySpaceWhitelistTags();
-    });
+    },
+  );
+}
 
-    mySpaceTagsContainer.appendChild(chip);
-  });
+function populateMySpaceShareFriendDropdown() {
+  if (!mySpaceShareFriendSelect) return;
+
+  const primaryOwner = (editingTargetSpace?.ownerUsername || currentUser?.username || "").toLowerCase();
+  const alreadyShared = new Set(tempMySpaceSharedOwners.map((u) => u.toLowerCase()));
+  const allFriends = [...friendsCache.online, ...friendsCache.offline]
+    .filter(
+      (f) =>
+        f.username.toLowerCase() !== primaryOwner &&
+        !alreadyShared.has(f.username.toLowerCase()),
+    )
+    .sort((a, b) => (a.displayName || a.username).localeCompare(b.displayName || b.username));
+
+  mySpaceShareFriendSelect.innerHTML = "";
+  if (allFriends.length === 0) {
+    const opt = document.createElement("option");
+    opt.value = "";
+    opt.textContent =
+      friendsCache.online.length + friendsCache.offline.length === 0
+        ? "No friends yet (add friends first)"
+        : "All friends are already housemates";
+    mySpaceShareFriendSelect.appendChild(opt);
+    mySpaceShareFriendSelect.disabled = true;
+    if (btnAddMySpaceShare) btnAddMySpaceShare.disabled = true;
+    return;
+  }
+
+  mySpaceShareFriendSelect.disabled = false;
+  if (btnAddMySpaceShare) btnAddMySpaceShare.disabled = false;
+
+  const placeholder = document.createElement("option");
+  placeholder.value = "";
+  placeholder.textContent = "Select a friend to share with...";
+  mySpaceShareFriendSelect.appendChild(placeholder);
+
+  for (const friend of allFriends) {
+    const opt = document.createElement("option");
+    opt.value = friend.username;
+    const statusDot = friend.isOnline ? "🟢" : "⚫";
+    const label =
+      friend.displayName && friend.displayName !== friend.username
+        ? `${statusDot} ${friend.displayName} (@${friend.username})`
+        : `${statusDot} @${friend.username}`;
+    opt.textContent = label;
+    mySpaceShareFriendSelect.appendChild(opt);
+  }
+}
+
+function renderMySpaceShareTags() {
+  if (!mySpaceShareTagsContainer || !mySpaceShareTagsCount) return;
+  renderUsernameTagList(
+    mySpaceShareTagsContainer,
+    mySpaceShareTagsCount,
+    tempMySpaceSharedOwners,
+    "No housemates added yet.",
+    (username) => {
+      tempMySpaceSharedOwners = tempMySpaceSharedOwners.filter(
+        (u) => u.toLowerCase() !== username.toLowerCase(),
+      );
+      renderMySpaceShareTags();
+      populateMySpaceShareFriendDropdown();
+    },
+  );
 }
 
 function addMySpaceInvite() {
@@ -8977,6 +10182,27 @@ function addMySpaceInvite() {
   renderMySpaceWhitelistTags();
 }
 
+function addMySpaceShare() {
+  if (!mySpaceShareFriendSelect) return;
+  const raw = mySpaceShareFriendSelect.value.trim();
+  if (!raw) return;
+
+  const primaryOwner = editingTargetSpace?.ownerUsername || currentUser?.username;
+  if (primaryOwner && raw.toLowerCase() === primaryOwner.toLowerCase()) {
+    alert("The primary space owner already has full ownership.");
+    return;
+  }
+
+  if (tempMySpaceSharedOwners.some((u) => u.toLowerCase() === raw.toLowerCase())) {
+    alert("User is already a housemate in this space.");
+    return;
+  }
+
+  tempMySpaceSharedOwners.push(raw);
+  renderMySpaceShareTags();
+  populateMySpaceShareFriendDropdown();
+}
+
 btnAddMySpaceInvite.addEventListener("click", addMySpaceInvite);
 mySpaceInviteUsername.addEventListener("keydown", (e) => {
   if (e.key === "Enter") {
@@ -8985,7 +10211,16 @@ mySpaceInviteUsername.addEventListener("keydown", (e) => {
   }
 });
 
+if (btnAddMySpaceShare) {
+  btnAddMySpaceShare.addEventListener("click", addMySpaceShare);
+}
+
 btnCloseMySpaceSettings.addEventListener("click", closeMySpaceSettingsModal);
+mySpaceSettingsModal.addEventListener("click", (e) => {
+  if (e.target === mySpaceSettingsModal) {
+    closeMySpaceSettingsModal();
+  }
+});
 
 mySpaceSettingsForm.addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -8993,9 +10228,14 @@ mySpaceSettingsForm.addEventListener("submit", async (e) => {
 
   const newName = mySpaceInputName.value.trim();
   const isPublic = mySpaceSwitchPublic.checked;
+  const target = editingTargetSpace || myPersonalSpace;
+  const isOwnSpace = !!(myPersonalSpace && target && target.id === myPersonalSpace.id);
+  const endpoint = isOwnSpace || !target
+    ? "/api/spaces/my-space"
+    : `/api/spaces/personal/${encodeURIComponent(target.id)}`;
 
   try {
-    const res = await fetch(getApiUrl("/api/spaces/my-space"), {
+    const res = await fetch(getApiUrl(endpoint), {
       method: "PUT",
       headers: {
         "Content-Type": "application/json",
@@ -9005,14 +10245,21 @@ mySpaceSettingsForm.addEventListener("submit", async (e) => {
         name: newName,
         isPublic,
         whitelist: tempMySpaceWhitelist,
+        sharedOwners: tempMySpaceSharedOwners,
       }),
     });
 
     const data: SpaceResponse = await res.json();
     if (res.ok && data.success && data.space) {
-      myPersonalSpace = data.space;
-      if (currentSpaceId === myPersonalSpace.id) {
-        currentSpaceName = myPersonalSpace.name;
+      if (isOwnSpace) {
+        myPersonalSpace = data.space;
+      } else {
+        loadedSharedSpaces = loadedSharedSpaces.map((s) =>
+          s.id === data.space!.id ? data.space! : s,
+        );
+      }
+      if (currentSpaceId === data.space.id) {
+        currentSpaceName = data.space.name;
       }
       updateTopBarUI();
       closeMySpaceSettingsModal();
@@ -9021,8 +10268,8 @@ mySpaceSettingsForm.addEventListener("submit", async (e) => {
       alert(data.error || "Failed to update space settings.");
     }
   } catch (err) {
-    console.error("Error updating personal space:", err);
-    alert("Network error updating personal space.");
+    console.error("Error updating space settings:", err);
+    alert("Network error updating space settings.");
   }
 });
 
@@ -9183,6 +10430,11 @@ function closeAdminSpaceModal() {
 }
 
 btnCloseAdminSpaceModal.addEventListener("click", closeAdminSpaceModal);
+adminSpaceModal.addEventListener("click", (e) => {
+  if (e.target === adminSpaceModal) {
+    closeAdminSpaceModal();
+  }
+});
 
 adminSpaceForm.addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -9263,21 +10515,7 @@ async function confirmDeleteAdminSpace(space: Space) {
 // Multiplayer Session & Game Initialization
 // ==========================================
 
-async function enterGameSession() {
-  const effectiveName = getEffectivePlayerName();
-  const color = selectedColor;
-  const avatars = computeActiveAvatars();
-
-  if (gameInstance) {
-    if (multiplayer) {
-      multiplayer.updateProfile(effectiveName, color, avatars || null);
-    }
-    return;
-  }
-
-  topbarStatusSubtitle.textContent = "Connecting to server...";
-  const manager = new MultiplayerManager();
-
+function bindMultiplayerLifecycleEvents(manager: MultiplayerManager) {
   manager.onNetworkStats((stats) => {
     const { pingMs } = stats;
     if (topbarPingStat) {
@@ -9299,11 +10537,38 @@ async function enterGameSession() {
     }
   });
 
+  manager.onUnexpectedDisconnect(() => {
+    showOfflineModal(
+      "You are offline or disconnected from the game server. Please reload the page to reconnect.",
+    );
+  });
+
   manager.onError((data) => {
     if (data?.message) {
       showPlacingToast(`⚠️ ${data.message}`);
     }
   });
+}
+
+async function enterGameSession() {
+  const effectiveName = getEffectivePlayerName();
+  const color = selectedColor;
+  const avatars = computeActiveAvatars();
+
+  if (gameInstance) {
+    if (multiplayer) {
+      multiplayer.updateProfile(effectiveName, color, avatars || null);
+    }
+    return;
+  }
+
+  if (currentUser?.lastSpaceId) {
+    currentSpaceId = currentUser.lastSpaceId;
+  }
+
+  topbarStatusSubtitle.textContent = "Connecting to server...";
+  const manager = new MultiplayerManager();
+  bindMultiplayerLifecycleEvents(manager);
 
   setupMultiplayerChatListeners(manager);
   updateChatTabNames();
@@ -9313,16 +10578,41 @@ async function enterGameSession() {
   setupMultiplayerSmokingGameListeners(manager);
   setupMultiplayerChessListeners(manager);
   setupMultiplayerParkingPointsListeners(manager);
+  setupMultiplayerFriendListeners(manager);
+  if (authToken) {
+    fetchFriendsData();
+    fetchOrganisationsData();
+  }
   setupMultiplayerThrowBattleListeners(manager);
 
   try {
-    await manager.joinGame({
-      name: effectiveName,
-      color,
-      avatars,
-      spaceId: currentSpaceId,
-      token: authToken || undefined,
-    });
+    try {
+      await manager.joinGame({
+        name: effectiveName,
+        color,
+        avatars,
+        spaceId: currentSpaceId,
+        token: authToken || undefined,
+      });
+    } catch (joinErr) {
+      if (currentSpaceId !== "space_central_plaza") {
+        console.warn(
+          `Could not rejoin saved space ${currentSpaceId}, falling back to CO3:`,
+          joinErr,
+        );
+        currentSpaceId = "space_central_plaza";
+        currentSpaceName = "CO3";
+        await manager.joinGame({
+          name: effectiveName,
+          color,
+          avatars,
+          spaceId: currentSpaceId,
+          token: authToken || undefined,
+        });
+      } else {
+        throw joinErr;
+      }
+    }
     multiplayer = manager;
 
     if (voiceManager) {
@@ -9372,8 +10662,16 @@ async function enterGameSession() {
           setupSceneTypewriterEvents(scene);
           setupSceneAshtrayEvents(scene);
           setupSceneChessEvents(scene);
-      setupSceneAquariumEvents(scene);
+          setupSceneAquariumEvents(scene);
           setupSceneEditorToolEvents(scene);
+          scene.onDismissPopups = () => {
+            closeProfileDropdown();
+            closeAudioSettingsDropdown();
+            closePlayerContextMenu();
+            closeEditorItemContextMenu();
+            const interactionPanel = document.getElementById("editor-interaction-dropdown-panel");
+            interactionPanel?.classList.add("hidden");
+          };
         }
       }
     };
@@ -9475,14 +10773,19 @@ function setupHudControlBadges() {
 }
 
 function setupMobileJoystick() {
+  const control = document.getElementById("mobile-analog-control");
   const base = document.getElementById("mobile-analog-base");
   const knob = document.getElementById("mobile-analog-knob");
-  if (!base || !knob) return;
+  const gameContainer = document.getElementById("game-container");
+  if (!control || !base || !knob || !gameContainer) return;
 
-  let activePointerId: number | null = null;
   let activeTouchId: number | null = null;
   let cachedCenterX = 0;
   let cachedCenterY = 0;
+  let isPinching = false;
+  let waitForAllTouchesUp = false;
+  let pinchStartDist = 0;
+  let pinchStartZoom = 1;
   let curLeft = false;
   let curRight = false;
   let curUp = false;
@@ -9493,6 +10796,16 @@ function setupMobileJoystick() {
   const exitDeadzone = 0.15;
   const enterThreshold = 0.44; // ~26 deg from axis to engage diagonal
   const exitThreshold = 0.30;  // ~17 deg from axis to disengage diagonal
+
+  const isEditModeActive = () => {
+    if (document.body.classList.contains("edit-mode-active")) return true;
+    const scene = gameInstance?.scene.getScene("GameScene") as any;
+    return Boolean(scene?.isEditMode);
+  };
+
+  const isMobileTouchEnv = () =>
+    window.matchMedia("(max-width: 768px), (hover: none) and (pointer: coarse)").matches ||
+    (navigator.maxTouchPoints ?? 0) > 0;
 
   const setVirtualInput = (left: boolean, right: boolean, up: boolean, down: boolean) => {
     if (left === curLeft && right === curRight && up === curUp && down === curDown) {
@@ -9514,10 +10827,22 @@ function setupMobileJoystick() {
   };
 
   const resetStick = () => {
-    activePointerId = null;
     activeTouchId = null;
     knob.style.transform = "translate3d(0px, 0px, 0)";
     base.classList.remove("active");
+    control.classList.remove("is-visible");
+    setVirtualInput(false, false, false, false);
+  };
+
+  const startStick = (touch: Touch) => {
+    activeTouchId = touch.identifier;
+    cachedCenterX = touch.clientX;
+    cachedCenterY = touch.clientY;
+    control.style.left = `${cachedCenterX}px`;
+    control.style.top = `${cachedCenterY}px`;
+    control.classList.add("is-visible");
+    base.classList.add("active");
+    knob.style.transform = "translate3d(0px, 0px, 0)";
     setVirtualInput(false, false, false, false);
   };
 
@@ -9555,25 +10880,64 @@ function setupMobileJoystick() {
     );
   };
 
-  const cacheCenter = () => {
-    const rect = base.getBoundingClientRect();
-    cachedCenterX = rect.left + rect.width / 2;
-    cachedCenterY = rect.top + rect.height / 2;
+  const startPinch = (t1: Touch, t2: Touch) => {
+    resetStick();
+    isPinching = true;
+    waitForAllTouchesUp = true;
+    pinchStartDist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+    const scene = gameInstance?.scene.getScene("GameScene") as GameScene | undefined;
+    pinchStartZoom = scene?.cameras?.main?.zoom ?? 1;
+  };
+
+  const updatePinch = (t1: Touch, t2: Touch) => {
+    if (!isPinching || pinchStartDist <= 0) return;
+    const currentDist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+    const scale = currentDist / pinchStartDist;
+    const scene = gameInstance?.scene.getScene("GameScene") as GameScene | undefined;
+    if (scene && typeof scene.setPinchZoom === "function") {
+      const rect = gameContainer.getBoundingClientRect();
+      const midX = (t1.clientX + t2.clientX) * 0.5 - rect.left;
+      const midY = (t1.clientY + t2.clientY) * 0.5 - rect.top;
+      scene.setPinchZoom(pinchStartZoom * scale, midX, midY);
+    }
   };
 
   // Native TouchEvents with passive: false prevent iOS WebKit from stealing/canceling the touch
-  base.addEventListener(
+  gameContainer.addEventListener(
     "touchstart",
     (e) => {
+      if (!isMobileTouchEnv()) return;
+      if ((e.target as HTMLElement | null)?.closest?.("#mobile-interact-btn")) return;
+      if (
+        document.querySelector(
+          ".modal-overlay:not(.hidden), #calendar-image-lightbox:not(.hidden)"
+        )
+      ) {
+        return;
+      }
       e.preventDefault();
-      e.stopPropagation();
-      if (activeTouchId !== null) return;
-      const touch = e.changedTouches[0];
-      if (!touch) return;
-      activeTouchId = touch.identifier;
-      cacheCenter();
-      base.classList.add("active");
-      updateStick(touch.clientX, touch.clientY);
+
+      if (
+        document.querySelector(
+          "#player-context-menu:not(.hidden), #editor-item-context-menu:not(.hidden), #editor-interaction-dropdown-panel:not(.hidden), #user-profile-dropdown:not(.hidden), #audio-settings-dropdown:not(.hidden)"
+        )
+      ) {
+        return;
+      }
+
+      if (e.touches.length >= 2) {
+        startPinch(e.touches[0], e.touches[1]);
+        return;
+      }
+
+      if (e.touches.length === 1) {
+        if (waitForAllTouchesUp || isPinching || isEditModeActive()) return;
+        if (activeTouchId !== null) return;
+        const touch = e.changedTouches[0] || e.touches[0];
+        if (touch) {
+          startStick(touch);
+        }
+      }
     },
     { passive: false },
   );
@@ -9581,12 +10945,19 @@ function setupMobileJoystick() {
   window.addEventListener(
     "touchmove",
     (e) => {
+      if (isPinching) {
+        if (e.touches.length >= 2) {
+          e.preventDefault();
+          updatePinch(e.touches[0], e.touches[1]);
+        }
+        return;
+      }
+
       if (activeTouchId === null) return;
       for (let i = 0; i < e.changedTouches.length; i++) {
         const touch = e.changedTouches[i];
         if (touch.identifier === activeTouchId) {
           e.preventDefault();
-          e.stopPropagation();
           updateStick(touch.clientX, touch.clientY);
           break;
         }
@@ -9596,53 +10967,520 @@ function setupMobileJoystick() {
   );
 
   const handleTouchEnd = (e: TouchEvent) => {
-    if (activeTouchId === null) return;
-    for (let i = 0; i < e.changedTouches.length; i++) {
-      if (e.changedTouches[i].identifier === activeTouchId) {
-        e.preventDefault();
-        e.stopPropagation();
+    if (isPinching && e.touches.length < 2) {
+      isPinching = false;
+    }
+
+    if (activeTouchId !== null) {
+      let stillActive = false;
+      for (let i = 0; i < e.touches.length; i++) {
+        if (e.touches[i].identifier === activeTouchId) {
+          stillActive = true;
+          break;
+        }
+      }
+      if (!stillActive) {
         resetStick();
-        break;
+      }
+    }
+
+    if (e.touches.length === 0) {
+      isPinching = false;
+      waitForAllTouchesUp = false;
+      if (activeTouchId !== null) {
+        resetStick();
       }
     }
   };
 
   window.addEventListener("touchend", handleTouchEnd, { passive: false });
   window.addEventListener("touchcancel", handleTouchEnd, { passive: false });
+  window.addEventListener("blur", () => {
+    isPinching = false;
+    waitForAllTouchesUp = false;
+    if (activeTouchId !== null) {
+      resetStick();
+    }
+  });
+}
 
-  // Mouse / non-touch PointerEvents fallback (without setPointerCapture to avoid iOS WebKit quirks)
-  base.addEventListener("pointerdown", (e) => {
-    if (e.pointerType === "touch") return;
-    if (activePointerId !== null) return;
-    e.preventDefault();
+function updateMobileInteractButton(
+  nearby: { id: string; interaction: DecorationInteractionType } | null
+) {
+  const btn = document.getElementById("mobile-interact-btn") as HTMLButtonElement | null;
+  const iconEl = document.getElementById("mobile-interact-icon");
+  const labelEl = document.getElementById("mobile-interact-label");
+  if (!btn) return;
+
+  if (!nearby) {
+    btn.classList.add("hidden");
+    return;
+  }
+
+  const meta = DECORATION_INTERACTIONS.find((item) => item.id === nearby.interaction);
+  if (iconEl) iconEl.textContent = meta?.icon ?? "✨";
+  if (labelEl) labelEl.textContent = meta?.label ?? "Interact";
+  btn.setAttribute("aria-label", `Interact: ${meta?.label ?? "Object"}`);
+  btn.classList.remove("hidden");
+}
+
+function setupMobileInteractButton() {
+  const btn = document.getElementById("mobile-interact-btn") as HTMLButtonElement | null;
+  if (!btn) return;
+
+  btn.addEventListener("touchstart", (e) => {
     e.stopPropagation();
-    cacheCenter();
-    activePointerId = e.pointerId;
-    base.classList.add("active");
-    updateStick(e.clientX, e.clientY);
+  }, { passive: true });
+
+  btn.addEventListener("pointerdown", (e) => {
+    e.stopPropagation();
   });
 
-  window.addEventListener("pointermove", (e) => {
-    if (e.pointerType === "touch") return;
-    if (e.pointerId !== activePointerId) return;
+  btn.addEventListener("click", (e) => {
     e.preventDefault();
     e.stopPropagation();
-    updateStick(e.clientX, e.clientY);
+    const scene = gameInstance?.scene.getScene("GameScene") as GameScene | undefined;
+    scene?.triggerNearbyInteraction();
   });
-
-  const handlePointerEnd = (e: PointerEvent) => {
-    if (e.pointerType === "touch") return;
-    if (e.pointerId !== activePointerId) return;
-    e.preventDefault();
-    e.stopPropagation();
-    resetStick();
-  };
-
-  window.addEventListener("pointerup", handlePointerEnd);
-  window.addEventListener("pointercancel", handlePointerEnd);
 }
 
 // App Initialization
+// ==========================================
+// Friends System State, Modal & Actions
+// ==========================================
+
+type FriendsTab = "online" | "offline" | "pending" | "request";
+
+let friendsCache: {
+  online: FriendEntry[];
+  offline: FriendEntry[];
+  pending: FriendRequestEntry[];
+  requests: FriendRequestEntry[];
+} = {
+  online: [],
+  offline: [],
+  pending: [],
+  requests: [],
+};
+
+let activeFriendsTab: FriendsTab = "online";
+let expandedFriendUserId: number | null = null;
+const registeredFriendManagers = new WeakSet<MultiplayerManager>();
+
+function setupMultiplayerFriendListeners(mgr: MultiplayerManager) {
+  if (registeredFriendManagers.has(mgr)) return;
+  registeredFriendManagers.add(mgr);
+  mgr.onFriendUpdate(() => {
+    if (authToken) {
+      fetchFriendsData();
+      fetchSpaces();
+    }
+  });
+}
+
+async function fetchFriendsData() {
+  if (!authToken) {
+    friendsCache = { online: [], offline: [], pending: [], requests: [] };
+    updateFriendsCountsUI();
+    return;
+  }
+
+  try {
+    const res = await fetch(getApiUrl("/api/friends"), {
+      headers: { Authorization: `Bearer ${authToken}` },
+    });
+    if (!res.ok) return;
+    const data: FriendsListResponse = await res.json();
+    if (data.success) {
+      friendsCache = {
+        online: data.online || [],
+        offline: data.offline || [],
+        pending: data.pending || [],
+        requests: data.requests || [],
+      };
+      updateFriendsCountsUI();
+      if (friendsModal && !friendsModal.classList.contains("hidden")) {
+        renderFriendsList();
+      }
+    }
+  } catch (err) {
+    console.warn("Failed to fetch friends:", err);
+  }
+}
+
+function updateFriendsCountsUI() {
+  if (friendsCountOnline) friendsCountOnline.textContent = String(friendsCache.online.length);
+  if (friendsCountOffline) friendsCountOffline.textContent = String(friendsCache.offline.length);
+  if (friendsCountPending) friendsCountPending.textContent = String(friendsCache.pending.length);
+  if (friendsCountRequest) friendsCountRequest.textContent = String(friendsCache.requests.length);
+
+  if (dropdownFriendsBadge) {
+    const reqCount = friendsCache.requests.length;
+    if (reqCount > 0) {
+      dropdownFriendsBadge.textContent = reqCount > 9 ? "9+" : String(reqCount);
+      dropdownFriendsBadge.classList.remove("hidden");
+    } else {
+      dropdownFriendsBadge.classList.add("hidden");
+    }
+  }
+}
+
+function showFriendsAddFeedback(message: string, isError: boolean) {
+  if (!friendsAddFeedback) return;
+  friendsAddFeedback.textContent = message;
+  friendsAddFeedback.className = `friends-add-feedback ${isError ? "error" : "success"}`;
+  friendsAddFeedback.classList.remove("hidden");
+  setTimeout(() => {
+    friendsAddFeedback?.classList.add("hidden");
+  }, 3500);
+}
+
+function openFriendsModal() {
+  closeProfileDropdown();
+  if (!authToken) {
+    alert("Please log in to view your friends list.");
+    return;
+  }
+  expandedFriendUserId = null;
+  friendsModal?.classList.remove("hidden");
+  setGameControlsActive(false);
+  renderFriendsList();
+  fetchFriendsData();
+}
+
+function closeFriendsModal() {
+  friendsModal?.classList.add("hidden");
+  expandedFriendUserId = null;
+  setGameControlsActive(true);
+}
+
+function createFriendVisitSpaceButton(friend: FriendEntry): HTMLButtonElement {
+  const btnVisitSpace = document.createElement("button");
+  btnVisitSpace.type = "button";
+  btnVisitSpace.className = "friend-online-menu-btn visit-space";
+  btnVisitSpace.textContent = "🏠 Visit Space";
+  btnVisitSpace.addEventListener("click", async (e) => {
+    e.stopPropagation();
+    closeFriendsModal();
+    await visitPlayerSpace({ userId: friend.userId, name: friend.name });
+  });
+  return btnVisitSpace;
+}
+
+function renderFriendsList() {
+  if (!friendsListContainer) return;
+  friendsListContainer.innerHTML = "";
+
+  const defaultAvatar = "/assets/sprites/default/sprite1.png";
+
+  if (activeFriendsTab === "online") {
+    if (friendsCache.online.length === 0) {
+      friendsListContainer.innerHTML = `<div class="friends-empty-state">No friends are currently online.</div>`;
+      return;
+    }
+
+    friendsCache.online.forEach((friend) => {
+      const wrapper = document.createElement("div");
+      wrapper.className = "friend-item-wrapper clickable";
+      const isExpanded = expandedFriendUserId === friend.userId;
+      const avatarUrl = friend.avatar || defaultAvatar;
+      const crown = friend.isSuperadmin ? "👑 " : "";
+      const locText = friend.spaceName || friend.spaceId || "Unknown";
+
+      wrapper.innerHTML = `
+        <div class="friend-item-row">
+          <div class="friend-item-left">
+            <div class="friend-avatar-wrap">
+              <img class="friend-avatar-img" src="${escapeHtml(avatarUrl)}" alt="${escapeHtml(friend.name)}" />
+              <span class="friend-status-dot online" title="Online"></span>
+            </div>
+            <div class="friend-info">
+              <div class="friend-name">${crown}${escapeHtml(friend.name)}</div>
+              <div class="friend-meta">📍 <span class="friend-location-badge">${escapeHtml(locText)}</span></div>
+            </div>
+          </div>
+          <div class="friend-item-actions">
+            <span style="font-size: 12px; color: #94a3b8;">${isExpanded ? "▴" : "▾"}</span>
+          </div>
+        </div>
+      `;
+
+      if (isExpanded) {
+        const menu = document.createElement("div");
+        menu.className = "friend-online-menu";
+
+        const btnGoTo = document.createElement("button");
+        btnGoTo.type = "button";
+        btnGoTo.className = "friend-online-menu-btn goto";
+        btnGoTo.textContent = "📍 Go To Location";
+        btnGoTo.addEventListener("click", async (e) => {
+          e.stopPropagation();
+          closeFriendsModal();
+          if (friend.spaceId && friend.spaceId !== currentSpaceId) {
+            await switchSpace(friend.spaceId, friend.spaceName || friend.spaceId);
+          }
+        });
+
+        const btnWhisper = document.createElement("button");
+        btnWhisper.type = "button";
+        btnWhisper.className = "friend-online-menu-btn whisper";
+        btnWhisper.textContent = "💬 Whisper";
+        btnWhisper.addEventListener("click", (e) => {
+          e.stopPropagation();
+          closeFriendsModal();
+          if (friend.sessionId) {
+            openDirectMessageChat(
+              friend.sessionId,
+              friend.name,
+              friend.color,
+              friend.isSuperadmin
+            );
+          }
+        });
+
+        menu.appendChild(btnGoTo);
+        menu.appendChild(btnWhisper);
+        menu.appendChild(createFriendVisitSpaceButton(friend));
+        wrapper.appendChild(menu);
+      }
+
+      wrapper.addEventListener("click", () => {
+        expandedFriendUserId = isExpanded ? null : friend.userId;
+        renderFriendsList();
+      });
+
+      friendsListContainer.appendChild(wrapper);
+    });
+  } else if (activeFriendsTab === "offline") {
+    if (friendsCache.offline.length === 0) {
+      friendsListContainer.innerHTML = `<div class="friends-empty-state">No offline friends.</div>`;
+      return;
+    }
+
+    friendsCache.offline.forEach((friend) => {
+      const wrapper = document.createElement("div");
+      wrapper.className = "friend-item-wrapper clickable";
+      const isExpanded = expandedFriendUserId === friend.userId;
+      const avatarUrl = friend.avatar || defaultAvatar;
+
+      wrapper.innerHTML = `
+        <div class="friend-item-row">
+          <div class="friend-item-left">
+            <div class="friend-avatar-wrap">
+              <img class="friend-avatar-img offline" src="${escapeHtml(avatarUrl)}" alt="${escapeHtml(friend.name)}" />
+              <span class="friend-status-dot offline" title="Offline"></span>
+            </div>
+            <div class="friend-info">
+              <div class="friend-name">${escapeHtml(friend.name)}</div>
+              <div class="friend-meta">Offline</div>
+            </div>
+          </div>
+          <div class="friend-item-actions">
+            <span style="font-size: 12px; color: #94a3b8;">${isExpanded ? "▴" : "▾"}</span>
+          </div>
+        </div>
+      `;
+
+      if (isExpanded) {
+        const menu = document.createElement("div");
+        menu.className = "friend-online-menu";
+        menu.appendChild(createFriendVisitSpaceButton(friend));
+        wrapper.appendChild(menu);
+      }
+
+      wrapper.addEventListener("click", () => {
+        expandedFriendUserId = isExpanded ? null : friend.userId;
+        renderFriendsList();
+      });
+
+      friendsListContainer.appendChild(wrapper);
+    });
+  } else if (activeFriendsTab === "pending") {
+    if (friendsCache.pending.length === 0) {
+      friendsListContainer.innerHTML = `<div class="friends-empty-state">No pending outgoing friend requests.</div>`;
+      return;
+    }
+
+    friendsCache.pending.forEach((reqItem) => {
+      const wrapper = document.createElement("div");
+      wrapper.className = "friend-item-wrapper";
+      const avatarUrl = reqItem.avatar || defaultAvatar;
+
+      wrapper.innerHTML = `
+        <div class="friend-item-row">
+          <div class="friend-item-left">
+            <div class="friend-avatar-wrap">
+              <img class="friend-avatar-img" src="${escapeHtml(avatarUrl)}" alt="${escapeHtml(reqItem.name)}" />
+            </div>
+            <div class="friend-info">
+              <div class="friend-name">${escapeHtml(reqItem.name)}</div>
+              <div class="friend-meta">@${escapeHtml(reqItem.username)} • Pending</div>
+            </div>
+          </div>
+          <div class="friend-item-actions">
+            <button type="button" class="friend-action-btn reject">Cancel</button>
+          </div>
+        </div>
+      `;
+
+      const cancelBtn = wrapper.querySelector(".friend-action-btn.reject") as HTMLButtonElement | null;
+      cancelBtn?.addEventListener("click", async () => {
+        await handleFriendRejectOrCancel(reqItem.friendshipId);
+      });
+
+      friendsListContainer.appendChild(wrapper);
+    });
+  } else if (activeFriendsTab === "request") {
+    if (friendsCache.requests.length === 0) {
+      friendsListContainer.innerHTML = `<div class="friends-empty-state">No incoming friend requests.</div>`;
+      return;
+    }
+
+    friendsCache.requests.forEach((reqItem) => {
+      const wrapper = document.createElement("div");
+      wrapper.className = "friend-item-wrapper";
+      const avatarUrl = reqItem.avatar || defaultAvatar;
+
+      wrapper.innerHTML = `
+        <div class="friend-item-row">
+          <div class="friend-item-left">
+            <div class="friend-avatar-wrap">
+              <img class="friend-avatar-img" src="${escapeHtml(avatarUrl)}" alt="${escapeHtml(reqItem.name)}" />
+            </div>
+            <div class="friend-info">
+              <div class="friend-name">${escapeHtml(reqItem.name)}</div>
+              <div class="friend-meta">@${escapeHtml(reqItem.username)} • Wants to be friends</div>
+            </div>
+          </div>
+          <div class="friend-item-actions">
+            <button type="button" class="friend-action-btn accept">Accept</button>
+            <button type="button" class="friend-action-btn reject">Reject</button>
+          </div>
+        </div>
+      `;
+
+      const acceptBtn = wrapper.querySelector(".friend-action-btn.accept") as HTMLButtonElement | null;
+      const rejectBtn = wrapper.querySelector(".friend-action-btn.reject") as HTMLButtonElement | null;
+
+      acceptBtn?.addEventListener("click", async () => {
+        await handleFriendAccept(reqItem.friendshipId);
+      });
+      rejectBtn?.addEventListener("click", async () => {
+        await handleFriendRejectOrCancel(reqItem.friendshipId);
+      });
+
+      friendsListContainer.appendChild(wrapper);
+    });
+  }
+}
+
+async function handleFriendAccept(friendshipId: number) {
+  if (!authToken) return;
+  try {
+    const res = await fetch(getApiUrl("/api/friends/accept"), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${authToken}`,
+      },
+      body: JSON.stringify({ friendshipId }),
+    });
+    if (res.ok) {
+      await fetchFriendsData();
+    }
+  } catch (err) {
+    console.error("Failed to accept friend request:", err);
+  }
+}
+
+async function handleFriendRejectOrCancel(friendshipId: number) {
+  if (!authToken) return;
+  try {
+    const res = await fetch(getApiUrl("/api/friends/reject"), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${authToken}`,
+      },
+      body: JSON.stringify({ friendshipId }),
+    });
+    if (res.ok) {
+      await fetchFriendsData();
+    }
+  } catch (err) {
+    console.error("Failed to reject/cancel friend request:", err);
+  }
+}
+
+if (dropdownFriendsBtn) {
+  dropdownFriendsBtn.addEventListener("click", () => {
+    openFriendsModal();
+  });
+}
+
+if (btnCloseFriendsModal) {
+  btnCloseFriendsModal.addEventListener("click", closeFriendsModal);
+}
+
+if (friendsModal) {
+  friendsModal.addEventListener("click", (e) => {
+    if (e.target === friendsModal) {
+      closeFriendsModal();
+    }
+  });
+
+  friendsModal.querySelectorAll(".friends-tab-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const tab = (btn as HTMLElement).dataset.tab as FriendsTab;
+      if (!tab) return;
+      activeFriendsTab = tab;
+      expandedFriendUserId = null;
+      friendsModal.querySelectorAll(".friends-tab-btn").forEach((b) => {
+        const isActive = (b as HTMLElement).dataset.tab === tab;
+        b.classList.toggle("active", isActive);
+        b.setAttribute("aria-selected", isActive ? "true" : "false");
+      });
+      renderFriendsList();
+    });
+  });
+}
+
+if (friendsAddForm) {
+  friendsAddForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (!authToken || !friendsAddInput) return;
+    const username = friendsAddInput.value.trim();
+    if (!username) return;
+
+    try {
+      const res = await fetch(getApiUrl("/api/friends/request"), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({ username }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        showFriendsAddFeedback(data.error || "Could not send friend request.", true);
+        return;
+      }
+      friendsAddInput.value = "";
+      showFriendsAddFeedback(
+        data.status === "accepted"
+          ? `You are now friends with ${username}!`
+          : `Friend request sent to ${username}.`,
+        false
+      );
+      await fetchFriendsData();
+    } catch (err) {
+      console.error("Failed to add friend:", err);
+      showFriendsAddFeedback("Network error sending friend request.", true);
+    }
+  });
+}
+
 async function init() {
   setupColorSwatches();
   setupMapEditorDecorationControls();
@@ -9650,6 +11488,7 @@ async function init() {
   setupUploadSlots();
   setupHudControlBadges();
   setupMobileJoystick();
+  setupMobileInteractButton();
 
   const savedColor = localStorage.getItem("player_color");
   const savedSwitch = localStorage.getItem("player_upload_switch");
@@ -9705,6 +11544,12 @@ async function init() {
   // Initialize YouTube Jukebox UI listeners
   initJukeboxUI();
 
+  // Initialize Organisation UI listeners
+  initOrganisationUI();
+  initNotesUI();
+  initSpaceInventoryUI();
+  initCalendarUI();
+
   // Check stored auth session
   const storedToken = localStorage.getItem("lepark_auth_token");
   if (storedToken) {
@@ -9719,6 +11564,7 @@ async function init() {
         setupSpriteTemplates();
         closeAuthModal();
         await enterGameSession();
+        checkAndShowLinkEmailModal();
         return;
       }
     } catch (err) {
@@ -9731,6 +11577,3254 @@ async function init() {
 
   // Not authenticated: Show Auth Modal
   openAuthModal("login");
+}
+
+// ==========================================
+// Organisation System UI & Handlers
+// ==========================================
+
+const organisationModal = document.getElementById("organisation-modal") as HTMLDivElement | null;
+const btnCloseOrganisationModal = document.getElementById("btn-close-organisation-modal") as HTMLButtonElement | null;
+const dropdownOrganisationsBtn = document.getElementById("dropdown-organisations-btn") as HTMLButtonElement | null;
+const orgCreateForm = document.getElementById("org-create-form") as HTMLFormElement | null;
+const orgListPanel = document.getElementById("org-list-panel") as HTMLDivElement | null;
+const orgListContainer = document.getElementById("org-list-container") as HTMLDivElement | null;
+const orgCountBadge = document.getElementById("org-count-badge") as HTMLSpanElement | null;
+const orgPointsBanner = document.getElementById("org-points-banner") as HTMLDivElement | null;
+const orgCurrentPointsEl = document.getElementById("org-current-points") as HTMLElement | null;
+const orgNameInput = document.getElementById("org-name-input") as HTMLInputElement | null;
+const orgLogoInput = document.getElementById("org-logo-input") as HTMLInputElement | null;
+const orgLogoPreviewImg = document.getElementById("org-logo-preview-img") as HTMLImageElement | null;
+const orgLogoPlaceholder = document.getElementById("org-logo-placeholder") as HTMLSpanElement | null;
+const btnOrgUploadLogo = document.getElementById("btn-org-upload-logo") as HTMLButtonElement | null;
+const btnOrgClearLogo = document.getElementById("btn-org-clear-logo") as HTMLButtonElement | null;
+const orgFriendSearchInput = document.getElementById("org-friend-search-input") as HTMLInputElement | null;
+const orgSelectedMembersEl = document.getElementById("org-selected-members") as HTMLDivElement | null;
+const orgFriendsPickerEl = document.getElementById("org-friends-picker") as HTMLDivElement | null;
+const orgCreateFeedback = document.getElementById("org-create-feedback") as HTMLDivElement | null;
+const btnOrgCreateSubmit = document.getElementById("btn-org-create-submit") as HTMLButtonElement | null;
+
+let organisationsCache: Organisation[] = [];
+let adminOrgPlayersCache: Array<{ userId: number; username: string; displayName: string | null; name: string; isOnline: boolean }> = [];
+let selectedOrgFriendIds: Set<number> = new Set();
+let pendingOrgLogoDataUrl: string | null = null;
+let activeOrgTab: "create" | "list" = "create";
+
+function isSuperadminUser(): boolean {
+  return currentUser?.role === "superadmin";
+}
+
+function escapeOrgHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function getAllAcceptedFriends(): FriendEntry[] {
+  return [...friendsCache.online, ...friendsCache.offline].sort((a, b) =>
+    (a.name || a.username).localeCompare(b.name || b.username)
+  );
+}
+
+function getSelectableOrgPlayers(): Array<{ userId: number; username: string; name: string; isOnline: boolean }> {
+  if (isSuperadminUser()) {
+    return adminOrgPlayersCache;
+  }
+  return getAllAcceptedFriends().map((f) => ({
+    userId: f.userId,
+    username: f.username,
+    name: f.name || f.username,
+    isOnline: f.isOnline,
+  }));
+}
+
+async function fetchAdminOrgPlayers() {
+  if (!authToken || !isSuperadminUser()) {
+    adminOrgPlayersCache = [];
+    return;
+  }
+  try {
+    const res = await fetch(getApiUrl("/api/organisations/players"), {
+      headers: { Authorization: `Bearer ${authToken}` },
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.success && Array.isArray(data.players)) {
+      adminOrgPlayersCache = data.players;
+    }
+  } catch (err) {
+    console.warn("Failed to fetch players for superadmin:", err);
+  }
+}
+
+function showOrgFeedback(message: string, type: "error" | "success") {
+  if (!orgCreateFeedback) return;
+  orgCreateFeedback.textContent = message;
+  orgCreateFeedback.className = `org-feedback ${type}`;
+  orgCreateFeedback.classList.remove("hidden");
+}
+
+function clearOrgFeedback() {
+  if (!orgCreateFeedback) return;
+  orgCreateFeedback.textContent = "";
+  orgCreateFeedback.classList.add("hidden");
+}
+
+function updateOrgPointsBanner() {
+  const pts = currentUser?.parkingPoints ?? 0;
+  const isAdmin = isSuperadminUser();
+  if (orgCurrentPointsEl) {
+    orgCurrentPointsEl.textContent = String(pts);
+  }
+  const costPill = orgPointsBanner?.querySelector(".org-cost-pill");
+  if (costPill) {
+    costPill.textContent = isAdmin ? "Cost: FREE (Superadmin)" : `Cost: ${ORGANISATION_CREATION_COST} Points`;
+  }
+  const hasEnough = isAdmin || pts >= ORGANISATION_CREATION_COST;
+  if (orgPointsBanner) {
+    orgPointsBanner.classList.toggle("insufficient", !hasEnough);
+  }
+  if (btnOrgCreateSubmit) {
+    btnOrgCreateSubmit.textContent = isAdmin
+      ? "Create Organisation (Free for Superadmin)"
+      : `Create Organisation (${ORGANISATION_CREATION_COST} Park Points)`;
+    btnOrgCreateSubmit.disabled = !authToken || !hasEnough;
+  }
+  if (orgFriendSearchInput) {
+    orgFriendSearchInput.placeholder = isAdmin ? "Filter any player..." : "Filter your friends...";
+  }
+}
+
+function setOrgLogoPreview(dataUrl: string | null) {
+  pendingOrgLogoDataUrl = dataUrl;
+  if (dataUrl && orgLogoPreviewImg && orgLogoPlaceholder && btnOrgClearLogo) {
+    orgLogoPreviewImg.src = dataUrl;
+    orgLogoPreviewImg.classList.remove("hidden");
+    orgLogoPlaceholder.classList.add("hidden");
+    btnOrgClearLogo.classList.remove("hidden");
+  } else if (orgLogoPreviewImg && orgLogoPlaceholder && btnOrgClearLogo) {
+    orgLogoPreviewImg.src = "";
+    orgLogoPreviewImg.classList.add("hidden");
+    orgLogoPlaceholder.classList.remove("hidden");
+    btnOrgClearLogo.classList.add("hidden");
+    if (orgLogoInput) orgLogoInput.value = "";
+  }
+}
+
+function resizeImageTo100x100(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Failed to read image file."));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error("Invalid image file."));
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        canvas.width = 100;
+        canvas.height = 100;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          reject(new Error("Canvas not supported."));
+          return;
+        }
+        // Center-crop to square, then draw at 100x100px
+        const side = Math.min(img.width, img.height);
+        const sx = (img.width - side) / 2;
+        const sy = (img.height - side) / 2;
+        ctx.clearRect(0, 0, 100, 100);
+        ctx.drawImage(img, sx, sy, side, side, 0, 0, 100, 100);
+        resolve(canvas.toDataURL("image/png"));
+      };
+      img.src = String(reader.result);
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function renderOrgFriendsPicker() {
+  if (!orgFriendsPickerEl || !orgSelectedMembersEl) return;
+  const allCandidates = getSelectableOrgPlayers();
+  const isAdmin = isSuperadminUser();
+  const query = (orgFriendSearchInput?.value || "").trim().toLowerCase();
+
+  // Render selected member chips
+  const selectedPlayers = allCandidates.filter((f) => selectedOrgFriendIds.has(f.userId));
+  if (selectedPlayers.length > 0) {
+    orgSelectedMembersEl.classList.remove("hidden");
+    orgSelectedMembersEl.innerHTML = selectedPlayers
+      .map(
+        (f) =>
+          `<span class="org-member-chip">${escapeOrgHtml(f.name || f.username)} <button type="button" data-remove-friend="${f.userId}" title="Remove">✕</button></span>`
+      )
+      .join("");
+    orgSelectedMembersEl.querySelectorAll<HTMLButtonElement>("[data-remove-friend]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const uid = Number(btn.dataset.removeFriend);
+        selectedOrgFriendIds.delete(uid);
+        renderOrgFriendsPicker();
+      });
+    });
+  } else {
+    orgSelectedMembersEl.classList.add("hidden");
+    orgSelectedMembersEl.innerHTML = "";
+  }
+
+  if (allCandidates.length === 0) {
+    orgFriendsPickerEl.innerHTML = isAdmin
+      ? `<div class="org-empty-friends">No other players found.</div>`
+      : `<div class="org-empty-friends">No friends in your friend list yet. Add friends first to invite them!</div>`;
+    return;
+  }
+
+  const filtered = query
+    ? allCandidates.filter(
+        (f) =>
+          (f.name || "").toLowerCase().includes(query) ||
+          f.username.toLowerCase().includes(query)
+      )
+    : allCandidates;
+
+  if (filtered.length === 0) {
+    orgFriendsPickerEl.innerHTML = `<div class="org-empty-friends">${isAdmin ? "No matching players found." : "No matching friends found."}</div>`;
+    return;
+  }
+
+  orgFriendsPickerEl.innerHTML = "";
+  for (const player of filtered) {
+    const isSelected = selectedOrgFriendIds.has(player.userId);
+    const row = document.createElement("div");
+    row.className = `org-friend-option${isSelected ? " selected" : ""}`;
+    row.innerHTML = `
+      <div class="org-friend-info">
+        <span class="org-friend-dot ${player.isOnline ? "online" : ""}"></span>
+        <span>${escapeOrgHtml(player.name || player.username)}</span>
+        <span class="org-friend-username">@${escapeOrgHtml(player.username)}</span>
+      </div>
+      <span>${isSelected ? "✓ Added" : "+ Add"}</span>
+    `;
+    row.addEventListener("click", () => {
+      if (selectedOrgFriendIds.has(player.userId)) {
+        selectedOrgFriendIds.delete(player.userId);
+      } else {
+        selectedOrgFriendIds.add(player.userId);
+      }
+      renderOrgFriendsPicker();
+    });
+    orgFriendsPickerEl.appendChild(row);
+  }
+}
+
+function switchOrgTab(tab: "create" | "list") {
+  activeOrgTab = tab;
+  document.querySelectorAll<HTMLButtonElement>(".org-tab-btn").forEach((btn) => {
+    const isActive = btn.dataset.orgTab === tab;
+    btn.classList.toggle("active", isActive);
+    btn.setAttribute("aria-selected", String(isActive));
+  });
+  if (orgCreateForm) orgCreateForm.classList.toggle("hidden", tab !== "create");
+  if (orgListPanel) orgListPanel.classList.toggle("hidden", tab !== "list");
+  if (tab === "list") {
+    renderOrganisationsList();
+  }
+}
+
+async function fetchOrganisationsData() {
+  if (!authToken) {
+    organisationsCache = [];
+    if (orgCountBadge) orgCountBadge.textContent = "0";
+    return;
+  }
+  try {
+    const res = await fetch(getApiUrl("/api/organisations"), {
+      headers: { Authorization: `Bearer ${authToken}` },
+    });
+    if (!res.ok) return;
+    const data: OrganisationsListResponse = await res.json();
+    if (data.success) {
+      organisationsCache = data.organisations || [];
+      if (orgCountBadge) orgCountBadge.textContent = String(organisationsCache.length);
+      syncOrgChatTabs(organisationsCache);
+      if (organisationModal && !organisationModal.classList.contains("hidden") && activeOrgTab === "list") {
+        renderOrganisationsList();
+      }
+    }
+  } catch (err) {
+    console.warn("Failed to fetch organisations:", err);
+  }
+}
+
+function renderOrganisationsList() {
+  if (!orgListContainer) return;
+  if (organisationsCache.length === 0) {
+    orgListContainer.innerHTML = `<div class="org-empty-friends">You are not in any organisation yet. Create one using ${ORGANISATION_CREATION_COST} Park Points!</div>`;
+    return;
+  }
+
+  const allCandidates = getSelectableOrgPlayers();
+  const isAdmin = isSuperadminUser();
+  orgListContainer.innerHTML = "";
+
+  for (const org of organisationsCache) {
+    const isLeader = currentUser && org.creatorId === currentUser.id;
+    const memberIds = new Set(org.members.map((m) => m.userId));
+    const invitablePlayers = allCandidates.filter((f) => !memberIds.has(f.userId));
+
+    const card = document.createElement("div");
+    card.className = "org-card";
+
+    const logoHtml = org.logo
+      ? `<img src="${escapeOrgHtml(org.logo)}" alt="${escapeOrgHtml(org.name)}" class="org-card-logo" />`
+      : `<div class="org-card-logo">🏢</div>`;
+
+    const membersHtml = org.members
+      .map((m) => {
+        const removeBtn =
+          isLeader && m.role !== "leader"
+            ? ` <button type="button" class="org-remove-member-btn" data-org-id="${org.id}" data-user-id="${m.userId}" title="Remove member" style="background:none;border:none;color:#fca5a5;cursor:pointer;padding:0 2px;">✕</button>`
+            : "";
+        return `<span class="org-member-pill ${m.role}">${m.role === "leader" ? "👑 " : ""}${escapeOrgHtml(m.name || m.username)}${removeBtn}</span>`;
+      })
+      .join("");
+
+    let actionsHtml = "";
+    if (isLeader) {
+      const selectHtml =
+        invitablePlayers.length > 0
+          ? `<div class="org-add-member-row">
+               <select class="org-add-member-select" data-org-select="${org.id}">
+                 ${invitablePlayers.map((f) => `<option value="${f.userId}">${escapeOrgHtml(f.name || f.username)} (@${escapeOrgHtml(f.username)})</option>`).join("")}
+               </select>
+               <button type="button" class="btn-secondary org-btn-sm org-add-member-btn" data-org-id="${org.id}">${isAdmin ? "+ Add Player" : "+ Add Friend"}</button>
+             </div>`
+          : `<span class="org-helper-text">${isAdmin ? "All players are already members" : "All friends are already members"}</span>`;
+      actionsHtml = `
+        <div class="org-card-actions">
+          ${selectHtml}
+          <button type="button" class="org-btn-sm org-btn-danger org-disband-btn" data-org-id="${org.id}">Disband</button>
+        </div>
+      `;
+    } else if (currentUser) {
+      actionsHtml = `
+        <div class="org-card-actions">
+          <span></span>
+          <button type="button" class="org-btn-sm org-btn-danger org-leave-btn" data-org-id="${org.id}" data-user-id="${currentUser.id}">Leave</button>
+        </div>
+      `;
+    }
+
+    card.innerHTML = `
+      <div class="org-card-header">
+        ${logoHtml}
+        <div class="org-card-meta">
+          <h3 class="org-card-name">${escapeOrgHtml(org.name)}</h3>
+          <div class="org-card-sub">Leader: ${escapeOrgHtml(org.creatorDisplayName || org.creatorUsername)} · ${org.members.length} member${org.members.length === 1 ? "" : "s"}</div>
+        </div>
+      </div>
+      <div class="org-members-list">${membersHtml}</div>
+      ${actionsHtml}
+    `;
+
+    orgListContainer.appendChild(card);
+  }
+
+  orgListContainer.querySelectorAll<HTMLButtonElement>(".org-add-member-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const orgId = Number(btn.dataset.orgId);
+      const select = orgListContainer.querySelector<HTMLSelectElement>(`[data-org-select="${orgId}"]`);
+      const targetUserId = Number(select?.value);
+      if (!targetUserId || !authToken) return;
+      const res = await fetch(getApiUrl(`/api/organisations/${orgId}/members`), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({ userId: targetUserId }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        alert(data.error || "Failed to add friend.");
+        return;
+      }
+      await fetchOrganisationsData();
+    });
+  });
+
+  orgListContainer.querySelectorAll<HTMLButtonElement>(".org-remove-member-btn, .org-leave-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const orgId = Number(btn.dataset.orgId);
+      const userId = Number(btn.dataset.userId);
+      if (!orgId || !userId || !authToken) return;
+      const res = await fetch(getApiUrl(`/api/organisations/${orgId}/members/${userId}`), {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${authToken}` },
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        alert(data.error || "Failed to update membership.");
+        return;
+      }
+      await fetchOrganisationsData();
+    });
+  });
+
+  orgListContainer.querySelectorAll<HTMLButtonElement>(".org-disband-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const orgId = Number(btn.dataset.orgId);
+      if (!orgId || !authToken) return;
+      if (!confirm("Disband this organisation? This cannot be undone.")) return;
+      const res = await fetch(getApiUrl(`/api/organisations/${orgId}`), {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${authToken}` },
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        alert(data.error || "Failed to disband organisation.");
+        return;
+      }
+      await fetchOrganisationsData();
+    });
+  });
+}
+
+async function openOrganisationModal() {
+  if (!organisationModal) return;
+  if (!authToken || !currentUser) {
+    alert("Please log in to create or manage organisations.");
+    return;
+  }
+  clearOrgFeedback();
+  updateOrgPointsBanner();
+  organisationModal.classList.remove("hidden");
+  setGameControlsActive(false);
+
+  await Promise.all([fetchFriendsData(), fetchOrganisationsData(), fetchAdminOrgPlayers()]);
+  renderOrgFriendsPicker();
+  if (activeOrgTab === "list") {
+    renderOrganisationsList();
+  }
+}
+
+function closeOrganisationModal() {
+  if (!organisationModal) return;
+  organisationModal.classList.add("hidden");
+  setGameControlsActive(true);
+}
+
+function initOrganisationUI() {
+  btnCloseOrganisationModal?.addEventListener("click", closeOrganisationModal);
+  organisationModal?.addEventListener("click", (e) => {
+    if (e.target === organisationModal) closeOrganisationModal();
+  });
+
+  dropdownOrganisationsBtn?.addEventListener("click", () => {
+    openOrganisationModal();
+  });
+
+  document.querySelectorAll<HTMLButtonElement>(".org-tab-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const tab = btn.dataset.orgTab === "list" ? "list" : "create";
+      switchOrgTab(tab);
+    });
+  });
+
+  btnOrgUploadLogo?.addEventListener("click", () => {
+    orgLogoInput?.click();
+  });
+
+  btnOrgClearLogo?.addEventListener("click", () => {
+    setOrgLogoPreview(null);
+  });
+
+  orgLogoInput?.addEventListener("change", async () => {
+    const file = orgLogoInput.files?.[0];
+    if (!file) return;
+    try {
+      const resized = await resizeImageTo100x100(file);
+      setOrgLogoPreview(resized);
+      clearOrgFeedback();
+    } catch (err: any) {
+      showOrgFeedback(err?.message || "Could not process logo image.", "error");
+    }
+  });
+
+  orgFriendSearchInput?.addEventListener("input", () => {
+    renderOrgFriendsPicker();
+  });
+
+  orgCreateForm?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    clearOrgFeedback();
+    if (!authToken || !currentUser) {
+      showOrgFeedback("Please log in first.", "error");
+      return;
+    }
+
+    const name = (orgNameInput?.value || "").trim();
+    if (name.length < 2 || name.length > 60) {
+      showOrgFeedback("Organisation name must be between 2 and 60 characters.", "error");
+      return;
+    }
+
+    const pts = currentUser.parkingPoints ?? 0;
+    if (!isSuperadminUser() && pts < ORGANISATION_CREATION_COST) {
+      showOrgFeedback(
+        `You need ${ORGANISATION_CREATION_COST} Park Points to create an organisation (you have ${pts}).`,
+        "error"
+      );
+      return;
+    }
+
+    if (btnOrgCreateSubmit) btnOrgCreateSubmit.disabled = true;
+    try {
+      const res = await fetch(getApiUrl("/api/organisations"), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({
+          name,
+          memberUserIds: Array.from(selectedOrgFriendIds),
+          logo: pendingOrgLogoDataUrl,
+        }),
+      });
+      const data: CreateOrganisationResponse = await res.json();
+      if (!res.ok || !data.success) {
+        if (typeof data.points === "number" && currentUser) {
+          currentUser.parkingPoints = data.points;
+          updateParkingPointsDisplay(data.points);
+          updateOrgPointsBanner();
+        }
+        showOrgFeedback(data.error || "Failed to create organisation.", "error");
+        return;
+      }
+
+      if (typeof data.points === "number" && currentUser) {
+        currentUser.parkingPoints = data.points;
+        try {
+          localStorage.setItem("lepark_auth_user", JSON.stringify(currentUser));
+        } catch {}
+        updateParkingPointsDisplay(data.points);
+        updateOrgPointsBanner();
+      }
+
+      // Reset form state & refresh list
+      if (orgNameInput) orgNameInput.value = "";
+      selectedOrgFriendIds.clear();
+      setOrgLogoPreview(null);
+      renderOrgFriendsPicker();
+      await fetchOrganisationsData();
+      showOrgFeedback(`🎉 Organisation "${name}" created!`, "success");
+      switchOrgTab("list");
+    } catch (err: any) {
+      showOrgFeedback(err?.message || "Network error creating organisation.", "error");
+    } finally {
+      updateOrgPointsBanner();
+    }
+  });
+}
+
+// ==========================================
+// Notes Modal & WYSIWYG System
+// ==========================================
+
+const notesModal = document.getElementById("notes-modal") as HTMLDivElement | null;
+const btnCloseNotesModal = document.getElementById("btn-close-notes-modal") as HTMLButtonElement | null;
+const dropdownNotesBtn = document.getElementById("dropdown-notes-btn") as HTMLButtonElement | null;
+const notesFeedbackEl = document.getElementById("notes-feedback") as HTMLDivElement | null;
+
+const notesListView = document.getElementById("notes-list-view") as HTMLDivElement | null;
+const notesDetailView = document.getElementById("notes-detail-view") as HTMLDivElement | null;
+const notesEditorView = document.getElementById("notes-editor-view") as HTMLDivElement | null;
+
+const btnNewNote = document.getElementById("btn-new-note") as HTMLButtonElement | null;
+const notesScopeBar = document.getElementById("notes-scope-bar") as HTMLDivElement | null;
+const notesScopeLabel = document.getElementById("notes-scope-label") as HTMLLabelElement | null;
+const notesScopeSelect = document.getElementById("notes-scope-select") as HTMLSelectElement | null;
+const notesListContainer = document.getElementById("notes-list-container") as HTMLDivElement | null;
+
+const btnNotesBackFromDetail = document.getElementById("btn-notes-back-from-detail") as HTMLButtonElement | null;
+const btnNoteEdit = document.getElementById("btn-note-edit") as HTMLButtonElement | null;
+const btnNoteDelete = document.getElementById("btn-note-delete") as HTMLButtonElement | null;
+const noteDetailTitle = document.getElementById("note-detail-title") as HTMLHeadingElement | null;
+const noteDetailMeta = document.getElementById("note-detail-meta") as HTMLDivElement | null;
+const noteDetailContent = document.getElementById("note-detail-content") as HTMLDivElement | null;
+const noteDetailImages = document.getElementById("note-detail-images") as HTMLDivElement | null;
+
+const btnNotesBackFromEditor = document.getElementById("btn-notes-back-from-editor") as HTMLButtonElement | null;
+const notesEditorHeading = document.getElementById("notes-editor-heading") as HTMLSpanElement | null;
+const noteEditorTitle = document.getElementById("note-editor-title") as HTMLInputElement | null;
+const noteWysiwygToolbar = document.getElementById("note-wysiwyg-toolbar") as HTMLDivElement | null;
+const noteEditorContent = document.getElementById("note-editor-content") as HTMLDivElement | null;
+const noteEditorImagesInput = document.getElementById("note-editor-images-input") as HTMLInputElement | null;
+const noteEditorImagesList = document.getElementById("note-editor-images-list") as HTMLDivElement | null;
+const btnNoteCancel = document.getElementById("btn-note-cancel") as HTMLButtonElement | null;
+const btnNoteSave = document.getElementById("btn-note-save") as HTMLButtonElement | null;
+
+let activeNoteTab: NoteType = "personal";
+let notesCache: NoteDto[] = [];
+let accessibleNoteSpaces: AccessibleNoteSpace[] = [];
+let selectedNoteSpaceId: string | null = null;
+let selectedNoteOrgId: number | null = null;
+let activeDetailNote: NoteDto | null = null;
+let editingNoteId: number | null = null;
+let selectedNoteImages: Array<{ name: string; dataUrl: string }> = [];
+
+function showNotesFeedback(msg: string, type: "error" | "success" = "error") {
+  if (!notesFeedbackEl) return;
+  notesFeedbackEl.textContent = msg;
+  notesFeedbackEl.className = `notes-feedback ${type}`;
+  notesFeedbackEl.classList.remove("hidden");
+}
+
+function clearNotesFeedback() {
+  if (!notesFeedbackEl) return;
+  notesFeedbackEl.textContent = "";
+  notesFeedbackEl.classList.add("hidden");
+}
+
+function sanitizeClientNoteHtml(raw: string): string {
+  if (!raw) return "";
+  const tpl = document.createElement("template");
+  tpl.innerHTML = raw;
+  const blockedTags = new Set(["script", "style", "iframe", "object", "embed", "form", "input", "textarea", "button", "meta", "link"]);
+  const walk = (node: Node) => {
+    const children = Array.from(node.childNodes);
+    for (const child of children) {
+      if (child.nodeType === Node.ELEMENT_NODE) {
+        const el = child as HTMLElement;
+        const tag = el.tagName.toLowerCase();
+        if (blockedTags.has(tag)) {
+          el.remove();
+          continue;
+        }
+        for (const attr of Array.from(el.attributes)) {
+          const name = attr.name.toLowerCase();
+          const val = attr.value.trim().toLowerCase();
+          if (name.startsWith("on")) {
+            el.removeAttribute(attr.name);
+          } else if ((name === "href" || name === "src") && (val.startsWith("javascript:") || val.startsWith("vbscript:") || val.startsWith("data:"))) {
+            el.setAttribute(attr.name, "#");
+          }
+        }
+        walk(el);
+      }
+    }
+  };
+  walk(tpl.content);
+  return tpl.innerHTML;
+}
+
+function extractFirstLinePreview(html: string): string {
+  if (!html) return "";
+  const div = document.createElement("div");
+  div.innerHTML = html
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(p|div|li|h1|h2|h3|blockquote)>/gi, "\n");
+  const text = (div.textContent || "").replace(/\r/g, "");
+  const firstLine = text
+    .split("\n")
+    .map((line) => line.trim())
+    .find((line) => line.length > 0);
+  return firstLine || "";
+}
+
+function formatNoteDate(iso: string): string {
+  try {
+    return new Date(iso).toLocaleString(undefined, {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return "";
+  }
+}
+
+function showNotesView(view: "list" | "detail" | "editor") {
+  clearNotesFeedback();
+  notesListView?.classList.toggle("hidden", view !== "list");
+  notesDetailView?.classList.toggle("hidden", view !== "detail");
+  notesEditorView?.classList.toggle("hidden", view !== "editor");
+}
+
+function updateNotesScopeSelector() {
+  if (!notesScopeBar || !notesScopeLabel || !notesScopeSelect) return;
+
+  if (activeNoteTab === "personal") {
+    notesScopeBar.classList.add("hidden");
+    if (btnNewNote) btnNewNote.disabled = false;
+    return;
+  }
+
+  if (activeNoteTab === "space") {
+    if (accessibleNoteSpaces.length === 0) {
+      notesScopeBar.classList.add("hidden");
+      if (btnNewNote) btnNewNote.disabled = true;
+      return;
+    }
+    if (
+      !selectedNoteSpaceId ||
+      !accessibleNoteSpaces.some((s) => s.id === selectedNoteSpaceId)
+    ) {
+      const currentAccessible = accessibleNoteSpaces.find((s) => s.id === currentSpaceId);
+      const personalAccessible = myPersonalSpace
+        ? accessibleNoteSpaces.find((s) => s.id === myPersonalSpace!.id)
+        : undefined;
+      selectedNoteSpaceId = (currentAccessible || personalAccessible || accessibleNoteSpaces[0]).id;
+    }
+    notesScopeLabel.textContent = "Space:";
+    notesScopeSelect.innerHTML = "";
+    for (const sp of accessibleNoteSpaces) {
+      const opt = document.createElement("option");
+      opt.value = sp.id;
+      opt.textContent = sp.isOwner ? `${sp.name} (Owner)` : `${sp.name} (Space-mate)`;
+      if (sp.id === selectedNoteSpaceId) opt.selected = true;
+      notesScopeSelect.appendChild(opt);
+    }
+    notesScopeBar.classList.remove("hidden");
+    if (btnNewNote) btnNewNote.disabled = false;
+    return;
+  }
+
+  // organisation
+  if (organisationsCache.length === 0) {
+    notesScopeBar.classList.add("hidden");
+    if (btnNewNote) btnNewNote.disabled = true;
+    return;
+  }
+  if (
+    selectedNoteOrgId === null ||
+    !organisationsCache.some((o) => o.id === selectedNoteOrgId)
+  ) {
+    selectedNoteOrgId = organisationsCache[0].id;
+  }
+  notesScopeLabel.textContent = "Organisation:";
+  notesScopeSelect.innerHTML = "";
+  for (const org of organisationsCache) {
+    const opt = document.createElement("option");
+    opt.value = String(org.id);
+    opt.textContent = org.name;
+    if (org.id === selectedNoteOrgId) opt.selected = true;
+    notesScopeSelect.appendChild(opt);
+  }
+  notesScopeBar.classList.remove("hidden");
+  if (btnNewNote) btnNewNote.disabled = false;
+}
+
+function renderNotesList() {
+  if (!notesListContainer) return;
+  updateNotesScopeSelector();
+
+  if (activeNoteTab === "space" && accessibleNoteSpaces.length === 0) {
+    notesListContainer.innerHTML = `
+      <div class="notes-empty-state">
+        You don't have any personal or shared space yet.
+      </div>
+    `;
+    return;
+  }
+
+  if (activeNoteTab === "organisation" && organisationsCache.length === 0) {
+    notesListContainer.innerHTML = `
+      <div class="notes-empty-state">
+        You are not a member of any organisation yet. Join or create an organisation to share notes.
+      </div>
+    `;
+    return;
+  }
+
+  if (notesCache.length === 0) {
+    notesListContainer.innerHTML = `
+      <div class="notes-empty-state">
+        No notes here yet. Click <strong>+ Note</strong> to create one.
+      </div>
+    `;
+    return;
+  }
+
+  notesListContainer.innerHTML = "";
+  for (const note of notesCache) {
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = "note-list-item";
+
+    const titleEl = document.createElement("div");
+    titleEl.className = "note-list-item-title";
+    titleEl.textContent = note.title;
+
+    const previewEl = document.createElement("div");
+    previewEl.className = "note-list-item-preview";
+    const previewText = extractFirstLinePreview(note.content);
+    previewEl.textContent = previewText || "Empty note";
+
+    card.appendChild(titleEl);
+    card.appendChild(previewEl);
+
+    card.addEventListener("click", () => {
+      openNoteDetailView(note);
+    });
+    notesListContainer.appendChild(card);
+  }
+}
+
+async function fetchNotesData() {
+  if (!authToken) return;
+  clearNotesFeedback();
+  const params = new URLSearchParams({ type: activeNoteTab });
+  if (activeNoteTab === "space" && selectedNoteSpaceId) {
+    params.set("spaceId", selectedNoteSpaceId);
+  } else if (activeNoteTab === "organisation" && selectedNoteOrgId !== null) {
+    params.set("organisationId", String(selectedNoteOrgId));
+  }
+
+  try {
+    const res = await fetch(getApiUrl(`/api/notes?${params.toString()}`), {
+      headers: { Authorization: `Bearer ${authToken}` },
+    });
+    const data = await res.json();
+    if (Array.isArray(data.accessibleSpaces)) {
+      accessibleNoteSpaces = data.accessibleSpaces;
+    }
+    if (!res.ok || !data.success) {
+      notesCache = [];
+      if (data.error) showNotesFeedback(data.error, "error");
+    } else {
+      notesCache = data.notes || [];
+    }
+    renderNotesList();
+  } catch (err: any) {
+    showNotesFeedback(err?.message || "Failed to load notes.", "error");
+  }
+}
+
+function renderNoteEditorImagesChips() {
+  if (!noteEditorImagesList) return;
+  noteEditorImagesList.innerHTML = "";
+  if (selectedNoteImages.length === 0) {
+    noteEditorImagesList.classList.add("hidden");
+    return;
+  }
+  noteEditorImagesList.classList.remove("hidden");
+  selectedNoteImages.forEach((img, idx) => {
+    const wrap = document.createElement("div");
+    wrap.className = "calendar-form-image-thumb-wrap";
+
+    const thumb = document.createElement("img");
+    thumb.src = img.dataUrl;
+    thumb.alt = img.name;
+    thumb.className = "calendar-form-image-thumb";
+    thumb.title = "Click to preview";
+    thumb.addEventListener("click", () => {
+      openCalendarImageLightbox(img.dataUrl, img.name);
+    });
+
+    const removeBtn = document.createElement("button");
+    removeBtn.type = "button";
+    removeBtn.className = "calendar-form-image-remove";
+    removeBtn.textContent = "×";
+    removeBtn.title = `Remove ${img.name}`;
+    removeBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      selectedNoteImages.splice(idx, 1);
+      renderNoteEditorImagesChips();
+    });
+
+    wrap.appendChild(thumb);
+    wrap.appendChild(removeBtn);
+    noteEditorImagesList.appendChild(wrap);
+  });
+}
+
+function openNoteDetailView(note: NoteDto) {
+  activeDetailNote = note;
+  if (noteDetailTitle) noteDetailTitle.textContent = note.title;
+  if (noteDetailMeta) {
+    const scopeText =
+      note.type === "personal"
+        ? "Personal Note"
+        : note.type === "space"
+        ? `Space: ${note.spaceName || "Shared Space"}`
+        : `Organisation: ${note.organisationName || "Organisation"}`;
+    const dateStr = formatNoteDate(note.updatedAt || note.createdAt);
+    noteDetailMeta.textContent = `${scopeText} • By ${note.authorName}${dateStr ? ` • ${dateStr}` : ""}`;
+  }
+  if (noteDetailContent) {
+    const clean = sanitizeClientNoteHtml(note.content || "");
+    noteDetailContent.innerHTML = clean || '<p class="notes-empty-body"><em>No content</em></p>';
+  }
+  if (noteDetailImages) {
+    noteDetailImages.innerHTML = "";
+    const imgs = Array.isArray(note.images) ? note.images : [];
+    if (imgs.length > 0) {
+      noteDetailImages.classList.remove("hidden");
+      imgs.forEach((src, idx) => {
+        const thumb = document.createElement("img");
+        thumb.src = src;
+        thumb.alt = `Note picture ${idx + 1}`;
+        thumb.className = "calendar-detail-image-thumb";
+        thumb.title = "Click to preview";
+        thumb.addEventListener("click", () => {
+          openCalendarImageLightbox(src, `Note picture ${idx + 1}`);
+        });
+        noteDetailImages.appendChild(thumb);
+      });
+    } else {
+      noteDetailImages.classList.add("hidden");
+    }
+  }
+  showNotesView("detail");
+}
+
+function openNoteEditorView(existingNote: NoteDto | null) {
+  editingNoteId = existingNote ? existingNote.id : null;
+  if (notesEditorHeading) {
+    notesEditorHeading.textContent = existingNote ? "Edit Note" : "New Note";
+  }
+  if (noteEditorTitle) {
+    noteEditorTitle.value = existingNote ? existingNote.title : "";
+  }
+  if (noteEditorContent) {
+    noteEditorContent.innerHTML = existingNote
+      ? sanitizeClientNoteHtml(existingNote.content || "")
+      : "";
+  }
+  selectedNoteImages = existingNote && Array.isArray(existingNote.images)
+    ? existingNote.images.map((dataUrl, i) => ({ name: `Picture ${i + 1}`, dataUrl }))
+    : [];
+  if (noteEditorImagesInput) noteEditorImagesInput.value = "";
+  renderNoteEditorImagesChips();
+  showNotesView("editor");
+  setTimeout(() => noteEditorTitle?.focus(), 30);
+}
+
+async function saveNoteFromEditor() {
+  if (!authToken) return;
+  clearNotesFeedback();
+  const title = (noteEditorTitle?.value || "").trim();
+  if (!title) {
+    showNotesFeedback("Please enter a note title.", "error");
+    noteEditorTitle?.focus();
+    return;
+  }
+  const content = sanitizeClientNoteHtml(noteEditorContent?.innerHTML || "");
+  const images = selectedNoteImages.map((img) => img.dataUrl);
+
+  if (btnNoteSave) btnNoteSave.disabled = true;
+  try {
+    if (editingNoteId !== null) {
+      const res = await fetch(getApiUrl(`/api/notes/${editingNoteId}`), {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({ title, content, images }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        showNotesFeedback(data.error || "Failed to update note.", "error");
+        return;
+      }
+      await fetchNotesData();
+      if (data.note) {
+        openNoteDetailView(data.note);
+      } else {
+        showNotesView("list");
+      }
+    } else {
+      const payload: any = {
+        type: activeNoteTab,
+        title,
+        content,
+        images,
+      };
+      if (activeNoteTab === "space") {
+        payload.spaceId = selectedNoteSpaceId;
+      } else if (activeNoteTab === "organisation") {
+        payload.organisationId = selectedNoteOrgId;
+      }
+      const res = await fetch(getApiUrl("/api/notes"), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        showNotesFeedback(data.error || "Failed to create note.", "error");
+        return;
+      }
+      await fetchNotesData();
+      showNotesView("list");
+    }
+  } catch (err: any) {
+    showNotesFeedback(err?.message || "Network error saving note.", "error");
+  } finally {
+    if (btnNoteSave) btnNoteSave.disabled = false;
+  }
+}
+
+async function deleteActiveDetailNote() {
+  if (!authToken || !activeDetailNote) return;
+  if (!confirm(`Delete note "${activeDetailNote.title}"?`)) return;
+  clearNotesFeedback();
+  try {
+    const res = await fetch(getApiUrl(`/api/notes/${activeDetailNote.id}`), {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${authToken}` },
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      showNotesFeedback(data.error || "Failed to delete note.", "error");
+      return;
+    }
+    activeDetailNote = null;
+    await fetchNotesData();
+    showNotesView("list");
+  } catch (err: any) {
+    showNotesFeedback(err?.message || "Network error deleting note.", "error");
+  }
+}
+
+function switchNotesTab(tab: NoteType) {
+  activeNoteTab = tab;
+  document.querySelectorAll<HTMLButtonElement>(".notes-tab-btn").forEach((btn) => {
+    const isMatch = btn.dataset.noteTab === tab;
+    btn.classList.toggle("active", isMatch);
+    btn.setAttribute("aria-selected", String(isMatch));
+  });
+  updateNotesScopeSelector();
+  fetchNotesData();
+}
+
+async function openNotesModal() {
+  if (!notesModal) return;
+  if (!authToken || !currentUser) {
+    alert("Please log in to view or create notes.");
+    return;
+  }
+  clearNotesFeedback();
+  notesModal.classList.remove("hidden");
+  setGameControlsActive(false);
+  showNotesView("list");
+
+  await fetchOrganisationsData();
+  await fetchNotesData();
+  // Re-fetch once if space/org scope just resolved to a specific ID
+  if (activeNoteTab === "space" && selectedNoteSpaceId) {
+    await fetchNotesData();
+  } else if (activeNoteTab === "organisation" && selectedNoteOrgId !== null) {
+    await fetchNotesData();
+  }
+}
+
+function closeNotesModal() {
+  if (!notesModal) return;
+  notesModal.classList.add("hidden");
+  setGameControlsActive(true);
+}
+
+function initNotesUI() {
+  btnCloseNotesModal?.addEventListener("click", closeNotesModal);
+  notesModal?.addEventListener("click", (e) => {
+    if (e.target === notesModal) closeNotesModal();
+  });
+
+  dropdownNotesBtn?.addEventListener("click", () => {
+    closeProfileDropdown();
+    openNotesModal();
+  });
+
+  document.querySelectorAll<HTMLButtonElement>(".notes-tab-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const raw = btn.dataset.noteTab;
+      const tab: NoteType =
+        raw === "space" || raw === "organisation" ? raw : "personal";
+      switchNotesTab(tab);
+    });
+  });
+
+  notesScopeSelect?.addEventListener("change", () => {
+    if (activeNoteTab === "space") {
+      selectedNoteSpaceId = notesScopeSelect.value || null;
+    } else if (activeNoteTab === "organisation") {
+      const val = Number(notesScopeSelect.value);
+      selectedNoteOrgId = Number.isInteger(val) ? val : null;
+    }
+    fetchNotesData();
+  });
+
+  btnNewNote?.addEventListener("click", () => {
+    openNoteEditorView(null);
+  });
+
+  btnNotesBackFromDetail?.addEventListener("click", () => {
+    activeDetailNote = null;
+    showNotesView("list");
+  });
+
+  btnNoteEdit?.addEventListener("click", () => {
+    if (activeDetailNote) openNoteEditorView(activeDetailNote);
+  });
+
+  btnNoteDelete?.addEventListener("click", () => {
+    deleteActiveDetailNote();
+  });
+
+  btnNotesBackFromEditor?.addEventListener("click", () => {
+    if (editingNoteId !== null && activeDetailNote) {
+      showNotesView("detail");
+    } else {
+      showNotesView("list");
+    }
+  });
+
+  btnNoteCancel?.addEventListener("click", () => {
+    if (editingNoteId !== null && activeDetailNote) {
+      showNotesView("detail");
+    } else {
+      showNotesView("list");
+    }
+  });
+
+  btnNoteSave?.addEventListener("click", () => {
+    saveNoteFromEditor();
+  });
+
+  noteEditorImagesInput?.addEventListener("change", async () => {
+    const files = Array.from(noteEditorImagesInput.files || []);
+    noteEditorImagesInput.value = "";
+    if (files.length === 0) return;
+    clearNotesFeedback();
+
+    for (const file of files) {
+      if (!file.type.startsWith("image/")) {
+        showNotesFeedback("Only picture files are allowed.", "error");
+        continue;
+      }
+      if (selectedNoteImages.length >= 10) {
+        showNotesFeedback("You can upload up to 10 pictures per note.", "error");
+        break;
+      }
+      try {
+        const compressed = await compressCalendarImageFile(file);
+        selectedNoteImages.push({ name: file.name, dataUrl: compressed });
+        renderNoteEditorImagesChips();
+      } catch (err: any) {
+        showNotesFeedback(err?.message || `Failed to process ${file.name}.`, "error");
+      }
+    }
+  });
+
+  // Ensure typing, Enter, movement keys (WASD), and interaction keys (E) stay isolated inside note inputs
+  [noteEditorTitle, noteEditorContent].forEach((el) => {
+    if (!el) return;
+    el.addEventListener("focus", () => {
+      setGameControlsActive(false);
+    });
+    el.addEventListener("keydown", (e) => {
+      if (e.key !== "Escape") {
+        e.stopPropagation();
+      }
+    });
+    el.addEventListener("keyup", (e) => {
+      if (e.key !== "Escape") {
+        e.stopPropagation();
+      }
+    });
+  });
+
+  noteWysiwygToolbar?.querySelectorAll<HTMLButtonElement>(".wysiwyg-btn").forEach((btn) => {
+    btn.addEventListener("mousedown", (e) => {
+      // Keep focus in contenteditable editor
+      e.preventDefault();
+    });
+    btn.addEventListener("click", () => {
+      const cmd = btn.dataset.cmd;
+      if (!cmd) return;
+      noteEditorContent?.focus();
+      if (cmd === "createLink") {
+        const url = prompt("Enter link URL (https://...):");
+        if (url && /^https?:\/\//i.test(url.trim())) {
+          document.execCommand("createLink", false, url.trim());
+        }
+      } else if (cmd === "formatBlock") {
+        const val = btn.dataset.val || "P";
+        document.execCommand("formatBlock", false, val);
+      } else {
+        document.execCommand(cmd, false);
+      }
+    });
+  });
+}
+
+// ==========================================
+// Calendar Modal System
+// ==========================================
+
+const calendarModal = document.getElementById("calendar-modal") as HTMLDivElement | null;
+const btnCloseCalendarModal = document.getElementById("btn-close-calendar-modal") as HTMLButtonElement | null;
+const dropdownCalendarBtn = document.getElementById("dropdown-calendar-btn") as HTMLButtonElement | null;
+const calendarFeedbackEl = document.getElementById("calendar-feedback") as HTMLDivElement | null;
+
+const calendarMonthView = document.getElementById("calendar-month-view") as HTMLDivElement | null;
+const calendarDayView = document.getElementById("calendar-day-view") as HTMLDivElement | null;
+const calendarDetailView = document.getElementById("calendar-detail-view") as HTMLDivElement | null;
+const calendarEditorView = document.getElementById("calendar-editor-view") as HTMLDivElement | null;
+
+const btnCalendarBackFromDay = document.getElementById("btn-calendar-back-from-day") as HTMLButtonElement | null;
+const calendarDayViewHeading = document.getElementById("calendar-day-view-heading") as HTMLSpanElement | null;
+const btnCalendarDayNewEvent = document.getElementById("btn-calendar-day-new-event") as HTMLButtonElement | null;
+const calendarDayEventsList = document.getElementById("calendar-day-events-list") as HTMLDivElement | null;
+
+const btnNewCalendarEvent = document.getElementById("btn-new-calendar-event") as HTMLButtonElement | null;
+const calendarScopeBar = document.getElementById("calendar-scope-bar") as HTMLDivElement | null;
+const calendarScopeLabel = document.getElementById("calendar-scope-label") as HTMLLabelElement | null;
+const calendarScopeSelect = document.getElementById("calendar-scope-select") as HTMLSelectElement | null;
+const calendarEmptyState = document.getElementById("calendar-empty-state") as HTMLDivElement | null;
+const calendarBody = document.getElementById("calendar-body") as HTMLDivElement | null;
+const calendarMealsBody = document.getElementById("calendar-meals-body") as HTMLDivElement | null;
+const calendarMealsGrid = document.getElementById("calendar-meals-grid") as HTMLDivElement | null;
+const calendarMealEditorView = document.getElementById("calendar-meal-editor-view") as HTMLDivElement | null;
+const btnCalendarBackFromMeal = document.getElementById("btn-calendar-back-from-meal") as HTMLButtonElement | null;
+const calendarMealEditorHeading = document.getElementById("calendar-meal-editor-heading") as HTMLSpanElement | null;
+const calendarMealInput = document.getElementById("calendar-meal-input") as HTMLInputElement | null;
+const btnCalendarMealSave = document.getElementById("btn-calendar-meal-save") as HTMLButtonElement | null;
+const calendarMonthSelect = document.getElementById("calendar-month-select") as HTMLSelectElement | null;
+const calendarYearInput = document.getElementById("calendar-year-input") as HTMLInputElement | null;
+const calendarDaysGrid = document.getElementById("calendar-days-grid") as HTMLDivElement | null;
+const btnCalendarToday = document.getElementById("btn-calendar-today") as HTMLButtonElement | null;
+const btnCalendarPrev = document.getElementById("btn-calendar-prev") as HTMLButtonElement | null;
+const btnCalendarNext = document.getElementById("btn-calendar-next") as HTMLButtonElement | null;
+
+const btnCalendarBackFromDetail = document.getElementById("btn-calendar-back-from-detail") as HTMLButtonElement | null;
+const btnCalendarEventEdit = document.getElementById("btn-calendar-event-edit") as HTMLButtonElement | null;
+const btnCalendarEventDelete = document.getElementById("btn-calendar-event-delete") as HTMLButtonElement | null;
+const calendarDetailTitle = document.getElementById("calendar-detail-title") as HTMLHeadingElement | null;
+const calendarDetailWhen = document.getElementById("calendar-detail-when") as HTMLDivElement | null;
+const calendarDetailAssignees = document.getElementById("calendar-detail-assignees") as HTMLDivElement | null;
+const calendarDetailMeta = document.getElementById("calendar-detail-meta") as HTMLDivElement | null;
+const calendarDetailDescription = document.getElementById("calendar-detail-description") as HTMLDivElement | null;
+const calendarDetailImages = document.getElementById("calendar-detail-images") as HTMLDivElement | null;
+const calendarImageLightbox = document.getElementById("calendar-image-lightbox") as HTMLDivElement | null;
+const btnCloseCalendarLightbox = document.getElementById("btn-close-calendar-lightbox") as HTMLButtonElement | null;
+const calendarLightboxImg = document.getElementById("calendar-lightbox-img") as HTMLImageElement | null;
+
+const btnCalendarBackFromEditor = document.getElementById("btn-calendar-back-from-editor") as HTMLButtonElement | null;
+const calendarEditorHeading = document.getElementById("calendar-editor-heading") as HTMLSpanElement | null;
+const calendarEventTitle = document.getElementById("calendar-event-title") as HTMLInputElement | null;
+const calendarEventStartDate = document.getElementById("calendar-event-start-date") as HTMLInputElement | null;
+const calendarEventEndDate = document.getElementById("calendar-event-end-date") as HTMLInputElement | null;
+const calendarEventStartDateDisplay = document.getElementById("calendar-event-start-date-display") as HTMLDivElement | null;
+const calendarEventEndDateDisplay = document.getElementById("calendar-event-end-date-display") as HTMLDivElement | null;
+const calendarEventTimeRow = document.getElementById("calendar-event-time-row") as HTMLDivElement | null;
+const calendarEventAllDay = document.getElementById("calendar-event-all-day") as HTMLInputElement | null;
+const calendarEventTimeInputs = document.getElementById("calendar-event-time-inputs") as HTMLDivElement | null;
+const calendarEventStartTime = document.getElementById("calendar-event-start-time") as HTMLInputElement | null;
+const calendarEventEndTime = document.getElementById("calendar-event-end-time") as HTMLInputElement | null;
+const calendarEventRepeatEnabled = document.getElementById("calendar-event-repeat-enabled") as HTMLInputElement | null;
+const calendarEventRepeatInputs = document.getElementById("calendar-event-repeat-inputs") as HTMLDivElement | null;
+const calendarEventRepeatInterval = document.getElementById("calendar-event-repeat-interval") as HTMLInputElement | null;
+const calendarEventRepeatUnit = document.getElementById("calendar-event-repeat-unit") as HTMLSelectElement | null;
+const calendarRepeatPreview = document.getElementById("calendar-repeat-preview") as HTMLDivElement | null;
+const calendarEventAssigneeRow = document.getElementById("calendar-event-assignee-row") as HTMLDivElement | null;
+const calendarEventAssigneeList = document.getElementById("calendar-event-assignee-list") as HTMLDivElement | null;
+const calendarEventRotateLabel = document.getElementById("calendar-event-rotate-label") as HTMLLabelElement | null;
+const calendarEventRotateAssignees = document.getElementById("calendar-event-rotate-assignees") as HTMLInputElement | null;
+const calendarAssigneeRotationPreview = document.getElementById("calendar-assignee-rotation-preview") as HTMLDivElement | null;
+const calendarWysiwygToolbar = document.getElementById("calendar-wysiwyg-toolbar") as HTMLDivElement | null;
+const calendarEventDescription = document.getElementById("calendar-event-description") as HTMLDivElement | null;
+const calendarEventImagesInput = document.getElementById("calendar-event-images-input") as HTMLInputElement | null;
+const calendarEventImagesList = document.getElementById("calendar-event-images-list") as HTMLDivElement | null;
+const btnCalendarEventCancel = document.getElementById("btn-calendar-event-cancel") as HTMLButtonElement | null;
+const btnCalendarEventSave = document.getElementById("btn-calendar-event-save") as HTMLButtonElement | null;
+
+let activeCalendarTab: CalendarType = "personal";
+let selectedCalendarSpaceId: string | null = null;
+let selectedCalendarOrgId: number | null = null;
+let calendarViewYear: number = new Date().getFullYear();
+let calendarViewMonth: number = new Date().getMonth();
+let calendarEventsCache: CalendarEventDto[] = [];
+let calendarAssignableMembers: CalendarAssigneeDto[] = [];
+let selectedCalendarAssigneeIds: number[] = [];
+let selectedCalendarEventImages: Array<{ name: string; dataUrl: string }> = [];
+let activeDetailCalendarEvent: CalendarEventDto | null = null;
+let editingCalendarEventId: number | null = null;
+let activeCalendarDayIso: string | null = null;
+let calendarDetailReturnView: "month" | "day" = "month";
+let calendarEditorReturnView: "month" | "day" | "detail" = "month";
+const calendarMealsCache = new Map<number, string>();
+let editingMealDayOfWeek: number | null = null;
+const MEAL_DAY_NAMES = [
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+  "Sunday",
+] as const;
+
+function showCalendarFeedback(msg: string, type: "error" | "success" = "error") {
+  if (!calendarFeedbackEl) return;
+  calendarFeedbackEl.textContent = msg;
+  calendarFeedbackEl.className = `notes-feedback ${type}`;
+  calendarFeedbackEl.classList.remove("hidden");
+}
+
+function clearCalendarFeedback() {
+  if (!calendarFeedbackEl) return;
+  calendarFeedbackEl.textContent = "";
+  calendarFeedbackEl.classList.add("hidden");
+}
+
+function showCalendarView(view: "month" | "day" | "detail" | "editor" | "meal-editor") {
+  clearCalendarFeedback();
+  calendarMonthView?.classList.toggle("hidden", view !== "month");
+  calendarDayView?.classList.toggle("hidden", view !== "day");
+  calendarDetailView?.classList.toggle("hidden", view !== "detail");
+  calendarEditorView?.classList.toggle("hidden", view !== "editor");
+  calendarMealEditorView?.classList.toggle("hidden", view !== "meal-editor");
+}
+
+function toIsoDateString(year: number, monthIndex: number, day: number): string {
+  const m = String(monthIndex + 1).padStart(2, "0");
+  const d = String(day).padStart(2, "0");
+  return `${year}-${m}-${d}`;
+}
+
+function formatCalendarDateDisplay(isoDate: string): string {
+  const [y, m, d] = isoDate.split("-").map(Number);
+  if (!y || !m || !d) return isoDate;
+  return `${String(d).padStart(2, "0")}/${String(m).padStart(2, "0")}/${y}`;
+}
+
+function parseIsoDateUtcMs(isoDate: string): number {
+  const [y, m, d] = isoDate.split("-").map(Number);
+  return Date.UTC(y, (m || 1) - 1, d || 1);
+}
+
+function diffDaysUtc(startIso: string, endIso: string): number {
+  return Math.round((parseIsoDateUtcMs(endIso) - parseIsoDateUtcMs(startIso)) / 86400000);
+}
+
+function addDaysUtc(isoDate: string, days: number): string {
+  const [y, m, d] = isoDate.split("-").map(Number);
+  if (!y || !m || !d) return isoDate;
+  const dt = new Date(Date.UTC(y, m - 1, d + days));
+  return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}-${String(dt.getUTCDate()).padStart(2, "0")}`;
+}
+
+function shiftIsoDate(isoDate: string, steps: number, unit: CalendarRepeatUnit): string {
+  if (steps === 0) return isoDate;
+  const [y, m, d] = isoDate.split("-").map(Number);
+  if (!y || !m || !d) return isoDate;
+
+  if (unit === "day" || unit === "week") {
+    return addDaysUtc(isoDate, steps * (unit === "week" ? 7 : 1));
+  }
+
+  if (unit === "month") {
+    const totalMonths = y * 12 + (m - 1) + steps;
+    const targetYear = Math.floor(totalMonths / 12);
+    const targetMonth = ((totalMonths % 12) + 12) % 12;
+    const lastDay = new Date(Date.UTC(targetYear, targetMonth + 1, 0)).getUTCDate();
+    const clampedDay = Math.min(d, lastDay);
+    return `${targetYear}-${String(targetMonth + 1).padStart(2, "0")}-${String(clampedDay).padStart(2, "0")}`;
+  }
+
+  // year
+  const targetYear = y + steps;
+  const lastDay = new Date(Date.UTC(targetYear, m, 0)).getUTCDate();
+  const clampedDay = Math.min(d, lastDay);
+  return `${targetYear}-${String(m).padStart(2, "0")}-${String(clampedDay).padStart(2, "0")}`;
+}
+
+function formatRepeatSummary(interval: number, unit: CalendarRepeatUnit): string {
+  const unitLabel = interval === 1 ? unit : `${unit}s`;
+  return `Every ${interval} ${unitLabel}`;
+}
+
+function formatCalendarEventWhen(ev: CalendarEventDto): string {
+  const repeatSuffix =
+    ev.repeatInterval && ev.repeatInterval > 0 && ev.repeatUnit
+      ? ` • 🔁 ${formatRepeatSummary(ev.repeatInterval, ev.repeatUnit)}`
+      : "";
+  if (ev.endDate > ev.startDate) {
+    return `📅 ${formatCalendarDateDisplay(ev.startDate)} – ${formatCalendarDateDisplay(ev.endDate)} (Multi-day)${repeatSuffix}`;
+  }
+  const datePart = formatCalendarDateDisplay(ev.startDate);
+  if (ev.isAllDay || !ev.startTime || !ev.endTime) {
+    return `📅 ${datePart} • All day${repeatSuffix}`;
+  }
+  return `📅 ${datePart} • ${ev.startTime} – ${ev.endTime}${repeatSuffix}`;
+}
+
+function canModifyCalendarEvent(ev: CalendarEventDto): boolean {
+  if (!currentUser) return false;
+  if (ev.authorId === currentUser.id || currentUser.role === "superadmin") return true;
+  if (ev.type === "space" && ev.spaceId) {
+    return accessibleNoteSpaces.some((s) => s.id === ev.spaceId);
+  }
+  if (ev.type === "organisation" && ev.organisationId) {
+    const org = organisationsCache.find((o) => o.id === ev.organisationId);
+    if (org && org.members.some((m) => m.userId === currentUser!.id)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function updateCalendarScopeSelector(): boolean {
+  if (!calendarScopeBar || !calendarScopeLabel || !calendarScopeSelect) return true;
+
+  if (activeCalendarTab === "personal") {
+    calendarScopeBar.classList.add("hidden");
+    if (btnNewCalendarEvent) btnNewCalendarEvent.disabled = false;
+    return true;
+  }
+
+  if (activeCalendarTab === "space" || activeCalendarTab === "meals") {
+    if (accessibleNoteSpaces.length === 0) {
+      calendarScopeBar.classList.add("hidden");
+      if (btnNewCalendarEvent) btnNewCalendarEvent.disabled = true;
+      return false;
+    }
+    if (
+      !selectedCalendarSpaceId ||
+      !accessibleNoteSpaces.some((s) => s.id === selectedCalendarSpaceId)
+    ) {
+      const currentAccessible = accessibleNoteSpaces.find((s) => s.id === currentSpaceId);
+      const personalAccessible = myPersonalSpace
+        ? accessibleNoteSpaces.find((s) => s.id === myPersonalSpace!.id)
+        : undefined;
+      selectedCalendarSpaceId = (currentAccessible || personalAccessible || accessibleNoteSpaces[0]).id;
+    }
+    calendarScopeLabel.textContent = "Space:";
+    calendarScopeSelect.innerHTML = "";
+    for (const sp of accessibleNoteSpaces) {
+      const opt = document.createElement("option");
+      opt.value = sp.id;
+      opt.textContent = sp.isOwner ? `${sp.name} (Owner)` : `${sp.name} (Space-mate)`;
+      if (sp.id === selectedCalendarSpaceId) opt.selected = true;
+      calendarScopeSelect.appendChild(opt);
+    }
+    calendarScopeBar.classList.remove("hidden");
+    if (btnNewCalendarEvent) btnNewCalendarEvent.disabled = false;
+    return true;
+  }
+
+  // organisation
+  if (organisationsCache.length === 0) {
+    calendarScopeBar.classList.add("hidden");
+    if (btnNewCalendarEvent) btnNewCalendarEvent.disabled = true;
+    return false;
+  }
+  if (
+    selectedCalendarOrgId === null ||
+    !organisationsCache.some((o) => o.id === selectedCalendarOrgId)
+  ) {
+    selectedCalendarOrgId = organisationsCache[0].id;
+  }
+  calendarScopeLabel.textContent = "Organisation:";
+  calendarScopeSelect.innerHTML = "";
+  for (const org of organisationsCache) {
+    const opt = document.createElement("option");
+    opt.value = String(org.id);
+    opt.textContent = org.name;
+    if (org.id === selectedCalendarOrgId) opt.selected = true;
+    calendarScopeSelect.appendChild(opt);
+  }
+  calendarScopeBar.classList.remove("hidden");
+  if (btnNewCalendarEvent) btnNewCalendarEvent.disabled = false;
+  return true;
+}
+
+function renderCalendarMealsView() {
+  if (!calendarMealsGrid) return;
+  calendarMealsGrid.innerHTML = "";
+  const jsDay = new Date().getDay(); // 0=Sun..6=Sat
+  const todayIndex = jsDay === 0 ? 6 : jsDay - 1; // 0=Mon..6=Sun
+
+  for (let dayIndex = 0; dayIndex < MEAL_DAY_NAMES.length; dayIndex++) {
+    const dayName = MEAL_DAY_NAMES[dayIndex];
+    const mealName = calendarMealsCache.get(dayIndex) || "";
+
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = "calendar-meal-day-card";
+    if (dayIndex === todayIndex) {
+      card.classList.add("is-today");
+    }
+
+    const nameEl = document.createElement("div");
+    nameEl.className = "calendar-meal-day-name";
+    nameEl.textContent = dayName;
+
+    const menuEl = document.createElement("div");
+    menuEl.className = "calendar-meal-day-menu";
+    if (mealName) {
+      menuEl.textContent = mealName;
+    } else {
+      menuEl.classList.add("is-empty");
+      menuEl.textContent = "Tap to set menu";
+    }
+
+    card.appendChild(nameEl);
+    card.appendChild(menuEl);
+    card.addEventListener("click", () => {
+      openCalendarMealEditor(dayIndex);
+    });
+    calendarMealsGrid.appendChild(card);
+  }
+}
+
+function openCalendarMealEditor(dayOfWeek: number) {
+  editingMealDayOfWeek = dayOfWeek;
+  if (calendarMealEditorHeading) {
+    calendarMealEditorHeading.textContent = MEAL_DAY_NAMES[dayOfWeek] || "Meal";
+  }
+  if (calendarMealInput) {
+    calendarMealInput.value = calendarMealsCache.get(dayOfWeek) || "";
+  }
+  showCalendarView("meal-editor");
+  calendarMealInput?.focus();
+  calendarMealInput?.select();
+}
+
+async function fetchCalendarMealsData() {
+  if (!authToken) return;
+  clearCalendarFeedback();
+
+  const hadSpace = Boolean(selectedCalendarSpaceId);
+  const params = new URLSearchParams();
+  if (selectedCalendarSpaceId) {
+    params.set("spaceId", selectedCalendarSpaceId);
+  }
+
+  try {
+    const queryStr = params.toString();
+    const res = await fetch(getApiUrl(`/api/calendar/meals${queryStr ? `?${queryStr}` : ""}`), {
+      headers: { Authorization: `Bearer ${authToken}` },
+    });
+    const data = await res.json();
+    if (Array.isArray(data.accessibleSpaces)) {
+      accessibleNoteSpaces = data.accessibleSpaces;
+    }
+    calendarMealsCache.clear();
+    if (!res.ok || !data.success) {
+      if (data.error) showCalendarFeedback(data.error, "error");
+    } else if (Array.isArray(data.meals)) {
+      for (const m of data.meals as CalendarMealDto[]) {
+        if (m.mealName) {
+          calendarMealsCache.set(m.dayOfWeek, m.mealName);
+        }
+      }
+    }
+
+    const hasScope = updateCalendarScopeSelector();
+    if (!hadSpace && hasScope && selectedCalendarSpaceId) {
+      const res2 = await fetch(
+        getApiUrl(`/api/calendar/meals?spaceId=${encodeURIComponent(selectedCalendarSpaceId)}`),
+        { headers: { Authorization: `Bearer ${authToken}` } }
+      );
+      const data2 = await res2.json();
+      if (res2.ok && data2.success && Array.isArray(data2.meals)) {
+        for (const m of data2.meals as CalendarMealDto[]) {
+          if (m.mealName) {
+            calendarMealsCache.set(m.dayOfWeek, m.mealName);
+          }
+        }
+      }
+    }
+    renderCalendarView();
+  } catch (err: any) {
+    showCalendarFeedback(err?.message || "Failed to load meals.", "error");
+  }
+}
+
+async function saveCalendarMeal() {
+  if (!authToken || editingMealDayOfWeek === null || !selectedCalendarSpaceId) return;
+  clearCalendarFeedback();
+  const mealName = calendarMealInput?.value.trim() || "";
+  if (btnCalendarMealSave) btnCalendarMealSave.disabled = true;
+  try {
+    const res = await fetch(getApiUrl(`/api/calendar/meals/${editingMealDayOfWeek}`), {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${authToken}`,
+      },
+      body: JSON.stringify({ spaceId: selectedCalendarSpaceId, mealName }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      showCalendarFeedback(data.error || "Failed to save meal.", "error");
+      return;
+    }
+    if (mealName) {
+      calendarMealsCache.set(editingMealDayOfWeek, data.meal?.mealName || mealName);
+    } else {
+      calendarMealsCache.delete(editingMealDayOfWeek);
+    }
+    editingMealDayOfWeek = null;
+    showCalendarView("month");
+    renderCalendarView();
+  } catch (err: any) {
+    showCalendarFeedback(err?.message || "Network error saving meal.", "error");
+  } finally {
+    if (btnCalendarMealSave) btnCalendarMealSave.disabled = false;
+  }
+}
+
+function renderCalendarView() {
+  const isMeals = activeCalendarTab === "meals";
+  btnNewCalendarEvent?.classList.toggle("hidden", isMeals);
+  const hasScope = updateCalendarScopeSelector();
+
+  if (isMeals) {
+    calendarBody?.classList.add("hidden");
+    if (!hasScope) {
+      calendarMealsBody?.classList.add("hidden");
+      if (calendarEmptyState) {
+        calendarEmptyState.classList.remove("hidden");
+        calendarEmptyState.textContent = "You don't have any personal or shared space yet.";
+      }
+      return;
+    }
+    calendarEmptyState?.classList.add("hidden");
+    calendarMealsBody?.classList.remove("hidden");
+    renderCalendarMealsView();
+    return;
+  }
+
+  calendarMealsBody?.classList.add("hidden");
+
+  if (!hasScope) {
+    calendarBody?.classList.add("hidden");
+    if (calendarEmptyState) {
+      calendarEmptyState.classList.remove("hidden");
+      if (activeCalendarTab === "space") {
+        calendarEmptyState.textContent = "You don't have any personal or shared space yet.";
+      } else {
+        calendarEmptyState.textContent =
+          "You are not a member of any organisation yet. Join or create an organisation to view its calendar.";
+      }
+    }
+    return;
+  }
+
+  calendarEmptyState?.classList.add("hidden");
+  calendarBody?.classList.remove("hidden");
+
+  if (!calendarDaysGrid) return;
+
+  if (calendarMonthSelect) {
+    calendarMonthSelect.value = String(calendarViewMonth);
+  }
+  if (calendarYearInput && document.activeElement !== calendarYearInput) {
+    calendarYearInput.value = String(calendarViewYear);
+  }
+
+  const monthDate = new Date(calendarViewYear, calendarViewMonth, 1);
+  const firstDayOfWeek = monthDate.getDay(); // 0 (Sun) - 6 (Sat)
+  const daysInMonth = new Date(calendarViewYear, calendarViewMonth + 1, 0).getDate();
+  const totalCells = Math.ceil((firstDayOfWeek + daysInMonth) / 7) * 7;
+
+  const today = new Date();
+  const isCurrentMonth =
+    today.getFullYear() === calendarViewYear && today.getMonth() === calendarViewMonth;
+  const todayDate = today.getDate();
+
+  const monthStartIso = toIsoDateString(calendarViewYear, calendarViewMonth, 1);
+  const monthEndIso = toIsoDateString(calendarViewYear, calendarViewMonth, daysInMonth);
+  const monthOccurrences: Array<{ event: CalendarEventDto; occStart: string; occEnd: string; occIndex: number }> = [];
+
+  for (const ev of calendarEventsCache) {
+    if (ev.startDate > monthEndIso) continue;
+    const interval = ev.repeatInterval && ev.repeatInterval > 0 && ev.repeatUnit ? ev.repeatInterval : null;
+    const unit = ev.repeatUnit || null;
+
+    if (!interval || !unit) {
+      if (ev.endDate >= monthStartIso) {
+        monthOccurrences.push({ event: ev, occStart: ev.startDate, occEnd: ev.endDate, occIndex: 0 });
+      }
+      continue;
+    }
+
+    const durDays = Math.max(0, diffDaysUtc(ev.startDate, ev.endDate));
+    let kStart = 0;
+
+    if (unit === "day" || unit === "week") {
+      const stepDays = interval * (unit === "week" ? 7 : 1);
+      const minStartNeeded = addDaysUtc(monthStartIso, -durDays);
+      const diffFromStart = diffDaysUtc(ev.startDate, minStartNeeded);
+      kStart = Math.max(0, Math.ceil(diffFromStart / stepDays));
+    } else if (unit === "month") {
+      const [sy, sm] = ev.startDate.split("-").map(Number);
+      const monthsDiff = (calendarViewYear - sy) * 12 + (calendarViewMonth - (sm - 1));
+      kStart = Math.max(0, Math.floor(monthsDiff / interval) - Math.ceil(durDays / 28) - 1);
+    } else {
+      const [sy] = ev.startDate.split("-").map(Number);
+      const yearsDiff = calendarViewYear - sy;
+      kStart = Math.max(0, Math.floor(yearsDiff / interval) - Math.ceil(durDays / 365) - 1);
+    }
+
+    for (let k = kStart; k < kStart + 1000; k++) {
+      const occStart = k === 0 ? ev.startDate : shiftIsoDate(ev.startDate, k * interval, unit);
+      if (occStart > monthEndIso) break;
+      const occEnd = durDays > 0 ? addDaysUtc(occStart, durDays) : occStart;
+      if (occEnd >= monthStartIso) {
+        monthOccurrences.push({ event: ev, occStart, occEnd, occIndex: k });
+      }
+    }
+  }
+
+  calendarDaysGrid.innerHTML = "";
+
+  for (let cellIdx = 0; cellIdx < totalCells; cellIdx++) {
+    const dayNumber = cellIdx - firstDayOfWeek + 1;
+    const cell = document.createElement("div");
+
+    if (dayNumber < 1 || dayNumber > daysInMonth) {
+      cell.className = "calendar-day-cell is-outside";
+      calendarDaysGrid.appendChild(cell);
+      continue;
+    }
+
+    const isoDate = toIsoDateString(calendarViewYear, calendarViewMonth, dayNumber);
+    const isToday = isCurrentMonth && dayNumber === todayDate;
+    cell.className = isToday ? "calendar-day-cell is-today" : "calendar-day-cell";
+    cell.dataset.day = String(dayNumber);
+    cell.dataset.date = isoDate;
+    cell.title = `Click to view events on ${formatCalendarDateDisplay(isoDate)}`;
+
+    const headerEl = document.createElement("div");
+    headerEl.className = "calendar-day-header";
+
+    const numEl = document.createElement("span");
+    numEl.className = isToday ? "calendar-day-number is-today" : "calendar-day-number";
+    numEl.textContent = String(dayNumber);
+    headerEl.appendChild(numEl);
+
+    const eventsEl = document.createElement("div");
+    eventsEl.className = "calendar-day-events";
+
+    const dayOccurrences = monthOccurrences.filter(
+      (occ) => occ.occStart <= isoDate && occ.occEnd >= isoDate
+    );
+
+    const visibleOccurrences = dayOccurrences.slice(0, 2);
+    for (const occ of visibleOccurrences) {
+      const ev = occ.event;
+      const pill = document.createElement("button");
+      pill.type = "button";
+      const isMultiDay = ev.endDate > ev.startDate;
+      pill.className = isMultiDay
+        ? "calendar-event-pill is-multiday"
+        : ev.isAllDay
+          ? "calendar-event-pill is-allday"
+          : "calendar-event-pill";
+
+      const isRepeating = Boolean(ev.repeatInterval && ev.repeatInterval > 0 && ev.repeatUnit);
+      const timeOrTitle =
+        !isMultiDay && !ev.isAllDay && ev.startTime
+          ? `${ev.startTime} ${ev.title}`
+          : ev.title;
+      const baseLabel = isRepeating ? `🔁 ${timeOrTitle}` : timeOrTitle;
+      const occAssignees = getOccurrenceAssignees(ev, occ.occIndex);
+      let assigneeSuffix = "";
+      if (occAssignees.length === 1) {
+        assigneeSuffix = ` (${occAssignees[0].name})`;
+      } else if (occAssignees.length > 1) {
+        assigneeSuffix = ` (${occAssignees[0].name} +${occAssignees.length - 1})`;
+      }
+      const labelText = `${baseLabel}${assigneeSuffix}`;
+      pill.textContent = labelText;
+      pill.title = labelText;
+
+      pill.addEventListener("click", (e) => {
+        e.stopPropagation();
+        openCalendarEventDetailView(ev, occ.occIndex, isoDate, "month");
+      });
+      eventsEl.appendChild(pill);
+    }
+
+    if (dayOccurrences.length > 2) {
+      const extraCount = dayOccurrences.length - 2;
+      const moreBtn = document.createElement("button");
+      moreBtn.type = "button";
+      moreBtn.className = "calendar-more-pill";
+      moreBtn.textContent = `+ ${extraCount} more`;
+      moreBtn.title = `View all ${dayOccurrences.length} events on ${formatCalendarDateDisplay(isoDate)}`;
+      moreBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        openCalendarDayView(isoDate);
+      });
+      eventsEl.appendChild(moreBtn);
+    }
+
+    cell.addEventListener("click", () => {
+      openCalendarDayView(isoDate);
+    });
+
+    cell.appendChild(headerEl);
+    cell.appendChild(eventsEl);
+    calendarDaysGrid.appendChild(cell);
+  }
+}
+
+function syncCalendarDateDisplays() {
+  const startText = calendarEventStartDateDisplay?.querySelector(".calendar-date-text");
+  if (startText) {
+    startText.textContent = calendarEventStartDate?.value
+      ? formatCalendarDateDisplay(calendarEventStartDate.value)
+      : "dd/mm/yyyy";
+  }
+  const endText = calendarEventEndDateDisplay?.querySelector(".calendar-date-text");
+  if (endText) {
+    endText.textContent = calendarEventEndDate?.value
+      ? formatCalendarDateDisplay(calendarEventEndDate.value)
+      : "dd/mm/yyyy";
+  }
+}
+
+function updateCalendarTimeRowVisibility() {
+  if (!calendarEventStartDate || !calendarEventEndDate || !calendarEventTimeRow) return;
+  const start = calendarEventStartDate.value;
+  const end = calendarEventEndDate.value || start;
+  const isMultiDay = Boolean(start && end && end > start);
+
+  calendarEventTimeRow.classList.toggle("hidden", isMultiDay);
+
+  if (!isMultiDay && calendarEventTimeInputs && calendarEventAllDay) {
+    calendarEventTimeInputs.classList.toggle("hidden", calendarEventAllDay.checked);
+  }
+}
+
+function getOccurrenceAssignees(ev: CalendarEventDto, occIndex: number): CalendarAssigneeDto[] {
+  const assignees = ev.assignees || [];
+  if (assignees.length === 0) return [];
+  const isRepeating = Boolean(ev.repeatInterval && ev.repeatInterval > 0 && ev.repeatUnit);
+  if (ev.rotateAssignees && isRepeating) {
+    const idx = ((occIndex % assignees.length) + assignees.length) % assignees.length;
+    return [assignees[idx]];
+  }
+  return assignees;
+}
+
+function renderCalendarAssigneePicker() {
+  if (!calendarEventAssigneeRow || !calendarEventAssigneeList) return;
+  const showAssignees = activeCalendarTab !== "personal";
+  calendarEventAssigneeRow.classList.toggle("hidden", !showAssignees);
+  if (!showAssignees) return;
+
+  const validIds = new Set(calendarAssignableMembers.map((m) => m.userId));
+  selectedCalendarAssigneeIds = selectedCalendarAssigneeIds.filter((id) => validIds.has(id));
+
+  const repeatEnabled = Boolean(calendarEventRepeatEnabled?.checked);
+  if (calendarEventRotateLabel) {
+    calendarEventRotateLabel.classList.toggle("hidden", !repeatEnabled);
+  }
+  const rotateEnabled = repeatEnabled && Boolean(calendarEventRotateAssignees?.checked);
+
+  calendarEventAssigneeList.innerHTML = "";
+  if (calendarAssignableMembers.length === 0) {
+    const emptyEl = document.createElement("div");
+    emptyEl.className = "calendar-assignee-empty";
+    emptyEl.textContent = "No members available to assign.";
+    calendarEventAssigneeList.appendChild(emptyEl);
+  } else {
+    for (const member of calendarAssignableMembers) {
+      const selIdx = selectedCalendarAssigneeIds.indexOf(member.userId);
+      const isSelected = selIdx !== -1;
+
+      const label = document.createElement("label");
+      label.className = isSelected ? "calendar-assignee-option is-selected" : "calendar-assignee-option";
+
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.checked = isSelected;
+      checkbox.addEventListener("change", () => {
+        if (checkbox.checked) {
+          if (!selectedCalendarAssigneeIds.includes(member.userId)) {
+            selectedCalendarAssigneeIds.push(member.userId);
+          }
+        } else {
+          selectedCalendarAssigneeIds = selectedCalendarAssigneeIds.filter((id) => id !== member.userId);
+        }
+        renderCalendarAssigneePicker();
+      });
+
+      const nameSpan = document.createElement("span");
+      nameSpan.className = "calendar-assignee-name";
+      nameSpan.textContent = member.name;
+
+      label.appendChild(checkbox);
+      label.appendChild(nameSpan);
+
+      if (rotateEnabled && isSelected) {
+        const orderBadge = document.createElement("span");
+        orderBadge.className = "calendar-assignee-order";
+        orderBadge.textContent = String(selIdx + 1);
+        label.appendChild(orderBadge);
+      }
+
+      calendarEventAssigneeList.appendChild(label);
+    }
+  }
+
+  if (calendarAssigneeRotationPreview) {
+    if (rotateEnabled && selectedCalendarAssigneeIds.length > 0) {
+      const memberMap = new Map(calendarAssignableMembers.map((m) => [m.userId, m.name]));
+      const names = selectedCalendarAssigneeIds.map((id) => memberMap.get(id)).filter(Boolean) as string[];
+      const cycleText = names.length > 1 ? `${names.join(" → ")} → ${names[0]}` : names[0];
+      calendarAssigneeRotationPreview.textContent = `Rotation order: ${cycleText}`;
+      calendarAssigneeRotationPreview.classList.remove("hidden");
+    } else {
+      calendarAssigneeRotationPreview.classList.add("hidden");
+      calendarAssigneeRotationPreview.textContent = "";
+    }
+  }
+}
+
+function updateCalendarRepeatUI() {
+  if (!calendarEventRepeatEnabled || !calendarEventRepeatInputs || !calendarRepeatPreview) return;
+  const enabled = calendarEventRepeatEnabled.checked;
+  calendarEventRepeatInputs.classList.toggle("hidden", !enabled);
+
+  if (!enabled) {
+    calendarRepeatPreview.classList.add("hidden");
+    calendarRepeatPreview.textContent = "";
+    renderCalendarAssigneePicker();
+    return;
+  }
+
+  const interval = Math.max(1, Math.min(365, Math.floor(Number(calendarEventRepeatInterval?.value) || 1)));
+  const unit = (calendarEventRepeatUnit?.value || "day") as CalendarRepeatUnit;
+  const start = calendarEventStartDate?.value;
+  if (start) {
+    const nextStart = shiftIsoDate(start, interval, unit);
+    calendarRepeatPreview.textContent = `Repeats ${formatRepeatSummary(interval, unit).toLowerCase()} (next: ${formatCalendarDateDisplay(nextStart)})`;
+  } else {
+    calendarRepeatPreview.textContent = `Repeats ${formatRepeatSummary(interval, unit).toLowerCase()}`;
+  }
+  calendarRepeatPreview.classList.remove("hidden");
+  renderCalendarAssigneePicker();
+}
+
+function getOccurrencesForDate(
+  isoDate: string
+): Array<{ event: CalendarEventDto; occStart: string; occEnd: string; occIndex: number }> {
+  const [targetY, targetM] = isoDate.split("-").map(Number);
+  const results: Array<{ event: CalendarEventDto; occStart: string; occEnd: string; occIndex: number }> = [];
+
+  for (const ev of calendarEventsCache) {
+    if (ev.startDate > isoDate) continue;
+    const interval = ev.repeatInterval && ev.repeatInterval > 0 && ev.repeatUnit ? ev.repeatInterval : null;
+    const unit = ev.repeatUnit || null;
+
+    if (!interval || !unit) {
+      if (ev.endDate >= isoDate) {
+        results.push({ event: ev, occStart: ev.startDate, occEnd: ev.endDate, occIndex: 0 });
+      }
+      continue;
+    }
+
+    const durDays = Math.max(0, diffDaysUtc(ev.startDate, ev.endDate));
+    let kStart = 0;
+
+    if (unit === "day" || unit === "week") {
+      const stepDays = interval * (unit === "week" ? 7 : 1);
+      const minStartNeeded = addDaysUtc(isoDate, -durDays);
+      const diffFromStart = diffDaysUtc(ev.startDate, minStartNeeded);
+      kStart = Math.max(0, Math.ceil(diffFromStart / stepDays));
+    } else if (unit === "month") {
+      const [sy, sm] = ev.startDate.split("-").map(Number);
+      const monthsDiff = (targetY - sy) * 12 + (targetM - sm);
+      kStart = Math.max(0, Math.floor(monthsDiff / interval) - Math.ceil(durDays / 28) - 1);
+    } else {
+      const [sy] = ev.startDate.split("-").map(Number);
+      const yearsDiff = targetY - sy;
+      kStart = Math.max(0, Math.floor(yearsDiff / interval) - Math.ceil(durDays / 365) - 1);
+    }
+
+    for (let k = kStart; k < kStart + 1000; k++) {
+      const occStart = k === 0 ? ev.startDate : shiftIsoDate(ev.startDate, k * interval, unit);
+      if (occStart > isoDate) break;
+      const occEnd = durDays > 0 ? addDaysUtc(occStart, durDays) : occStart;
+      if (occEnd >= isoDate) {
+        results.push({ event: ev, occStart, occEnd, occIndex: k });
+        break;
+      }
+    }
+  }
+
+  return results;
+}
+
+function openCalendarDayView(isoDate: string) {
+  activeCalendarDayIso = isoDate;
+  if (calendarDayViewHeading) {
+    calendarDayViewHeading.textContent = formatCalendarDateDisplay(isoDate);
+  }
+
+  if (calendarDayEventsList) {
+    calendarDayEventsList.innerHTML = "";
+    const dayOccurrences = getOccurrencesForDate(isoDate);
+
+    if (dayOccurrences.length === 0) {
+      const emptyEl = document.createElement("div");
+      emptyEl.className = "calendar-day-empty";
+      emptyEl.textContent = "No events scheduled for this day.";
+      calendarDayEventsList.appendChild(emptyEl);
+    } else {
+      for (const occ of dayOccurrences) {
+        const ev = occ.event;
+        const item = document.createElement("button");
+        item.type = "button";
+        item.className = "calendar-day-list-item";
+
+        const isRepeating = Boolean(ev.repeatInterval && ev.repeatInterval > 0 && ev.repeatUnit);
+        const titleEl = document.createElement("div");
+        titleEl.className = "calendar-day-list-title";
+        titleEl.textContent = isRepeating ? `🔁 ${ev.title}` : ev.title;
+
+        const metaParts: string[] = [];
+        if (ev.endDate > ev.startDate) {
+          metaParts.push(`${formatCalendarDateDisplay(occ.occStart)} – ${formatCalendarDateDisplay(occ.occEnd)}`);
+        } else if (ev.isAllDay) {
+          metaParts.push("All day");
+        } else if (ev.startTime && ev.endTime) {
+          metaParts.push(`${ev.startTime} – ${ev.endTime}`);
+        }
+
+        const occAssignees = getOccurrenceAssignees(ev, occ.occIndex);
+        if (occAssignees.length > 0) {
+          metaParts.push(`👤 ${occAssignees.map((a) => a.name).join(", ")}`);
+        }
+
+        const metaEl = document.createElement("div");
+        metaEl.className = "calendar-day-list-meta";
+        metaEl.textContent = metaParts.join(" • ");
+
+        item.appendChild(titleEl);
+        if (metaEl.textContent) item.appendChild(metaEl);
+
+        item.addEventListener("click", () => {
+          openCalendarEventDetailView(ev, occ.occIndex, isoDate, "day");
+        });
+        calendarDayEventsList.appendChild(item);
+      }
+    }
+  }
+
+  showCalendarView("day");
+}
+
+async function compressCalendarImageFile(file: File): Promise<string> {
+  const MAX_DIM = 1600;
+  const QUALITY = 0.4; // 60% compression
+
+  const objectUrl = URL.createObjectURL(file);
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const imageEl = new Image();
+      imageEl.onload = () => resolve(imageEl);
+      imageEl.onerror = () => reject(new Error("Failed to read picture."));
+      imageEl.src = objectUrl;
+    });
+
+    let width = img.naturalWidth || img.width;
+    let height = img.naturalHeight || img.height;
+    if (width > MAX_DIM || height > MAX_DIM) {
+      const scale = Math.min(MAX_DIM / width, MAX_DIM / height);
+      width = Math.max(1, Math.round(width * scale));
+      height = Math.max(1, Math.round(height * scale));
+    }
+
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      throw new Error("Canvas unavailable for image compression.");
+    }
+    ctx.drawImage(img, 0, 0, width, height);
+    return canvas.toDataURL("image/jpeg", QUALITY);
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
+function openCalendarImageLightbox(src: string, alt = "Event picture preview") {
+  if (!calendarImageLightbox || !calendarLightboxImg) return;
+  calendarLightboxImg.src = src;
+  calendarLightboxImg.alt = alt;
+  calendarImageLightbox.classList.remove("hidden");
+}
+
+function closeCalendarImageLightbox() {
+  if (!calendarImageLightbox || !calendarLightboxImg) return;
+  calendarImageLightbox.classList.add("hidden");
+  calendarLightboxImg.src = "";
+}
+
+function renderCalendarEventImagesChips() {
+  if (!calendarEventImagesList) return;
+  calendarEventImagesList.innerHTML = "";
+  if (selectedCalendarEventImages.length === 0) {
+    calendarEventImagesList.classList.add("hidden");
+    return;
+  }
+  calendarEventImagesList.classList.remove("hidden");
+  selectedCalendarEventImages.forEach((img, idx) => {
+    const wrap = document.createElement("div");
+    wrap.className = "calendar-form-image-thumb-wrap";
+
+    const thumb = document.createElement("img");
+    thumb.src = img.dataUrl;
+    thumb.alt = img.name;
+    thumb.className = "calendar-form-image-thumb";
+    thumb.title = "Click to preview";
+    thumb.addEventListener("click", () => {
+      openCalendarImageLightbox(img.dataUrl, img.name);
+    });
+
+    const removeBtn = document.createElement("button");
+    removeBtn.type = "button";
+    removeBtn.className = "calendar-form-image-remove";
+    removeBtn.textContent = "×";
+    removeBtn.title = `Remove ${img.name}`;
+    removeBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      selectedCalendarEventImages.splice(idx, 1);
+      renderCalendarEventImagesChips();
+    });
+
+    wrap.appendChild(thumb);
+    wrap.appendChild(removeBtn);
+    calendarEventImagesList.appendChild(wrap);
+  });
+}
+
+function openCalendarEventDetailView(
+  ev: CalendarEventDto,
+  occIndex = 0,
+  occDate?: string,
+  returnView: "month" | "day" = "month"
+) {
+  calendarDetailReturnView = returnView;
+  activeDetailCalendarEvent = ev;
+  if (calendarDetailTitle) calendarDetailTitle.textContent = ev.title;
+  if (calendarDetailWhen) {
+    calendarDetailWhen.innerHTML = "";
+    const dateLine = document.createElement("div");
+    if (ev.endDate > ev.startDate) {
+      dateLine.textContent = `📅 ${formatCalendarDateDisplay(ev.startDate)} – ${formatCalendarDateDisplay(ev.endDate)}`;
+    } else {
+      dateLine.textContent = `📅 ${formatCalendarDateDisplay(occDate || ev.startDate)}`;
+    }
+    const timeLine = document.createElement("div");
+    timeLine.textContent =
+      ev.isAllDay || !ev.startTime || !ev.endTime
+        ? "🕒 All day"
+        : `🕒 ${ev.startTime} – ${ev.endTime}`;
+    calendarDetailWhen.appendChild(dateLine);
+    calendarDetailWhen.appendChild(timeLine);
+  }
+  if (calendarDetailAssignees) {
+    const assignees = ev.assignees || [];
+    if (ev.type !== "personal" && assignees.length > 0) {
+      const occAssignees = getOccurrenceAssignees(ev, occIndex);
+      calendarDetailAssignees.textContent = `👤 Assignee: ${occAssignees.map((a) => a.name).join(", ")}`;
+      calendarDetailAssignees.classList.remove("hidden");
+    } else {
+      calendarDetailAssignees.textContent = "";
+      calendarDetailAssignees.classList.add("hidden");
+    }
+  }
+  if (calendarDetailMeta) {
+    calendarDetailMeta.textContent = `Created by ${ev.authorName}`;
+  }
+  if (calendarDetailDescription) {
+    const clean = sanitizeClientNoteHtml(ev.description || "");
+    calendarDetailDescription.innerHTML = clean || "<p><em>No description</em></p>";
+  }
+  if (calendarDetailImages) {
+    calendarDetailImages.innerHTML = "";
+    const imgs = ev.images || [];
+    if (imgs.length > 0) {
+      for (let i = 0; i < imgs.length; i++) {
+        const imgSrc = imgs[i];
+        const imgAlt = `${ev.title} picture ${i + 1}`;
+        const imgEl = document.createElement("img");
+        imgEl.src = imgSrc;
+        imgEl.alt = imgAlt;
+        imgEl.className = "calendar-detail-image-thumb";
+        imgEl.loading = "lazy";
+        imgEl.title = "Click to preview";
+        imgEl.addEventListener("click", () => {
+          openCalendarImageLightbox(imgSrc, imgAlt);
+        });
+        calendarDetailImages.appendChild(imgEl);
+      }
+      calendarDetailImages.classList.remove("hidden");
+    } else {
+      calendarDetailImages.classList.add("hidden");
+    }
+  }
+
+  const canModify = canModifyCalendarEvent(ev);
+  btnCalendarEventEdit?.classList.toggle("hidden", !canModify);
+  btnCalendarEventDelete?.classList.toggle("hidden", !canModify);
+
+  showCalendarView("detail");
+}
+
+function openCalendarEditorView(
+  ev: CalendarEventDto | null,
+  defaultDate?: string,
+  returnView: "month" | "day" | "detail" = ev ? "detail" : "month"
+) {
+  calendarEditorReturnView = returnView;
+  editingCalendarEventId = ev ? ev.id : null;
+  if (calendarEditorHeading) {
+    calendarEditorHeading.textContent = ev ? "Edit Event" : "New Event";
+  }
+
+  const fallbackDate =
+    defaultDate ||
+    (() => {
+      const now = new Date();
+      if (now.getFullYear() === calendarViewYear && now.getMonth() === calendarViewMonth) {
+        return toIsoDateString(calendarViewYear, calendarViewMonth, now.getDate());
+      }
+      return toIsoDateString(calendarViewYear, calendarViewMonth, 1);
+    })();
+
+  if (calendarEventTitle) calendarEventTitle.value = ev ? ev.title : "";
+  if (calendarEventStartDate) calendarEventStartDate.value = ev ? ev.startDate : fallbackDate;
+  if (calendarEventEndDate) calendarEventEndDate.value = ev ? ev.endDate : fallbackDate;
+  syncCalendarDateDisplays();
+  if (calendarEventAllDay) calendarEventAllDay.checked = ev ? ev.isAllDay : true;
+  if (calendarEventStartTime) calendarEventStartTime.value = ev?.startTime || "09:00";
+  if (calendarEventEndTime) calendarEventEndTime.value = ev?.endTime || "10:00";
+  const hasRepeat = Boolean(ev?.repeatInterval && ev.repeatInterval > 0 && ev?.repeatUnit);
+  if (calendarEventRepeatEnabled) calendarEventRepeatEnabled.checked = hasRepeat;
+  if (calendarEventRepeatInterval) calendarEventRepeatInterval.value = String(ev?.repeatInterval || 1);
+  if (calendarEventRepeatUnit) calendarEventRepeatUnit.value = ev?.repeatUnit || "day";
+  selectedCalendarAssigneeIds = ev?.assigneeIds ? [...ev.assigneeIds] : [];
+  if (calendarEventRotateAssignees) calendarEventRotateAssignees.checked = Boolean(ev?.rotateAssignees);
+  if (calendarEventDescription) {
+    calendarEventDescription.innerHTML = ev ? sanitizeClientNoteHtml(ev.description || "") : "";
+  }
+  selectedCalendarEventImages = (ev?.images || []).map((dataUrl, i) => ({
+    name: `Picture ${i + 1}`,
+    dataUrl,
+  }));
+  if (calendarEventImagesInput) calendarEventImagesInput.value = "";
+  renderCalendarEventImagesChips();
+
+  updateCalendarTimeRowVisibility();
+  updateCalendarRepeatUI();
+  showCalendarView("editor");
+  calendarEventTitle?.focus();
+}
+
+async function fetchCalendarEventsData() {
+  if (!authToken) return;
+  if (activeCalendarTab === "meals") {
+    await fetchCalendarMealsData();
+    return;
+  }
+  clearCalendarFeedback();
+
+  const params = new URLSearchParams({ type: activeCalendarTab });
+  if (activeCalendarTab === "space" && selectedCalendarSpaceId) {
+    params.set("spaceId", selectedCalendarSpaceId);
+  } else if (activeCalendarTab === "organisation" && selectedCalendarOrgId !== null) {
+    params.set("organisationId", String(selectedCalendarOrgId));
+  }
+
+  try {
+    const res = await fetch(getApiUrl(`/api/calendar/events?${params.toString()}`), {
+      headers: { Authorization: `Bearer ${authToken}` },
+    });
+    const data = await res.json();
+    if (Array.isArray(data.accessibleSpaces)) {
+      accessibleNoteSpaces = data.accessibleSpaces;
+    }
+    calendarAssignableMembers = Array.isArray(data.assignableMembers) ? data.assignableMembers : [];
+    if (!res.ok || !data.success) {
+      calendarEventsCache = [];
+      if (data.error) showCalendarFeedback(data.error, "error");
+    } else {
+      calendarEventsCache = data.events || [];
+    }
+    renderCalendarView();
+  } catch (err: any) {
+    showCalendarFeedback(err?.message || "Failed to load calendar events.", "error");
+  }
+}
+
+async function saveCalendarEventFromEditor() {
+  if (!authToken) return;
+  clearCalendarFeedback();
+
+  const title = calendarEventTitle?.value.trim() || "";
+  if (!title) {
+    showCalendarFeedback("Please enter an event title.", "error");
+    calendarEventTitle?.focus();
+    return;
+  }
+
+  const startDate = calendarEventStartDate?.value || "";
+  const endDate = calendarEventEndDate?.value || startDate;
+  if (!startDate || !endDate) {
+    showCalendarFeedback("Please select start and end dates.", "error");
+    return;
+  }
+  if (endDate < startDate) {
+    showCalendarFeedback("End date cannot be earlier than start date.", "error");
+    return;
+  }
+
+  const isMultiDay = endDate > startDate;
+  const isAllDay = isMultiDay ? true : Boolean(calendarEventAllDay?.checked);
+  const startTime = !isMultiDay && !isAllDay ? calendarEventStartTime?.value || "" : null;
+  const endTime = !isMultiDay && !isAllDay ? calendarEventEndTime?.value || "" : null;
+
+  if (!isMultiDay && !isAllDay) {
+    if (!startTime || !endTime) {
+      showCalendarFeedback("Please enter start and end times.", "error");
+      return;
+    }
+    if (endTime < startTime) {
+      showCalendarFeedback("End time cannot be earlier than start time.", "error");
+      return;
+    }
+  }
+
+  const description = sanitizeClientNoteHtml(calendarEventDescription?.innerHTML || "");
+
+  let repeatInterval: number | null = null;
+  let repeatUnit: CalendarRepeatUnit | null = null;
+  if (calendarEventRepeatEnabled?.checked) {
+    const parsedInterval = Number(calendarEventRepeatInterval?.value);
+    if (!Number.isInteger(parsedInterval) || parsedInterval < 1 || parsedInterval > 365) {
+      showCalendarFeedback("Repeat interval must be a whole number between 1 and 365.", "error");
+      calendarEventRepeatInterval?.focus();
+      return;
+    }
+    repeatInterval = parsedInterval;
+    repeatUnit = (calendarEventRepeatUnit?.value || "day") as CalendarRepeatUnit;
+  }
+
+  if (btnCalendarEventSave) btnCalendarEventSave.disabled = true;
+  try {
+    const isEdit = editingCalendarEventId !== null;
+    const url = isEdit
+      ? getApiUrl(`/api/calendar/events/${editingCalendarEventId}`)
+      : getApiUrl("/api/calendar/events");
+
+    const payload: Record<string, any> = {
+      title,
+      description,
+      startDate,
+      endDate,
+      isAllDay,
+      startTime,
+      endTime,
+      repeatInterval,
+      repeatUnit,
+      assigneeIds: activeCalendarTab !== "personal" ? selectedCalendarAssigneeIds : [],
+      rotateAssignees:
+        activeCalendarTab !== "personal" && repeatInterval !== null
+          ? Boolean(calendarEventRotateAssignees?.checked)
+          : false,
+      images: selectedCalendarEventImages.map((img) => img.dataUrl),
+    };
+    if (!isEdit) {
+      payload.type = activeCalendarTab;
+      if (activeCalendarTab === "space") payload.spaceId = selectedCalendarSpaceId;
+      if (activeCalendarTab === "organisation") payload.organisationId = selectedCalendarOrgId;
+    }
+
+    const res = await fetch(url, {
+      method: isEdit ? "PUT" : "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${authToken}`,
+      },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      showCalendarFeedback(data.error || "Failed to save event.", "error");
+      return;
+    }
+
+    await fetchCalendarEventsData();
+    activeDetailCalendarEvent = data.event || null;
+    editingCalendarEventId = null;
+    if (calendarEditorReturnView === "day" && activeCalendarDayIso) {
+      openCalendarDayView(activeCalendarDayIso);
+    } else {
+      showCalendarView("month");
+    }
+  } catch (err: any) {
+    showCalendarFeedback(err?.message || "Network error saving event.", "error");
+  } finally {
+    if (btnCalendarEventSave) btnCalendarEventSave.disabled = false;
+  }
+}
+
+async function deleteActiveDetailCalendarEvent() {
+  if (!authToken || !activeDetailCalendarEvent) return;
+  if (!confirm(`Delete event "${activeDetailCalendarEvent.title}"?`)) return;
+
+  try {
+    const res = await fetch(getApiUrl(`/api/calendar/events/${activeDetailCalendarEvent.id}`), {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${authToken}` },
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      showCalendarFeedback(data.error || "Failed to delete event.", "error");
+      return;
+    }
+    activeDetailCalendarEvent = null;
+    await fetchCalendarEventsData();
+    if (calendarDetailReturnView === "day" && activeCalendarDayIso) {
+      openCalendarDayView(activeCalendarDayIso);
+    } else {
+      showCalendarView("month");
+    }
+  } catch (err: any) {
+    showCalendarFeedback(err?.message || "Network error deleting event.", "error");
+  }
+}
+
+function syncCalendarTabButtons(tab: CalendarType) {
+  document.querySelectorAll<HTMLButtonElement>(".calendar-tab-btn").forEach((btn) => {
+    const isMatch = btn.dataset.calendarTab === tab;
+    btn.classList.toggle("active", isMatch);
+    btn.setAttribute("aria-selected", String(isMatch));
+  });
+}
+
+function switchCalendarTab(tab: CalendarType) {
+  activeCalendarTab = tab;
+  syncCalendarTabButtons(tab);
+  updateCalendarScopeSelector();
+  fetchCalendarEventsData();
+}
+
+async function openCalendarModal(initialTab?: CalendarType) {
+  if (!calendarModal) return;
+  if (!authToken || !currentUser) {
+    alert("Please log in to view your calendar.");
+    return;
+  }
+
+  if (initialTab) {
+    activeCalendarTab = initialTab;
+  }
+  syncCalendarTabButtons(activeCalendarTab);
+
+  const now = new Date();
+  calendarViewYear = now.getFullYear();
+  calendarViewMonth = now.getMonth();
+
+  clearCalendarFeedback();
+  calendarModal.classList.remove("hidden");
+  setGameControlsActive(false);
+  showCalendarView("month");
+  renderCalendarView();
+
+  if (activeCalendarTab !== "meals") {
+    await fetchOrganisationsData();
+  }
+  await fetchCalendarEventsData();
+  if (activeCalendarTab === "space" && selectedCalendarSpaceId) {
+    await fetchCalendarEventsData();
+  } else if (activeCalendarTab === "organisation" && selectedCalendarOrgId !== null) {
+    await fetchCalendarEventsData();
+  }
+}
+
+function closeCalendarModal() {
+  if (!calendarModal) return;
+  calendarModal.classList.add("hidden");
+  setGameControlsActive(true);
+}
+
+function initCalendarUI() {
+  btnCloseCalendarModal?.addEventListener("click", closeCalendarModal);
+  calendarModal?.addEventListener("click", (e) => {
+    if (e.target === calendarModal) closeCalendarModal();
+  });
+
+  dropdownCalendarBtn?.addEventListener("click", () => {
+    closeProfileDropdown();
+    openCalendarModal();
+  });
+
+  document.querySelectorAll<HTMLButtonElement>(".calendar-tab-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const raw = btn.dataset.calendarTab;
+      const tab: CalendarType =
+        raw === "space" || raw === "organisation" || raw === "meals" ? raw : "personal";
+      switchCalendarTab(tab);
+    });
+  });
+
+  calendarScopeSelect?.addEventListener("change", () => {
+    if (activeCalendarTab === "space" || activeCalendarTab === "meals") {
+      selectedCalendarSpaceId = calendarScopeSelect.value || null;
+    } else if (activeCalendarTab === "organisation") {
+      const val = Number(calendarScopeSelect.value);
+      selectedCalendarOrgId = Number.isInteger(val) ? val : null;
+    }
+    fetchCalendarEventsData();
+  });
+
+  btnNewCalendarEvent?.addEventListener("click", () => {
+    openCalendarEditorView(null, undefined, "month");
+  });
+
+  btnCalendarBackFromDay?.addEventListener("click", () => {
+    activeCalendarDayIso = null;
+    showCalendarView("month");
+  });
+
+  btnCalendarDayNewEvent?.addEventListener("click", () => {
+    openCalendarEditorView(null, activeCalendarDayIso || undefined, "day");
+  });
+
+  btnCalendarBackFromDetail?.addEventListener("click", () => {
+    activeDetailCalendarEvent = null;
+    if (calendarDetailReturnView === "day" && activeCalendarDayIso) {
+      openCalendarDayView(activeCalendarDayIso);
+    } else {
+      showCalendarView("month");
+    }
+  });
+
+  btnCalendarEventEdit?.addEventListener("click", () => {
+    if (activeDetailCalendarEvent) {
+      openCalendarEditorView(activeDetailCalendarEvent, undefined, "detail");
+    }
+  });
+
+  btnCalendarEventDelete?.addEventListener("click", () => {
+    deleteActiveDetailCalendarEvent();
+  });
+
+  const handleCalendarEditorBack = () => {
+    if (editingCalendarEventId !== null && activeDetailCalendarEvent) {
+      showCalendarView("detail");
+    } else if (calendarEditorReturnView === "day" && activeCalendarDayIso) {
+      openCalendarDayView(activeCalendarDayIso);
+    } else {
+      showCalendarView("month");
+    }
+  };
+
+  btnCalendarBackFromEditor?.addEventListener("click", handleCalendarEditorBack);
+
+  btnCalendarEventCancel?.addEventListener("click", handleCalendarEditorBack);
+
+  btnCalendarEventSave?.addEventListener("click", () => {
+    saveCalendarEventFromEditor();
+  });
+
+  btnCalendarBackFromMeal?.addEventListener("click", () => {
+    editingMealDayOfWeek = null;
+    showCalendarView("month");
+  });
+
+  btnCalendarMealSave?.addEventListener("click", () => {
+    saveCalendarMeal();
+  });
+
+  calendarMealInput?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      saveCalendarMeal();
+    }
+  });
+
+  const handleStartDateChange = () => {
+    if (calendarEventStartDate && calendarEventEndDate) {
+      if (!calendarEventEndDate.value || calendarEventEndDate.value < calendarEventStartDate.value) {
+        calendarEventEndDate.value = calendarEventStartDate.value;
+      }
+    }
+    syncCalendarDateDisplays();
+    updateCalendarTimeRowVisibility();
+    updateCalendarRepeatUI();
+  };
+  calendarEventStartDate?.addEventListener("change", handleStartDateChange);
+  calendarEventStartDate?.addEventListener("input", handleStartDateChange);
+  calendarEventStartDate?.addEventListener("click", () => {
+    try {
+      (calendarEventStartDate as any).showPicker?.();
+    } catch {
+      // Ignore on browsers without showPicker support
+    }
+  });
+
+  const handleEndDateChange = () => {
+    syncCalendarDateDisplays();
+    updateCalendarTimeRowVisibility();
+  };
+  calendarEventEndDate?.addEventListener("change", handleEndDateChange);
+  calendarEventEndDate?.addEventListener("input", handleEndDateChange);
+  calendarEventEndDate?.addEventListener("click", () => {
+    try {
+      (calendarEventEndDate as any).showPicker?.();
+    } catch {
+      // Ignore on browsers without showPicker support
+    }
+  });
+
+  calendarEventAllDay?.addEventListener("change", () => {
+    updateCalendarTimeRowVisibility();
+  });
+
+  calendarEventRepeatEnabled?.addEventListener("change", () => {
+    updateCalendarRepeatUI();
+  });
+
+  calendarEventRepeatInterval?.addEventListener("input", () => {
+    updateCalendarRepeatUI();
+  });
+
+  calendarEventRepeatUnit?.addEventListener("change", () => {
+    updateCalendarRepeatUI();
+  });
+
+  calendarEventRotateAssignees?.addEventListener("change", () => {
+    renderCalendarAssigneePicker();
+  });
+
+  btnCloseCalendarLightbox?.addEventListener("click", closeCalendarImageLightbox);
+  calendarImageLightbox?.addEventListener("click", (e) => {
+    if (e.target === calendarImageLightbox) closeCalendarImageLightbox();
+  });
+
+  calendarEventImagesInput?.addEventListener("change", async () => {
+    const files = Array.from(calendarEventImagesInput.files || []);
+    calendarEventImagesInput.value = "";
+    if (files.length === 0) return;
+    clearCalendarFeedback();
+
+    for (const file of files) {
+      if (!file.type.startsWith("image/")) {
+        showCalendarFeedback("Only picture files are allowed.", "error");
+        continue;
+      }
+      if (selectedCalendarEventImages.length >= 10) {
+        showCalendarFeedback("You can upload up to 10 pictures per event.", "error");
+        break;
+      }
+      try {
+        const compressed = await compressCalendarImageFile(file);
+        selectedCalendarEventImages.push({ name: file.name, dataUrl: compressed });
+        renderCalendarEventImagesChips();
+      } catch (err: any) {
+        showCalendarFeedback(err?.message || `Failed to process ${file.name}.`, "error");
+      }
+    }
+  });
+
+  [calendarEventTitle, calendarEventDescription, calendarEventRepeatInterval].forEach((el) => {
+    if (!el) return;
+    ["keydown", "keyup", "keypress"].forEach((evt) => {
+      el.addEventListener(evt, (e) => {
+        e.stopPropagation();
+      });
+    });
+  });
+
+  calendarWysiwygToolbar?.querySelectorAll<HTMLButtonElement>(".wysiwyg-btn").forEach((btn) => {
+    btn.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+    });
+    btn.addEventListener("click", () => {
+      const cmd = btn.dataset.cmd;
+      if (!cmd) return;
+      calendarEventDescription?.focus();
+      if (cmd === "createLink") {
+        const url = prompt("Enter link URL (https://...):");
+        if (url && /^https?:\/\//i.test(url.trim())) {
+          document.execCommand("createLink", false, url.trim());
+        }
+      } else if (cmd === "formatBlock") {
+        const val = btn.dataset.val || "P";
+        document.execCommand("formatBlock", false, val);
+      } else {
+        document.execCommand(cmd, false);
+      }
+    });
+  });
+
+  btnCalendarToday?.addEventListener("click", () => {
+    const now = new Date();
+    calendarViewYear = now.getFullYear();
+    calendarViewMonth = now.getMonth();
+    renderCalendarView();
+  });
+
+  btnCalendarPrev?.addEventListener("click", () => {
+    calendarViewMonth -= 1;
+    if (calendarViewMonth < 0) {
+      calendarViewMonth = 11;
+      calendarViewYear -= 1;
+    }
+    renderCalendarView();
+  });
+
+  btnCalendarNext?.addEventListener("click", () => {
+    calendarViewMonth += 1;
+    if (calendarViewMonth > 11) {
+      calendarViewMonth = 0;
+      calendarViewYear += 1;
+    }
+    renderCalendarView();
+  });
+
+  calendarMonthSelect?.addEventListener("change", () => {
+    const val = Number(calendarMonthSelect.value);
+    if (Number.isInteger(val) && val >= 0 && val <= 11) {
+      calendarViewMonth = val;
+      renderCalendarView();
+    }
+  });
+
+  const applyCalendarYear = (commitInvalid: boolean) => {
+    if (!calendarYearInput) return;
+    const raw = calendarYearInput.value.trim();
+    const parsed = Number(raw);
+    if (raw.length === 4 && Number.isInteger(parsed) && parsed >= 1900 && parsed <= 2100) {
+      if (parsed !== calendarViewYear) {
+        calendarViewYear = parsed;
+        renderCalendarView();
+      }
+      return;
+    }
+    if (commitInvalid) {
+      if (Number.isInteger(parsed) && raw !== "") {
+        calendarViewYear = Math.min(2100, Math.max(1900, parsed));
+      }
+      calendarYearInput.value = String(calendarViewYear);
+      renderCalendarView();
+    }
+  };
+
+  calendarYearInput?.addEventListener("input", () => applyCalendarYear(false));
+  calendarYearInput?.addEventListener("change", () => applyCalendarYear(true));
+  calendarYearInput?.addEventListener("blur", () => applyCalendarYear(true));
+  calendarYearInput?.addEventListener("keydown", (e) => {
+    e.stopPropagation();
+    if (e.key === "Enter") {
+      applyCalendarYear(true);
+      calendarYearInput.blur();
+    }
+  });
+}
+
+// ==========================================
+// Space's Inventory Modal & API
+// ==========================================
+
+interface SpaceInventoryItem {
+  id: number;
+  spaceId: string;
+  name: string;
+  bought: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+const spaceInventoryModal = document.getElementById(
+  "space-inventory-modal",
+) as HTMLDivElement | null;
+const btnCloseInventoryModal = document.getElementById(
+  "btn-close-inventory-modal",
+) as HTMLButtonElement | null;
+const inventoryFeedbackEl = document.getElementById(
+  "inventory-feedback",
+) as HTMLDivElement | null;
+const inventoryListView = document.getElementById(
+  "inventory-list-view",
+) as HTMLDivElement | null;
+const inventoryFormView = document.getElementById(
+  "inventory-form-view",
+) as HTMLDivElement | null;
+const btnNewInventory = document.getElementById(
+  "btn-new-inventory",
+) as HTMLButtonElement | null;
+const inventoryTabBoughtBtn = document.getElementById(
+  "inventory-tab-bought",
+) as HTMLButtonElement | null;
+const inventoryTabToBuyBtn = document.getElementById(
+  "inventory-tab-to-buy",
+) as HTMLButtonElement | null;
+const inventoryCountBoughtEl = document.getElementById(
+  "inventory-count-bought",
+) as HTMLSpanElement | null;
+const inventoryCountToBuyEl = document.getElementById(
+  "inventory-count-to-buy",
+) as HTMLSpanElement | null;
+const inventoryListContainer = document.getElementById(
+  "inventory-list-container",
+) as HTMLDivElement | null;
+const btnInventoryBack = document.getElementById(
+  "btn-inventory-back",
+) as HTMLButtonElement | null;
+const inventoryFormHeading = document.getElementById(
+  "inventory-form-heading",
+) as HTMLSpanElement | null;
+const inventoryForm = document.getElementById(
+  "inventory-form",
+) as HTMLFormElement | null;
+const inventoryInputName = document.getElementById(
+  "inventory-input-name",
+) as HTMLInputElement | null;
+const inventorySwitchBought = document.getElementById(
+  "inventory-switch-bought",
+) as HTMLInputElement | null;
+const inventoryBoughtSwitchRow = document.getElementById(
+  "inventory-bought-switch-row",
+) as HTMLDivElement | null;
+const inventoryBoughtSwitchDesc = document.getElementById(
+  "inventory-bought-switch-desc",
+) as HTMLSpanElement | null;
+const btnInventoryDelete = document.getElementById(
+  "btn-inventory-delete",
+) as HTMLButtonElement | null;
+const btnInventoryCancel = document.getElementById(
+  "btn-inventory-cancel",
+) as HTMLButtonElement | null;
+const btnInventorySave = document.getElementById(
+  "btn-inventory-save",
+) as HTMLButtonElement | null;
+
+let activeInventorySpaceId: string | null = null;
+let inventoryItems: SpaceInventoryItem[] = [];
+let activeInventoryTab: "bought" | "to-buy" = "bought";
+let editingInventoryItemId: number | null = null;
+let isLoadingInventory = false;
+let isSavingInventory = false;
+
+function showInventoryFeedback(message: string, isError: boolean) {
+  if (!inventoryFeedbackEl) return;
+  inventoryFeedbackEl.textContent = message;
+  inventoryFeedbackEl.className = `inventory-feedback ${isError ? "error" : "success"}`;
+}
+
+function clearInventoryFeedback() {
+  if (!inventoryFeedbackEl) return;
+  inventoryFeedbackEl.textContent = "";
+  inventoryFeedbackEl.className = "inventory-feedback hidden";
+}
+
+function showInventoryView(view: "list" | "form") {
+  if (view === "list") {
+    inventoryListView?.classList.remove("hidden");
+    inventoryFormView?.classList.add("hidden");
+  } else {
+    inventoryListView?.classList.add("hidden");
+    inventoryFormView?.classList.remove("hidden");
+  }
+}
+
+function updateInventoryBoughtDesc() {
+  if (!inventoryBoughtSwitchDesc || !inventorySwitchBought) return;
+  inventoryBoughtSwitchDesc.textContent = inventorySwitchBought.checked
+    ? "On — Item is in the Bought list"
+    : "Off — Item is in the To Buy list";
+}
+
+function setInventoryTab(tab: "bought" | "to-buy") {
+  activeInventoryTab = tab;
+  if (inventoryTabBoughtBtn) {
+    const isBought = tab === "bought";
+    inventoryTabBoughtBtn.classList.toggle("active", isBought);
+    inventoryTabBoughtBtn.setAttribute("aria-selected", isBought ? "true" : "false");
+  }
+  if (inventoryTabToBuyBtn) {
+    const isToBuy = tab === "to-buy";
+    inventoryTabToBuyBtn.classList.toggle("active", isToBuy);
+    inventoryTabToBuyBtn.setAttribute("aria-selected", isToBuy ? "true" : "false");
+  }
+  renderInventoryList();
+}
+
+function renderInventoryList() {
+  if (!inventoryListContainer) return;
+
+  const boughtItems = inventoryItems.filter((item) => item.bought);
+  const toBuyItems = inventoryItems.filter((item) => !item.bought);
+
+  if (inventoryCountBoughtEl) {
+    inventoryCountBoughtEl.textContent = String(boughtItems.length);
+  }
+  if (inventoryCountToBuyEl) {
+    inventoryCountToBuyEl.textContent = String(toBuyItems.length);
+  }
+
+  inventoryListContainer.innerHTML = "";
+
+  if (isLoadingInventory) {
+    const loadingEl = document.createElement("div");
+    loadingEl.className = "inventory-empty-state";
+    loadingEl.textContent = "Loading inventory...";
+    inventoryListContainer.appendChild(loadingEl);
+    return;
+  }
+
+  const visibleItems = activeInventoryTab === "bought" ? boughtItems : toBuyItems;
+
+  if (visibleItems.length === 0) {
+    const emptyEl = document.createElement("div");
+    emptyEl.className = "inventory-empty-state";
+
+    const iconEl = document.createElement("div");
+    iconEl.className = "inventory-empty-icon";
+    iconEl.textContent = activeInventoryTab === "bought" ? "✅" : "🛒";
+
+    const textEl = document.createElement("div");
+    textEl.textContent =
+      activeInventoryTab === "bought"
+        ? "No bought items yet. Tap + Inventory to add one."
+        : "Nothing to buy right now. Tap + Inventory to add an item.";
+
+    emptyEl.appendChild(iconEl);
+    emptyEl.appendChild(textEl);
+    inventoryListContainer.appendChild(emptyEl);
+    return;
+  }
+
+  for (const item of visibleItems) {
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = "inventory-item-card";
+    card.addEventListener("click", () => {
+      openInventoryForm(item);
+    });
+
+    const main = document.createElement("div");
+    main.className = "inventory-item-main";
+
+    const icon = document.createElement("span");
+    icon.className = "inventory-item-icon";
+    icon.textContent = item.bought ? "✅" : "🛒";
+
+    const name = document.createElement("span");
+    name.className = "inventory-item-name";
+    name.textContent = item.name;
+
+    main.appendChild(icon);
+    main.appendChild(name);
+
+    const right = document.createElement("div");
+    right.className = "inventory-item-right";
+
+    const badge = document.createElement("span");
+    badge.className = `inventory-item-badge ${item.bought ? "bought" : "to-buy"}`;
+    badge.textContent = item.bought ? "Bought" : "To Buy";
+
+    const chevron = document.createElement("span");
+    chevron.className = "inventory-item-chevron";
+    chevron.textContent = "›";
+
+    right.appendChild(badge);
+    right.appendChild(chevron);
+
+    card.appendChild(main);
+    card.appendChild(right);
+    inventoryListContainer.appendChild(card);
+  }
+}
+
+function openInventoryForm(item?: SpaceInventoryItem) {
+  clearInventoryFeedback();
+  if (item) {
+    editingInventoryItemId = item.id;
+    inventoryFormHeading?.classList.add("hidden");
+    if (inventoryInputName) inventoryInputName.value = item.name;
+    if (inventorySwitchBought) inventorySwitchBought.checked = item.bought;
+    btnInventoryDelete?.classList.remove("hidden");
+  } else {
+    editingInventoryItemId = null;
+    if (inventoryFormHeading) {
+      inventoryFormHeading.textContent = "Add Inventory";
+      inventoryFormHeading.classList.remove("hidden");
+    }
+    if (inventoryInputName) inventoryInputName.value = "";
+    if (inventorySwitchBought) {
+      inventorySwitchBought.checked = activeInventoryTab === "bought";
+    }
+    btnInventoryDelete?.classList.add("hidden");
+  }
+  updateInventoryBoughtDesc();
+  showInventoryView("form");
+
+  // Focus input cleanly on desktop; avoid aggressive auto-zoom on small touchscreens
+  if (inventoryInputName && window.innerWidth > 600) {
+    setTimeout(() => inventoryInputName.focus(), 30);
+  }
+}
+
+function getInventoryTargetSpaceId(): string | null {
+  if (activeInventorySpaceId) {
+    return activeInventorySpaceId;
+  }
+  if (myPersonalSpace && currentSpaceId === myPersonalSpace.id) {
+    return myPersonalSpace.id;
+  }
+  return currentSpaceId || myPersonalSpace?.id || null;
+}
+
+async function fetchSpaceInventory() {
+  const spaceId = getInventoryTargetSpaceId();
+  if (!spaceId || !authToken) return;
+
+  isLoadingInventory = true;
+  renderInventoryList();
+
+  try {
+    const res = await fetch(
+      `/api/spaces/${encodeURIComponent(spaceId)}/inventory`,
+      {
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+        },
+      },
+    );
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      showInventoryFeedback(
+        data.error || "Failed to load space inventory.",
+        true,
+      );
+      inventoryItems = [];
+    } else {
+      inventoryItems = Array.isArray(data.items) ? data.items : [];
+    }
+  } catch (err) {
+    console.error("Error fetching space inventory:", err);
+    showInventoryFeedback("Network error while loading inventory.", true);
+  } finally {
+    isLoadingInventory = false;
+    renderInventoryList();
+  }
+}
+
+async function saveInventoryItem() {
+  if (isSavingInventory) return;
+  const spaceId = getInventoryTargetSpaceId();
+  if (!spaceId || !authToken) return;
+
+  const name = (inventoryInputName?.value || "").trim();
+  if (!name) {
+    showInventoryFeedback("Please enter an inventory name.", true);
+    inventoryInputName?.focus();
+    return;
+  }
+
+  const bought = Boolean(inventorySwitchBought?.checked);
+  isSavingInventory = true;
+  if (btnInventorySave) {
+    btnInventorySave.disabled = true;
+    btnInventorySave.textContent = "Saving...";
+  }
+  clearInventoryFeedback();
+
+  try {
+    const isEdit = editingInventoryItemId !== null;
+    const url = isEdit
+      ? `/api/spaces/${encodeURIComponent(spaceId)}/inventory/${editingInventoryItemId}`
+      : `/api/spaces/${encodeURIComponent(spaceId)}/inventory`;
+
+    const res = await fetch(url, {
+      method: isEdit ? "PUT" : "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${authToken}`,
+      },
+      body: JSON.stringify({ name, bought }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success || !data.item) {
+      showInventoryFeedback(
+        data.error || "Failed to save inventory item.",
+        true,
+      );
+      return;
+    }
+
+    const savedItem: SpaceInventoryItem = data.item;
+    if (isEdit) {
+      const idx = inventoryItems.findIndex((i) => i.id === savedItem.id);
+      if (idx !== -1) {
+        inventoryItems[idx] = savedItem;
+      } else {
+        inventoryItems.unshift(savedItem);
+      }
+    } else {
+      inventoryItems.unshift(savedItem);
+    }
+
+    setInventoryTab(savedItem.bought ? "bought" : "to-buy");
+    showInventoryView("list");
+    showInventoryFeedback(
+      isEdit ? "Inventory item updated." : "Inventory item added.",
+      false,
+    );
+  } catch (err) {
+    console.error("Error saving space inventory item:", err);
+    showInventoryFeedback("Network error while saving inventory item.", true);
+  } finally {
+    isSavingInventory = false;
+    if (btnInventorySave) {
+      btnInventorySave.disabled = false;
+      btnInventorySave.textContent = "Save";
+    }
+  }
+}
+
+async function deleteCurrentInventoryItem() {
+  if (isSavingInventory || editingInventoryItemId === null) return;
+  const spaceId = getInventoryTargetSpaceId();
+  if (!spaceId || !authToken) return;
+
+  isSavingInventory = true;
+  if (btnInventoryDelete) btnInventoryDelete.disabled = true;
+  clearInventoryFeedback();
+
+  try {
+    const res = await fetch(
+      `/api/spaces/${encodeURIComponent(spaceId)}/inventory/${editingInventoryItemId}`,
+      {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+        },
+      },
+    );
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      showInventoryFeedback(
+        data.error || "Failed to delete inventory item.",
+        true,
+      );
+      return;
+    }
+
+    inventoryItems = inventoryItems.filter(
+      (i) => i.id !== editingInventoryItemId,
+    );
+    editingInventoryItemId = null;
+    renderInventoryList();
+    showInventoryView("list");
+    showInventoryFeedback("Inventory item deleted.", false);
+  } catch (err) {
+    console.error("Error deleting space inventory item:", err);
+    showInventoryFeedback("Network error while deleting inventory item.", true);
+  } finally {
+    isSavingInventory = false;
+    if (btnInventoryDelete) btnInventoryDelete.disabled = false;
+  }
+}
+
+async function openSpaceInventoryModal(spaceId?: string) {
+  if (!spaceInventoryModal) return;
+  if (!authToken || !currentUser) {
+    alert("Please log in to view your space's inventory.");
+    return;
+  }
+  activeInventorySpaceId = spaceId || null;
+  clearInventoryFeedback();
+  spaceInventoryModal.classList.remove("hidden");
+  setGameControlsActive(false);
+  showInventoryView("list");
+  setInventoryTab(activeInventoryTab);
+  await fetchSpaceInventory();
+}
+
+function closeSpaceInventoryModal() {
+  if (!spaceInventoryModal) return;
+  spaceInventoryModal.classList.add("hidden");
+  setGameControlsActive(true);
+}
+
+function initSpaceInventoryUI() {
+  btnCloseInventoryModal?.addEventListener("click", closeSpaceInventoryModal);
+  spaceInventoryModal?.addEventListener("click", (e) => {
+    if (e.target === spaceInventoryModal) {
+      closeSpaceInventoryModal();
+    }
+  });
+
+  btnNewInventory?.addEventListener("click", () => {
+    openInventoryForm();
+  });
+
+  inventoryTabBoughtBtn?.addEventListener("click", () => {
+    clearInventoryFeedback();
+    setInventoryTab("bought");
+  });
+
+  inventoryTabToBuyBtn?.addEventListener("click", () => {
+    clearInventoryFeedback();
+    setInventoryTab("to-buy");
+  });
+
+  btnInventoryBack?.addEventListener("click", () => {
+    clearInventoryFeedback();
+    showInventoryView("list");
+  });
+
+  btnInventoryCancel?.addEventListener("click", () => {
+    clearInventoryFeedback();
+    showInventoryView("list");
+  });
+
+  inventorySwitchBought?.addEventListener("change", updateInventoryBoughtDesc);
+  inventoryBoughtSwitchRow?.addEventListener("click", (e) => {
+    const target = e.target as HTMLElement;
+    if (target.closest(".toggle-switch")) return;
+    if (inventorySwitchBought) {
+      inventorySwitchBought.checked = !inventorySwitchBought.checked;
+      updateInventoryBoughtDesc();
+    }
+  });
+
+  inventoryInputName?.addEventListener("keydown", (e) => {
+    e.stopPropagation();
+  });
+
+  inventoryForm?.addEventListener("submit", (e) => {
+    e.preventDefault();
+    saveInventoryItem();
+  });
+
+  btnInventoryDelete?.addEventListener("click", () => {
+    deleteCurrentInventoryItem();
+  });
 }
 
 init();

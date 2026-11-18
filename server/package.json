@@ -10,12 +10,14 @@
   "dependencies": {
     "@colyseus/schema": "^2.0.35",
     "@colyseus/ws-transport": "^0.15.0",
+    "@types/nodemailer": "^8.0.2",
+    "chess.js": "^1.4.0",
     "colyseus": "^0.15.57",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
+    "nodemailer": "^10.6.0",
     "pg": "^8.11.5",
-    "chess.js": "^1.4.0",
     "shared": "*"
   },
   "devDependencies": {
