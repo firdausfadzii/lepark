@@ -32,6 +32,7 @@ export const DEFAULT_PRESET_COLORS = [
 export const SERVER_TICK_RATE = 20; // 20 Hz tick loop
 
 export const ASSET_UNLOCK_COST = 50; // Focus Points (FP) required per paid map editor sprite
+export const NAME_CHANGE_FP_COST = 1000; // Focus Points (FP) required to change display name
 
 export const FOCUS_IDLE_TIMEOUT_MS = 60_000; // 1 minute without moving opens Focus Room
 export const FOCUS_BASE_FP_PER_MINUTE = 4;

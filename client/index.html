@@ -69,23 +69,11 @@
         </button>
       </div>
 
-    <!-- Top-Right Action Controls (Focus, Party, Map, Chat & Voice toggle triggers) -->
+    <!-- Top-Right Action Controls (Focus, Chat & Voice toggle triggers) -->
     <div id="topright-bar" class="topright-bar">
       <button type="button" id="btn-open-focus" class="topright-pill-btn topright-focus-btn" title="Open Focus Room (Pomodoro)" aria-label="Open Focus Room">
         <span class="focus-btn-dot"></span>
         <span>Focus</span>
-      </button>
-
-      <button type="button" id="btn-open-squad" class="topright-pill-btn topright-squad-btn" title="Party" aria-label="Party">
-        <span>Party</span>
-        <span id="topbar-squad-badge" class="topbar-squad-badge hidden">1</span>
-      </button>
-
-      <!-- Map Icon Button (Moved to right side of bar, left side of chat button) -->
-      <button type="button" id="btn-open-map" class="topright-action-btn topbar-map-btn" title="Explore Spaces (Map)" aria-label="Explore Spaces">
-        <svg class="map-svg-icon" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M20.5 3l-6 2.25L8.5 3 3.5 4.88v16.12l6-2.25 6 2.25 5-1.88V3zM9.5 5.15l5 1.88v11.82l-5-1.88V5.15zM5 6.42l3-1.12v12.28l-3 1.13V6.42zm14 11.16l-3 1.13V6.43l3-1.13v12.28z"/>
-        </svg>
       </button>
 
       <!-- Message Chat Bubble -->
@@ -2722,249 +2710,6 @@
       </div>
     </div>
 
-    <!-- Modal for Name and Appearance Customization -->
-    <div id="onboarding-modal" class="modal-overlay hidden">
-      <div class="modal-card">
-        <div class="modal-header">
-          <div class="modal-header-row">
-            <h2 class="modal-title">Update Character</h2>
-            <button type="button" id="btn-close-modal" class="btn-modal-close" title="Close">✕</button>
-          </div>
-        </div>
-
-        <!-- Live Preview -->
-        <div class="preview-box">
-          <div class="preview-character-container">
-            <div id="preview-name" class="preview-name-tag">Player</div>
-            <div class="preview-avatar-stack">
-              <img id="preview-avatar" class="preview-avatar" alt="Character Preview" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" />
-              <img id="preview-fashion-cloth" class="preview-avatar preview-fashion-layer hidden" alt="" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" />
-            </div>
-          </div>
-          <!-- Direction Preview Switcher (Hidden: only still preview is displayed) -->
-          <div id="preview-directions-bar" class="preview-directions-bar hidden" style="display: none;">
-            <button type="button" class="preview-dir-btn active" data-dir="idle" title="Standing Still">Still</button>
-          </div>
-          <div id="preview-status-hint" class="preview-status-hint">Default template (idle)</div>
-        </div>
-
-        <form id="profile-form">
-          <!-- Name Input -->
-          <div class="form-group">
-            <label class="form-label" for="player-name">
-              Display Name <span class="badge-optional">Optional</span>
-            </label>
-            <input
-              id="player-name"
-              class="form-input"
-              type="text"
-              maxlength="24"
-              placeholder="Leave blank to use username..."
-              autocomplete="off"
-            />
-            <span class="field-hint">If blank, your username (<span id="current-username-tag"></span>) will be used.</span>
-          </div>
-
-          <!-- Switch to Upload Custom Sprites (Hidden for now) -->
-          <div class="form-group switch-group hidden" style="display: none;">
-            <div class="switch-row">
-              <div class="switch-info">
-                <label class="switch-title" for="switch-upload-pictures">Customize Sprites</label>
-                <span class="switch-desc">Upload your own character sprites</span>
-              </div>
-              <label class="toggle-switch">
-                <input type="checkbox" id="switch-upload-pictures" />
-                <span class="slider"></span>
-              </label>
-            </div>
-          </div>
-
-          <!-- Sprite Template Selection (Rendered dynamically based on added sprites) -->
-          <div class="form-group sprite-templates-group">
-            <label class="form-label">
-              Sprite Template <span class="badge-optional" id="badge-template-count">3 Available</span>
-            </label>
-            <div id="sprite-templates-grid" class="sprite-templates-grid">
-              <!-- Dynamically populated based on added sprites -->
-            </div>
-          </div>
-
-          <!-- Wardrobe Trigger (Visible when Default template is selected) -->
-          <div id="fashion-picker-group" class="form-group fashion-picker-group">
-            <label class="form-label">
-              Appearance <span class="badge-optional">Default Character</span>
-            </label>
-            <button type="button" id="btn-open-wardrobe" class="btn-wardrobe-trigger">
-              <span class="wardrobe-trigger-icon" aria-hidden="true">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M20.38 3.46L16 2a4 4 0 0 1-8 0L3.62 3.46a2 2 0 0 0-1.34 2.23l.58 3.47a1 1 0 0 0 .99.84H6v10c0 1.1.9 2 2 2h8a2 2 0 0 0 2-2V10h2.15a1 1 0 0 0 .99-.84l.58-3.47a2 2 0 0 0-1.34-2.23z"/>
-                </svg>
-              </span>
-              <span class="wardrobe-trigger-text">
-                <span class="wardrobe-trigger-title">Wardrobe</span>
-                <span id="wardrobe-trigger-summary" class="wardrobe-trigger-sub">Customize shirt, pants & skin</span>
-              </span>
-              <span class="wardrobe-trigger-chevron" aria-hidden="true">›</span>
-            </button>
-          </div>
-
-          <!-- Section 2: Upload Pictures Form (Hidden for now) -->
-          <div id="upload-pictures-section" class="input-section hidden" style="display: none;">
-            <div class="section-notice">
-              <span class="notice-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.3 1 2.3h6c0-1 .4-1.8 1-2.3A7 7 0 0 0 12 2z"/></svg></span>
-              <span class="notice-text">
-                Upload custom sprites to personalize your character. Any empty movement directions will automatically use the default male character movements!
-              </span>
-            </div>
-
-            <div class="demo-sprites-row">
-              <button type="button" id="btn-load-demo-sprites" class="btn-demo-sprites">
-                Reset to Default Male Sprites
-              </button>
-              <button type="button" id="btn-clear-all-sprites" class="btn-demo-sprites secondary">
-                ✕ Clear All
-              </button>
-            </div>
-
-            <div class="upload-slots-container">
-              <!-- Slot 1: Standing Still (Primary / Required) -->
-              <div class="upload-slot-card primary-slot" id="slot-card-idle">
-                <div class="upload-slot-header">
-                  <div class="slot-badge-group">
-                    <span class="slot-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
-                    <span class="slot-title">Standing Still</span>
-                    <span class="badge-required">Required</span>
-                    <span class="badge-frame-counter" id="badge-counter-idle">0 / 6</span>
-                  </div>
-                  <span class="slot-hint">Default idle pose & fallback (up to 6 frames)</span>
-                </div>
-                <div class="frames-strip-container" id="frames-strip-idle">
-                  <!-- Injected dynamically: frame cards + Add Frame dropzone -->
-                </div>
-                <input type="file" id="file-idle" accept="image/*" multiple class="file-input-hidden" />
-              </div>
-
-              <!-- Directional Movement Slots 2x2 Grid -->
-              <div class="movement-slots-grid">
-                <!-- Slot 2: Left -->
-                <div class="upload-slot-card" id="slot-card-left">
-                  <div class="upload-slot-header">
-                    <div class="slot-badge-group">
-                      <span class="slot-icon">⬅️</span>
-                      <span class="slot-title">Left</span>
-                      <span class="badge-frame-counter" id="badge-counter-left">0 / 6</span>
-                    </div>
-                    <span class="slot-fallback-tag">Fallback: Still</span>
-                  </div>
-                  <div class="slot-desc">Moving left animation frames (max 6)</div>
-                  <div class="frames-strip-container" id="frames-strip-left">
-                    <!-- Injected dynamically -->
-                  </div>
-                  <input type="file" id="file-left" accept="image/*" multiple class="file-input-hidden" />
-                </div>
-
-                <!-- Slot 3: Right -->
-                <div class="upload-slot-card" id="slot-card-right">
-                  <div class="upload-slot-header">
-                    <div class="slot-badge-group">
-                      <span class="slot-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></span>
-                      <span class="slot-title">Right</span>
-                      <span class="badge-frame-counter" id="badge-counter-right">0 / 6</span>
-                    </div>
-                    <span class="slot-fallback-tag">Fallback: Still</span>
-                  </div>
-                  <div class="slot-desc">Moving right animation frames (max 6)</div>
-                  <div class="frames-strip-container" id="frames-strip-right">
-                    <!-- Injected dynamically -->
-                  </div>
-                  <input type="file" id="file-right" accept="image/*" multiple class="file-input-hidden" />
-                </div>
-
-                <!-- Slot 4: Up -->
-                <div class="upload-slot-card" id="slot-card-up">
-                  <div class="upload-slot-header">
-                    <div class="slot-badge-group">
-                      <span class="slot-icon">⬆️</span>
-                      <span class="slot-title">Up</span>
-                      <span class="badge-frame-counter" id="badge-counter-up">0 / 6</span>
-                    </div>
-                    <span class="slot-fallback-tag">Fallback: Still</span>
-                  </div>
-                  <div class="slot-desc">Moving up animation frames (max 6)</div>
-                  <div class="frames-strip-container" id="frames-strip-up">
-                    <!-- Injected dynamically -->
-                  </div>
-                  <input type="file" id="file-up" accept="image/*" multiple class="file-input-hidden" />
-                </div>
-
-                <!-- Slot 5: Down -->
-                <div class="upload-slot-card" id="slot-card-down">
-                  <div class="upload-slot-header">
-                    <div class="slot-badge-group">
-                      <span class="slot-icon">⬇️</span>
-                      <span class="slot-title">Down</span>
-                      <span class="badge-frame-counter" id="badge-counter-down">0 / 6</span>
-                    </div>
-                    <span class="slot-fallback-tag">Fallback: Still</span>
-                  </div>
-                  <div class="slot-desc">Moving down animation frames (max 6)</div>
-                  <div class="frames-strip-container" id="frames-strip-down">
-                    <!-- Injected dynamically -->
-                  </div>
-                  <input type="file" id="file-down" accept="image/*" multiple class="file-input-hidden" />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <button id="btn-join" class="btn-primary" type="submit">
-            Save Changes
-          </button>
-        </form>
-      </div>
-    </div>
-
-    <!-- Modal: Wardrobe (Fashion Customization) -->
-    <div id="wardrobe-modal" class="modal-overlay wardrobe-modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="wardrobe-modal-title">
-      <div class="modal-card wardrobe-modal-card">
-        <div class="modal-header">
-          <div class="modal-header-row">
-            <h2 id="wardrobe-modal-title" class="modal-title">Wardrobe</h2>
-            <button type="button" id="btn-close-wardrobe-modal" class="btn-modal-close" title="Close">✕</button>
-          </div>
-        </div>
-
-        <!-- Live Outfit Preview -->
-        <div class="preview-box wardrobe-preview-box">
-          <div class="preview-character-container">
-            <div class="preview-avatar-stack">
-              <img id="wardrobe-preview-avatar" class="preview-avatar" alt="Wardrobe Character Preview" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" />
-            </div>
-          </div>
-          <div class="preview-status-hint" id="wardrobe-preview-hint">Default Character Outfit</div>
-        </div>
-
-        <div class="fashion-tabs" role="tablist" aria-label="Fashion categories">
-          <button type="button" class="fashion-tab-btn active" data-fashion-tab="cloth" role="tab" aria-selected="true">Cloth</button>
-          <button type="button" class="fashion-tab-btn" data-fashion-tab="pants" role="tab" aria-selected="false">Pants</button>
-          <button type="button" class="fashion-tab-btn" data-fashion-tab="skin" role="tab" aria-selected="false">Skin</button>
-          <button type="button" class="fashion-tab-btn" data-fashion-tab="hair" role="tab" aria-selected="false">Hair</button>
-        </div>
-
-        <div id="fashion-items-grid" class="fashion-items-grid">
-          <!-- Dynamically populated per tab -->
-        </div>
-
-        <div id="fashion-color-row" class="fashion-color-row hidden"></div>
-
-        <div class="modal-footer-actions wardrobe-modal-footer">
-          <button type="button" id="btn-save-wardrobe" class="btn-primary">
-            Done
-          </button>
-        </div>
-      </div>
-    </div>
-
     <!-- Modal: My Space Settings & Invitation Whitelist -->
     <div id="my-space-settings-modal" class="modal-overlay hidden">
       <div class="modal-card space-settings-card">
@@ -3292,16 +3037,25 @@
     <!-- Modal: Profile Menu -->
     <div id="profile-menu-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="profile-modal-user-name">
       <div class="modal-card profile-modal-card">
-        <!-- Section 1: User Info -->
+        <!-- Header: User Info (No character avatar in header) -->
         <div class="profile-modal-user-section">
           <div class="profile-modal-user-left">
-            <div class="profile-modal-avatar-wrap">
-              <img id="profile-modal-avatar-img" class="profile-modal-avatar-img" alt="Avatar" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" />
-              <span id="profile-modal-status-dot" class="profile-modal-status-dot" title="Online"></span>
-            </div>
             <div class="profile-modal-user-meta">
               <div class="profile-modal-name-row">
+                <span id="profile-modal-status-dot" class="profile-modal-status-dot" title="Online"></span>
                 <h2 id="profile-modal-user-name" class="profile-modal-user-name">Player</h2>
+                <button
+                  type="button"
+                  id="btn-open-change-name"
+                  class="profile-modal-edit-name-btn"
+                  title="Change Name (1,000 FP)"
+                  aria-label="Change Name"
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M12 20h9"/>
+                    <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+                  </svg>
+                </button>
                 <span id="profile-modal-admin-badge" class="profile-modal-admin-badge hidden" title="Superadmin">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
@@ -3326,141 +3080,334 @@
           </button>
         </div>
 
-        <!-- Section 2: Grid Menu -->
-        <div class="profile-modal-grid">
-          <button type="button" id="dropdown-my-space-btn" class="profile-grid-item">
-            <span id="dropdown-my-space-icon" class="profile-grid-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M3 10.5L12 3l9 7.5"/>
-                <path d="M5 9.5V20a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9.5"/>
-                <path d="M9 21V13h6v8"/>
-              </svg>
-            </span>
-            <span class="profile-grid-text">
-              <span id="dropdown-my-space-title" class="profile-grid-title">Go to my space</span>
-              <span id="dropdown-my-space-sub" class="profile-grid-sub">Enter personal space</span>
-            </span>
-          </button>
+        <!-- Body: Two-column layout (Left mini sidebar + Right WoW-style character equipment) -->
+        <div class="profile-modal-body">
+          <!-- Left: Compact Mini Sidebar -->
+          <nav class="profile-modal-sidebar" aria-label="Player Menu">
+            <div class="profile-sidebar-list">
+              <button type="button" id="btn-open-map" class="profile-sidebar-item" title="Explore Spaces (Map)">
+                <span class="profile-sidebar-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/>
+                    <line x1="8" y1="2" x2="8" y2="18"/>
+                    <line x1="16" y1="6" x2="16" y2="22"/>
+                  </svg>
+                </span>
+                <span class="profile-sidebar-text">
+                  <span class="profile-sidebar-title">Map</span>
+                </span>
+              </button>
 
-          <button type="button" id="dropdown-friends-btn" class="profile-grid-item">
-            <span class="profile-grid-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
-                <circle cx="9" cy="7" r="4"/>
-                <path d="M22 21v-2a4 4 0 0 0-3-3.87"/>
-                <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-              </svg>
-            </span>
-            <span class="profile-grid-text">
-              <span class="profile-grid-title">Friends <span id="dropdown-friends-badge" class="friends-req-badge hidden">0</span></span>
-              <span class="profile-grid-sub">View friends & requests</span>
-            </span>
-          </button>
+              <button type="button" id="dropdown-friends-btn" class="profile-sidebar-item">
+                <span class="profile-sidebar-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+                    <circle cx="9" cy="7" r="4"/>
+                    <path d="M22 21v-2a4 4 0 0 0-3-3.87"/>
+                    <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                  </svg>
+                </span>
+                <span class="profile-sidebar-text">
+                  <span class="profile-sidebar-title">Friends <span id="dropdown-friends-badge" class="friends-req-badge hidden">0</span></span>
+                </span>
+              </button>
 
-          <button type="button" id="dropdown-organisations-btn" class="profile-grid-item">
-            <span class="profile-grid-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <rect x="3" y="3" width="18" height="18" rx="2"/>
-                <path d="M9 3v18"/>
-                <path d="M13 8h4"/>
-                <path d="M13 12h4"/>
-                <path d="M13 16h4"/>
-              </svg>
-            </span>
-            <span class="profile-grid-text">
-              <span class="profile-grid-title">Organisations</span>
-              <span class="profile-grid-sub">Create & manage organisations</span>
-            </span>
-          </button>
+              <button type="button" id="btn-open-squad" class="profile-sidebar-item" title="Party">
+                <span class="profile-sidebar-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                    <circle cx="9" cy="7" r="4"/>
+                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                    <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                  </svg>
+                </span>
+                <span class="profile-sidebar-text">
+                  <span class="profile-sidebar-title">Party <span id="topbar-squad-badge" class="topbar-squad-badge hidden">1</span></span>
+                </span>
+              </button>
 
-          <button type="button" id="dropdown-notes-btn" class="profile-grid-item">
-            <span class="profile-grid-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                <polyline points="14 2 14 8 20 8"/>
-                <line x1="8" y1="13" x2="16" y2="13"/>
-                <line x1="8" y1="17" x2="13" y2="17"/>
-              </svg>
-            </span>
-            <span class="profile-grid-text">
-              <span class="profile-grid-title">Notes</span>
-              <span class="profile-grid-sub">Personal, space & organisation notes</span>
-            </span>
-          </button>
+              <button type="button" id="dropdown-organisations-btn" class="profile-sidebar-item">
+                <span class="profile-sidebar-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="3" width="18" height="18" rx="2"/>
+                    <path d="M9 3v18"/>
+                    <path d="M13 8h4"/>
+                    <path d="M13 12h4"/>
+                    <path d="M13 16h4"/>
+                  </svg>
+                </span>
+                <span class="profile-sidebar-text">
+                  <span class="profile-sidebar-title">Organisations</span>
+                </span>
+              </button>
 
-          <button type="button" id="dropdown-calendar-btn" class="profile-grid-item">
-            <span class="profile-grid-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
-                <line x1="16" y1="2" x2="16" y2="6"/>
-                <line x1="8" y1="2" x2="8" y2="6"/>
-                <line x1="3" y1="10" x2="21" y2="10"/>
-              </svg>
-            </span>
-            <span class="profile-grid-text">
-              <span class="profile-grid-title">Calendar</span>
-              <span class="profile-grid-sub">Personal, space & organisation calendar</span>
-            </span>
-          </button>
+              <button type="button" id="dropdown-notes-btn" class="profile-sidebar-item">
+                <span class="profile-sidebar-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                    <polyline points="14 2 14 8 20 8"/>
+                    <line x1="8" y1="13" x2="16" y2="13"/>
+                    <line x1="8" y1="17" x2="13" y2="17"/>
+                  </svg>
+                </span>
+                <span class="profile-sidebar-text">
+                  <span class="profile-sidebar-title">Notes</span>
+                </span>
+              </button>
 
-          <button type="button" id="dropdown-update-char-btn" class="profile-grid-item">
-            <span class="profile-grid-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="12" cy="8" r="4"/>
-                <path d="M4 20a8 8 0 0 1 16 0"/>
-              </svg>
-            </span>
-            <span class="profile-grid-text">
-              <span class="profile-grid-title">Wardrobe</span>
-              <span class="profile-grid-sub">Customize avatar & appearance</span>
-            </span>
-          </button>
+              <button type="button" id="dropdown-calendar-btn" class="profile-sidebar-item">
+                <span class="profile-sidebar-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                    <line x1="16" y1="2" x2="16" y2="6"/>
+                    <line x1="8" y1="2" x2="8" y2="6"/>
+                    <line x1="3" y1="10" x2="21" y2="10"/>
+                  </svg>
+                </span>
+                <span class="profile-sidebar-text">
+                  <span class="profile-sidebar-title">Calendar</span>
+                </span>
+              </button>
 
-          <button type="button" id="dropdown-edit-space-btn" class="profile-grid-item mobile-only-dropdown-item hidden">
-            <span class="profile-grid-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <line x1="4" y1="21" x2="4" y2="14"/>
-                <line x1="4" y1="10" x2="4" y2="3"/>
-                <line x1="12" y1="21" x2="12" y2="12"/>
-                <line x1="12" y1="8" x2="12" y2="3"/>
-                <line x1="20" y1="21" x2="20" y2="16"/>
-                <line x1="20" y1="12" x2="20" y2="3"/>
-                <line x1="1" y1="14" x2="7" y2="14"/>
-                <line x1="9" y1="8" x2="15" y2="8"/>
-                <line x1="17" y1="16" x2="23" y2="16"/>
-              </svg>
-            </span>
-            <span class="profile-grid-text">
-              <span class="profile-grid-title">Edit space info</span>
-              <span class="profile-grid-sub">Manage space name & settings</span>
-            </span>
-          </button>
+              <button type="button" id="dropdown-edit-space-btn" class="profile-sidebar-item mobile-only-dropdown-item hidden">
+                <span class="profile-sidebar-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="4" y1="21" x2="4" y2="14"/>
+                    <line x1="4" y1="10" x2="4" y2="3"/>
+                    <line x1="12" y1="21" x2="12" y2="12"/>
+                    <line x1="12" y1="8" x2="12" y2="3"/>
+                    <line x1="20" y1="21" x2="20" y2="16"/>
+                    <line x1="20" y1="12" x2="20" y2="3"/>
+                    <line x1="1" y1="14" x2="7" y2="14"/>
+                    <line x1="9" y1="8" x2="15" y2="8"/>
+                    <line x1="17" y1="16" x2="23" y2="16"/>
+                  </svg>
+                </span>
+                <span class="profile-sidebar-text">
+                  <span class="profile-sidebar-title">Edit Space</span>
+                </span>
+              </button>
 
-          <button type="button" id="dropdown-edit-map-btn" class="profile-grid-item mobile-only-dropdown-item hidden">
-            <span class="profile-grid-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M12 20h9"/>
-                <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
-              </svg>
-            </span>
-            <span class="profile-grid-text">
-              <span class="profile-grid-title">Edit map</span>
-              <span class="profile-grid-sub">Customize tiles & decorations</span>
-            </span>
-          </button>
+              <button type="button" id="dropdown-edit-map-btn" class="profile-sidebar-item mobile-only-dropdown-item hidden">
+                <span class="profile-sidebar-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 20h9"/>
+                    <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+                  </svg>
+                </span>
+                <span class="profile-sidebar-text">
+                  <span class="profile-sidebar-title">Edit Map</span>
+                </span>
+              </button>
+            </div>
+
+            <div class="profile-sidebar-footer">
+              <button type="button" id="dropdown-logout-btn" class="profile-modal-logout-btn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+                  <polyline points="16 17 21 12 16 7"/>
+                  <line x1="21" y1="12" x2="9" y2="12"/>
+                </svg>
+                <span>Logout</span>
+              </button>
+            </div>
+          </nav>
+
+          <!-- Right: WoW-style Character & Equipment Slots -->
+          <section class="profile-modal-equipment-pane" aria-label="Character Equipment">
+            <!-- Top Bar: Casual & Adventure Tabs (Top Left) -->
+            <div class="profile-equip-topbar">
+              <div class="profile-equip-tabs" role="tablist" aria-label="Equipment Loadout">
+                <button
+                  type="button"
+                  id="profile-equip-tab-casual"
+                  class="profile-equip-tab-btn"
+                  data-equip-tab="casual"
+                  role="tab"
+                  aria-selected="false"
+                >
+                  Casual
+                </button>
+                <button
+                  type="button"
+                  id="profile-equip-tab-adventure"
+                  class="profile-equip-tab-btn active"
+                  data-equip-tab="adventure"
+                  role="tab"
+                  aria-selected="true"
+                >
+                  Adventure
+                </button>
+              </div>
+            </div>
+
+            <!-- WoW Paperdoll: Left Slots | Center Character Viewport | Right Slots -->
+            <div class="profile-wow-paperdoll">
+              <!-- Left Column: Helmet, Armor, Pants -->
+              <div class="wow-slot-col wow-slot-col-left">
+                <button type="button" class="wow-equip-slot" data-equip-slot="helmet" title="Helmet">
+                  <span class="wow-slot-frame">
+                    <span class="wow-slot-placeholder" aria-hidden="true">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M4 14a8 8 0 0 1 16 0v3a2 2 0 0 1-2 2h-2v-4H8v4H6a2 2 0 0 1-2-2v-3z"/>
+                        <path d="M12 6V3"/>
+                      </svg>
+                    </span>
+                    <img class="wow-slot-icon hidden" alt="Helmet" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" />
+                  </span>
+                  <span class="wow-slot-label">Helmet</span>
+                </button>
+
+                <button type="button" class="wow-equip-slot" data-equip-slot="chest" title="Armor">
+                  <span class="wow-slot-frame">
+                    <span class="wow-slot-placeholder" aria-hidden="true">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M20.38 3.46L16 2a4 4 0 0 1-8 0L3.62 3.46a2 2 0 0 0-1.34 2.23l.58 3.47a1 1 0 0 0 .99.84H6v10c0 1.1.9 2 2 2h8a2 2 0 0 0 2-2V10h2.15a1 1 0 0 0 .99-.84l.58-3.47a2 2 0 0 0-1.34-2.23z"/>
+                      </svg>
+                    </span>
+                    <img class="wow-slot-icon hidden" alt="Armor" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" />
+                  </span>
+                  <span class="wow-slot-label">Armor</span>
+                </button>
+
+                <button type="button" class="wow-equip-slot" data-equip-slot="pants" title="Pants">
+                  <span class="wow-slot-frame">
+                    <span class="wow-slot-placeholder" aria-hidden="true">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M6 3h12l1.5 18h-5l-2.5-9-2.5 9h-5L6 3z"/>
+                      </svg>
+                    </span>
+                    <img class="wow-slot-icon hidden" alt="Pants" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" />
+                  </span>
+                  <span class="wow-slot-label">Pants</span>
+                </button>
+              </div>
+
+              <!-- Center: Character Model Viewport -->
+              <div class="wow-character-stage">
+                <div class="wow-stage-controls" aria-label="Rotate character preview">
+                  <button type="button" id="btn-profile-char-rot-left" class="wow-stage-ctrl-btn" title="Rotate Left" aria-label="Rotate Left">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                      <polyline points="15 18 9 12 15 6"/>
+                    </svg>
+                  </button>
+                  <button type="button" id="btn-profile-char-rot-reset" class="wow-stage-ctrl-btn" title="Reset View" aria-label="Reset View">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M3 12a9 9 0 1 0 3-6.7L3 8"/>
+                      <path d="M3 3v5h5"/>
+                    </svg>
+                  </button>
+                  <button type="button" id="btn-profile-char-rot-right" class="wow-stage-ctrl-btn" title="Rotate Right" aria-label="Rotate Right">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                      <polyline points="9 18 15 12 9 6"/>
+                    </svg>
+                  </button>
+                </div>
+
+                <div class="wow-character-figure-wrap">
+                  <div class="wow-character-pedestal"></div>
+                  <img
+                    id="profile-equip-char-img"
+                    class="wow-character-img"
+                    alt="Character Preview"
+                    src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
+                  />
+                </div>
+
+                <div class="wow-stage-caption">
+                  <span id="profile-equip-stage-label">Male · Adventure</span>
+                </div>
+              </div>
+
+              <!-- Right Column: Gloves, Shoes -->
+              <div class="wow-slot-col wow-slot-col-right">
+                <button type="button" class="wow-equip-slot" data-equip-slot="gloves" title="Gloves">
+                  <span class="wow-slot-frame">
+                    <span class="wow-slot-placeholder" aria-hidden="true">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M18 11V6a2 2 0 0 0-4 0v4"/>
+                        <path d="M14 10V4a2 2 0 0 0-4 0v6"/>
+                        <path d="M10 10V5a2 2 0 0 0-4 0v9"/>
+                        <path d="M18 11a2 2 0 1 1 4 0v3a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/>
+                      </svg>
+                    </span>
+                    <img class="wow-slot-icon hidden" alt="Gloves" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" />
+                  </span>
+                  <span class="wow-slot-label">Gloves</span>
+                </button>
+
+                <button type="button" class="wow-equip-slot" data-equip-slot="boots" title="Shoes">
+                  <span class="wow-slot-frame">
+                    <span class="wow-slot-placeholder" aria-hidden="true">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M4 16v3a1 1 0 0 0 1 1h15a1 1 0 0 0 1-1v-1a3 3 0 0 0-3-3h-3l-2-5V5a1 1 0 0 0-1-1H6a1 1 0 0 0-1 1v11z"/>
+                      </svg>
+                    </span>
+                    <img class="wow-slot-icon hidden" alt="Shoes" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" />
+                  </span>
+                  <span class="wow-slot-label">Shoes</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Selected Slot Inspector / Quick Equip Bar -->
+            <div id="profile-equip-inspector" class="profile-equip-inspector">
+              <div class="profile-equip-inspector-info">
+                <span id="profile-equip-inspector-slot" class="profile-equip-inspector-slot">Helmet</span>
+                <span id="profile-equip-inspector-item" class="profile-equip-inspector-item">Leather Helmet</span>
+              </div>
+              <div id="profile-equip-inspector-actions" class="profile-equip-inspector-actions">
+                <!-- Populated dynamically when a slot is clicked -->
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal: Change Display Name (Costs 1,000 FP) -->
+    <div id="change-name-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="change-name-modal-title">
+      <div class="modal-card change-name-modal-card">
+        <div class="modal-header">
+          <div class="modal-header-row">
+            <h2 id="change-name-modal-title" class="modal-title">Change Name</h2>
+            <button type="button" id="btn-close-change-name-modal" class="btn-modal-close" title="Close" aria-label="Close">✕</button>
+          </div>
         </div>
 
-        <!-- Section 3: Bottom Logout Section (Aligned Right) -->
-        <div class="profile-modal-footer">
-          <button type="button" id="dropdown-logout-btn" class="profile-modal-logout-btn">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
-              <polyline points="16 17 21 12 16 7"/>
-              <line x1="21" y1="12" x2="9" y2="12"/>
-            </svg>
-            <span>Logout</span>
-          </button>
+        <div class="change-name-cost-banner">
+          <div class="change-name-cost-left">
+            <img src="/assets/icons/focus_point.png" class="fp-icon" alt="FP" />
+            <span>Cost: <strong>1,000 FP</strong></span>
+          </div>
+          <span id="change-name-current-fp" class="change-name-balance-pill">Balance: 0 FP</span>
         </div>
+
+        <form id="change-name-form">
+          <div class="form-group">
+            <label class="form-label" for="change-name-input">
+              New Display Name
+            </label>
+            <input
+              id="change-name-input"
+              class="form-input"
+              type="text"
+              maxlength="24"
+              placeholder="Enter new display name..."
+              autocomplete="off"
+            />
+            <span class="field-hint">Leave blank to revert to your username (<span id="change-name-username-tag">@player</span>).</span>
+          </div>
+
+          <div id="change-name-feedback" class="change-name-feedback hidden" role="alert"></div>
+
+          <div class="modal-footer-actions change-name-actions">
+            <button type="button" id="btn-cancel-change-name" class="btn-secondary">Cancel</button>
+            <button type="submit" id="btn-submit-change-name" class="btn-primary">
+              Change Name (1,000 FP)
+            </button>
+          </div>
+        </form>
       </div>
     </div>
 

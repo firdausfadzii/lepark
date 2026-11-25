@@ -1,7 +1,10 @@
 import Phaser from "phaser";
-import { PlayerOutfit, DEFAULT_PLAYER_OUTFIT, OUTERWEAR_CATALOG } from "shared";
-import FashionPipeline from "../pipelines/FashionPipeline";
-import FrontArmPipeline from "../pipelines/FrontArmPipeline";
+import { PlayerOutfit, DEFAULT_PLAYER_OUTFIT, FashionAnimState } from "shared";
+import {
+  acquireBakedOutfitTexture,
+  getBakedAnimKey,
+  releaseBakedOutfitTexture,
+} from "../fashionBaker";
 import { resolveGearSheetKeys } from "../rpg/rpgGearRenderer";
 
 export type AvatarDirection = "south" | "west" | "east" | "north";
@@ -13,314 +16,180 @@ const DIR_INDEX_MAP: Record<AvatarDirection, number> = {
   north: 3,
 };
 
-function resolvePipeline<T>(
-  sprite: Phaser.GameObjects.Sprite,
-  name: string
-): T | null {
-  const res = sprite.getPostPipeline(name);
-  if (Array.isArray(res)) {
-    return (res[0] as unknown as T) || null;
-  }
-  return (res as unknown as T) || null;
-}
+// Feet sit at y=74 inside the 92x92 cell, so originY = 74/92 aligns feet to container y=0
+const FEET_ORIGIN_Y = 74 / 92;
 
 /**
- * 4-layer modular pixel-art avatar container:
- *   0: bodySprite (32x32 animated Color-ID base sheet + FashionPipeline)
- *   1: outerwearSprite (4-frame static strip + FashionPipeline)
- *   2: frontArmSprite (reuses base sheet + FrontArmPipeline to sort hand/forearm above outerwear)
- *   3: hatSprite (4-frame static strip + FashionPipeline, synced to head bob)
+ * Single-sprite Bake-on-Equip pixel-art avatar container (92x92 cells).
+ * Composites base grayscale body + part_mask front-arm occlusion + equipped gear
+ * once per outfit change into a ref-counted Phaser texture — zero PostFXPipeline
+ * overhead and full WebGL sprite batching for multiplayer.
  */
 export default class PlayerAvatar extends Phaser.GameObjects.Container {
   public bodySprite: Phaser.GameObjects.Sprite;
-  public outerwearSprite: Phaser.GameObjects.Sprite;
-  public frontArmSprite: Phaser.GameObjects.Sprite;
-  public hatSprite: Phaser.GameObjects.Sprite;
-  public rpgAccessorySprite: Phaser.GameObjects.Sprite;
-  public rpgArmorSprite: Phaser.GameObjects.Sprite;
-  public rpgEmblemSprite: Phaser.GameObjects.Sprite;
-  public rpgWeaponSprite: Phaser.GameObjects.Sprite;
-
-  private bodyShader: FashionPipeline | null = null;
-  private outerwearShader: FashionPipeline | null = null;
-  private frontArmShader: FrontArmPipeline | null = null;
-  private hatShader: FashionPipeline | null = null;
 
   private currentDirection: AvatarDirection = "south";
   private currentIsMoving = false;
+  private isPlayingMelee = false;
   private currentOutfit: PlayerOutfit;
   private currentGearSig = "";
   private showRpgGear = false;
+
+  private bakedTextures: Record<FashionAnimState, string | null> = {
+    idle: null,
+    walking: null,
+    melee_swing: null,
+  };
+  private bakeGeneration = 0;
+  private destroyedFlag = false;
 
   constructor(scene: Phaser.Scene, x: number, y: number, outfit?: Partial<PlayerOutfit>) {
     super(scene, x, y);
 
     this.currentOutfit = { ...DEFAULT_PLAYER_OUTFIT, ...outfit };
-    const isWebGL = scene.renderer instanceof Phaser.Renderer.WebGL.WebGLRenderer;
 
-    // Layer 0: Base Body Sprite
-    this.bodySprite = scene.add.sprite(0, 0, "player_base", 0);
-    this.bodySprite.setOrigin(0.5, 1.0);
-    if (isWebGL) {
-      this.bodySprite.setPostPipeline("FashionPipeline");
-      this.bodyShader = resolvePipeline<FashionPipeline>(this.bodySprite, "FashionPipeline");
-    }
-
-    // Layer 1: Outerwear Overlay (4 static frames: S, W, E, N)
-    const initialOuterwearKey =
-      this.currentOutfit.outerwearKey && scene.textures.exists(this.currentOutfit.outerwearKey)
-        ? this.currentOutfit.outerwearKey
-        : "empty_pixel";
-    this.outerwearSprite = scene.add.sprite(0, 0, initialOuterwearKey, 0);
-    this.outerwearSprite.setOrigin(0.5, 1.0);
-    if (isWebGL) {
-      this.outerwearSprite.setPostPipeline("FashionPipeline");
-      this.outerwearShader = resolvePipeline<FashionPipeline>(this.outerwearSprite, "FashionPipeline");
-    }
-    this.outerwearSprite.setVisible(
-      Boolean(this.currentOutfit.outerwearKey && scene.textures.exists(this.currentOutfit.outerwearKey))
-    );
-
-    // Layer 2: Front Swinging Arm Clone (renders ON TOP of outerwear)
-    this.frontArmSprite = scene.add.sprite(0, 0, "player_base", 0);
-    this.frontArmSprite.setOrigin(0.5, 1.0);
-    if (isWebGL) {
-      this.frontArmSprite.setPostPipeline("FrontArmPipeline");
-      this.frontArmShader = resolvePipeline<FrontArmPipeline>(this.frontArmSprite, "FrontArmPipeline");
-    }
-    this.frontArmSprite.setVisible(this.outerwearSprite.visible);
-
-    // Layer 3: Hat / Hair Overlay (4 static frames: S, W, E, N)
-    const initialHatKey =
-      this.currentOutfit.hatKey && scene.textures.exists(this.currentOutfit.hatKey)
-        ? this.currentOutfit.hatKey
-        : "empty_pixel";
-    this.hatSprite = scene.add.sprite(0, 0, initialHatKey, 0);
-    this.hatSprite.setOrigin(0.5, 1.0);
-    if (isWebGL) {
-      this.hatSprite.setPostPipeline("FashionPipeline");
-      this.hatShader = resolvePipeline<FashionPipeline>(this.hatSprite, "FashionPipeline");
-    }
-    this.hatSprite.setVisible(
-      Boolean(this.currentOutfit.hatKey && scene.textures.exists(this.currentOutfit.hatKey))
-    );
-
-    // Animated 4x8 RPG Gear layers (strictly default character only, synced 1-to-1 to bodySprite frames 0..31)
-    this.rpgAccessorySprite = scene.add.sprite(0, 0, "empty_pixel", 0).setOrigin(0.5, 1.0).setVisible(false);
-    this.rpgArmorSprite = scene.add.sprite(0, 0, "empty_pixel", 0).setOrigin(0.5, 1.0).setVisible(false);
-    this.rpgEmblemSprite = scene.add.sprite(0, 0, "empty_pixel", 0).setOrigin(0.5, 1.0).setVisible(false);
-    this.rpgWeaponSprite = scene.add.sprite(0, 0, "empty_pixel", 0).setOrigin(0.5, 1.0).setVisible(false);
-
-    this.add([
-      this.bodySprite,
-      this.outerwearSprite,
-      this.rpgAccessorySprite,
-      this.rpgArmorSprite,
-      this.frontArmSprite,
-      this.hatSprite,
-      this.rpgEmblemSprite,
-      this.rpgWeaponSprite,
-    ]);
+    this.bodySprite = scene.add.sprite(0, 0, "empty_pixel", 0);
+    this.bodySprite.setOrigin(0.5, FEET_ORIGIN_Y);
+    this.add(this.bodySprite);
 
     this.updateOutfit(this.currentOutfit);
-
-    // Sync static overlay bobbing & keep frontArmSprite + animated RPG gear sprites frame-locked to bodySprite
-    this.bodySprite.on(
-      "animationupdate",
-      (anim: Phaser.Animations.Animation, frame: Phaser.Animations.AnimationFrame) => {
-        const tf = Number(frame.textureFrame);
-        if (this.frontArmSprite.visible) {
-          this.frontArmSprite.setFrame(frame.textureFrame);
-        }
-        this.syncRpgGearFrame(tf);
-        this.syncBobForFrame(anim.key.startsWith("walk_"), frame.index);
-      }
-    );
   }
 
-  private syncRpgGearFrame(textureFrame: number): void {
-    const safeFrame = Number.isFinite(textureFrame) ? textureFrame : 0;
-    if (this.rpgAccessorySprite.visible) this.rpgAccessorySprite.setFrame(safeFrame);
-    if (this.rpgArmorSprite.visible) this.rpgArmorSprite.setFrame(safeFrame);
-    if (this.rpgEmblemSprite.visible) this.rpgEmblemSprite.setFrame(safeFrame);
-    if (this.rpgWeaponSprite.visible) this.rpgWeaponSprite.setFrame(safeFrame);
+  private resolveEffectiveOutfit(): PlayerOutfit {
+    if (!this.showRpgGear || !this.currentGearSig) {
+      return this.currentOutfit;
+    }
+    const keys = resolveGearSheetKeys(this.currentGearSig);
+    const merged: PlayerOutfit = { ...this.currentOutfit };
+    if (keys.armorKey && !merged.chestKey && !merged.outerwearKey) {
+      merged.chestKey = "leather_cloth";
+    }
+    return merged;
   }
 
   public setRpgGear(gearSignature: string, visible: boolean): void {
-    this.currentGearSig = gearSignature || "";
-    this.showRpgGear = Boolean(visible && this.currentGearSig);
-
-    const applyLayer = (spr: Phaser.GameObjects.Sprite, key: string | null) => {
-      if (this.showRpgGear && key && this.scene.textures.exists(key)) {
-        spr.setTexture(key, this.getCurrentBodyTextureFrame());
-        spr.setVisible(true);
-      } else {
-        spr.setVisible(false);
-      }
-    };
-
-    const keys = resolveGearSheetKeys(this.currentGearSig);
-    applyLayer(this.rpgAccessorySprite, keys.accessoryKey);
-    applyLayer(this.rpgArmorSprite, keys.armorKey);
-    applyLayer(this.rpgEmblemSprite, keys.emblemKey);
-    applyLayer(this.rpgWeaponSprite, keys.weaponKey);
-  }
-
-  private getCurrentBodyTextureFrame(): number {
-    if (this.bodySprite.anims.isPlaying && this.bodySprite.anims.currentFrame) {
-      return Number(this.bodySprite.anims.currentFrame.textureFrame) || 0;
+    const nextSig = gearSignature || "";
+    const nextVisible = Boolean(visible && nextSig);
+    if (this.currentGearSig === nextSig && this.showRpgGear === nextVisible) {
+      return;
     }
-    const n = Number(this.bodySprite.frame?.name);
-    return Number.isFinite(n) ? n : 0;
-  }
-
-  private syncBobForFrame(isWalk: boolean, oneBasedFrameIndex: number): void {
-    let torsoBob = 0;
-    let headBob = 0;
-    if (isWalk) {
-      if (oneBasedFrameIndex === 2 || oneBasedFrameIndex === 4) {
-        torsoBob = -1;
-        headBob = -1;
-      }
-    } else {
-      if (oneBasedFrameIndex === 2) {
-        torsoBob = 1;
-        headBob = 1;
-      } else if (oneBasedFrameIndex === 3) {
-        torsoBob = 1;
-        headBob = 2;
-      }
-    }
-    this.outerwearSprite.y = torsoBob;
-    this.hatSprite.y = headBob;
+    this.currentGearSig = nextSig;
+    this.showRpgGear = nextVisible;
+    this.rebakeAllAnims();
   }
 
   public updateOutfit(outfit: Partial<PlayerOutfit>): void {
     this.currentOutfit = { ...this.currentOutfit, ...outfit };
+    this.rebakeAllAnims();
+  }
 
-    const {
-      shirtStyle = DEFAULT_PLAYER_OUTFIT.shirtStyle,
-      shirtColor = DEFAULT_PLAYER_OUTFIT.shirtColor,
-      sleeveColor = "",
-      pantsColor = DEFAULT_PLAYER_OUTFIT.pantsColor,
-      skinColor = DEFAULT_PLAYER_OUTFIT.skinColor,
-      outerwearKey = "",
-      outerwearColor = DEFAULT_PLAYER_OUTFIT.outerwearColor,
-      hatKey = "",
-    } = this.currentOutfit;
+  private rebakeAllAnims(): void {
+    const gen = ++this.bakeGeneration;
+    const effectiveOutfit = this.resolveEffectiveOutfit();
+    const anims: FashionAnimState[] = ["idle", "walking", "melee_swing"];
 
-    const hasOuterwear = Boolean(outerwearKey && this.scene.textures.exists(outerwearKey));
-    const catalogItem = hasOuterwear
-      ? OUTERWEAR_CATALOG.find((item) => item.id === outerwearKey)
-      : undefined;
-    const isShortSleeveOuterwear = !catalogItem || catalogItem.sleeveType === "short";
+    Promise.all(
+      anims.map((anim) => acquireBakedOutfitTexture(this.scene, effectiveOutfit, anim))
+    )
+      .then(([idleKey, walkKey, meleeKey]) => {
+        // If superseded by a newer outfit change or destroyed mid-bake, release immediately
+        if (this.destroyedFlag || gen !== this.bakeGeneration || !this.scene?.sys?.isActive()) {
+          releaseBakedOutfitTexture(this.scene, idleKey);
+          releaseBakedOutfitTexture(this.scene, walkKey);
+          releaseBakedOutfitTexture(this.scene, meleeKey);
+          return;
+        }
 
-    let baseUpperSleeveHex = skinColor;
-    let baseForearmHex = skinColor;
-    if (shirtStyle === "short_sleeve") {
-      baseUpperSleeveHex = shirtColor;
-    } else if (shirtStyle === "long_sleeve") {
-      baseUpperSleeveHex = shirtColor;
-      baseForearmHex = shirtColor;
-    } else if (sleeveColor) {
-      baseUpperSleeveHex = sleeveColor;
-      baseForearmHex = sleeveColor;
+        const prev = { ...this.bakedTextures };
+        this.bakedTextures.idle = idleKey;
+        this.bakedTextures.walking = walkKey;
+        this.bakedTextures.melee_swing = meleeKey;
+
+        // Release previous textures after acquiring new ones (prevents flicker on identical keys)
+        releaseBakedOutfitTexture(this.scene, prev.idle);
+        releaseBakedOutfitTexture(this.scene, prev.walking);
+        releaseBakedOutfitTexture(this.scene, prev.melee_swing);
+
+        if (!this.isPlayingMelee) {
+          this.applyActiveAnimation(true);
+        }
+      })
+      .catch((err) => {
+        console.warn("[PlayerAvatar] Failed to bake outfit textures:", err);
+      });
+  }
+
+  private applyActiveAnimation(forceRestart: boolean): void {
+    const animState: FashionAnimState = this.currentIsMoving ? "walking" : "idle";
+    const texKey = this.bakedTextures[animState];
+    if (!texKey || !this.scene?.textures?.exists(texKey)) {
+      return;
     }
 
-    const resolvedSleeve = hasOuterwear ? outerwearColor : baseUpperSleeveHex;
-    const resolvedForearm = hasOuterwear
-      ? isShortSleeveOuterwear
-        ? baseForearmHex
-        : outerwearColor
-      : baseForearmHex;
-    const resolvedFrontHand = skinColor;
-
-    this.bodyShader?.setOutfit({
-      shirtHex: shirtColor,
-      sleeveHex: resolvedSleeve,
-      forearmHex: resolvedForearm,
-      pantsHex: pantsColor,
-      skinHex: skinColor,
-      frontArmHex: resolvedFrontHand,
-    });
-
-    if (hasOuterwear) {
-      const dirIndex = DIR_INDEX_MAP[this.currentDirection] ?? 0;
-      this.outerwearSprite.setTexture(outerwearKey, dirIndex);
-      this.outerwearSprite.setVisible(true);
-      this.outerwearShader?.setOutfit({
-        shirtHex: outerwearColor,
-        sleeveHex: outerwearColor,
-        forearmHex: resolvedForearm,
-        pantsHex: pantsColor,
-        skinHex: skinColor,
-        frontArmHex: resolvedFrontHand,
-      });
-
-      this.frontArmSprite.setVisible(true);
-      this.frontArmShader?.setArmColors(resolvedFrontHand, resolvedForearm);
-      if (this.bodySprite.anims.isPlaying && this.bodySprite.anims.currentFrame) {
-        this.frontArmSprite.setFrame(this.bodySprite.anims.currentFrame.textureFrame);
-      } else {
-        this.frontArmSprite.setFrame(this.bodySprite.frame.name);
+    const animKey = getBakedAnimKey(texKey, this.currentDirection);
+    if (this.scene.anims.exists(animKey)) {
+      if (forceRestart || this.bodySprite.anims.currentAnim?.key !== animKey || !this.bodySprite.anims.isPlaying) {
+        this.bodySprite.setTexture(texKey);
+        this.bodySprite.anims.play(animKey, true);
       }
     } else {
-      this.outerwearSprite.setVisible(false);
-      this.frontArmSprite.setVisible(false);
-    }
-
-    if (hatKey && this.scene.textures.exists(hatKey)) {
       const dirIndex = DIR_INDEX_MAP[this.currentDirection] ?? 0;
-      this.hatSprite.setTexture(hatKey, dirIndex);
-      this.hatSprite.setVisible(true);
-      this.hatShader?.setOutfit({
-        shirtHex: outerwearColor,
-        sleeveHex: outerwearColor,
-        forearmHex: outerwearColor,
-        pantsHex: pantsColor,
-        skinHex: skinColor,
-      });
-    } else {
-      this.hatSprite.setVisible(false);
+      const cols = animState === "walking" ? 6 : 4;
+      this.bodySprite.anims.stop();
+      this.bodySprite.setTexture(texKey, dirIndex * cols);
     }
   }
 
   public playDirection(direction: AvatarDirection, isMoving: boolean): void {
-    const dirIndex = DIR_INDEX_MAP[direction] ?? 0;
     const changed = direction !== this.currentDirection || isMoving !== this.currentIsMoving;
     this.currentDirection = direction;
     this.currentIsMoving = isMoving;
 
-    if (this.outerwearSprite.visible) {
-      this.outerwearSprite.setFrame(dirIndex);
+    if (this.isPlayingMelee) return;
+    this.applyActiveAnimation(changed);
+  }
+
+  public playMeleeSwing(direction?: AvatarDirection, onComplete?: () => void): void {
+    if (direction) {
+      this.currentDirection = direction;
     }
-    if (this.hatSprite.visible) {
-      this.hatSprite.setFrame(dirIndex);
+    const texKey = this.bakedTextures.melee_swing;
+    if (!texKey || !this.scene?.textures?.exists(texKey)) {
+      onComplete?.();
+      return;
     }
 
-    const animKey = `${isMoving ? "walk" : "idle"}_${direction}`;
-    if (this.scene.anims.exists(animKey)) {
-      if (changed || !this.bodySprite.anims.isPlaying) {
-        this.bodySprite.anims.play(animKey, true);
-        const curFrame = this.bodySprite.anims.currentFrame;
-        if (curFrame) {
-          if (this.frontArmSprite.visible) {
-            this.frontArmSprite.setFrame(curFrame.textureFrame);
-          }
-          this.syncRpgGearFrame(Number(curFrame.textureFrame));
-          this.syncBobForFrame(isMoving, curFrame.index);
-        }
-      }
-    } else {
-      this.bodySprite.anims.stop();
-      const idleFrame = dirIndex * 4;
-      this.bodySprite.setFrame(idleFrame);
-      if (this.frontArmSprite.visible) {
-        this.frontArmSprite.setFrame(idleFrame);
-      }
-      this.syncRpgGearFrame(idleFrame);
-      this.outerwearSprite.y = 0;
-      this.hatSprite.y = 0;
+    const animKey = getBakedAnimKey(texKey, this.currentDirection);
+    if (!this.scene.anims.exists(animKey)) {
+      onComplete?.();
+      return;
     }
+
+    this.isPlayingMelee = true;
+    this.bodySprite.setTexture(texKey);
+    this.bodySprite.anims.play(animKey, false);
+    this.bodySprite.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => {
+      this.isPlayingMelee = false;
+      if (!this.destroyedFlag) {
+        this.applyActiveAnimation(true);
+      }
+      onComplete?.();
+    });
+  }
+
+  public override destroy(fromScene?: boolean): void {
+    if (!this.destroyedFlag) {
+      this.destroyedFlag = true;
+      this.bakeGeneration++;
+      if (this.scene) {
+        releaseBakedOutfitTexture(this.scene, this.bakedTextures.idle);
+        releaseBakedOutfitTexture(this.scene, this.bakedTextures.walking);
+        releaseBakedOutfitTexture(this.scene, this.bakedTextures.melee_swing);
+      }
+      this.bakedTextures.idle = null;
+      this.bakedTextures.walking = null;
+      this.bakedTextures.melee_swing = null;
+    }
+    super.destroy(fromScene);
   }
 }

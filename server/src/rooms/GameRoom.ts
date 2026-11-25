@@ -5356,6 +5356,11 @@ export class GameRoom extends Room<GameState> {
     if (isValidKey(data.outerwearKey)) target.outerwearKey = data.outerwearKey;
     if (isValidHex(data.outerwearColor)) target.outerwearColor = data.outerwearColor;
     if (isValidKey(data.hatKey)) target.hatKey = data.hatKey;
+    if (isValidKey(data.chestKey)) target.chestKey = data.chestKey;
+    if (isValidKey(data.pantsKey)) target.pantsKey = data.pantsKey;
+    if (isValidKey(data.helmetKey)) target.helmetKey = data.helmetKey;
+    if (isValidKey(data.bootsKey)) target.bootsKey = data.bootsKey;
+    if (isValidKey(data.glovesKey)) target.glovesKey = data.glovesKey;
   }
 
   private getPlayerAvatarUrl(sessionId: string): string {

@@ -176,6 +176,9 @@ export function extractPlayerOutfit(raw: any): PlayerOutfit {
     outerwearKey: typeof src.outerwearKey === "string" ? src.outerwearKey : DEFAULT_PLAYER_OUTFIT.outerwearKey,
     outerwearColor: typeof src.outerwearColor === "string" && src.outerwearColor ? src.outerwearColor : DEFAULT_PLAYER_OUTFIT.outerwearColor,
     hatKey: typeof src.hatKey === "string" ? src.hatKey : DEFAULT_PLAYER_OUTFIT.hatKey,
+    chestKey: typeof src.chestKey === "string" ? src.chestKey : (typeof src.outerwearKey === "string" ? src.outerwearKey : ""),
+    pantsKey: typeof src.pantsKey === "string" ? src.pantsKey : "",
+    helmetKey: typeof src.helmetKey === "string" ? src.helmetKey : (typeof src.hatKey === "string" ? src.hatKey : ""),
   };
 }
 

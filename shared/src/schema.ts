@@ -10,6 +10,11 @@ export class OutfitSchema extends Schema {
   @type("string") outerwearKey: string = "";
   @type("string") outerwearColor: string = "#e74c3c";
   @type("string") hatKey: string = "";
+  @type("string") chestKey: string = "";
+  @type("string") pantsKey: string = "";
+  @type("string") helmetKey: string = "";
+  @type("string") bootsKey: string = "";
+  @type("string") glovesKey: string = "";
 }
 
 export class PlayerState extends Schema {

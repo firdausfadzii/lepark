@@ -44,13 +44,13 @@ function getHttpsConfig(enabled: boolean, customCert?: string, customKey?: strin
     }
   }
 
-  // 3. Fallback: generate self-signed cert for lan.jomlepark.cc and localhost
+  // 3. Fallback: generate self-signed cert for localhost
   try {
     if (!fs.existsSync(certsDir)) {
       fs.mkdirSync(certsDir, { recursive: true });
     }
     execSync(
-      `openssl req -x509 -newkey rsa:2048 -nodes -sha256 -subj "/CN=lan.jomlepark.cc" -addext "subjectAltName=DNS:lan.jomlepark.cc,DNS:jomlepark.cc,DNS:*.jomlepark.cc,DNS:localhost,IP:127.0.0.1" -keyout "${keyPath}" -out "${certPath}" -days 3650`,
+      `openssl req -x509 -newkey rsa:2048 -nodes -sha256 -subj "/CN=localhost" -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" -keyout "${keyPath}" -out "${certPath}" -days 3650`,
       { stdio: "ignore" },
     );
     if (fs.existsSync(certPath) && fs.existsSync(keyPath)) {

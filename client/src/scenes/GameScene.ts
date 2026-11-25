@@ -2,8 +2,6 @@ import Phaser from "phaser";
 import { MultiplayerManager, extractPlayerOutfit } from "../network/MultiplayerManager";
 import { VoiceManager } from "../network/VoiceManager";
 import { parseSheetFrameRef, SPRITE_SHEET_CONFIGS } from "../spriteSheetResolver";
-import FashionPipeline from "../pipelines/FashionPipeline";
-import FrontArmPipeline from "../pipelines/FrontArmPipeline";
 import PlayerAvatar, { AvatarDirection } from "../entities/PlayerAvatar";
 import {
   TILE_SIZE,
@@ -509,46 +507,7 @@ export class GameScene extends Phaser.Scene {
       "/assets/decoration/living_room_two_sprites.json"
     );
 
-    // Modular Color-ID base character spritesheet (32x32 uniform cells: 4 cols x 8 rows)
-    this.load.spritesheet("player_base", "/assets/character_base_map.png", {
-      frameWidth: 32,
-      frameHeight: 32,
-    });
-
-    // Animated 4x8 (128x256) RPG Gear spritesheets synced 1-to-1 with player_base
-    for (const sheet of RPG_GEAR_SHEETS) {
-      this.load.spritesheet(sheet.key, sheet.url, {
-        frameWidth: 32,
-        frameHeight: 32,
-      });
-    }
-
-    // 4-frame static fashion overlays (South, West, East, North)
-    for (const item of OUTERWEAR_CATALOG) {
-      this.load.spritesheet(item.id, item.assetPath, {
-        frameWidth: 32,
-        frameHeight: 32,
-      });
-    }
-
-    // Slime avatar atlas & frames
-    this.load.atlas(
-      "slime_sheet",
-      "/assets/sprites/slime/slime_spritesheet.png",
-      "/assets/sprites/slime/slime_sprites.json"
-    );
-
-    // Ghost Slime avatar atlas & frames
-    this.load.atlas(
-      "ghost_slime_sheet",
-      "/assets/sprites/ghost_slime/ghost_slime_spritesheet.png",
-      "/assets/sprites/ghost_slime/ghost_slime_sprites.json"
-    );
-    this.load.atlas(
-      "ghost_slime_walk_sheet",
-      "/assets/sprites/ghost_slime/ghost_slime_walk_spritesheet.png",
-      "/assets/sprites/ghost_slime/ghost_slime_walk_sprites.json"
-    );
+    // Bake-on-Equip 92x92 player assets are loaded and cached on demand by fashionBaker.ts
 
     // Seller NPC spritesheets & shop counter prop
     for (const opt of SELLER_NPC_SPRITE_OPTIONS) {
@@ -589,48 +548,6 @@ export class GameScene extends Phaser.Scene {
         }
       }
     });
-
-    // Register modular fashion PostFX shaders once
-    if (this.renderer instanceof Phaser.Renderer.WebGL.WebGLRenderer) {
-      this.renderer.pipelines.addPostPipeline("FashionPipeline", FashionPipeline);
-      this.renderer.pipelines.addPostPipeline("FrontArmPipeline", FrontArmPipeline);
-    }
-
-    if (this.textures.exists("player_base")) {
-      this.textures.get("player_base").setFilter(Phaser.Textures.FilterMode.NEAREST);
-    }
-    for (const sheet of RPG_GEAR_SHEETS) {
-      if (this.textures.exists(sheet.key)) {
-        this.textures.get(sheet.key).setFilter(Phaser.Textures.FilterMode.NEAREST);
-      }
-    }
-    for (const item of OUTERWEAR_CATALOG) {
-      if (this.textures.exists(item.id)) {
-        this.textures.get(item.id).setFilter(Phaser.Textures.FilterMode.NEAREST);
-      }
-    }
-
-    // Register 4-directional idle & walk animations on player_base (4 cols x 8 rows)
-    const animDefs: Array<{ key: string; start: number; end: number }> = [
-      { key: "idle_south", start: 0, end: 3 },
-      { key: "idle_west", start: 4, end: 7 },
-      { key: "idle_east", start: 8, end: 11 },
-      { key: "idle_north", start: 12, end: 15 },
-      { key: "walk_south", start: 16, end: 19 },
-      { key: "walk_west", start: 20, end: 23 },
-      { key: "walk_east", start: 24, end: 27 },
-      { key: "walk_north", start: 28, end: 31 },
-    ];
-    for (const def of animDefs) {
-      if (!this.anims.exists(def.key) && this.textures.exists("player_base")) {
-        this.anims.create({
-          key: def.key,
-          frames: this.anims.generateFrameNumbers("player_base", { start: def.start, end: def.end }),
-          frameRate: 6,
-          repeat: -1,
-        });
-      }
-    }
 
     // Seller NPC spritesheets filter & friendly idle wave animations
     if (this.textures.exists("shop_counter_prop")) {
@@ -1456,7 +1373,7 @@ export class GameScene extends Phaser.Scene {
     sprite.setOrigin(0.5, 1.0);
     sprite.setVisible(false);
 
-    const scale = CHARACTER_MAX_SIZE / 25;
+    const scale = CHARACTER_MAX_SIZE / 55;
 
     const initialOutfit: PlayerOutfit = player?.outfit
       ? extractPlayerOutfit(player.outfit)
@@ -1828,10 +1745,7 @@ export class GameScene extends Phaser.Scene {
         const rawRef = rawDirFrames[visual.currentFrameIdx % rawDirFrames.length];
         const parsedSheet = parseSheetFrameRef(rawRef);
         if (parsedSheet) {
-          let atlasKey = SPRITE_SHEET_CONFIGS[parsedSheet.sheetKey].phaserAtlas;
-          if (isMoving && parsedSheet.sheetKey === "ghost_slime" && this.textures.exists("ghost_slime_walk_sheet")) {
-            atlasKey = "ghost_slime_walk_sheet";
-          }
+          const atlasKey = SPRITE_SHEET_CONFIGS[parsedSheet.sheetKey].phaserAtlas;
           if (this.textures.exists(atlasKey)) {
             visual.sprite.setTexture(atlasKey, parsedSheet.frameName);
             visual.sprite.setOrigin(0.5, 1.0);

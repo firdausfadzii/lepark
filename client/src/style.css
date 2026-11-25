@@ -3748,70 +3748,46 @@ body.editor-placing-mode #player-context-menu {
   display: none !important;
 }
 
-/* Profile Modal Menu */
+/* Profile Modal Menu (Overhauled 2-column WoW-style Character & Equipment UI) */
 .profile-modal-card {
-  max-width: 540px;
-  width: 92vw;
-  padding: 22px;
+  max-width: 760px;
+  width: 94vw;
+  padding: 20px;
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 16px;
 }
 
-/* Section 1: User Info */
+/* Header: User Info (No player character avatar) */
 .profile-modal-user-section {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding-bottom: 16px;
+  padding-bottom: 14px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .profile-modal-user-left {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
   min-width: 0;
 }
 
-.profile-modal-avatar-wrap {
-  position: relative;
-  width: 54px;
-  height: 54px;
-  border-radius: 16px;
-  background: rgba(15, 26, 26, 0.85);
-  border: 1px solid rgba(94, 234, 212, 0.3);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  overflow: visible;
-}
-
-.profile-modal-avatar-img {
-  width: 46px;
-  height: 46px;
-  object-fit: contain;
-  image-rendering: pixelated;
-}
-
 .profile-modal-status-dot {
-  position: absolute;
-  bottom: -2px;
-  right: -2px;
-  width: 12px;
-  height: 12px;
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
   background: #22c55e;
-  border: 2px solid rgba(22, 36, 36, 0.98);
   box-shadow: 0 0 6px #22c55e;
+  flex-shrink: 0;
 }
 
 .profile-modal-user-meta {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 4px;
   min-width: 0;
 }
 
@@ -3832,6 +3808,110 @@ body.editor-placing-mode #player-context-menu {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.profile-modal-edit-name-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 7px;
+  border: 1px solid rgba(94, 234, 212, 0.22);
+  background: rgba(59, 130, 130, 0.14);
+  color: #94a3b8;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.14s ease, border-color 0.14s ease, color 0.14s ease;
+}
+
+.profile-modal-edit-name-btn:hover {
+  background: rgba(94, 234, 212, 0.16);
+  border-color: rgba(94, 234, 212, 0.5);
+  color: #5eead4;
+}
+
+.profile-modal-edit-name-btn svg {
+  width: 13px;
+  height: 13px;
+}
+
+/* Change Name Modal */
+#change-name-modal {
+  z-index: 1200;
+}
+
+.change-name-modal-card {
+  max-width: 420px;
+  width: 92vw;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.change-name-cost-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(236, 162, 57, 0.1);
+  border: 1px solid rgba(236, 162, 57, 0.32);
+  font-size: 12.5px;
+  color: #fde68a;
+}
+
+.change-name-cost-left {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.change-name-cost-left .fp-icon {
+  width: 15px;
+  height: 15px;
+  image-rendering: pixelated;
+}
+
+.change-name-balance-pill {
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 9999px;
+  background: rgba(20, 32, 32, 0.85);
+  border: 1px solid rgba(59, 130, 130, 0.4);
+  color: #5eead4;
+}
+
+.change-name-balance-pill.insufficient {
+  border-color: rgba(239, 68, 68, 0.45);
+  color: #fca5a5;
+}
+
+.change-name-feedback {
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.35;
+  margin-bottom: 10px;
+  background: rgba(239, 68, 68, 0.14);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  color: #fecaca;
+}
+
+.change-name-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.change-name-actions .btn-primary:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
 }
 
 .profile-modal-admin-badge {
@@ -3930,42 +4010,61 @@ body.editor-placing-mode #player-context-menu {
   flex-shrink: 0;
 }
 
-/* Section 2: Grid Menu */
-.profile-modal-grid {
+/* Two-column Body: Mini Left Sidebar + Right Character & Equipment Pane */
+.profile-modal-body {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
+  grid-template-columns: 186px minmax(0, 1fr);
+  gap: 16px;
+  align-items: stretch;
+  min-height: 368px;
 }
 
-.profile-grid-item {
+/* Left Mini Sidebar */
+.profile-modal-sidebar {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  justify-content: space-between;
   gap: 10px;
-  padding: 14px 12px;
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(59, 130, 130, 0.2);
-  color: #f1f5f9;
+  padding-right: 14px;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.profile-sidebar-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.profile-sidebar-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(59, 130, 130, 0.16);
+  color: #e2e8f0;
   cursor: pointer;
   text-align: left;
-  transition: background 0.16s ease, border-color 0.16s ease, transform 0.16s ease;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.12s ease;
 }
 
-.profile-grid-item:hover {
-  background: rgba(94, 234, 212, 0.08);
+.profile-sidebar-item:hover {
+  background: rgba(94, 234, 212, 0.09);
   border-color: rgba(94, 234, 212, 0.42);
-  transform: translateY(-1px);
+  color: #ffffff;
+  transform: translateX(2px);
 }
 
-.profile-grid-item:active {
-  transform: translateY(0);
+.profile-sidebar-item:active {
+  transform: translateX(0);
 }
 
-.profile-grid-icon {
-  width: 34px;
-  height: 34px;
-  border-radius: 10px;
+.profile-sidebar-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
   background: rgba(59, 130, 130, 0.16);
   border: 1px solid rgba(94, 234, 212, 0.2);
   color: #5eead4;
@@ -3975,49 +4074,53 @@ body.editor-placing-mode #player-context-menu {
   flex-shrink: 0;
 }
 
-.profile-grid-icon svg {
-  width: 18px;
-  height: 18px;
+.profile-sidebar-icon svg {
+  width: 15px;
+  height: 15px;
 }
 
-.profile-grid-text {
+.profile-sidebar-text {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 1px;
   min-width: 0;
-  width: 100%;
+  flex: 1;
 }
 
-.profile-grid-title {
-  font-size: 13px;
+.profile-sidebar-title {
+  font-size: 12.5px;
   font-weight: 600;
-  color: #ffffff;
-  line-height: 1.25;
+  color: #f8fafc;
+  line-height: 1.2;
   display: flex;
   align-items: center;
   gap: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.profile-grid-sub {
-  font-size: 10.5px;
+.profile-sidebar-sub {
+  font-size: 10px;
   color: #94a3b8;
-  line-height: 1.3;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-/* Section 3: Bottom Logout Section (Aligned Right) */
-.profile-modal-footer {
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  padding-top: 12px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+.profile-sidebar-footer {
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
 }
 
 .profile-modal-logout-btn {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
+  width: 100%;
   gap: 7px;
-  padding: 8px 14px;
+  padding: 8px 12px;
   border-radius: 10px;
   background: rgba(239, 68, 68, 0.12);
   border: 1px solid rgba(239, 68, 68, 0.3);
@@ -4039,12 +4142,400 @@ body.editor-placing-mode #player-context-menu {
   height: 15px;
 }
 
-@media (max-width: 540px) {
+/* Right Pane: WoW-style Character & Equipment */
+.profile-modal-equipment-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.profile-equip-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.profile-equip-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px;
+  border-radius: 10px;
+  background: rgba(11, 20, 20, 0.8);
+  border: 1px solid rgba(59, 130, 130, 0.25);
+}
+
+.profile-equip-tab-btn {
+  padding: 6px 14px;
+  border-radius: 7px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #94a3b8;
+  font-family: var(--font-display, "Space Grotesk", sans-serif);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.profile-equip-tab-btn:hover {
+  color: #e2e8f0;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.profile-equip-tab-btn.active {
+  background: rgba(59, 130, 130, 0.28);
+  border-color: rgba(94, 234, 212, 0.45);
+  color: #5eead4;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+/* WoW Paperdoll Layout */
+.profile-wow-paperdoll {
+  display: grid;
+  grid-template-columns: 74px minmax(0, 1fr) 74px;
+  gap: 12px;
+  align-items: center;
+  padding: 14px 12px;
+  border-radius: 14px;
+  background:
+    radial-gradient(ellipse at center, rgba(30, 52, 52, 0.65) 0%, rgba(12, 21, 21, 0.94) 75%);
+  border: 1px solid rgba(94, 234, 212, 0.18);
+  box-shadow: inset 0 0 24px rgba(0, 0, 0, 0.55);
+}
+
+.wow-slot-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+.wow-equip-slot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  color: #94a3b8;
+  transition: transform 0.14s ease;
+}
+
+.wow-equip-slot:hover {
+  transform: translateY(-1px);
+}
+
+.wow-slot-frame {
+  position: relative;
+  width: 54px;
+  height: 54px;
+  border-radius: 10px;
+  background: linear-gradient(145deg, rgba(16, 26, 28, 0.96), rgba(9, 15, 16, 0.98));
+  border: 2px solid rgba(100, 116, 139, 0.36);
+  box-shadow:
+    inset 0 2px 8px rgba(0, 0, 0, 0.72),
+    0 2px 6px rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.wow-equip-slot:hover .wow-slot-frame {
+  border-color: rgba(94, 234, 212, 0.6);
+}
+
+.wow-equip-slot.equipped .wow-slot-frame {
+  border-color: rgba(236, 162, 57, 0.8);
+  background: linear-gradient(145deg, rgba(44, 34, 18, 0.7), rgba(16, 22, 22, 0.96));
+  box-shadow:
+    inset 0 0 10px rgba(236, 162, 57, 0.2),
+    0 0 10px rgba(236, 162, 57, 0.16);
+}
+
+.wow-equip-slot.selected .wow-slot-frame {
+  border-color: #5eead4;
+  box-shadow:
+    0 0 0 2px rgba(94, 234, 212, 0.28),
+    inset 0 0 10px rgba(94, 234, 212, 0.18);
+}
+
+.wow-slot-placeholder {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(148, 163, 184, 0.36);
+}
+
+.wow-slot-placeholder svg {
+  width: 24px;
+  height: 24px;
+}
+
+.wow-slot-icon {
+  width: 44px;
+  height: 44px;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
+.wow-slot-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: #94a3b8;
+  letter-spacing: 0.02em;
+  line-height: 1.1;
+}
+
+.wow-equip-slot.equipped .wow-slot-label {
+  color: #f8fafc;
+}
+
+/* Center Character Viewport (WoW-inspired dark chamber) */
+.wow-character-stage {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 248px;
+  padding: 10px 8px;
+  border-radius: 12px;
+  background:
+    radial-gradient(circle at 50% 42%, rgba(59, 130, 130, 0.22) 0%, rgba(10, 17, 18, 0.85) 72%);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  box-shadow: inset 0 0 28px rgba(0, 0, 0, 0.65);
+}
+
+.wow-stage-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 6px;
+  border-radius: 9999px;
+  background: rgba(11, 19, 20, 0.72);
+  border: 1px solid rgba(236, 162, 57, 0.26);
+}
+
+.wow-stage-ctrl-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #fbbf24;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.14s ease, color 0.14s ease, border-color 0.14s ease;
+}
+
+.wow-stage-ctrl-btn:hover {
+  background: rgba(236, 162, 57, 0.16);
+  border-color: rgba(236, 162, 57, 0.4);
+  color: #fde68a;
+}
+
+.wow-stage-ctrl-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.wow-character-figure-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 164px;
+  height: 164px;
+}
+
+.wow-character-pedestal {
+  position: absolute;
+  bottom: 14px;
+  width: 96px;
+  height: 20px;
+  border-radius: 50%;
+  background: radial-gradient(ellipse at center, rgba(94, 234, 212, 0.22) 0%, rgba(0, 0, 0, 0.55) 70%, transparent 100%);
+  pointer-events: none;
+}
+
+.wow-character-img {
+  position: relative;
+  z-index: 1;
+  width: 156px;
+  height: 156px;
+  object-fit: contain;
+  image-rendering: pixelated;
+  filter: drop-shadow(0 8px 12px rgba(0, 0, 0, 0.55));
+}
+
+.wow-stage-caption {
+  font-size: 11px;
+  font-weight: 600;
+  color: #94a3b8;
+  letter-spacing: 0.03em;
+}
+
+/* Slot Inspector / Quick Equip Bar */
+.profile-equip-inspector {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  background: rgba(15, 26, 26, 0.82);
+  border: 1px solid rgba(59, 130, 130, 0.22);
+  min-height: 44px;
+  flex-wrap: wrap;
+}
+
+.profile-equip-inspector-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.profile-equip-inspector-slot {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #5eead4;
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: rgba(59, 130, 130, 0.18);
+  border: 1px solid rgba(94, 234, 212, 0.25);
+}
+
+.profile-equip-inspector-item {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #f1f5f9;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.profile-equip-inspector-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.profile-equip-chip-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  background: rgba(255, 255, 255, 0.04);
+  color: #cbd5e1;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.14s ease, border-color 0.14s ease, color 0.14s ease;
+}
+
+.profile-equip-chip-btn:hover {
+  background: rgba(94, 234, 212, 0.1);
+  border-color: rgba(94, 234, 212, 0.45);
+  color: #ffffff;
+}
+
+.profile-equip-chip-btn.active {
+  background: rgba(236, 162, 57, 0.18);
+  border-color: rgba(236, 162, 57, 0.6);
+  color: #fde68a;
+}
+
+.profile-equip-empty-note {
+  font-size: 11.5px;
+  color: #64748b;
+  font-style: italic;
+}
+
+@media (max-width: 680px) {
   .profile-modal-card {
-    padding: 18px 16px;
+    padding: 16px;
+    max-height: 90vh;
+    overflow-y: auto;
   }
-  .profile-modal-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .profile-modal-body {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    min-height: 0;
+  }
+  .profile-modal-sidebar {
+    display: contents;
+  }
+  .profile-sidebar-list {
+    order: 1;
+    display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    gap: 8px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .profile-sidebar-list::-webkit-scrollbar {
+    display: none;
+  }
+  .profile-sidebar-item {
+    width: auto;
+    flex: 0 0 auto;
+    white-space: nowrap;
+    padding: 8px 12px;
+  }
+  .profile-sidebar-item:hover {
+    transform: none;
+  }
+  .profile-modal-equipment-pane {
+    order: 2;
+  }
+  .profile-sidebar-footer {
+    order: 3;
+    padding-top: 12px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  .profile-wow-paperdoll {
+    grid-template-columns: 62px minmax(0, 1fr) 62px;
+    gap: 8px;
+    padding: 10px 8px;
+  }
+  .wow-slot-frame {
+    width: 48px;
+    height: 48px;
+  }
+  .wow-slot-icon {
+    width: 38px;
+    height: 38px;
+  }
+  .wow-character-figure-wrap {
+    width: 132px;
+    height: 132px;
+  }
+  .wow-character-img {
+    width: 128px;
+    height: 128px;
   }
 }
 

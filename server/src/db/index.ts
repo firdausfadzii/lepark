@@ -1177,6 +1177,88 @@ export async function updateUserDisplayName(
   return null;
 }
 
+export async function changeUserDisplayNameWithCost(
+  id: number,
+  displayName: string | null,
+  cost: number
+): Promise<{ success: boolean; user?: UserRecord; newPoints?: number; error?: string }> {
+  const cleanDisplayName = displayName && displayName.trim() ? displayName.trim().slice(0, 30) : null;
+  const user = await findUserById(id);
+  if (!user) {
+    return { success: false, error: "User not found." };
+  }
+
+  const currentClean = user.display_name && user.display_name.trim() ? user.display_name.trim() : null;
+  if (currentClean === cleanDisplayName) {
+    return {
+      success: false,
+      newPoints: user.focus_points || 0,
+      error: "New display name is the same as your current name.",
+    };
+  }
+
+  const currentPoints = user.focus_points || 0;
+  if (currentPoints < cost) {
+    return {
+      success: false,
+      newPoints: currentPoints,
+      error: `Insufficient Focus Points. You need ${cost.toLocaleString()} FP (you have ${currentPoints.toLocaleString()} FP).`,
+    };
+  }
+
+  if (isDbConnected) {
+    try {
+      const res = await pool.query(
+        `UPDATE users
+         SET display_name = $2,
+             focus_points = focus_points - $3,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = $1 AND focus_points >= $3
+         RETURNING ${USER_SELECT_COLUMNS}`,
+        [id, cleanDisplayName, cost]
+      );
+      if (!res.rows[0]) {
+        const refreshed = await findUserById(id);
+        return {
+          success: false,
+          newPoints: refreshed?.focus_points || 0,
+          error: `Insufficient Focus Points. You need ${cost.toLocaleString()} FP.`,
+        };
+      }
+      const updated: UserRecord = {
+        ...res.rows[0],
+        role: res.rows[0].role === "superadmin" ? "superadmin" : "user",
+      };
+      inMemoryUsers.set(updated.username.toLowerCase(), updated);
+      return {
+        success: true,
+        user: updated,
+        newPoints: updated.focus_points || 0,
+      };
+    } catch (err) {
+      handleDbQueryError("Error updating user display name with cost", err);
+      return { success: false, error: "Database error while changing display name." };
+    }
+  }
+
+  // In-memory fallback
+  const nextPoints = currentPoints - cost;
+  for (const u of inMemoryUsers.values()) {
+    if (u.id === id) {
+      u.display_name = cleanDisplayName;
+      u.focus_points = nextPoints;
+      u.updated_at = new Date();
+      return {
+        success: true,
+        user: u,
+        newPoints: nextPoints,
+      };
+    }
+  }
+
+  return { success: false, error: "User not found." };
+}
+
 export async function updateUserEmail(id: number, email: string): Promise<UserRecord | null> {
   const cleanEmail = email.trim().toLowerCase();
 

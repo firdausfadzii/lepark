@@ -20,6 +20,7 @@ import {
   findUserById,
   createUser,
   updateUserDisplayName,
+  changeUserDisplayNameWithCost,
   updateUserEmail,
   updateUserPassword,
   getSuperadminSpaces,
@@ -80,6 +81,7 @@ import {
   FriendsListResponse,
   ORGANISATION_CREATION_COST,
   ASSET_UNLOCK_COST,
+  NAME_CHANGE_FP_COST,
   ALL_PAID_ASSET_IDS,
   isPaidAssetId,
   isValidFocusTheme,
@@ -459,7 +461,7 @@ app.get("/api/auth/me", async (req, res) => {
 });
 
 /**
- * Update user display name.
+ * Update user display name (requires NAME_CHANGE_FP_COST Focus Points).
  */
 app.put("/api/auth/profile", async (req, res) => {
   try {
@@ -474,19 +476,31 @@ app.put("/api/auth/profile", async (req, res) => {
         ? displayName.trim().slice(0, 30)
         : null;
 
-    const updatedRecord = await updateUserDisplayName(user.id, cleanDisplayName);
-    if (!updatedRecord) {
-      return res.status(404).json({ success: false, error: "User not found." });
+    const result = await changeUserDisplayNameWithCost(
+      user.id,
+      cleanDisplayName,
+      NAME_CHANGE_FP_COST
+    );
+    if (!result.success || !result.user) {
+      return res.status(400).json({
+        success: false,
+        error: result.error || "Could not update display name.",
+        points: result.newPoints,
+      });
     }
 
-    const updatedUser: AuthUser = buildAuthUserDto(updatedRecord, false);
+    if (typeof result.newPoints === "number") {
+      focusPointsService.updateUserPoints(user.id, result.newPoints);
+    }
 
+    const updatedUser: AuthUser = buildAuthUserDto(result.user, false);
     const newToken = generateToken(updatedUser);
 
     return res.json({
       success: true,
       token: newToken,
       user: updatedUser,
+      points: result.newPoints,
     });
   } catch (err: any) {
     console.error("Update profile error:", err);
@@ -612,10 +626,8 @@ app.post("/api/skins/unlock", async (req, res) => {
       return res.status(400).json({ success: false, error: "Missing skinId." });
     }
 
-    // Define skin costs
-    const SKIN_COSTS: Record<string, number> = {
-      ghost_slime: 10,
-    };
+    // Define skin costs (only default male body is currently available)
+    const SKIN_COSTS: Record<string, number> = {};
 
     if (!(skinId in SKIN_COSTS)) {
       return res.status(400).json({ success: false, error: `Skin '${skinId}' is not unlockable with points.` });
@@ -2515,7 +2527,7 @@ function getHttpsConfig(): { key: Buffer; cert: Buffer } | undefined {
     }
   }
 
-  // 3. Fallback: auto-generate self-signed cert for lan.jomlepark.cc and localhost
+  // 3. Fallback: auto-generate self-signed cert for localhost
   const targetDir = path.resolve(__dirname, "../../certs");
   const keyPath = path.join(targetDir, "key.pem");
   const certPath = path.join(targetDir, "cert.pem");
@@ -2525,7 +2537,7 @@ function getHttpsConfig(): { key: Buffer; cert: Buffer } | undefined {
     }
     console.log(`[SSL] Generating self-signed certificates in ${targetDir}...`);
     execSync(
-      `openssl req -x509 -newkey rsa:2048 -nodes -sha256 -subj "/CN=lan.jomlepark.cc" -addext "subjectAltName=DNS:lan.jomlepark.cc,DNS:jomlepark.cc,DNS:*.jomlepark.cc,DNS:localhost,IP:127.0.0.1" -keyout "${keyPath}" -out "${certPath}" -days 3650`,
+      `openssl req -x509 -newkey rsa:2048 -nodes -sha256 -subj "/CN=localhost" -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" -keyout "${keyPath}" -out "${certPath}" -days 3650`,
       { stdio: "ignore" }
     );
     if (fs.existsSync(keyPath) && fs.existsSync(certPath)) {
@@ -2611,7 +2623,6 @@ async function start() {
     console.log(`🌐 Client URL: ${process.env.CLIENT_URL}`);
   }
   console.log(`📡 Health endpoint: ${protocol}://localhost:${PORT}/health`);
-  console.log(`📡 Health endpoint (LAN): ${protocol}://lan.jomlepark.cc:${PORT}/health`);
   console.log(`👥 Database players API: ${protocol}://localhost:${PORT}/api/players`);
   console.log(`🌌 Spaces API: ${protocol}://localhost:${PORT}/api/spaces`);
   console.log(`🔐 Auth endpoints available at ${protocol}://localhost:${PORT}/api/auth/*`);

@@ -2,10 +2,7 @@ import { DEFAULT_AVATAR_ICON } from "shared";
 
 export type SpriteSheetKey =
   | "default_idle"
-  | "default_walk"
-  | "slime"
-  | "ghost_slime"
-  | "ghost_slime_walk";
+  | "default_walk";
 
 export interface SheetAssetConfig {
   imageUrl: string;
@@ -23,21 +20,6 @@ export const SPRITE_SHEET_CONFIGS: Record<SpriteSheetKey, SheetAssetConfig> = {
     imageUrl: "/assets/sprites/default/16x32_walk_sheet.png",
     jsonUrl: "/assets/sprites/default/walk_sprites_mapping.json",
     phaserAtlas: "player_walk_sheet",
-  },
-  slime: {
-    imageUrl: "/assets/sprites/slime/slime_spritesheet.png",
-    jsonUrl: "/assets/sprites/slime/slime_sprites.json",
-    phaserAtlas: "slime_sheet",
-  },
-  ghost_slime: {
-    imageUrl: "/assets/sprites/ghost_slime/ghost_slime_spritesheet.png",
-    jsonUrl: "/assets/sprites/ghost_slime/ghost_slime_sprites.json",
-    phaserAtlas: "ghost_slime_sheet",
-  },
-  ghost_slime_walk: {
-    imageUrl: "/assets/sprites/ghost_slime/ghost_slime_walk_spritesheet.png",
-    jsonUrl: "/assets/sprites/ghost_slime/ghost_slime_walk_sprites.json",
-    phaserAtlas: "ghost_slime_walk_sheet",
   },
 };
 
@@ -66,16 +48,6 @@ export function normalizeSpriteRef(ref: string): string {
   const defaultWalk = ref.match(/^\/assets\/sprites\/default\/walk_sprite(\d+)(_flip)?\.png$/);
   if (defaultWalk) {
     return `sheet:default_walk:sprite${defaultWalk[1]}${defaultWalk[2] ? ":flip" : ""}`;
-  }
-
-  const slime = ref.match(/^\/assets\/sprites\/slime\/(sprite-\d+-\d+)\.png$/);
-  if (slime) {
-    return `sheet:slime:${slime[1]}`;
-  }
-
-  const ghostSlime = ref.match(/^\/assets\/sprites\/ghost_slime\/(sprite-\d+-\d+)\.png$/);
-  if (ghostSlime) {
-    return `sheet:ghost_slime:${ghostSlime[1]}`;
   }
 
   return ref;

@@ -71,18 +71,81 @@ export interface PlayerInputPayload {
 
 export type ShirtStyle = "sleeveless" | "short_sleeve" | "long_sleeve";
 
+export type OutfitMode = "casual" | "adventure";
+
+export type BodyGender = "male" | "female";
+
+export type FashionGearSlot = "cape" | "pants" | "boots" | "chest" | "gloves" | "helmet" | "weapon";
+
+export type FashionAnimState = "idle" | "walking" | "melee_swing";
+
+export interface FashionGearCatalogItem {
+  id: string;
+  name: string;
+  slot: FashionGearSlot;
+  category: OutfitMode;
+  assetBasePath: string;
+  iconPath: string;
+  supportedAnims: FashionAnimState[];
+  dyeable?: boolean;
+  hasSleeves?: boolean;
+}
+
+export const FASHION_GEAR_CATALOG: FashionGearCatalogItem[] = [
+  {
+    id: "leather_cloth",
+    name: "Leather Tunic",
+    slot: "chest",
+    category: "adventure",
+    assetBasePath: "/assets/gears/chest/leather_cloth",
+    iconPath: "/assets/gears/chest/leather_cloth/icon.png",
+    supportedAnims: ["idle", "walking", "melee_swing"],
+    dyeable: false,
+    hasSleeves: false,
+  },
+  {
+    id: "leather_pant",
+    name: "Leather Pants",
+    slot: "pants",
+    category: "adventure",
+    assetBasePath: "/assets/gears/pants/leather_pant",
+    iconPath: "/assets/gears/pants/leather_pant/icon.png",
+    supportedAnims: ["idle", "walking"],
+    dyeable: false,
+  },
+  {
+    id: "leather_helmet",
+    name: "Leather Helmet",
+    slot: "helmet",
+    category: "adventure",
+    assetBasePath: "/assets/gears/helmet/leather_helmet",
+    iconPath: "/assets/gears/helmet/leather_helmet/icon.png",
+    supportedAnims: ["idle", "walking"],
+    dyeable: false,
+  },
+];
+
 export interface PlayerOutfit {
+  bodyGender?: BodyGender;
   shirtStyle: ShirtStyle;
   shirtColor: string;
   sleeveColor: string; // Optional override; "" resolves from shirtStyle
   pantsColor: string;
   skinColor: string;
-  outerwearKey: string; // e.g. "hoodie_01" or ""
+  outerwearKey: string; // Legacy / chest gear key (e.g. "leather_cloth" or "")
   outerwearColor: string;
-  hatKey: string; // e.g. "hat_01" or ""
+  hatKey: string; // Legacy / helmet gear key (e.g. "leather_helmet" or "")
+  chestKey?: string;
+  pantsKey?: string;
+  helmetKey?: string;
+  bootsKey?: string;
+  glovesKey?: string;
+  capeKey?: string;
+  weaponKey?: string;
 }
 
 export const DEFAULT_PLAYER_OUTFIT: PlayerOutfit = {
+  bodyGender: "male",
   shirtStyle: "short_sleeve",
   shirtColor: "#ffffff",
   sleeveColor: "",
@@ -91,6 +154,28 @@ export const DEFAULT_PLAYER_OUTFIT: PlayerOutfit = {
   outerwearKey: "",
   outerwearColor: "#e74c3c",
   hatKey: "",
+  chestKey: "",
+  pantsKey: "",
+  helmetKey: "",
+  bootsKey: "",
+  glovesKey: "",
+  capeKey: "",
+  weaponKey: "",
+};
+
+export const DEFAULT_CASUAL_OUTFIT: PlayerOutfit = {
+  ...DEFAULT_PLAYER_OUTFIT,
+};
+
+export const DEFAULT_ADVENTURE_OUTFIT: PlayerOutfit = {
+  ...DEFAULT_PLAYER_OUTFIT,
+  chestKey: "leather_cloth",
+  outerwearKey: "leather_cloth",
+  pantsKey: "leather_pant",
+  helmetKey: "leather_helmet",
+  hatKey: "leather_helmet",
+  bootsKey: "",
+  glovesKey: "",
 };
 
 export interface OuterwearCatalogItem {

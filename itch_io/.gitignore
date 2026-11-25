@@ -1,0 +1,6 @@
+.venv/
+__pycache__/
+*.pyc
+cookies-itch.txt
+downloaded_assets/
+.itch-downloader-track.txt

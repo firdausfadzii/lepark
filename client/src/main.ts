@@ -24,9 +24,11 @@ import {
   DEFAULT_PRESET_COLORS,
   PlayerAvatars,
   PlayerOutfit,
-  ShirtStyle,
+  OutfitMode,
   DEFAULT_PLAYER_OUTFIT,
-  OUTERWEAR_CATALOG,
+  DEFAULT_CASUAL_OUTFIT,
+  DEFAULT_ADVENTURE_OUTFIT,
+  FASHION_GEAR_CATALOG,
   AuthUser,
   AuthResponse,
   Space,
@@ -39,6 +41,7 @@ import {
   PrivateZone,
   VoicePeer,
   CHARACTER_MAX_SIZE,
+  NAME_CHANGE_FP_COST,
   JukeboxState,
   JukeboxTrack,
   TypewriterState,
@@ -274,9 +277,6 @@ const profileMenuModal = document.getElementById(
 const btnCloseProfileModal = document.getElementById(
   "btn-close-profile-modal",
 ) as HTMLButtonElement | null;
-const profileModalAvatarImg = document.getElementById(
-  "profile-modal-avatar-img",
-) as HTMLImageElement | null;
 const profileModalStatusDot = document.getElementById(
   "profile-modal-status-dot",
 ) as HTMLSpanElement | null;
@@ -289,21 +289,66 @@ const profileModalAdminBadge = document.getElementById(
 const profileModalUsername = document.getElementById(
   "profile-modal-username",
 ) as HTMLSpanElement | null;
-const dropdownMySpaceBtn = document.getElementById(
-  "dropdown-my-space-btn",
-) as HTMLButtonElement;
-const dropdownMySpaceIcon = document.getElementById(
-  "dropdown-my-space-icon",
+const profileEquipTabBtns = document.querySelectorAll<HTMLButtonElement>(
+  ".profile-equip-tab-btn",
+);
+const profileEquipStageLabel = document.getElementById(
+  "profile-equip-stage-label",
 ) as HTMLSpanElement | null;
-const dropdownMySpaceTitle = document.getElementById(
-  "dropdown-my-space-title",
+const profileEquipCharImg = document.getElementById(
+  "profile-equip-char-img",
+) as HTMLImageElement | null;
+const btnProfileCharRotLeft = document.getElementById(
+  "btn-profile-char-rot-left",
+) as HTMLButtonElement | null;
+const btnProfileCharRotReset = document.getElementById(
+  "btn-profile-char-rot-reset",
+) as HTMLButtonElement | null;
+const btnProfileCharRotRight = document.getElementById(
+  "btn-profile-char-rot-right",
+) as HTMLButtonElement | null;
+const profileEquipInspectorSlot = document.getElementById(
+  "profile-equip-inspector-slot",
 ) as HTMLSpanElement | null;
-const dropdownMySpaceSub = document.getElementById(
-  "dropdown-my-space-sub",
-) as HTMLSpanElement;
-const dropdownUpdateCharBtn = document.getElementById(
-  "dropdown-update-char-btn",
-) as HTMLButtonElement;
+const profileEquipInspectorItem = document.getElementById(
+  "profile-equip-inspector-item",
+) as HTMLSpanElement | null;
+const profileEquipInspectorActions = document.getElementById(
+  "profile-equip-inspector-actions",
+) as HTMLDivElement | null;
+const btnOpenSquad = document.getElementById(
+  "btn-open-squad",
+) as HTMLButtonElement | null;
+const btnOpenChangeName = document.getElementById(
+  "btn-open-change-name",
+) as HTMLButtonElement | null;
+const changeNameModal = document.getElementById(
+  "change-name-modal",
+) as HTMLDivElement | null;
+const btnCloseChangeNameModal = document.getElementById(
+  "btn-close-change-name-modal",
+) as HTMLButtonElement | null;
+const btnCancelChangeName = document.getElementById(
+  "btn-cancel-change-name",
+) as HTMLButtonElement | null;
+const changeNameForm = document.getElementById(
+  "change-name-form",
+) as HTMLFormElement | null;
+const changeNameInput = document.getElementById(
+  "change-name-input",
+) as HTMLInputElement | null;
+const changeNameUsernameTag = document.getElementById(
+  "change-name-username-tag",
+) as HTMLSpanElement | null;
+const changeNameCurrentFp = document.getElementById(
+  "change-name-current-fp",
+) as HTMLSpanElement | null;
+const changeNameFeedback = document.getElementById(
+  "change-name-feedback",
+) as HTMLDivElement | null;
+const btnSubmitChangeName = document.getElementById(
+  "btn-submit-change-name",
+) as HTMLButtonElement | null;
 const dropdownFriendsBtn = document.getElementById(
   "dropdown-friends-btn",
 ) as HTMLButtonElement | null;
@@ -427,44 +472,23 @@ const btnCloseMapModal = document.getElementById(
 ) as HTMLButtonElement;
 const mapSpacesGrid = document.getElementById("map-spaces-grid") as HTMLElement;
 
-// DOM Elements - Update Character Modal
-const modal = document.getElementById("onboarding-modal") as HTMLDivElement;
-const btnCloseModal = document.getElementById(
-  "btn-close-modal",
-) as HTMLButtonElement;
-const profileForm = document.getElementById("profile-form") as HTMLFormElement;
-const nameInput = document.getElementById("player-name") as HTMLInputElement;
-const currentUsernameTag = document.getElementById(
-  "current-username-tag",
-) as HTMLSpanElement;
+// DOM Elements - Optional legacy character customization refs (removed from DOM)
 const customColorInput = document.getElementById(
   "custom-color-picker",
 ) as HTMLInputElement | null;
 const colorGrid = document.getElementById("color-grid") as HTMLDivElement | null;
 const previewAvatar = document.getElementById(
   "preview-avatar",
-) as HTMLImageElement;
+) as HTMLImageElement | null;
 const previewFashionCloth = document.getElementById(
   "preview-fashion-cloth",
 ) as HTMLImageElement | null;
 const fashionPickerGroup = document.getElementById(
   "fashion-picker-group",
 ) as HTMLDivElement | null;
-const btnOpenWardrobe = document.getElementById(
-  "btn-open-wardrobe",
-) as HTMLButtonElement | null;
 const wardrobeTriggerSummary = document.getElementById(
   "wardrobe-trigger-summary",
 ) as HTMLSpanElement | null;
-const wardrobeModal = document.getElementById(
-  "wardrobe-modal",
-) as HTMLDivElement | null;
-const btnCloseWardrobeModal = document.getElementById(
-  "btn-close-wardrobe-modal",
-) as HTMLButtonElement | null;
-const btnSaveWardrobe = document.getElementById(
-  "btn-save-wardrobe",
-) as HTMLButtonElement | null;
 const wardrobePreviewAvatar = document.getElementById(
   "wardrobe-preview-avatar",
 ) as HTMLImageElement | null;
@@ -477,16 +501,10 @@ const fashionItemsGrid = document.getElementById(
 const fashionColorRow = document.getElementById(
   "fashion-color-row",
 ) as HTMLDivElement | null;
-const previewDirectionsBar = document.getElementById(
-  "preview-directions-bar",
-) as HTMLDivElement;
 const previewStatusHint = document.getElementById(
   "preview-status-hint",
-) as HTMLDivElement;
-const previewName = document.getElementById("preview-name") as HTMLDivElement;
-const btnJoin = document.getElementById("btn-join") as HTMLButtonElement;
-
-// Switch and Sections for Custom Sprites
+) as HTMLDivElement | null;
+const previewName = document.getElementById("preview-name") as HTMLDivElement | null;
 const switchUploadPictures = document.getElementById(
   "switch-upload-pictures",
 ) as HTMLInputElement | null;
@@ -1329,7 +1347,7 @@ function getEffectivePlayerName(): string {
     }
     return currentUser.username;
   }
-  return nameInput.value.trim() || "Player";
+  return "Player";
 }
 
 function setGameControlsActive(active: boolean) {
@@ -1356,10 +1374,7 @@ function setGameControlsActive(active: boolean) {
     if (tbModal && !tbModal.classList.contains("hidden")) {
       return;
     }
-    if (wardrobeModal && !wardrobeModal.classList.contains("hidden")) {
-      return;
-    }
-    if (modal && !modal.classList.contains("hidden")) {
+    if (changeNameModal && !changeNameModal.classList.contains("hidden")) {
       return;
     }
   }
@@ -1985,7 +2000,7 @@ function selectColor(colorHex: string) {
   updatePreview();
 }
 
-// Sprite Templates Definition
+// Sprite Templates Definition (Only default Male body for now; Female coming in the future)
 interface SpriteTemplate {
   id: string;
   name: string;
@@ -1997,7 +2012,7 @@ interface SpriteTemplate {
 const SPRITE_TEMPLATES: SpriteTemplate[] = [
   {
     id: "default",
-    name: "Default",
+    name: "Male",
     idleFrames: [
       "sheet:default_idle:sprite1",
       "sheet:default_idle:sprite2",
@@ -2005,157 +2020,21 @@ const SPRITE_TEMPLATES: SpriteTemplate[] = [
       "sheet:default_idle:sprite4",
     ],
   },
-  {
-    id: "slime",
-    name: "Slime",
-    idleFrames: [
-      "sheet:slime:sprite-1-1",
-      "sheet:slime:sprite-1-2",
-      "sheet:slime:sprite-1-3",
-      "sheet:slime:sprite-1-4",
-      "sheet:slime:sprite-1-5",
-      "sheet:slime:sprite-1-6",
-    ],
-    directionalFrames: {
-      idle: [
-        "sheet:slime:sprite-1-1",
-        "sheet:slime:sprite-1-2",
-        "sheet:slime:sprite-1-3",
-        "sheet:slime:sprite-1-4",
-        "sheet:slime:sprite-1-5",
-        "sheet:slime:sprite-1-6",
-      ],
-      down: [
-        "sheet:slime:sprite-1-1",
-        "sheet:slime:sprite-1-2",
-        "sheet:slime:sprite-1-3",
-        "sheet:slime:sprite-1-4",
-        "sheet:slime:sprite-1-5",
-        "sheet:slime:sprite-1-6",
-      ],
-      left: [
-        "sheet:slime:sprite-3-1",
-        "sheet:slime:sprite-3-2",
-        "sheet:slime:sprite-3-3",
-        "sheet:slime:sprite-3-4",
-        "sheet:slime:sprite-3-5",
-        "sheet:slime:sprite-3-6",
-      ],
-      right: [
-        "sheet:slime:sprite-4-1",
-        "sheet:slime:sprite-4-2",
-        "sheet:slime:sprite-4-3",
-        "sheet:slime:sprite-4-4",
-        "sheet:slime:sprite-4-5",
-        "sheet:slime:sprite-4-6",
-      ],
-      up: [
-        "sheet:slime:sprite-2-1",
-        "sheet:slime:sprite-2-2",
-        "sheet:slime:sprite-2-3",
-        "sheet:slime:sprite-2-4",
-        "sheet:slime:sprite-2-5",
-        "sheet:slime:sprite-2-6",
-      ],
-    },
-  },
-  {
-    id: "ghost_slime",
-    name: "Ghost Slime",
-    cost: 10,
-    idleFrames: [
-      "sheet:ghost_slime:sprite-1-1",
-      "sheet:ghost_slime:sprite-1-2",
-      "sheet:ghost_slime:sprite-1-3",
-      "sheet:ghost_slime:sprite-1-4",
-      "sheet:ghost_slime:sprite-1-5",
-      "sheet:ghost_slime:sprite-1-6",
-      "sheet:ghost_slime:sprite-1-7",
-      "sheet:ghost_slime:sprite-1-8",
-    ],
-    directionalFrames: {
-      idle: [
-        "sheet:ghost_slime:sprite-1-1",
-        "sheet:ghost_slime:sprite-1-2",
-        "sheet:ghost_slime:sprite-1-3",
-        "sheet:ghost_slime:sprite-1-4",
-        "sheet:ghost_slime:sprite-1-5",
-        "sheet:ghost_slime:sprite-1-6",
-        "sheet:ghost_slime:sprite-1-7",
-        "sheet:ghost_slime:sprite-1-8",
-      ],
-      down: [
-        "sheet:ghost_slime:sprite-1-1",
-        "sheet:ghost_slime:sprite-1-2",
-        "sheet:ghost_slime:sprite-1-3",
-        "sheet:ghost_slime:sprite-1-4",
-        "sheet:ghost_slime:sprite-1-5",
-        "sheet:ghost_slime:sprite-1-6",
-        "sheet:ghost_slime:sprite-1-7",
-        "sheet:ghost_slime:sprite-1-8",
-      ],
-      up: [
-        "sheet:ghost_slime:sprite-2-1",
-        "sheet:ghost_slime:sprite-2-2",
-        "sheet:ghost_slime:sprite-2-4",
-        "sheet:ghost_slime:sprite-2-6",
-        "sheet:ghost_slime:sprite-2-8",
-        "sheet:ghost_slime:sprite-2-9",
-        "sheet:ghost_slime:sprite-2-10",
-        "sheet:ghost_slime:sprite-2-11",
-      ],
-      left: [
-        "sheet:ghost_slime:sprite-3-1",
-        "sheet:ghost_slime:sprite-3-3",
-        "sheet:ghost_slime:sprite-3-5",
-        "sheet:ghost_slime:sprite-3-6",
-        "sheet:ghost_slime:sprite-3-8",
-        "sheet:ghost_slime:sprite-3-9",
-        "sheet:ghost_slime:sprite-3-10",
-        "sheet:ghost_slime:sprite-3-11",
-      ],
-      right: [
-        "sheet:ghost_slime:sprite-4-1",
-        "sheet:ghost_slime:sprite-4-3",
-        "sheet:ghost_slime:sprite-4-5",
-        "sheet:ghost_slime:sprite-4-7",
-        "sheet:ghost_slime:sprite-4-8",
-        "sheet:ghost_slime:sprite-4-10",
-        "sheet:ghost_slime:sprite-4-11",
-        "sheet:ghost_slime:sprite-4-12",
-      ],
-    },
-  },
 ];
 
-let selectedTemplateId = localStorage.getItem("player_sprite_template") || "default";
+let selectedTemplateId = "default";
+try {
+  localStorage.setItem("player_sprite_template", "default");
+} catch {
+  // ignore
+}
 
 function isTemplateUnlocked(templateId: string): boolean {
   const tpl = SPRITE_TEMPLATES.find((t) => t.id === templateId);
-  if (!tpl) return false;
-  if (!tpl.cost || tpl.cost <= 0) return true;
-
-  if (currentUser && Array.isArray(currentUser.unlockedSkins)) {
-    if (currentUser.unlockedSkins.includes(templateId)) return true;
-  }
-
-  try {
-    const local = JSON.parse(localStorage.getItem("player_unlocked_skins") || "[]");
-    if (Array.isArray(local) && local.includes(templateId)) {
-      return true;
-    }
-  } catch {
-    // ignore
-  }
-
-  return false;
+  return !!tpl;
 }
 
 function getActiveTemplate(): SpriteTemplate {
-  const tpl = SPRITE_TEMPLATES.find((t) => t.id === selectedTemplateId);
-  if (tpl && isTemplateUnlocked(tpl.id)) {
-    return tpl;
-  }
   return SPRITE_TEMPLATES[0];
 }
 
@@ -2163,47 +2042,31 @@ function renderSpriteTemplatesGrid() {
   const grid = document.getElementById("sprite-templates-grid");
   const countBadge = document.getElementById("badge-template-count");
   if (countBadge) {
-    countBadge.textContent = `${SPRITE_TEMPLATES.length} Available`;
+    countBadge.textContent = "Male";
   }
   if (!grid) return;
 
   grid.innerHTML = "";
 
   SPRITE_TEMPLATES.forEach((tpl) => {
-    const isUnlocked = isTemplateUnlocked(tpl.id);
-    const isActive = tpl.id === selectedTemplateId && isUnlocked;
-    const isLocked = !isUnlocked;
-
     const card = document.createElement("div");
-    card.className = `sprite-template-card ${isActive ? "active" : ""} ${isLocked ? "locked" : ""}`;
+    card.className = "sprite-template-card active";
     card.setAttribute("data-template-id", tpl.id);
     card.setAttribute("role", "button");
     card.setAttribute("tabindex", "0");
 
     const initialImg = tpl.idleFrames[0] || DEFAULT_AVATAR_ICON;
 
-    const badgeHtml = isLocked
-      ? `<span class="template-card-lock-badge">${tpl.cost}</span>`
-      : `<span class="template-card-check">✓</span>`;
-
-    const statusHtml = isLocked
-      ? `<span class="template-card-status status-locked">${tpl.cost} FP</span>`
-      : "";
-
     card.innerHTML = `
-      ${badgeHtml}
+      <span class="template-card-check">✓</span>
       <div class="template-preview-box">
-        <img id="template-anim-${tpl.id}" class="template-idle-img ${isLocked ? "locked-preview" : ""}" ${imgSrcAttr(initialImg)} alt="" />
+        <img id="template-anim-${tpl.id}" class="template-idle-img" ${imgSrcAttr(initialImg)} alt="${escapeHtml(tpl.name)}" />
       </div>
-      ${statusHtml}
+      <div class="template-card-name">${escapeHtml(tpl.name)}</div>
     `;
 
     card.addEventListener("click", () => {
-      if (isLocked) {
-        handleUnlockTemplate(tpl);
-      } else {
-        selectSpriteTemplate(tpl.id);
-      }
+      selectSpriteTemplate(tpl.id);
     });
 
     grid.appendChild(card);
@@ -2211,143 +2074,15 @@ function renderSpriteTemplatesGrid() {
   hydrateSheetImages(grid);
 }
 
-async function handleUnlockTemplate(tpl: SpriteTemplate) {
-  if (!currentUser) return;
-  const cost = tpl.cost || 10;
-  const currentPoints = currentUser?.focusPoints ?? 0;
+type FashionCategory = "chest" | "pants" | "helmet";
 
-  if (currentPoints < cost) {
-    alert(
-      `${tpl.name} requires ${cost} Focus Points (FP) to unlock.\n\nYou currently have ${currentPoints} FP. Complete a Pomodoro session in a Focus Room to earn more FP!`
-    );
-    return;
-  }
-
-  const confirmed = confirm(
-    `Unlock ${tpl.name} for ${cost} FP?\n\nYou currently have ${currentPoints} FP. After unlocking, you will have ${currentPoints - cost} FP remaining.`
-  );
-
-  if (!confirmed) return;
-
-  try {
-    let unlockSuccess = false;
-    let newPoints = currentPoints - cost;
-    let unlockedList: string[] = [];
-
-    if (authToken) {
-      const res = await fetch(getApiUrl("/api/skins/unlock"), {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${authToken}`,
-        },
-        body: JSON.stringify({ skinId: tpl.id }),
-      });
-
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        alert(data.error || "Failed to unlock sprite template.");
-        return;
-      }
-
-      unlockSuccess = true;
-      newPoints = typeof data.points === "number" ? data.points : currentPoints - cost;
-      unlockedList = data.unlockedSkins || [];
-    } else {
-      unlockSuccess = true;
-      unlockedList = [tpl.id];
-    }
-
-    if (unlockSuccess) {
-      // Update currentUser
-      if (currentUser) {
-        currentUser.focusPoints = newPoints;
-        if (!currentUser.unlockedSkins) currentUser.unlockedSkins = [];
-        if (!currentUser.unlockedSkins.includes(tpl.id)) {
-          currentUser.unlockedSkins.push(tpl.id);
-        }
-        try {
-          localStorage.setItem("lepark_auth_user", JSON.stringify(currentUser));
-        } catch {}
-      }
-
-      // Update local storage unlocked skins
-      try {
-        const localUnlocked: string[] = JSON.parse(localStorage.getItem("player_unlocked_skins") || "[]");
-        if (!localUnlocked.includes(tpl.id)) {
-          localUnlocked.push(tpl.id);
-          localStorage.setItem("player_unlocked_skins", JSON.stringify(localUnlocked));
-        }
-      } catch {}
-
-      // Update topbar UI
-      updateFocusPointsDisplay(newPoints);
-      focusUiController?.syncUserAuth(currentUser);
-
-      // Re-render templates grid & select the newly unlocked template
-      renderSpriteTemplatesGrid();
-      selectSpriteTemplate(tpl.id);
-
-      // Auto update character in multiplayer if connected
-      const avatars = computeActiveAvatars();
-      if (multiplayer) {
-        multiplayer.updateProfile(getEffectivePlayerName(), selectedColor, avatars || null, selectedOutfit);
-      }
-
-      alert(`Congratulations! You have unlocked ${tpl.name}! It is now equipped as your character.`);
-    }
-  } catch (err: any) {
-    console.error("Error unlocking sprite template:", err);
-    alert("Network error while unlocking sprite template.");
-  }
-}
-
-type FashionCategory = "cloth" | "pants" | "skin" | "hair";
-
-interface ClothModeOption {
-  id: ShirtStyle;
-  name: string;
-}
-
-const CLOTH_OPTIONS: ClothModeOption[] = [
-  { id: "sleeveless", name: "Sleeveless Shirt" },
-  { id: "short_sleeve", name: "Short-Sleeve T-Shirt" },
-  { id: "long_sleeve", name: "Long-Sleeve T-Shirt" },
-];
-
-const SHIRT_COLOR_SWATCHES = [
-  { name: "Crisp White", hex: "#ffffff" },
-  { name: "Sky Blue", hex: "#3498db" },
-  { name: "Crimson", hex: "#e74c3c" },
-  { name: "Emerald", hex: "#10b981" },
-  { name: "Charcoal", hex: "#1e293b" },
-  { name: "Ochre", hex: "#f59e0b" },
-  { name: "Lavender", hex: "#8b5cf6" },
-  { name: "Rose", hex: "#ec4899" },
-];
-
-const PANTS_COLOR_SWATCHES = [
-  { name: "Slate", hex: "#2c3e50" },
-  { name: "Denim", hex: "#2563eb" },
-  { name: "Charcoal", hex: "#18181b" },
-  { name: "Khaki", hex: "#b9b3a1" },
-  { name: "Olive", hex: "#4d7c0f" },
-  { name: "Burgundy", hex: "#7f1d1d" },
-  { name: "Stone", hex: "#64748b" },
-  { name: "Ivory", hex: "#e2e8f0" },
-];
-
-const SKIN_COLOR_SWATCHES = [
-  { name: "Cream", hex: "#faf3e8" },
-  { name: "Peach", hex: "#f5cba7" },
-  { name: "Warm Ivory", hex: "#fde2c4" },
-  { name: "Golden", hex: "#e0ac69" },
-  { name: "Caramel", hex: "#c68642" },
-  { name: "Deep Brown", hex: "#8d5524" },
-];
-
-let activeFashionTab: FashionCategory = "cloth";
+let activeFashionTab: FashionCategory = "chest";
 let selectedOutfit: PlayerOutfit = loadSavedOutfit();
+
+function isValidFashionGearKey(slot: FashionCategory, key: unknown): string {
+  if (typeof key !== "string" || !key) return "";
+  return FASHION_GEAR_CATALOG.some((item) => item.slot === slot && item.id === key) ? key : "";
+}
 
 function loadSavedOutfit(): PlayerOutfit {
   try {
@@ -2355,23 +2090,16 @@ function loadSavedOutfit(): PlayerOutfit {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (parsed && typeof parsed === "object") {
-        const shirtStyle: ShirtStyle =
-          parsed.shirtStyle === "sleeveless" ||
-          parsed.shirtStyle === "short_sleeve" ||
-          parsed.shirtStyle === "long_sleeve"
-            ? parsed.shirtStyle
-            : DEFAULT_PLAYER_OUTFIT.shirtStyle;
-        const rawOuterKey = typeof parsed.outerwearKey === "string" ? parsed.outerwearKey : "";
-        const validOuter = OUTERWEAR_CATALOG.some((o) => o.id === rawOuterKey) ? rawOuterKey : "";
+        const chestKey = isValidFashionGearKey("chest", parsed.chestKey || parsed.outerwearKey);
+        const pantsKey = isValidFashionGearKey("pants", parsed.pantsKey);
+        const helmetKey = isValidFashionGearKey("helmet", parsed.helmetKey || parsed.hatKey);
         return {
-          shirtStyle,
-          shirtColor: typeof parsed.shirtColor === "string" ? parsed.shirtColor : DEFAULT_PLAYER_OUTFIT.shirtColor,
-          sleeveColor: typeof parsed.sleeveColor === "string" ? parsed.sleeveColor : DEFAULT_PLAYER_OUTFIT.sleeveColor,
-          pantsColor: typeof parsed.pantsColor === "string" ? parsed.pantsColor : DEFAULT_PLAYER_OUTFIT.pantsColor,
-          skinColor: typeof parsed.skinColor === "string" ? parsed.skinColor : DEFAULT_PLAYER_OUTFIT.skinColor,
-          outerwearKey: validOuter,
-          outerwearColor: typeof parsed.outerwearColor === "string" ? parsed.outerwearColor : DEFAULT_PLAYER_OUTFIT.outerwearColor,
-          hatKey: typeof parsed.hatKey === "string" ? parsed.hatKey : DEFAULT_PLAYER_OUTFIT.hatKey,
+          ...DEFAULT_PLAYER_OUTFIT,
+          chestKey,
+          outerwearKey: chestKey,
+          pantsKey,
+          helmetKey,
+          hatKey: helmetKey,
         };
       }
     }
@@ -2389,62 +2117,42 @@ function saveOutfitToStorage(outfit: PlayerOutfit) {
   }
 }
 
-function getActiveClothMode(): ShirtStyle {
-  return selectedOutfit.shirtStyle || DEFAULT_PLAYER_OUTFIT.shirtStyle;
-}
-
 function updateFashionPickerVisibility() {
   if (!fashionPickerGroup) return;
   const isSwitchOn = switchUploadPictures ? switchUploadPictures.checked : false;
   const isDefaultSelected = selectedTemplateId === "default" && !isSwitchOn;
   fashionPickerGroup.classList.toggle("hidden", !isDefaultSelected);
   if (wardrobeTriggerSummary) {
-    wardrobeTriggerSummary.textContent = "Customize shirt, pants & skin";
+    const equippedNames = [
+      selectedOutfit.chestKey,
+      selectedOutfit.pantsKey,
+      selectedOutfit.helmetKey,
+    ]
+      .map((id) => FASHION_GEAR_CATALOG.find((g) => g.id === id)?.name)
+      .filter(Boolean);
+    wardrobeTriggerSummary.textContent =
+      equippedNames.length > 0 ? equippedNames.join(", ") : "Equip cloth, pants & helmet";
   }
 }
 
-function renderColorSwatchRow(
-  label: string,
-  swatches: Array<{ name: string; hex: string }>,
-  currentHex: string,
-  onPick: (hex: string) => void
-) {
-  if (!fashionColorRow) return;
-  fashionColorRow.innerHTML = "";
-  fashionColorRow.classList.remove("hidden");
+function getEquippedKeyForTab(tab: FashionCategory): string {
+  if (tab === "chest") return selectedOutfit.chestKey || selectedOutfit.outerwearKey || "";
+  if (tab === "pants") return selectedOutfit.pantsKey || "";
+  return selectedOutfit.helmetKey || selectedOutfit.hatKey || "";
+}
 
-  const labelEl = document.createElement("span");
-  labelEl.className = "fashion-color-label";
-  labelEl.textContent = label;
-  fashionColorRow.appendChild(labelEl);
-
-  swatches.forEach((sw) => {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = `fashion-swatch-btn ${sw.hex.toLowerCase() === currentHex.toLowerCase() ? "active" : ""}`;
-    btn.style.backgroundColor = sw.hex;
-    btn.title = sw.name;
-    btn.addEventListener("click", () => {
-      onPick(sw.hex);
-      renderFashionPicker();
-      updatePreviewFrame();
-      updateTemplateGridAnimations();
-    });
-    fashionColorRow.appendChild(btn);
-  });
-
-  const customInput = document.createElement("input");
-  customInput.type = "color";
-  customInput.className = "fashion-custom-color";
-  customInput.title = "Custom Color";
-  customInput.value = /^#[0-9a-f]{6}$/i.test(currentHex) ? currentHex : "#ffffff";
-  customInput.addEventListener("input", () => {
-    onPick(customInput.value);
-    renderFashionPicker();
-    updatePreviewFrame();
-    updateTemplateGridAnimations();
-  });
-  fashionColorRow.appendChild(customInput);
+function setEquippedKeyForTab(tab: FashionCategory, itemId: string) {
+  if (tab === "chest") {
+    selectedOutfit = { ...selectedOutfit, chestKey: itemId, outerwearKey: itemId };
+  } else if (tab === "pants") {
+    selectedOutfit = { ...selectedOutfit, pantsKey: itemId };
+  } else {
+    selectedOutfit = { ...selectedOutfit, helmetKey: itemId, hatKey: itemId };
+  }
+  saveOutfitToStorage(selectedOutfit);
+  renderFashionPicker();
+  updatePreviewFrame();
+  updateTemplateGridAnimations();
 }
 
 function renderFashionPicker() {
@@ -2460,98 +2168,46 @@ function renderFashionPicker() {
 
   if (!fashionItemsGrid) return;
   fashionItemsGrid.innerHTML = "";
-  if (fashionColorRow) fashionColorRow.classList.add("hidden");
-
-  if (activeFashionTab === "cloth") {
-    const activeMode = getActiveClothMode();
-    CLOTH_OPTIONS.forEach((item) => {
-      const isActive = item.id === activeMode;
-      const card = document.createElement("div");
-      card.className = `sprite-template-card ${isActive ? "active" : ""}`;
-      card.setAttribute("role", "button");
-      card.setAttribute("tabindex", "0");
-
-      const fill = escapeHtml(selectedOutfit.shirtColor);
-      const previewContent =
-        item.id === "sleeveless"
-          ? `<svg class="fashion-item-icon" width="40" height="40" viewBox="0 0 32 32" preserveAspectRatio="xMidYMid meet" fill="${fill}" stroke="#94a3b8" stroke-width="1.4" stroke-linejoin="round" aria-hidden="true"><path d="M8 6 H12 C12.5 11 19.5 11 20 6 H24 L23 11.5 C23 13.2 24 14.2 25 14.8 V26 H7 V14.8 C8 14.2 9 13.2 9 11.5 Z"/></svg>`
-          : item.id === "short_sleeve"
-          ? `<svg class="fashion-item-icon" width="40" height="40" viewBox="0 0 32 32" preserveAspectRatio="xMidYMid meet" fill="${fill}" stroke="#94a3b8" stroke-width="1.4" stroke-linejoin="round" aria-hidden="true"><path d="M12 6 Q16 10 20 6 L24 6.5 L30 11.5 L27.5 15.5 L24 13.5 V26 H8 V13.5 L4.5 15.5 L2 11.5 L8 6.5 Z"/></svg>`
-          : `<svg class="fashion-item-icon" width="40" height="40" viewBox="0 0 32 32" preserveAspectRatio="xMidYMid meet" fill="${fill}" stroke="#94a3b8" stroke-width="1.4" stroke-linejoin="round" aria-hidden="true"><path d="M12 6 Q16 10 20 6 L24 6.5 L30 20 L26.5 21.5 L24 13.5 V26 H8 V13.5 L5.5 21.5 L2 20 L8 6.5 Z"/></svg>`;
-
-      card.innerHTML = `
-        <span class="template-card-check">✓</span>
-        <div class="template-preview-box">${previewContent}</div>
-      `;
-
-      card.addEventListener("click", () => {
-        selectedOutfit = {
-          ...selectedOutfit,
-          shirtStyle: item.id,
-          sleeveColor: "",
-          outerwearKey: "",
-        };
-        saveOutfitToStorage(selectedOutfit);
-        renderFashionPicker();
-        updatePreviewFrame();
-        updateTemplateGridAnimations();
-      });
-
-      fashionItemsGrid.appendChild(card);
-    });
-
-    renderColorSwatchRow(
-      "Shirt Color:",
-      SHIRT_COLOR_SWATCHES,
-      selectedOutfit.shirtColor,
-      (hex) => {
-        selectedOutfit = {
-          ...selectedOutfit,
-          shirtColor: hex,
-          sleeveColor: "",
-        };
-        saveOutfitToStorage(selectedOutfit);
-      }
-    );
-  } else if (activeFashionTab === "pants") {
-    const card = document.createElement("div");
-    card.className = "sprite-template-card active";
-    card.innerHTML = `
-      <span class="template-card-check">✓</span>
-      <div class="template-preview-box"><svg class="fashion-item-icon" width="40" height="40" viewBox="0 0 32 32" preserveAspectRatio="xMidYMid meet" fill="${escapeHtml(selectedOutfit.pantsColor)}" stroke="#cbd5e1" stroke-width="1.4" stroke-linejoin="round" aria-hidden="true"><path d="M8 6 H24 L25.5 26 H18.5 L16 14 L13.5 26 H6.5 Z"/></svg></div>
-    `;
-    fashionItemsGrid.appendChild(card);
-
-    renderColorSwatchRow("Pants Color:", PANTS_COLOR_SWATCHES, selectedOutfit.pantsColor, (hex) => {
-      selectedOutfit = { ...selectedOutfit, pantsColor: hex };
-      saveOutfitToStorage(selectedOutfit);
-    });
-  } else if (activeFashionTab === "skin") {
-    const card = document.createElement("div");
-    card.className = "sprite-template-card active";
-    card.innerHTML = `
-      <span class="template-card-check">✓</span>
-      <div class="template-preview-box"><span class="fashion-none-icon" style="background:${escapeHtml(selectedOutfit.skinColor)};width:28px;height:28px;border-radius:8px;border:1px solid rgba(255,255,255,0.35);display:inline-block;flex-shrink:0;"></span></div>
-    `;
-    fashionItemsGrid.appendChild(card);
-
-    renderColorSwatchRow("Skin Tone:", SKIN_COLOR_SWATCHES, selectedOutfit.skinColor, (hex) => {
-      selectedOutfit = {
-        ...selectedOutfit,
-        skinColor: hex,
-      };
-      saveOutfitToStorage(selectedOutfit);
-    });
-  } else {
-    // Hair / Hats
-    const card = document.createElement("div");
-    card.className = "sprite-template-card active";
-    card.innerHTML = `
-      <span class="template-card-check">✓</span>
-      <div class="template-preview-box"><span class="fashion-none-icon">—</span></div>
-    `;
-    fashionItemsGrid.appendChild(card);
+  if (fashionColorRow) {
+    fashionColorRow.innerHTML = "";
+    fashionColorRow.classList.add("hidden");
   }
+
+  const equippedId = getEquippedKeyForTab(activeFashionTab);
+
+  // "None" card to unequip the active slot
+  const noneCard = document.createElement("div");
+  noneCard.className = `sprite-template-card ${equippedId === "" ? "active" : ""}`;
+  noneCard.setAttribute("role", "button");
+  noneCard.setAttribute("tabindex", "0");
+  noneCard.title = "None";
+  noneCard.innerHTML = `
+    <span class="template-card-check">✓</span>
+    <div class="template-preview-box"><span class="fashion-none-icon">—</span></div>
+    <div class="template-card-name">None</div>
+  `;
+  noneCard.addEventListener("click", () => setEquippedKeyForTab(activeFashionTab, ""));
+  fashionItemsGrid.appendChild(noneCard);
+
+  // Catalog items for the active slot (Leather Tunic, Leather Pants, Leather Helmet)
+  const items = FASHION_GEAR_CATALOG.filter((item) => item.slot === activeFashionTab);
+  items.forEach((item) => {
+    const isActive = item.id === equippedId;
+    const card = document.createElement("div");
+    card.className = `sprite-template-card ${isActive ? "active" : ""}`;
+    card.setAttribute("role", "button");
+    card.setAttribute("tabindex", "0");
+    card.title = item.name;
+    card.innerHTML = `
+      <span class="template-card-check">✓</span>
+      <div class="template-preview-box">
+        <img class="fashion-item-icon" src="${escapeHtml(item.iconPath)}" alt="${escapeHtml(item.name)}" style="width:48px;height:48px;object-fit:contain;image-rendering:pixelated;" />
+      </div>
+      <div class="template-card-name">${escapeHtml(item.name)}</div>
+    `;
+    card.addEventListener("click", () => setEquippedKeyForTab(activeFashionTab, item.id));
+    fashionItemsGrid.appendChild(card);
+  });
 }
 
 function setupFashionTabs() {
@@ -2628,15 +2284,15 @@ function startPreviewAnimation() {
     previewFrameIndex++;
     updatePreviewFrame();
     updateTemplateGridAnimations();
+    if (profileMenuModal && !profileMenuModal.classList.contains("hidden")) {
+      updateProfileEquipCharFrame();
+    }
   }, 166);
 }
 
 function updatePreview() {
-  const inputVal = nameInput.value.trim();
-  const fallbackUsername = currentUser ? currentUser.username : "Player";
-  const currentName = inputVal.length > 0 ? inputVal : fallbackUsername;
-
-  previewName.textContent = currentName;
+  const currentName = getEffectivePlayerName();
+  if (previewName) previewName.textContent = currentName;
   updatePreviewFrame();
 }
 
@@ -2908,66 +2564,306 @@ function setupUploadSlots() {
   startPreviewAnimation();
 }
 
-switchUploadPictures?.addEventListener("change", () => {
-  if (switchUploadPictures.checked) {
-    defaultCharacterSection?.classList.add("hidden");
-    uploadPicturesSection?.classList.remove("hidden");
-  } else {
-    defaultCharacterSection?.classList.remove("hidden");
-    uploadPicturesSection?.classList.add("hidden");
-  }
-  updatePreview();
-});
-
-nameInput.addEventListener("input", updatePreview);
-if (customColorInput) {
-  customColorInput.addEventListener("input", (e) => {
-    selectColor((e.target as HTMLInputElement).value);
-  });
+function computeActiveAvatars(): PlayerAvatars | undefined {
+  // Default Male character uses the Bake-on-Equip compositor
+  return undefined;
 }
 
-// Update Character Modal Open / Close
-function openUpdateCharacterModal() {
-  btnJoin.textContent = "Save Changes";
-  nameInput.value = currentUser?.displayName || "";
-  if (currentUsernameTag) {
-    currentUsernameTag.textContent = currentUser
-      ? `@${currentUser.username}`
-      : "";
-  }
-  selectSpriteTemplate(selectedTemplateId);
-  renderFashionPicker();
-  updatePreview();
-  updateTemplateGridAnimations();
+// ==========================================
+// Change Display Name Modal (Costs 1,000 FP)
+// ==========================================
 
-  modal.classList.remove("hidden");
+function showChangeNameFeedback(message: string) {
+  if (!changeNameFeedback) return;
+  changeNameFeedback.textContent = message;
+  changeNameFeedback.classList.remove("hidden");
+}
+
+function hideChangeNameFeedback() {
+  if (!changeNameFeedback) return;
+  changeNameFeedback.textContent = "";
+  changeNameFeedback.classList.add("hidden");
+}
+
+function updateChangeNameModalState() {
+  const currentPoints = currentUser?.focusPoints ?? 0;
+  const hasEnoughFp = currentPoints >= NAME_CHANGE_FP_COST;
+  const currentDisplayName = (currentUser?.displayName || "").trim();
+  const draftName = (changeNameInput?.value || "").trim();
+  const isUnchanged = draftName === currentDisplayName;
+
+  if (changeNameCurrentFp) {
+    changeNameCurrentFp.textContent = `Balance: ${currentPoints.toLocaleString()} FP`;
+    changeNameCurrentFp.classList.toggle("insufficient", !hasEnoughFp);
+  }
+  if (btnSubmitChangeName) {
+    btnSubmitChangeName.disabled = !hasEnoughFp || isUnchanged;
+    btnSubmitChangeName.textContent = `Change Name (${NAME_CHANGE_FP_COST.toLocaleString()} FP)`;
+  }
+}
+
+function openChangeNameModal() {
+  if (!changeNameModal) return;
+  hideChangeNameFeedback();
+  if (changeNameInput) {
+    changeNameInput.value = currentUser?.displayName || "";
+  }
+  if (changeNameUsernameTag) {
+    changeNameUsernameTag.textContent = currentUser?.username ? `@${currentUser.username}` : "@player";
+  }
+  updateChangeNameModalState();
+  changeNameModal.classList.remove("hidden");
   setGameControlsActive(false);
 
   setTimeout(() => {
-    nameInput.focus();
-    nameInput.select();
+    changeNameInput?.focus();
+    changeNameInput?.select();
   }, 50);
 }
 
-function openWardrobeModal() {
-  if (!wardrobeModal) return;
-  renderFashionPicker();
-  updatePreviewFrame();
-  updateTemplateGridAnimations();
-  wardrobeModal.classList.remove("hidden");
-  setGameControlsActive(false);
+function closeChangeNameModal() {
+  if (!changeNameModal) return;
+  changeNameModal.classList.add("hidden");
+  hideChangeNameFeedback();
+  if (!isAnyModalOpen()) {
+    setGameControlsActive(true);
+  }
 }
 
-function closeWardrobeModal(syncMultiplayer = false) {
-  if (!wardrobeModal) return;
-  wardrobeModal.classList.add("hidden");
+btnOpenChangeName?.addEventListener("click", () => {
+  openChangeNameModal();
+});
+
+btnCloseChangeNameModal?.addEventListener("click", () => {
+  closeChangeNameModal();
+});
+
+btnCancelChangeName?.addEventListener("click", () => {
+  closeChangeNameModal();
+});
+
+changeNameModal?.addEventListener("click", (e) => {
+  if (e.target === changeNameModal) {
+    closeChangeNameModal();
+  }
+});
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && changeNameModal && !changeNameModal.classList.contains("hidden")) {
+    e.stopImmediatePropagation();
+    closeChangeNameModal();
+  }
+});
+
+changeNameInput?.addEventListener("input", () => {
+  hideChangeNameFeedback();
+  updateChangeNameModalState();
+});
+
+changeNameForm?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if (!currentUser || !authToken || !changeNameInput) return;
+
+  const newDisplayName = changeNameInput.value.trim();
+  const previousDisplayName = (currentUser.displayName || "").trim();
+  if (newDisplayName === previousDisplayName) {
+    showChangeNameFeedback("Please enter a different name than your current one.");
+    return;
+  }
+
+  const currentPoints = currentUser.focusPoints ?? 0;
+  if (currentPoints < NAME_CHANGE_FP_COST) {
+    showChangeNameFeedback(
+      `You need ${NAME_CHANGE_FP_COST.toLocaleString()} Focus Points to change your name (you have ${currentPoints.toLocaleString()} FP).`
+    );
+    return;
+  }
+
+  if (btnSubmitChangeName) {
+    btnSubmitChangeName.disabled = true;
+    btnSubmitChangeName.textContent = "Saving...";
+  }
+  hideChangeNameFeedback();
+
+  try {
+    const res = await fetch(getApiUrl("/api/auth/profile"), {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${authToken}`,
+      },
+      body: JSON.stringify({ displayName: newDisplayName || null }),
+    });
+    const data: AuthResponse & { points?: number } = await res.json();
+    if (!res.ok || !data.success || !data.user) {
+      if (typeof data.points === "number" && currentUser) {
+        currentUser.focusPoints = data.points;
+        updateFocusPointsDisplay(data.points);
+      }
+      showChangeNameFeedback(data.error || "Failed to change name.");
+      updateChangeNameModalState();
+      return;
+    }
+
+    currentUser = data.user;
+    if (typeof data.points === "number") {
+      currentUser.focusPoints = data.points;
+    }
+    if (data.token) {
+      authToken = data.token;
+      localStorage.setItem("lepark_auth_token", authToken);
+    }
+    localStorage.setItem("lepark_auth_user", JSON.stringify(currentUser));
+
+    updateFocusPointsDisplay(currentUser.focusPoints ?? 0);
+    focusUiController?.syncUserAuth(currentUser);
+    updateTopBarUI();
+    syncProfileModalUserInfo();
+
+    const effectiveName = getEffectivePlayerName();
+    if (multiplayer) {
+      multiplayer.updateProfile(effectiveName, selectedColor, null, selectedOutfit);
+    }
+
+    closeChangeNameModal();
+  } catch (err) {
+    console.warn("Could not sync display name with server:", err);
+    showChangeNameFeedback("Network error while changing name. Please try again.");
+    updateChangeNameModalState();
+  }
+});
+
+// ==========================================
+// Middle Top Bar, Profile Modal & Equipment UI
+// ==========================================
+
+type ProfileEquipSlot = "helmet" | "chest" | "pants" | "boots" | "gloves";
+
+const PROFILE_EQUIP_SLOT_LABELS: Record<ProfileEquipSlot, string> = {
+  helmet: "Helmet",
+  chest: "Armor",
+  pants: "Pants",
+  boots: "Shoes",
+  gloves: "Gloves",
+};
+
+const PROFILE_CHAR_ROT_ORDER = [0, 1, 3, 2]; // Front (south) -> West -> Back (north) -> East
+
+let activeProfileEquipTab: OutfitMode = (() => {
+  const saved = localStorage.getItem("player_equip_tab");
+  return saved === "casual" || saved === "adventure" ? saved : "adventure";
+})();
+
+let selectedProfileEquipSlot: ProfileEquipSlot = "helmet";
+let profileCharRotIdx = 0;
+
+function sanitizeOutfitForMode(raw: any, mode: OutfitMode, fallback: PlayerOutfit): PlayerOutfit {
+  if (!raw || typeof raw !== "object") return { ...fallback };
+  const validFor = (slot: ProfileEquipSlot, key: unknown): string => {
+    if (typeof key !== "string" || !key) return "";
+    return FASHION_GEAR_CATALOG.some(
+      (item) => item.slot === slot && item.category === mode && item.id === key
+    )
+      ? key
+      : "";
+  };
+  const chestKey = validFor("chest", raw.chestKey || raw.outerwearKey);
+  const pantsKey = validFor("pants", raw.pantsKey);
+  const helmetKey = validFor("helmet", raw.helmetKey || raw.hatKey);
+  const bootsKey = validFor("boots", raw.bootsKey);
+  const glovesKey = validFor("gloves", raw.glovesKey);
+  return {
+    ...DEFAULT_PLAYER_OUTFIT,
+    chestKey,
+    outerwearKey: chestKey,
+    pantsKey,
+    helmetKey,
+    hatKey: helmetKey,
+    bootsKey,
+    glovesKey,
+  };
+}
+
+let casualOutfit: PlayerOutfit = (() => {
+  try {
+    const raw = localStorage.getItem("player_outfit_casual");
+    if (raw) return sanitizeOutfitForMode(JSON.parse(raw), "casual", DEFAULT_CASUAL_OUTFIT);
+  } catch {
+    // ignore
+  }
+  return { ...DEFAULT_CASUAL_OUTFIT };
+})();
+
+let adventureOutfit: PlayerOutfit = (() => {
+  try {
+    const raw = localStorage.getItem("player_outfit_adventure");
+    if (raw) return sanitizeOutfitForMode(JSON.parse(raw), "adventure", DEFAULT_ADVENTURE_OUTFIT);
+  } catch {
+    // ignore
+  }
+  // All players have the leather set by default in Adventure
+  return { ...DEFAULT_ADVENTURE_OUTFIT };
+})();
+
+function getProfileEquipOutfit(mode: OutfitMode = activeProfileEquipTab): PlayerOutfit {
+  return mode === "casual" ? casualOutfit : adventureOutfit;
+}
+
+function getSlotKeyFromOutfit(outfit: PlayerOutfit, slot: ProfileEquipSlot): string {
+  switch (slot) {
+    case "helmet":
+      return outfit.helmetKey || outfit.hatKey || "";
+    case "chest":
+      return outfit.chestKey || outfit.outerwearKey || "";
+    case "pants":
+      return outfit.pantsKey || "";
+    case "boots":
+      return outfit.bootsKey || "";
+    case "gloves":
+      return outfit.glovesKey || "";
+  }
+}
+
+function setProfileEquipSlotItem(mode: OutfitMode, slot: ProfileEquipSlot, itemId: string) {
+  const base = mode === "casual" ? casualOutfit : adventureOutfit;
+  const updated: PlayerOutfit = { ...base };
+  if (slot === "helmet") {
+    updated.helmetKey = itemId;
+    updated.hatKey = itemId;
+  } else if (slot === "chest") {
+    updated.chestKey = itemId;
+    updated.outerwearKey = itemId;
+  } else if (slot === "pants") {
+    updated.pantsKey = itemId;
+  } else if (slot === "boots") {
+    updated.bootsKey = itemId;
+  } else if (slot === "gloves") {
+    updated.glovesKey = itemId;
+  }
+
+  if (mode === "casual") {
+    casualOutfit = updated;
+    try {
+      localStorage.setItem("player_outfit_casual", JSON.stringify(casualOutfit));
+    } catch {
+      // ignore
+    }
+  } else {
+    adventureOutfit = updated;
+    try {
+      localStorage.setItem("player_outfit_adventure", JSON.stringify(adventureOutfit));
+    } catch {
+      // ignore
+    }
+  }
+
+  // Sync live active outfit to game & multiplayer
+  selectedOutfit = { ...updated };
   saveOutfitToStorage(selectedOutfit);
-  updateFashionPickerVisibility();
   updatePreviewFrame();
   updateTemplateGridAnimations();
   updateTopBarUI();
-
-  if (syncMultiplayer && multiplayer) {
+  if (multiplayer) {
     multiplayer.changeOutfit(selectedOutfit);
     if (multiplayer.sessionId && gameInstance) {
       const activeScene = gameInstance.scene.getScene("GameScene") as GameScene;
@@ -2977,166 +2873,159 @@ function closeWardrobeModal(syncMultiplayer = false) {
     }
   }
 
-  if (!isAnyModalOpen()) {
-    setGameControlsActive(true);
-  }
+  renderProfileEquipmentPane();
+  updateProfileEquipCharFrame();
 }
 
-function closeUpdateCharacterModal() {
-  if (wardrobeModal) wardrobeModal.classList.add("hidden");
-  modal.classList.add("hidden");
-  if (!isAnyModalOpen()) {
-    setGameControlsActive(true);
-  }
-}
-
-btnOpenWardrobe?.addEventListener("click", () => {
-  openWardrobeModal();
-});
-
-btnCloseWardrobeModal?.addEventListener("click", () => {
-  closeWardrobeModal(false);
-});
-
-btnSaveWardrobe?.addEventListener("click", () => {
-  closeWardrobeModal(true);
-});
-
-wardrobeModal?.addEventListener("click", (e) => {
-  if (e.target === wardrobeModal) {
-    closeWardrobeModal(false);
-  }
-});
-
-document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && wardrobeModal && !wardrobeModal.classList.contains("hidden")) {
-    closeWardrobeModal(false);
-  }
-});
-
-dropdownUpdateCharBtn.addEventListener("click", () => {
-  closeProfileDropdown();
-  openUpdateCharacterModal();
-});
-
-btnCloseModal.addEventListener("click", () => {
-  closeUpdateCharacterModal();
-});
-
-modal.addEventListener("click", (e) => {
-  if (e.target === modal) {
-    closeUpdateCharacterModal();
-  }
-});
-
-function computeActiveAvatars(): PlayerAvatars | undefined {
-  const isSwitchOn = switchUploadPictures ? switchUploadPictures.checked : false;
-  if (isSwitchOn && uploadedFrames.idle.length > 0) {
-    // Check if actual custom base64 frames exist
-    const slots: DirectionSlot[] = ["idle", "left", "right", "up", "down"];
-    const hasCustomFrames = slots.some((s) =>
-      uploadedFrames[s].some((f) => typeof f === "string" && f.startsWith("data:image/"))
-    );
-    if (hasCustomFrames) {
-      const idle = uploadedFrames.idle.filter((f) => typeof f === "string" && f.startsWith("data:image/"));
-      if (idle.length > 0) {
-        return {
-          idle,
-          left: uploadedFrames.left.length > 0 ? uploadedFrames.left : idle,
-          right: uploadedFrames.right.length > 0 ? uploadedFrames.right : idle,
-          up: uploadedFrames.up.length > 0 ? uploadedFrames.up : idle,
-          down: uploadedFrames.down.length > 0 ? uploadedFrames.down : idle,
-        };
+function updateProfileEquipCharFrame() {
+  if (!profileEquipCharImg) return;
+  const outfit = getProfileEquipOutfit(activeProfileEquipTab);
+  const dirIndex = PROFILE_CHAR_ROT_ORDER[profileCharRotIdx % PROFILE_CHAR_ROT_ORDER.length];
+  const frameIdx = previewFrameIndex % 4;
+  renderFashionPreviewFrame(outfit, dirIndex, frameIdx, false)
+    .then((url) => {
+      if (url && profileEquipCharImg) {
+        profileEquipCharImg.src = url;
       }
-    }
-  }
-
-  // Active sprite template branch (e.g. Slime)
-  const tpl = getActiveTemplate();
-  if (tpl && tpl.directionalFrames) {
-    return tpl.directionalFrames;
-  }
-
-  // Default character template uses built-in atlas
-  return undefined;
+    })
+    .catch(() => {});
 }
 
-// Handle Update Character Form Submission
-async function handleUpdateCharacter(e: Event) {
-  e.preventDefault();
+function renderProfileEquipmentPane() {
+  const mode = activeProfileEquipTab;
+  const outfit = getProfileEquipOutfit(mode);
 
-  const newDisplayName = nameInput.value.trim();
-  const color = selectedColor;
-  const avatars = computeActiveAvatars();
+  // Update tabs
+  profileEquipTabBtns.forEach((btn) => {
+    const tab = btn.getAttribute("data-equip-tab") as OutfitMode | null;
+    const isActive = tab === mode;
+    btn.classList.toggle("active", isActive);
+    btn.setAttribute("aria-selected", isActive ? "true" : "false");
+  });
 
-  if (currentUser && authToken) {
-    const previousDisplayName = currentUser.displayName || "";
-    if (newDisplayName !== previousDisplayName) {
-      try {
-        const res = await fetch(getApiUrl("/api/auth/profile"), {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${authToken}`,
-          },
-          body: JSON.stringify({ displayName: newDisplayName || null }),
+  // Update stage caption
+  if (profileEquipStageLabel) {
+    profileEquipStageLabel.textContent = `Male · ${mode === "casual" ? "Casual" : "Adventure"}`;
+  }
+
+  // Render 5 WoW equipment slots
+  const slotBtns = document.querySelectorAll<HTMLButtonElement>(".wow-equip-slot");
+  slotBtns.forEach((btn) => {
+    const slot = btn.getAttribute("data-equip-slot") as ProfileEquipSlot | null;
+    if (!slot) return;
+    const equippedId = getSlotKeyFromOutfit(outfit, slot);
+    const catalogItem = equippedId
+      ? FASHION_GEAR_CATALOG.find((g) => g.id === equippedId)
+      : undefined;
+
+    btn.classList.toggle("equipped", !!catalogItem);
+    btn.classList.toggle("selected", slot === selectedProfileEquipSlot);
+    btn.title = catalogItem
+      ? `${PROFILE_EQUIP_SLOT_LABELS[slot]}: ${catalogItem.name}`
+      : `${PROFILE_EQUIP_SLOT_LABELS[slot]} (Empty)`;
+
+    const placeholder = btn.querySelector<HTMLElement>(".wow-slot-placeholder");
+    const iconImg = btn.querySelector<HTMLImageElement>(".wow-slot-icon");
+    if (catalogItem && iconImg) {
+      iconImg.src = catalogItem.iconPath;
+      iconImg.alt = catalogItem.name;
+      iconImg.classList.remove("hidden");
+      placeholder?.classList.add("hidden");
+    } else {
+      iconImg?.classList.add("hidden");
+      placeholder?.classList.remove("hidden");
+    }
+  });
+
+  // Render Slot Inspector / Quick Equip Bar
+  const slotLabel = PROFILE_EQUIP_SLOT_LABELS[selectedProfileEquipSlot];
+  const equippedId = getSlotKeyFromOutfit(outfit, selectedProfileEquipSlot);
+  const equippedItem = equippedId
+    ? FASHION_GEAR_CATALOG.find((g) => g.id === equippedId)
+    : undefined;
+
+  if (profileEquipInspectorSlot) {
+    profileEquipInspectorSlot.textContent = slotLabel;
+  }
+  if (profileEquipInspectorItem) {
+    profileEquipInspectorItem.textContent = equippedItem ? equippedItem.name : "Empty";
+  }
+  if (profileEquipInspectorActions) {
+    profileEquipInspectorActions.innerHTML = "";
+    const availableItems = FASHION_GEAR_CATALOG.filter(
+      (g) => g.slot === selectedProfileEquipSlot && g.category === mode
+    );
+
+    if (availableItems.length === 0) {
+      const note = document.createElement("span");
+      note.className = "profile-equip-empty-note";
+      note.textContent =
+        mode === "casual"
+          ? "No casual items yet"
+          : `No ${slotLabel.toLowerCase()} items yet`;
+      profileEquipInspectorActions.appendChild(note);
+    } else {
+      const noneBtn = document.createElement("button");
+      noneBtn.type = "button";
+      noneBtn.className = `profile-equip-chip-btn ${!equippedId ? "active" : ""}`;
+      noneBtn.textContent = "None";
+      noneBtn.addEventListener("click", () => {
+        setProfileEquipSlotItem(mode, selectedProfileEquipSlot, "");
+      });
+      profileEquipInspectorActions.appendChild(noneBtn);
+
+      availableItems.forEach((item) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = `profile-equip-chip-btn ${equippedId === item.id ? "active" : ""}`;
+        btn.textContent = item.name;
+        btn.addEventListener("click", () => {
+          setProfileEquipSlotItem(mode, selectedProfileEquipSlot, item.id);
         });
-        const data: AuthResponse = await res.json();
-        if (data.success && data.user) {
-          currentUser = data.user;
-          if (data.token) {
-            authToken = data.token;
-            localStorage.setItem("lepark_auth_token", authToken);
-          }
-          localStorage.setItem("lepark_auth_user", JSON.stringify(currentUser));
-        }
-      } catch (err) {
-        console.warn("Could not sync display name with server:", err);
-      }
-    }
-  }
-
-  try {
-    localStorage.setItem("player_color", color);
-    localStorage.setItem(
-      "player_upload_switch",
-      switchUploadPictures ? (switchUploadPictures.checked ? "true" : "false") : "false",
-    );
-    localStorage.setItem("player_sprite_template", selectedTemplateId);
-    localStorage.setItem("player_outfit", JSON.stringify(selectedOutfit));
-    localStorage.setItem(
-      "player_avatar_frames",
-      JSON.stringify(uploadedFrames),
-    );
-  } catch (err) {
-    console.warn("Could not save avatar frames to localStorage:", err);
-  }
-
-  closeUpdateCharacterModal();
-  updateTopBarUI();
-
-  const effectiveName = getEffectivePlayerName();
-
-  if (multiplayer) {
-    multiplayer.updateProfile(effectiveName, color, avatars || null, selectedOutfit);
-
-    if (multiplayer.sessionId && gameInstance) {
-      const activeScene = gameInstance.scene.getScene("GameScene") as GameScene;
-      if (activeScene && typeof activeScene.setPlayerAvatars === "function") {
-        activeScene.setPlayerAvatars(multiplayer.sessionId, avatars || null);
-      }
-      if (activeScene && typeof activeScene.setPlayerOutfit === "function") {
-        activeScene.setPlayerOutfit(multiplayer.sessionId, selectedOutfit);
-      }
+        profileEquipInspectorActions.appendChild(btn);
+      });
     }
   }
 }
 
-profileForm.addEventListener("submit", handleUpdateCharacter);
+profileEquipTabBtns.forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const tab = btn.getAttribute("data-equip-tab") as OutfitMode | null;
+    if (!tab || tab === activeProfileEquipTab) return;
+    activeProfileEquipTab = tab;
+    try {
+      localStorage.setItem("player_equip_tab", activeProfileEquipTab);
+    } catch {
+      // ignore
+    }
+    renderProfileEquipmentPane();
+    updateProfileEquipCharFrame();
+  });
+});
 
-// ==========================================
-// Middle Top Bar, Profile Dropdown & Map Modal
-// ==========================================
+document.querySelectorAll<HTMLButtonElement>(".wow-equip-slot").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const slot = btn.getAttribute("data-equip-slot") as ProfileEquipSlot | null;
+    if (!slot) return;
+    selectedProfileEquipSlot = slot;
+    renderProfileEquipmentPane();
+  });
+});
+
+btnProfileCharRotLeft?.addEventListener("click", () => {
+  profileCharRotIdx = (profileCharRotIdx - 1 + PROFILE_CHAR_ROT_ORDER.length) % PROFILE_CHAR_ROT_ORDER.length;
+  updateProfileEquipCharFrame();
+});
+
+btnProfileCharRotRight?.addEventListener("click", () => {
+  profileCharRotIdx = (profileCharRotIdx + 1) % PROFILE_CHAR_ROT_ORDER.length;
+  updateProfileEquipCharFrame();
+});
+
+btnProfileCharRotReset?.addEventListener("click", () => {
+  profileCharRotIdx = 0;
+  updateProfileEquipCharFrame();
+});
 
 function toggleProfileDropdown() {
   const isCurrentlyOpen = !profileMenuModal.classList.contains("hidden");
@@ -3150,6 +3039,8 @@ function toggleProfileDropdown() {
 function openProfileDropdown() {
   closeAudioSettingsDropdown();
   syncProfileModalUserInfo();
+  renderProfileEquipmentPane();
+  updateProfileEquipCharFrame();
   profileMenuModal.classList.remove("hidden");
   topbarProfileTrigger.classList.add("active");
 }
@@ -3169,9 +3060,6 @@ function syncProfileModalUserInfo() {
   }
   if (profileModalAdminBadge) {
     profileModalAdminBadge.classList.toggle("hidden", currentUser?.role !== "superadmin");
-  }
-  if (profileModalAvatarImg && topbarAvatarImg) {
-    profileModalAvatarImg.src = topbarAvatarImg.src;
   }
   if (profileModalStatusDot && topbarStatusDot) {
     profileModalStatusDot.style.background = topbarStatusDot.style.background;
@@ -3210,20 +3098,9 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
-// Dropdown Action: Go to My Space or Space's Inventory (when in own space)
-dropdownMySpaceBtn.addEventListener("click", () => {
+// Party button inside Player Menu: close Player Menu before FocusUiController opens Party modal
+btnOpenSquad?.addEventListener("click", () => {
   closeProfileDropdown();
-  if (myPersonalSpace && currentSpaceId === myPersonalSpace.id) {
-    openSpaceInventoryModal();
-    return;
-  }
-  if (myPersonalSpace) {
-    switchSpace(myPersonalSpace.id, myPersonalSpace.name);
-  } else {
-    alert(
-      "Personal space is still initializing. Please try again in a moment.",
-    );
-  }
 });
 
 function openCurrentSpaceSettings() {
@@ -5735,8 +5612,7 @@ function isAnyModalOpen(): boolean {
   if (authModal && !authModal.classList.contains("hidden")) return true;
   if (linkEmailModal && !linkEmailModal.classList.contains("hidden")) return true;
   if (mapModal && !mapModal.classList.contains("hidden")) return true;
-  if (wardrobeModal && !wardrobeModal.classList.contains("hidden")) return true;
-  if (modal && !modal.classList.contains("hidden")) return true;
+  if (changeNameModal && !changeNameModal.classList.contains("hidden")) return true;
   if (mySpaceSettingsModal && !mySpaceSettingsModal.classList.contains("hidden")) return true;
   if (adminSpaceModal && !adminSpaceModal.classList.contains("hidden")) return true;
   if (privateZoneNameModal && !privateZoneNameModal.classList.contains("hidden")) return true;
@@ -10559,7 +10435,10 @@ function closeMapModal() {
   setGameControlsActive(true);
 }
 
-btnOpenMap.addEventListener("click", openMapModal);
+btnOpenMap?.addEventListener("click", () => {
+  closeProfileDropdown();
+  openMapModal();
+});
 btnCloseMapModal.addEventListener("click", closeMapModal);
 
 mapModal.addEventListener("click", (e) => {
@@ -10631,21 +10510,6 @@ function updateTopBarUI() {
   if (topbarAvatarDot) topbarAvatarDot.classList.add("hidden");
 
   syncProfileModalUserInfo();
-
-  // Profile menu item title & subtitle
-  if (myPersonalSpace && currentSpaceId === myPersonalSpace.id) {
-    if (dropdownMySpaceIcon) dropdownMySpaceIcon.innerHTML = SPACE_INVENTORY_ICON_SVG;
-    if (dropdownMySpaceTitle) dropdownMySpaceTitle.textContent = "Space's Inventory";
-    dropdownMySpaceSub.textContent = "Manage house inventory";
-  } else {
-    if (dropdownMySpaceIcon) dropdownMySpaceIcon.innerHTML = MY_SPACE_ICON_SVG;
-    if (dropdownMySpaceTitle) dropdownMySpaceTitle.textContent = "Go to my space";
-    if (myPersonalSpace) {
-      dropdownMySpaceSub.textContent = `${myPersonalSpace.name} (${myPersonalSpace.isPublic ? "Public" : "Private"})`;
-    } else {
-      dropdownMySpaceSub.textContent = "Enter personal space";
-    }
-  }
 
   if (mapCurrentSpaceName) {
     mapCurrentSpaceName.textContent = currentSpaceName;
@@ -10750,9 +10614,15 @@ async function fetchSpaces() {
 function getAllListedSpaces(): Space[] {
   const seen = new Set<string>();
   const combined: Space[] = [];
+  if (myPersonalSpace) {
+    seen.add(myPersonalSpace.id);
+    combined.push(myPersonalSpace);
+  }
   for (const s of loadedSpaces) {
-    seen.add(s.id);
-    combined.push(s);
+    if (!seen.has(s.id)) {
+      seen.add(s.id);
+      combined.push(s);
+    }
   }
   for (const s of loadedSharedSpaces) {
     if (!seen.has(s.id)) {
@@ -10778,6 +10648,7 @@ function renderSpacesList() {
   }
 
   spacesList.forEach((space) => {
+    const isMySpace = !!myPersonalSpace && space.id === myPersonalSpace.id;
     const isCurrent = space.id === currentSpaceId;
     const isSuperadmin = currentUser?.role === "superadmin";
     const isWhitelisted = currentUser
@@ -10790,12 +10661,14 @@ function renderSpacesList() {
           (u) => u.toLowerCase() === currentUser!.username.toLowerCase(),
         )
       : false;
-    const canJoin = space.isPublic || isSuperadmin || isWhitelisted || isHousemate;
+    const canJoin = isMySpace || space.isPublic || isSuperadmin || isWhitelisted || isHousemate;
     const isClickable = !isCurrent && canJoin;
     const onlineCount = space.playerCount || 0;
 
     const metaParts: string[] = [];
-    if (isHousemate) {
+    if (isMySpace) {
+      metaParts.push("My Space");
+    } else if (isHousemate) {
       metaParts.push(
         space.ownerUsername
           ? `Housemate · @${escapeHtml(space.ownerUsername)}`
@@ -10851,7 +10724,7 @@ function renderSpacesList() {
         </div>
       </div>
       ${
-        isSuperadmin
+        isSuperadmin && !isMySpace
           ? `
         <div class="space-card-admin-row">
           <button type="button" class="btn-space-admin-action edit-admin-space" data-id="${space.id}" title="Edit Space" aria-label="Edit ${escapeHtml(space.name)}">
