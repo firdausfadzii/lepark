@@ -1,4 +1,4 @@
-const { execSync, spawn } = require('child_process');
+const { execSync, execFileSync, spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
@@ -45,7 +45,7 @@ try {
 // 3. Ensure database container is running
 function isContainerRunning() {
   try {
-    const status = execSync(`docker inspect -f '{{.State.Running}}' ${CONTAINER_NAME}`, { encoding: 'utf8' }).trim();
+    const status = execFileSync('docker', ['inspect', '-f', '{{.State.Running}}', CONTAINER_NAME], { encoding: 'utf8' }).trim();
     return status === 'true';
   } catch (err) {
     return false;

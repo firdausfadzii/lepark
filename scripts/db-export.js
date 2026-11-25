@@ -1,4 +1,4 @@
-const { execSync, spawn } = require('child_process');
+const { execSync, execFileSync, spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
@@ -14,7 +14,7 @@ console.log(`- Output:    ${BACKUP_FILE}\n`);
 
 // 1. Check if container is running
 try {
-  const status = execSync(`docker inspect -f '{{.State.Running}}' ${CONTAINER_NAME}`, { encoding: 'utf8' }).trim();
+  const status = execFileSync('docker', ['inspect', '-f', '{{.State.Running}}', CONTAINER_NAME], { encoding: 'utf8' }).trim();
   if (status !== 'true') {
     console.error(`❌ Container "${CONTAINER_NAME}" is not running.`);
     console.error(`👉 Start it first with: npm run db:up\n`);
