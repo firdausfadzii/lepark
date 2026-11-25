@@ -769,7 +769,7 @@ export class ThrowBattleGame {
     this.floatingTexts.push({
       x: target.x,
       y: this.groundY - 60,
-      text: `💥 -1 HIT! (${target.hp}/${maxHp})`,
+      text: `-1 HIT! (${target.hp}/${maxHp})`,
       color: "#ef4444",
       alpha: 1,
       vy: -45,
@@ -1391,7 +1391,7 @@ export class ThrowBattleGame {
       this.winnerSessionId === this.player1.sessionId ? this.player1 : this.player2;
 
     if (title) {
-      title.textContent = isWinner ? "🏆 VICTORY!" : "💀 DEFEAT";
+      title.textContent = isWinner ? "VICTORY!" : "DEFEAT";
       title.style.color = isWinner ? "#fde047" : "#f87171";
     }
     if (subtitle) {

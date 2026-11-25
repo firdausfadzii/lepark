@@ -1,6 +1,7 @@
 import { Pool, PoolClient } from "pg";
 import dotenv from "dotenv";
 import { hashPassword } from "../auth";
+import { buildRestaurantBistroTiles } from "../services/RestaurantMapBuilder";
 import {
   PrivateZone,
   JukeboxState,
@@ -8,6 +9,7 @@ import {
   AshtrayState,
   ChessBoardState,
   AquariumState,
+  SellerNpcState,
   ChatMessage,
   ChatRoomType,
   Organisation,
@@ -21,6 +23,12 @@ import {
   CalendarAssigneeDto,
   CalendarEventDto,
   CalendarMealDto,
+  FocusTheme,
+  FocusStats,
+  FocusRewardBreakdown,
+  isValidFocusTheme,
+  calculateFocusPointsReward,
+  FOCUS_MIN_MINUTES,
 } from "shared";
 
 dotenv.config();
@@ -56,7 +64,14 @@ export interface UserRecord {
   display_name: string | null;
   password_hash: string;
   role: "user" | "superadmin";
-  parking_points: number;
+  focus_points: number;
+  focus_streak_days?: number;
+  last_focus_date?: string | null;
+  focus_freeze_shields?: number;
+  focus_shield_week?: string | null;
+  daily_focus_date?: string | null;
+  daily_focus_minutes?: number;
+  last_public_space_id?: string | null;
   unlocked_skins?: string[];
   unlocked_assets?: string[];
   last_space_id?: string | null;
@@ -69,11 +84,11 @@ export interface UserRecord {
 export interface SpaceRecord {
   id: string;
   name: string;
-  category: string;
   owner_id: number;
   owner_username?: string;
   is_public: boolean;
   is_superadmin_space: boolean;
+  focus_theme?: FocusTheme;
   whitelist: string[]; // usernames allowed if private
   shared_owners: string[]; // usernames of co-owners / housemates
   tiles?: Record<string, string>;
@@ -83,6 +98,7 @@ export interface SpaceRecord {
   ashtrays?: AshtrayState[];
   chess_boards?: ChessBoardState[];
   aquariums?: AquariumState[];
+  seller_npc?: SellerNpcState | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -204,7 +220,14 @@ async function seedDefaultData(isPostgres: boolean, client?: PoolClient) {
           display_name: adminData.displayName,
           password_hash: passwordHash,
           role: "superadmin",
-          parking_points: 0,
+          focus_points: 0,
+          focus_streak_days: 0,
+          last_focus_date: null,
+          focus_freeze_shields: 2,
+          focus_shield_week: null,
+          daily_focus_date: null,
+          daily_focus_minutes: 0,
+          last_public_space_id: null,
           unlocked_skins: [],
           unlocked_assets: [],
           created_at: new Date(),
@@ -230,14 +253,33 @@ async function seedDefaultData(isPostgres: boolean, client?: PoolClient) {
   }
 
   // Default spaces for fresh database setup
+  const restaurantTiles = buildRestaurantBistroTiles();
   const defaultSpaces = [
     {
       id: "space_central_plaza",
       name: "CO3",
-      category: "Hangout Lounges",
       is_public: true,
       is_superadmin_space: true,
-      whitelist: [],
+      whitelist: [] as string[],
+      tiles: {} as Record<string, string>,
+    },
+    {
+      id: "space_restaurant_bistro",
+      name: "Saffron & Hearth Bistro",
+      is_public: true,
+      is_superadmin_space: true,
+      focus_theme: "auto" as FocusTheme,
+      whitelist: [] as string[],
+      tiles: restaurantTiles,
+    },
+    {
+      id: "space_adventure_guild",
+      name: "Adventure Guild",
+      is_public: true,
+      is_superadmin_space: true,
+      focus_theme: "guild" as FocusTheme,
+      whitelist: [] as string[],
+      tiles: {} as Record<string, string>,
     },
   ];
 
@@ -247,9 +289,60 @@ async function seedDefaultData(isPostgres: boolean, client?: PoolClient) {
     if (totalSpaces === 0) {
       for (const s of defaultSpaces) {
         await client.query(
-          `INSERT INTO spaces (id, name, category, owner_id, is_public, is_superadmin_space, whitelist)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-          [s.id, s.name, s.category, adminId, s.is_public, s.is_superadmin_space, JSON.stringify(s.whitelist)]
+          `INSERT INTO spaces (id, name, owner_id, is_public, is_superadmin_space, focus_theme, whitelist, tiles)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+          [
+            s.id,
+            s.name,
+            adminId,
+            s.is_public,
+            s.is_superadmin_space,
+            s.focus_theme || "auto",
+            JSON.stringify(s.whitelist),
+            JSON.stringify(s.tiles),
+          ]
+        );
+      }
+    } else {
+      const existingRestRes = await client.query(
+        `SELECT id FROM spaces WHERE id = 'space_restaurant_bistro' OR tiles::text LIKE '%restaurant/%' LIMIT 1`
+      );
+      if (existingRestRes.rows.length === 0) {
+        const bistro = defaultSpaces[1];
+        await client.query(
+          `INSERT INTO spaces (id, name, owner_id, is_public, is_superadmin_space, whitelist, tiles)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)
+           ON CONFLICT (id) DO NOTHING`,
+          [
+            bistro.id,
+            bistro.name,
+            adminId,
+            bistro.is_public,
+            bistro.is_superadmin_space,
+            JSON.stringify(bistro.whitelist),
+            JSON.stringify(bistro.tiles),
+          ]
+        );
+      }
+      const existingGuildRes = await client.query(
+        `SELECT id FROM spaces WHERE id = 'space_adventure_guild' OR focus_theme = 'guild' OR LOWER(name) LIKE '%adventure%' OR LOWER(name) LIKE '%guild%' LIMIT 1`
+      );
+      if (existingGuildRes.rows.length === 0) {
+        const guild = defaultSpaces[2];
+        await client.query(
+          `INSERT INTO spaces (id, name, owner_id, is_public, is_superadmin_space, focus_theme, whitelist, tiles)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+           ON CONFLICT (id) DO NOTHING`,
+          [
+            guild.id,
+            guild.name,
+            adminId,
+            guild.is_public,
+            guild.is_superadmin_space,
+            guild.focus_theme,
+            JSON.stringify(guild.whitelist),
+            JSON.stringify(guild.tiles),
+          ]
         );
       }
     }
@@ -259,13 +352,14 @@ async function seedDefaultData(isPostgres: boolean, client?: PoolClient) {
         inMemorySpaces.set(s.id, {
           id: s.id,
           name: s.name,
-          category: s.category,
           owner_id: adminId,
           owner_username: "superadmin",
           is_public: s.is_public,
           is_superadmin_space: s.is_superadmin_space,
+          focus_theme: s.focus_theme || "auto",
           whitelist: s.whitelist,
           shared_owners: [],
+          tiles: s.tiles,
           created_at: new Date(),
           updated_at: new Date(),
         });
@@ -294,7 +388,28 @@ async function setupDatabaseSchema(client: PoolClient) {
     ALTER TABLE users ADD COLUMN IF NOT EXISTS email VARCHAR(255);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_lower ON users (LOWER(email)) WHERE email IS NOT NULL;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(20) DEFAULT 'user';
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS parking_points INT DEFAULT 0 NOT NULL;
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'users' AND column_name = 'focus_points'
+      ) THEN
+        ALTER TABLE users ADD COLUMN focus_points INT DEFAULT 0 NOT NULL;
+        IF EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'users' AND column_name = 'parking_points'
+        ) THEN
+          UPDATE users SET focus_points = COALESCE(parking_points, 0);
+        END IF;
+      END IF;
+    END $$;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS focus_streak_days INT DEFAULT 0 NOT NULL;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS last_focus_date VARCHAR(10);
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS focus_freeze_shields INT DEFAULT 2 NOT NULL;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS focus_shield_week VARCHAR(10);
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS daily_focus_date VARCHAR(10);
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS daily_focus_minutes INT DEFAULT 0 NOT NULL;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS last_public_space_id VARCHAR(64);
     ALTER TABLE users ADD COLUMN IF NOT EXISTS unlocked_skins JSONB DEFAULT '[]'::jsonb;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS unlocked_assets JSONB DEFAULT '[]'::jsonb;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS last_space_id VARCHAR(64);
@@ -321,10 +436,10 @@ async function setupDatabaseSchema(client: PoolClient) {
     CREATE TABLE IF NOT EXISTS spaces (
       id VARCHAR(64) PRIMARY KEY,
       name VARCHAR(100) NOT NULL,
-      category VARCHAR(50) DEFAULT 'General',
       owner_id INT REFERENCES users(id) ON DELETE SET NULL,
       is_public BOOLEAN DEFAULT TRUE,
       is_superadmin_space BOOLEAN DEFAULT FALSE,
+      focus_theme VARCHAR(32) DEFAULT 'auto' NOT NULL,
       whitelist JSONB DEFAULT '[]'::jsonb,
       shared_owners JSONB DEFAULT '[]'::jsonb,
       tiles JSONB DEFAULT '{}'::jsonb,
@@ -334,9 +449,11 @@ async function setupDatabaseSchema(client: PoolClient) {
       ashtrays JSONB DEFAULT '[]'::jsonb,
       chess_boards JSONB DEFAULT '[]'::jsonb,
       aquariums JSONB DEFAULT '[]'::jsonb,
+      seller_npc JSONB DEFAULT NULL,
       created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     );
+    ALTER TABLE spaces ADD COLUMN IF NOT EXISTS focus_theme VARCHAR(32) DEFAULT 'auto' NOT NULL;
     ALTER TABLE spaces ADD COLUMN IF NOT EXISTS shared_owners JSONB DEFAULT '[]'::jsonb;
     ALTER TABLE spaces ADD COLUMN IF NOT EXISTS tiles JSONB DEFAULT '{}'::jsonb;
     ALTER TABLE spaces ADD COLUMN IF NOT EXISTS private_zones JSONB DEFAULT '[]'::jsonb;
@@ -345,7 +462,8 @@ async function setupDatabaseSchema(client: PoolClient) {
     ALTER TABLE spaces ADD COLUMN IF NOT EXISTS ashtrays JSONB DEFAULT '[]'::jsonb;
     ALTER TABLE spaces ADD COLUMN IF NOT EXISTS chess_boards JSONB DEFAULT '[]'::jsonb;
     ALTER TABLE spaces ADD COLUMN IF NOT EXISTS aquariums JSONB DEFAULT '[]'::jsonb;
-    CREATE INDEX IF NOT EXISTS idx_spaces_superadmin ON spaces (is_superadmin_space, category);
+    ALTER TABLE spaces ADD COLUMN IF NOT EXISTS seller_npc JSONB DEFAULT NULL;
+    CREATE INDEX IF NOT EXISTS idx_spaces_superadmin_name ON spaces (is_superadmin_space, name);
 
     -- Auto-migrate legacy tile assets in all spaces
     UPDATE spaces
@@ -510,6 +628,32 @@ async function setupDatabaseSchema(client: PoolClient) {
       PRIMARY KEY (space_id, day_of_week)
     );
   `);
+
+  // 10. Netherworld Focus RPG tables (profiles, squad barter offers, weekly global raid boss)
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS rpg_profiles (
+      user_id INT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      profile_json JSONB NOT NULL,
+      power_score TEXT NOT NULL DEFAULT '0',
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS rpg_trade_offers (
+      offer_id VARCHAR(64) PRIMARY KEY,
+      squad_id VARCHAR(64) NOT NULL,
+      sender_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      offer_json JSONB NOT NULL,
+      expires_at BIGINT NOT NULL,
+      created_at BIGINT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_rpg_trade_squad ON rpg_trade_offers (squad_id, expires_at);
+
+    CREATE TABLE IF NOT EXISTS rpg_raid_state (
+      week_key VARCHAR(16) PRIMARY KEY,
+      raid_json JSONB NOT NULL,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
 }
 
 /**
@@ -526,10 +670,10 @@ async function syncInMemoryToPostgres(client: PoolClient) {
       );
       if (existing.rows.length === 0) {
         await client.query(
-          `INSERT INTO users (username, display_name, password_hash, role, parking_points, unlocked_skins, unlocked_assets)
+          `INSERT INTO users (username, display_name, password_hash, role, focus_points, unlocked_skins, unlocked_assets)
            VALUES ($1, $2, $3, $4, $5, $6, $7)
            ON CONFLICT (username) DO NOTHING`,
-          [user.username, user.display_name, user.password_hash, user.role, user.parking_points || 0, JSON.stringify(user.unlocked_skins || []), JSON.stringify(user.unlocked_assets || [])]
+          [user.username, user.display_name, user.password_hash, user.role, user.focus_points || 0, JSON.stringify(user.unlocked_skins || []), JSON.stringify(user.unlocked_assets || [])]
         );
       }
     } catch (err) {
@@ -545,10 +689,10 @@ async function syncInMemoryToPostgres(client: PoolClient) {
       inMemorySpaces.set(row.id, {
         id: row.id,
         name: row.name,
-        category: row.category || "General",
         owner_id: row.owner_id,
         is_public: row.is_public,
         is_superadmin_space: row.is_superadmin_space,
+        focus_theme: isValidFocusTheme(row.focus_theme) ? row.focus_theme : "auto",
         whitelist: parseWhitelist(row.whitelist),
         shared_owners: parseWhitelist(row.shared_owners),
         tiles: typeof row.tiles === "string" ? JSON.parse(row.tiles) : (row.tiles || {}),
@@ -558,6 +702,7 @@ async function syncInMemoryToPostgres(client: PoolClient) {
         ashtrays: parseAshtrays(row.ashtrays),
         chess_boards: parseChessBoards(row.chess_boards),
         aquariums: parseAquariums(row.aquariums),
+        seller_npc: parseSellerNpc(row.seller_npc),
         created_at: row.created_at,
         updated_at: row.updated_at,
       });
@@ -692,12 +837,87 @@ export function getLastDbError(): string | null {
 // User Database Operations
 // ==========================================
 
+const USER_SELECT_COLUMNS = `id, username, email, display_name, password_hash, role,
+  COALESCE(focus_points, 0) as focus_points,
+  COALESCE(focus_streak_days, 0) as focus_streak_days,
+  last_focus_date,
+  COALESCE(focus_freeze_shields, 2) as focus_freeze_shields,
+  focus_shield_week,
+  daily_focus_date,
+  COALESCE(daily_focus_minutes, 0) as daily_focus_minutes,
+  last_public_space_id,
+  COALESCE(unlocked_skins, '[]'::jsonb) as unlocked_skins,
+  COALESCE(unlocked_assets, '[]'::jsonb) as unlocked_assets,
+  last_space_id, last_x, last_y, created_at, updated_at`;
+
+export function formatLocalDateKey(date: Date = new Date()): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+export function getMondayWeekKey(date: Date = new Date()): string {
+  const copy = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const day = copy.getDay(); // 0=Sun..6=Sat
+  const diff = day === 0 ? -6 : 1 - day;
+  copy.setDate(copy.getDate() + diff);
+  return formatLocalDateKey(copy);
+}
+
+function diffCalendarDays(isoA: string, isoB: string): number {
+  const [ya, ma, da] = isoA.split("-").map(Number);
+  const [yb, mb, db] = isoB.split("-").map(Number);
+  if (!ya || !ma || !da || !yb || !mb || !db) return 0;
+  const utcA = Date.UTC(ya, ma - 1, da);
+  const utcB = Date.UTC(yb, mb - 1, db);
+  return Math.round((utcB - utcA) / 86_400_000);
+}
+
+export function computeUserFocusStats(user: UserRecord, now: Date = new Date()): FocusStats {
+  const today = formatLocalDateKey(now);
+  const mondayWeek = getMondayWeekKey(now);
+
+  // Weekly 2 Freeze Shields replenish every Monday (max stock of 2)
+  const shields =
+    user.focus_shield_week === mondayWeek
+      ? Math.max(0, Math.min(2, Number(user.focus_freeze_shields ?? 2)))
+      : 2;
+
+  let effectiveStreak = 0;
+  if (user.last_focus_date) {
+    if (user.last_focus_date === today) {
+      effectiveStreak = Math.max(1, Number(user.focus_streak_days || 1));
+    } else {
+      const gap = diffCalendarDays(user.last_focus_date, today);
+      const missedDays = Math.max(0, gap - 1);
+      if (gap >= 1 && missedDays <= shields) {
+        effectiveStreak = Math.max(0, Number(user.focus_streak_days || 0));
+      } else {
+        effectiveStreak = 0;
+      }
+    }
+  }
+
+  const dailyFocusMinutes =
+    user.daily_focus_date === today ? Math.max(0, Number(user.daily_focus_minutes || 0)) : 0;
+
+  return {
+    focusPoints: Number(user.focus_points) || 0,
+    streakDays: effectiveStreak,
+    freezeShields: shields,
+    dailyFocusMinutes,
+    isFirstSessionToday: user.last_focus_date !== today,
+    lastPublicSpaceId: user.last_public_space_id || null,
+  };
+}
+
 export async function findUserByUsername(username: string): Promise<UserRecord | null> {
   const cleanUsername = username.trim();
   if (isDbConnected) {
     try {
       const res = await pool.query(
-        "SELECT id, username, email, display_name, password_hash, role, COALESCE(parking_points, 0) as parking_points, COALESCE(unlocked_skins, '[]'::jsonb) as unlocked_skins, COALESCE(unlocked_assets, '[]'::jsonb) as unlocked_assets, last_space_id, last_x, last_y, created_at, updated_at FROM users WHERE LOWER(username) = LOWER($1) LIMIT 1",
+        `SELECT ${USER_SELECT_COLUMNS} FROM users WHERE LOWER(username) = LOWER($1) LIMIT 1`,
         [cleanUsername]
       );
       if (res.rows[0]) {
@@ -727,7 +947,7 @@ export async function findUserByEmail(email: string): Promise<UserRecord | null>
   if (isDbConnected) {
     try {
       const res = await pool.query(
-        "SELECT id, username, email, display_name, password_hash, role, COALESCE(parking_points, 0) as parking_points, COALESCE(unlocked_skins, '[]'::jsonb) as unlocked_skins, COALESCE(unlocked_assets, '[]'::jsonb) as unlocked_assets, last_space_id, last_x, last_y, created_at, updated_at FROM users WHERE LOWER(email) = LOWER($1) LIMIT 1",
+        `SELECT ${USER_SELECT_COLUMNS} FROM users WHERE LOWER(email) = LOWER($1) LIMIT 1`,
         [cleanEmail]
       );
       if (res.rows[0]) {
@@ -754,7 +974,7 @@ export async function findUserById(id: number): Promise<UserRecord | null> {
   if (isDbConnected) {
     try {
       const res = await pool.query(
-        "SELECT id, username, email, display_name, password_hash, role, COALESCE(parking_points, 0) as parking_points, COALESCE(unlocked_skins, '[]'::jsonb) as unlocked_skins, COALESCE(unlocked_assets, '[]'::jsonb) as unlocked_assets, last_space_id, last_x, last_y, created_at, updated_at FROM users WHERE id = $1 LIMIT 1",
+        `SELECT ${USER_SELECT_COLUMNS} FROM users WHERE id = $1 LIMIT 1`,
         [id]
       );
       if (res.rows[0]) {
@@ -807,6 +1027,31 @@ export async function updateUserLastLocation(
   }
 }
 
+export async function updateUserLastPublicSpace(
+  userId: number,
+  spaceId: string
+): Promise<void> {
+  if (!userId || userId <= 0 || !spaceId) return;
+
+  if (isDbConnected) {
+    try {
+      await pool.query(
+        "UPDATE users SET last_public_space_id = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2",
+        [spaceId, userId]
+      );
+    } catch (err) {
+      handleDbQueryError("Error updating user last public space", err);
+    }
+  }
+
+  for (const user of inMemoryUsers.values()) {
+    if (user.id === userId) {
+      user.last_public_space_id = spaceId;
+      break;
+    }
+  }
+}
+
 export async function createUser(
   username: string,
   passwordHash: string,
@@ -823,9 +1068,9 @@ export async function createUser(
   if (isDbConnected) {
     try {
       const res = await pool.query(
-        `INSERT INTO users (username, email, display_name, password_hash, role, parking_points, unlocked_skins, unlocked_assets)
+        `INSERT INTO users (username, email, display_name, password_hash, role, focus_points, unlocked_skins, unlocked_assets)
          VALUES ($1, $2, $3, $4, $5, 0, '[]'::jsonb, '[]'::jsonb)
-         RETURNING id, username, email, display_name, password_hash, role, COALESCE(parking_points, 0) as parking_points, COALESCE(unlocked_skins, '[]'::jsonb) as unlocked_skins, COALESCE(unlocked_assets, '[]'::jsonb) as unlocked_assets, created_at, updated_at`,
+         RETURNING ${USER_SELECT_COLUMNS}`,
         [cleanUsername, cleanEmail, cleanDisplayName, passwordHash, role]
       );
       createdUser = {
@@ -846,7 +1091,14 @@ export async function createUser(
         display_name: cleanDisplayName,
         password_hash: passwordHash,
         role,
-        parking_points: 0,
+        focus_points: 0,
+        focus_streak_days: 0,
+        last_focus_date: null,
+        focus_freeze_shields: 2,
+        focus_shield_week: null,
+        daily_focus_date: null,
+        daily_focus_minutes: 0,
+        last_public_space_id: null,
         unlocked_skins: [],
         unlocked_assets: [],
         created_at: new Date(),
@@ -863,7 +1115,14 @@ export async function createUser(
       display_name: cleanDisplayName,
       password_hash: passwordHash,
       role,
-      parking_points: 0,
+      focus_points: 0,
+      focus_streak_days: 0,
+      last_focus_date: null,
+      focus_freeze_shields: 2,
+      focus_shield_week: null,
+      daily_focus_date: null,
+      daily_focus_minutes: 0,
+      last_public_space_id: null,
       unlocked_skins: [],
       unlocked_assets: [],
       created_at: new Date(),
@@ -891,7 +1150,7 @@ export async function updateUserDisplayName(
         `UPDATE users
          SET display_name = $2, updated_at = CURRENT_TIMESTAMP
          WHERE id = $1
-         RETURNING id, username, email, display_name, password_hash, role, COALESCE(parking_points, 0) as parking_points, COALESCE(unlocked_skins, '[]'::jsonb) as unlocked_skins, COALESCE(unlocked_assets, '[]'::jsonb) as unlocked_assets, created_at, updated_at`,
+         RETURNING ${USER_SELECT_COLUMNS}`,
         [id, cleanDisplayName]
       );
       if (res.rows[0]) {
@@ -927,7 +1186,7 @@ export async function updateUserEmail(id: number, email: string): Promise<UserRe
         `UPDATE users
          SET email = $2, updated_at = CURRENT_TIMESTAMP
          WHERE id = $1
-         RETURNING id, username, email, display_name, password_hash, role, COALESCE(parking_points, 0) as parking_points, COALESCE(unlocked_skins, '[]'::jsonb) as unlocked_skins, COALESCE(unlocked_assets, '[]'::jsonb) as unlocked_assets, created_at, updated_at`,
+         RETURNING ${USER_SELECT_COLUMNS}`,
         [id, cleanEmail]
       );
       if (res.rows[0]) {
@@ -991,23 +1250,23 @@ export async function updateUserPassword(id: number, passwordHash: string): Prom
   return false;
 }
 
-export async function getUserParkingPoints(userId: number): Promise<number> {
+export async function getUserFocusPoints(userId: number): Promise<number> {
   if (isDbConnected) {
     try {
       const res = await pool.query(
-        "SELECT COALESCE(parking_points, 0) as parking_points FROM users WHERE id = $1 LIMIT 1",
+        "SELECT COALESCE(focus_points, 0) as focus_points FROM users WHERE id = $1 LIMIT 1",
         [userId]
       );
       if (res.rows[0]) {
-        return Number(res.rows[0].parking_points) || 0;
+        return Number(res.rows[0].focus_points) || 0;
       }
     } catch (err) {
-      handleDbQueryError("Error getting user parking points", err);
+      handleDbQueryError("Error getting user focus points", err);
     }
   }
   for (const user of inMemoryUsers.values()) {
     if (user.id === userId) {
-      return user.parking_points || 0;
+      return user.focus_points || 0;
     }
   }
   return 0;
@@ -1031,7 +1290,7 @@ async function unlockUserFeatureItem(
   if (freeForSuperadmin && user.role === "superadmin") {
     return {
       success: true,
-      newPoints: user.parking_points || 0,
+      newPoints: user.focus_points || 0,
       items: currentItems,
     };
   }
@@ -1039,18 +1298,18 @@ async function unlockUserFeatureItem(
   if (currentItems.includes(itemId)) {
     return {
       success: true,
-      newPoints: user.parking_points || 0,
+      newPoints: user.focus_points || 0,
       items: currentItems,
     };
   }
 
-  const currentPoints = user.parking_points || 0;
+  const currentPoints = user.focus_points || 0;
   if (currentPoints < cost) {
     return {
       success: false,
       newPoints: currentPoints,
       items: currentItems,
-      error: `Requires ${cost} parking points (you have ${currentPoints}).`,
+      error: `Requires ${cost} FP (you have ${currentPoints} FP).`,
     };
   }
 
@@ -1060,11 +1319,11 @@ async function unlockUserFeatureItem(
     try {
       const res = await pool.query(
         `UPDATE users
-         SET parking_points = parking_points - $2,
+         SET focus_points = focus_points - $2,
              ${column} = $3::jsonb,
              updated_at = CURRENT_TIMESTAMP
-         WHERE id = $1 AND parking_points >= $2
-         RETURNING COALESCE(parking_points, 0) as parking_points, COALESCE(${column}, '[]'::jsonb) as items`,
+         WHERE id = $1 AND focus_points >= $2
+         RETURNING COALESCE(focus_points, 0) as focus_points, COALESCE(${column}, '[]'::jsonb) as items`,
         [userId, cost, JSON.stringify(newItems)]
       );
 
@@ -1073,16 +1332,16 @@ async function unlockUserFeatureItem(
           success: false,
           newPoints: currentPoints,
           items: currentItems,
-          error: "Insufficient parking points.",
+          error: "Insufficient Focus Points (FP).",
         };
       }
 
-      const updatedPoints = Number(res.rows[0].parking_points) || 0;
+      const updatedPoints = Number(res.rows[0].focus_points) || 0;
       const updatedItems = Array.isArray(res.rows[0].items) ? res.rows[0].items : newItems;
 
       for (const u of inMemoryUsers.values()) {
         if (u.id === userId) {
-          u.parking_points = updatedPoints;
+          u.focus_points = updatedPoints;
           u[column] = updatedItems;
         }
       }
@@ -1098,18 +1357,18 @@ async function unlockUserFeatureItem(
   }
 
   // In-memory fallback
-  user.parking_points = (user.parking_points || 0) - cost;
+  user.focus_points = (user.focus_points || 0) - cost;
   user[column] = newItems;
   for (const u of inMemoryUsers.values()) {
     if (u.id === userId) {
-      u.parking_points = user.parking_points;
+      u.focus_points = user.focus_points;
       u[column] = newItems;
     }
   }
 
   return {
     success: true,
-    newPoints: user.parking_points,
+    newPoints: user.focus_points,
     items: newItems,
   };
 }
@@ -1142,35 +1401,172 @@ export async function unlockAssetForUser(
   };
 }
 
-export async function addParkingPoints(userId: number, amount: number = 1): Promise<number> {
+export async function addFocusPoints(userId: number, amount: number = 1): Promise<number> {
   let newPoints = 0;
   if (isDbConnected) {
     try {
       const res = await pool.query(
         `UPDATE users
-         SET parking_points = COALESCE(parking_points, 0) + $2, updated_at = CURRENT_TIMESTAMP
+         SET focus_points = COALESCE(focus_points, 0) + $2, updated_at = CURRENT_TIMESTAMP
          WHERE id = $1
-         RETURNING COALESCE(parking_points, 0) as parking_points`,
+         RETURNING COALESCE(focus_points, 0) as focus_points`,
         [userId, amount]
       );
       if (res.rows[0]) {
-        newPoints = Number(res.rows[0].parking_points) || 0;
+        newPoints = Number(res.rows[0].focus_points) || 0;
       }
     } catch (err) {
-      handleDbQueryError("Error adding parking points", err);
+      handleDbQueryError("Error adding focus points", err);
     }
   }
 
   for (const user of inMemoryUsers.values()) {
     if (user.id === userId) {
-      user.parking_points = (user.parking_points || 0) + amount;
+      user.focus_points = (user.focus_points || 0) + amount;
       if (!isDbConnected || newPoints === 0) {
-        newPoints = user.parking_points;
+        newPoints = user.focus_points;
       }
       break;
     }
   }
   return newPoints;
+}
+
+export async function recordCompletedFocusSessionInDb(params: {
+  userId: number;
+  elapsedMinutes: number;
+  targetMinutes: number;
+  isCompleted: boolean;
+  isStrictMode: boolean;
+  strictViolated: boolean;
+  hasSquadSynergy: boolean;
+  focusUpgradeRank?: number;
+}): Promise<{ breakdown: FocusRewardBreakdown; stats: FocusStats } | null> {
+  const user = await findUserById(params.userId);
+  if (!user) return null;
+
+  const now = new Date();
+  const today = formatLocalDateKey(now);
+  const mondayWeek = getMondayWeekKey(now);
+  const preStats = computeUserFocusStats(user, now);
+
+  const rewardCore = calculateFocusPointsReward({
+    elapsedMinutes: params.elapsedMinutes,
+    targetMinutes: params.targetMinutes,
+    isCompleted: params.isCompleted,
+    isStrictMode: params.isStrictMode,
+    strictViolated: params.strictViolated,
+    streakDays: preStats.streakDays,
+    hasSquadSynergy: params.hasSquadSynergy,
+    isFirstSessionToday: preStats.isFirstSessionToday,
+    priorDailyFocusMinutes: preStats.dailyFocusMinutes,
+    focusUpgradeRank: params.focusUpgradeRank,
+  });
+
+  if (rewardCore.forfeitedUnderMinimum || params.elapsedMinutes < FOCUS_MIN_MINUTES) {
+    return {
+      breakdown: {
+        ...rewardCore,
+        newTotalFp: preStats.focusPoints,
+        streakDays: preStats.streakDays,
+        freezeShields: preStats.freezeShields,
+        dailyFocusMinutes: preStats.dailyFocusMinutes,
+      },
+      stats: preStats,
+    };
+  }
+
+  let nextStreak = preStats.streakDays;
+  let nextShields = preStats.freezeShields;
+  let nextLastFocusDate = user.last_focus_date || null;
+
+  if (params.isCompleted) {
+    if (!user.last_focus_date) {
+      nextStreak = 1;
+    } else if (user.last_focus_date === today) {
+      nextStreak = Math.max(1, Number(user.focus_streak_days || 1));
+    } else {
+      const gap = diffCalendarDays(user.last_focus_date, today);
+      const missedDays = Math.max(0, gap - 1);
+      if (gap >= 1 && missedDays === 0) {
+        nextStreak = Math.max(0, Number(user.focus_streak_days || 0)) + 1;
+      } else if (gap > 1 && nextShields >= missedDays) {
+        nextShields -= missedDays;
+        nextStreak = Math.max(0, Number(user.focus_streak_days || 0)) + 1;
+      } else {
+        nextStreak = 1;
+      }
+    }
+    nextLastFocusDate = today;
+  }
+
+  const nextDailyMinutes = preStats.dailyFocusMinutes + Math.round(rewardCore.elapsedMinutes);
+  let nextPoints = preStats.focusPoints + rewardCore.totalFpEarned;
+
+  if (isDbConnected) {
+    try {
+      const res = await pool.query(
+        `UPDATE users
+         SET focus_points = COALESCE(focus_points, 0) + $2,
+             focus_streak_days = $3,
+             last_focus_date = $4,
+             focus_freeze_shields = $5,
+             focus_shield_week = $6,
+             daily_focus_date = $7,
+             daily_focus_minutes = $8,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = $1
+         RETURNING COALESCE(focus_points, 0) as focus_points`,
+        [
+          params.userId,
+          rewardCore.totalFpEarned,
+          nextStreak,
+          nextLastFocusDate,
+          nextShields,
+          mondayWeek,
+          today,
+          nextDailyMinutes,
+        ]
+      );
+      if (res.rows[0]) {
+        nextPoints = Number(res.rows[0].focus_points) || nextPoints;
+      }
+    } catch (err) {
+      handleDbQueryError("Error recording completed focus session", err);
+    }
+  }
+
+  for (const u of inMemoryUsers.values()) {
+    if (u.id === params.userId) {
+      u.focus_points = nextPoints;
+      u.focus_streak_days = nextStreak;
+      u.last_focus_date = nextLastFocusDate;
+      u.focus_freeze_shields = nextShields;
+      u.focus_shield_week = mondayWeek;
+      u.daily_focus_date = today;
+      u.daily_focus_minutes = nextDailyMinutes;
+    }
+  }
+
+  const nextStats: FocusStats = {
+    focusPoints: nextPoints,
+    streakDays: nextStreak,
+    freezeShields: nextShields,
+    dailyFocusMinutes: nextDailyMinutes,
+    isFirstSessionToday: nextLastFocusDate !== today,
+    lastPublicSpaceId: user.last_public_space_id || null,
+  };
+
+  return {
+    breakdown: {
+      ...rewardCore,
+      newTotalFp: nextPoints,
+      streakDays: nextStreak,
+      freezeShields: nextShields,
+      dailyFocusMinutes: nextDailyMinutes,
+    },
+    stats: nextStats,
+  };
 }
 
 // ==========================================
@@ -1254,25 +1650,41 @@ export function parseAquariums(raw: any): AquariumState[] {
   return [];
 }
 
+export function parseSellerNpc(raw: any): SellerNpcState | null {
+  let obj: any = raw;
+  if (typeof obj === "string") {
+    try {
+      obj = JSON.parse(obj);
+    } catch {
+      return null;
+    }
+  }
+  if (!obj || typeof obj !== "object" || Array.isArray(obj)) return null;
+  if (typeof obj.x !== "number" || typeof obj.y !== "number" || Number.isNaN(obj.x) || Number.isNaN(obj.y)) {
+    return null;
+  }
+  return obj as SellerNpcState;
+}
+
 export async function getSuperadminSpaces(): Promise<SpaceRecord[]> {
   if (isDbConnected) {
     try {
       const res = await pool.query(`
-        SELECT s.id, s.name, s.category, s.owner_id, s.is_public, s.is_superadmin_space, s.whitelist, s.shared_owners, s.created_at, s.updated_at,
+        SELECT s.id, s.name, s.owner_id, s.is_public, s.is_superadmin_space, COALESCE(s.focus_theme, 'auto') as focus_theme, s.whitelist, s.shared_owners, s.created_at, s.updated_at,
                u.username as owner_username
         FROM spaces s
         LEFT JOIN users u ON s.owner_id = u.id
         WHERE s.is_superadmin_space = true
-        ORDER BY s.category ASC, s.name ASC
+        ORDER BY s.name ASC
       `);
       return res.rows.map((row) => ({
         id: row.id,
         name: row.name,
-        category: row.category || "General",
         owner_id: row.owner_id,
         owner_username: row.owner_username || "superadmin",
         is_public: row.is_public,
         is_superadmin_space: true,
+        focus_theme: isValidFocusTheme(row.focus_theme) ? row.focus_theme : "auto",
         whitelist: parseWhitelist(row.whitelist),
         shared_owners: parseWhitelist(row.shared_owners),
         created_at: row.created_at,
@@ -1290,14 +1702,14 @@ export async function getSuperadminSpaces(): Promise<SpaceRecord[]> {
       results.push({ ...space, whitelist: [...space.whitelist], shared_owners: [...(space.shared_owners || [])] });
     }
   }
-  return results.sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name));
+  return results.sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export async function getSpaceById(id: string): Promise<SpaceRecord | null> {
   if (isDbConnected) {
     try {
       const res = await pool.query(
-        `SELECT s.id, s.name, s.category, s.owner_id, s.is_public, s.is_superadmin_space, s.whitelist, s.shared_owners, s.private_zones, s.jukeboxes, s.typewriters, s.ashtrays, s.chess_boards, s.aquariums, s.created_at, s.updated_at,
+        `SELECT s.id, s.name, s.owner_id, s.is_public, s.is_superadmin_space, COALESCE(s.focus_theme, 'auto') as focus_theme, s.whitelist, s.shared_owners, s.private_zones, s.jukeboxes, s.typewriters, s.ashtrays, s.chess_boards, s.aquariums, s.seller_npc, s.created_at, s.updated_at,
                 u.username as owner_username
          FROM spaces s
          LEFT JOIN users u ON s.owner_id = u.id
@@ -1309,11 +1721,11 @@ export async function getSpaceById(id: string): Promise<SpaceRecord | null> {
         return {
           id: row.id,
           name: row.name,
-          category: row.category || "General",
           owner_id: row.owner_id,
           owner_username: row.owner_username || "User",
           is_public: row.is_public,
           is_superadmin_space: row.is_superadmin_space,
+          focus_theme: isValidFocusTheme(row.focus_theme) ? row.focus_theme : "auto",
           whitelist: parseWhitelist(row.whitelist),
           shared_owners: parseWhitelist(row.shared_owners),
           private_zones: parsePrivateZones(row.private_zones),
@@ -1321,7 +1733,8 @@ export async function getSpaceById(id: string): Promise<SpaceRecord | null> {
           typewriters: parseTypewriters(row.typewriters),
           ashtrays: parseAshtrays(row.ashtrays),
           chess_boards: parseChessBoards(row.chess_boards),
-        aquariums: parseAquariums(row.aquariums),
+          aquariums: parseAquariums(row.aquariums),
+          seller_npc: parseSellerNpc(row.seller_npc),
           created_at: row.created_at,
           updated_at: row.updated_at,
         };
@@ -1344,6 +1757,7 @@ export async function getSpaceById(id: string): Promise<SpaceRecord | null> {
         ashtrays: space.ashtrays ? [...space.ashtrays] : [],
         chess_boards: space.chess_boards ? [...space.chess_boards] : [],
         aquariums: space.aquariums ? [...space.aquariums] : [],
+        seller_npc: space.seller_npc ? { ...space.seller_npc } : null,
       }
     : null;
 }
@@ -1352,7 +1766,7 @@ export async function getUserPersonalSpace(userId: number): Promise<SpaceRecord 
   if (isDbConnected) {
     try {
       const res = await pool.query(
-        `SELECT s.id, s.name, s.category, s.owner_id, s.is_public, s.is_superadmin_space, s.whitelist, s.shared_owners, s.created_at, s.updated_at,
+        `SELECT s.id, s.name, s.owner_id, s.is_public, s.is_superadmin_space, COALESCE(s.focus_theme, 'auto') as focus_theme, s.whitelist, s.shared_owners, s.created_at, s.updated_at,
                 u.username as owner_username
          FROM spaces s
          LEFT JOIN users u ON s.owner_id = u.id
@@ -1365,11 +1779,11 @@ export async function getUserPersonalSpace(userId: number): Promise<SpaceRecord 
         return {
           id: row.id,
           name: row.name,
-          category: "Personal",
           owner_id: row.owner_id,
           owner_username: row.owner_username || "User",
           is_public: row.is_public,
           is_superadmin_space: false,
+          focus_theme: isValidFocusTheme(row.focus_theme) ? row.focus_theme : "auto",
           whitelist: parseWhitelist(row.whitelist),
           shared_owners: parseWhitelist(row.shared_owners),
           created_at: row.created_at,
@@ -1393,7 +1807,7 @@ export async function getSharedSpacesForUser(userId: number, username: string): 
   if (isDbConnected) {
     try {
       const res = await pool.query(
-        `SELECT s.id, s.name, s.category, s.owner_id, s.is_public, s.is_superadmin_space, s.whitelist, s.shared_owners, s.created_at, s.updated_at,
+        `SELECT s.id, s.name, s.owner_id, s.is_public, s.is_superadmin_space, COALESCE(s.focus_theme, 'auto') as focus_theme, s.whitelist, s.shared_owners, s.created_at, s.updated_at,
                 u.username as owner_username
          FROM spaces s
          LEFT JOIN users u ON s.owner_id = u.id
@@ -1409,11 +1823,11 @@ export async function getSharedSpacesForUser(userId: number, username: string): 
       return res.rows.map((row) => ({
         id: row.id,
         name: row.name,
-        category: row.is_superadmin_space ? (row.category || "General") : "Personal",
         owner_id: row.owner_id,
         owner_username: row.owner_username || "User",
         is_public: row.is_public,
         is_superadmin_space: row.is_superadmin_space,
+        focus_theme: isValidFocusTheme(row.focus_theme) ? row.focus_theme : "auto",
         whitelist: parseWhitelist(row.whitelist),
         shared_owners: parseWhitelist(row.shared_owners),
         created_at: row.created_at,
@@ -1462,21 +1876,21 @@ export async function ensureUserPersonalSpace(userId: number, username: string):
   if (isDbConnected) {
     try {
       const res = await pool.query(
-        `INSERT INTO spaces (id, name, category, owner_id, is_public, is_superadmin_space, whitelist, shared_owners)
-         VALUES ($1, $2, 'Personal', $3, $4, false, $5, '[]'::jsonb)
+        `INSERT INTO spaces (id, name, owner_id, is_public, is_superadmin_space, focus_theme, whitelist, shared_owners)
+         VALUES ($1, $2, $3, $4, false, 'auto', $5, '[]'::jsonb)
          ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, owner_id = EXCLUDED.owner_id
-         RETURNING id, name, category, owner_id, is_public, is_superadmin_space, whitelist, shared_owners, created_at, updated_at`,
+         RETURNING id, name, owner_id, is_public, is_superadmin_space, COALESCE(focus_theme, 'auto') as focus_theme, whitelist, shared_owners, created_at, updated_at`,
         [spaceId, spaceName, userId, isPublic, JSON.stringify(whitelist)]
       );
       const row = res.rows[0];
       const record: SpaceRecord = {
         id: row.id,
         name: row.name,
-        category: "Personal",
         owner_id: row.owner_id,
         owner_username: username,
         is_public: row.is_public,
         is_superadmin_space: false,
+        focus_theme: isValidFocusTheme(row.focus_theme) ? row.focus_theme : "auto",
         whitelist,
         shared_owners: parseWhitelist(row.shared_owners),
         created_at: row.created_at,
@@ -1496,11 +1910,11 @@ export async function ensureUserPersonalSpace(userId: number, username: string):
     const record: SpaceRecord = {
       id: spaceId,
       name: spaceName,
-      category: "Personal",
       owner_id: userId,
       owner_username: username,
       is_public: isPublic,
       is_superadmin_space: false,
+      focus_theme: "auto",
       whitelist,
       shared_owners: [],
       created_at: new Date(),
@@ -1515,34 +1929,34 @@ export async function ensureUserPersonalSpace(userId: number, username: string):
 
 export async function createSuperadminSpace(params: {
   name: string;
-  category: string;
   isPublic: boolean;
   ownerId: number;
+  focusTheme?: FocusTheme;
   whitelist?: string[];
   sharedOwners?: string[];
 }): Promise<SpaceRecord> {
   const id = `space_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
   const cleanName = params.name.trim().slice(0, 50);
-  const cleanCategory = params.category.trim().slice(0, 40) || "General";
+  const focusTheme: FocusTheme = isValidFocusTheme(params.focusTheme) ? params.focusTheme : "auto";
   const whitelist = params.whitelist || [];
   const sharedOwners = params.sharedOwners || [];
 
   if (isDbConnected) {
     try {
       const res = await pool.query(
-        `INSERT INTO spaces (id, name, category, owner_id, is_public, is_superadmin_space, whitelist, shared_owners)
-         VALUES ($1, $2, $3, $4, $5, true, $6, $7)
-         RETURNING id, name, category, owner_id, is_public, is_superadmin_space, whitelist, shared_owners, created_at, updated_at`,
-        [id, cleanName, cleanCategory, params.ownerId, params.isPublic, JSON.stringify(whitelist), JSON.stringify(sharedOwners)]
+        `INSERT INTO spaces (id, name, owner_id, is_public, is_superadmin_space, focus_theme, whitelist, shared_owners)
+         VALUES ($1, $2, $3, $4, true, $5, $6, $7)
+         RETURNING id, name, owner_id, is_public, is_superadmin_space, COALESCE(focus_theme, 'auto') as focus_theme, whitelist, shared_owners, created_at, updated_at`,
+        [id, cleanName, params.ownerId, params.isPublic, focusTheme, JSON.stringify(whitelist), JSON.stringify(sharedOwners)]
       );
       const row = res.rows[0];
       const record: SpaceRecord = {
         id: row.id,
         name: row.name,
-        category: row.category,
         owner_id: row.owner_id,
         is_public: row.is_public,
         is_superadmin_space: true,
+        focus_theme: isValidFocusTheme(row.focus_theme) ? row.focus_theme : "auto",
         whitelist: parseWhitelist(row.whitelist),
         shared_owners: parseWhitelist(row.shared_owners),
         created_at: row.created_at,
@@ -1558,10 +1972,10 @@ export async function createSuperadminSpace(params: {
   const record: SpaceRecord = {
     id,
     name: cleanName,
-    category: cleanCategory,
     owner_id: params.ownerId,
     is_public: params.isPublic,
     is_superadmin_space: true,
+    focus_theme: focusTheme,
     whitelist,
     shared_owners: sharedOwners,
     created_at: new Date(),
@@ -1575,8 +1989,8 @@ export async function updateSpace(
   spaceId: string,
   updates: {
     name?: string;
-    category?: string;
     isPublic?: boolean;
+    focusTheme?: FocusTheme;
     whitelist?: string[];
     sharedOwners?: string[];
   }
@@ -1585,8 +1999,10 @@ export async function updateSpace(
   if (!existing) return null;
 
   const newName = updates.name !== undefined ? updates.name.trim().slice(0, 50) : existing.name;
-  const newCategory = updates.category !== undefined ? updates.category.trim().slice(0, 40) : existing.category;
   const newIsPublic = updates.isPublic !== undefined ? !!updates.isPublic : existing.is_public;
+  const newFocusTheme: FocusTheme = isValidFocusTheme(updates.focusTheme)
+    ? updates.focusTheme
+    : existing.focus_theme || "auto";
   const newWhitelist = updates.whitelist !== undefined ? updates.whitelist : existing.whitelist;
   const newSharedOwners = updates.sharedOwners !== undefined ? updates.sharedOwners : (existing.shared_owners || []);
 
@@ -1594,21 +2010,21 @@ export async function updateSpace(
     try {
       const res = await pool.query(
         `UPDATE spaces
-         SET name = $2, category = $3, is_public = $4, whitelist = $5, shared_owners = $6, updated_at = CURRENT_TIMESTAMP
+         SET name = $2, is_public = $3, focus_theme = $4, whitelist = $5, shared_owners = $6, updated_at = CURRENT_TIMESTAMP
          WHERE id = $1
-         RETURNING id, name, category, owner_id, is_public, is_superadmin_space, whitelist, shared_owners, created_at, updated_at`,
-        [spaceId, newName, newCategory, newIsPublic, JSON.stringify(newWhitelist), JSON.stringify(newSharedOwners)]
+         RETURNING id, name, owner_id, is_public, is_superadmin_space, COALESCE(focus_theme, 'auto') as focus_theme, whitelist, shared_owners, created_at, updated_at`,
+        [spaceId, newName, newIsPublic, newFocusTheme, JSON.stringify(newWhitelist), JSON.stringify(newSharedOwners)]
       );
       if (res.rows[0]) {
         const row = res.rows[0];
         const updatedRecord: SpaceRecord = {
           id: row.id,
           name: row.name,
-          category: row.category,
           owner_id: row.owner_id,
           owner_username: existing.owner_username,
           is_public: row.is_public,
           is_superadmin_space: row.is_superadmin_space,
+          focus_theme: isValidFocusTheme(row.focus_theme) ? row.focus_theme : "auto",
           whitelist: parseWhitelist(row.whitelist),
           shared_owners: parseWhitelist(row.shared_owners),
           created_at: row.created_at,
@@ -1625,8 +2041,8 @@ export async function updateSpace(
   const inMem = inMemorySpaces.get(spaceId);
   if (inMem) {
     inMem.name = newName;
-    inMem.category = newCategory;
     inMem.is_public = newIsPublic;
+    inMem.focus_theme = newFocusTheme;
     inMem.whitelist = newWhitelist;
     inMem.shared_owners = newSharedOwners;
     inMem.updated_at = new Date();
@@ -1718,8 +2134,8 @@ export async function updateSpaceTiles(
       if (res.rowCount === 0) {
         // Space record did not exist yet; insert it so map tiles are preserved
         await pool.query(
-          `INSERT INTO spaces (id, name, category, is_public, tiles)
-           VALUES ($1, $2, 'General', true, $3)
+          `INSERT INTO spaces (id, name, is_public, tiles)
+           VALUES ($1, $2, true, $3)
            ON CONFLICT (id) DO UPDATE SET tiles = EXCLUDED.tiles, updated_at = CURRENT_TIMESTAMP`,
           [
             spaceId,
@@ -1738,7 +2154,6 @@ export async function updateSpaceTiles(
     inMem = {
       id: spaceId,
       name: spaceId,
-      category: "General",
       owner_id: 1,
       is_public: true,
       is_superadmin_space: false,
@@ -1789,8 +2204,8 @@ export async function updateSpacePrivateZones(
       );
       if (res.rowCount === 0) {
         await pool.query(
-          `INSERT INTO spaces (id, name, category, is_public, private_zones)
-           VALUES ($1, $2, 'General', true, $3)
+          `INSERT INTO spaces (id, name, is_public, private_zones)
+           VALUES ($1, $2, true, $3)
            ON CONFLICT (id) DO UPDATE SET private_zones = EXCLUDED.private_zones, updated_at = CURRENT_TIMESTAMP`,
           [
             spaceId,
@@ -1816,7 +2231,6 @@ export async function updateSpacePrivateZones(
     inMem = {
       id: spaceId,
       name: spaceId.startsWith("user_space_") ? "Personal Space" : spaceId,
-      category: "General",
       owner_id: 1,
       is_public: true,
       is_superadmin_space: false,
@@ -1866,8 +2280,8 @@ export async function updateSpaceJukeboxes(
       );
       if (res.rowCount === 0) {
         await pool.query(
-          `INSERT INTO spaces (id, name, category, is_public, jukeboxes)
-           VALUES ($1, $2, 'General', true, $3)
+          `INSERT INTO spaces (id, name, is_public, jukeboxes)
+           VALUES ($1, $2, true, $3)
            ON CONFLICT (id) DO UPDATE SET jukeboxes = EXCLUDED.jukeboxes, updated_at = CURRENT_TIMESTAMP`,
           [
             spaceId,
@@ -1923,8 +2337,8 @@ export async function updateSpaceTypewriters(
       );
       if (res.rowCount === 0) {
         await pool.query(
-          `INSERT INTO spaces (id, name, category, is_public, typewriters)
-           VALUES ($1, $2, 'General', true, $3)
+          `INSERT INTO spaces (id, name, is_public, typewriters)
+           VALUES ($1, $2, true, $3)
            ON CONFLICT (id) DO UPDATE SET typewriters = EXCLUDED.typewriters, updated_at = CURRENT_TIMESTAMP`,
           [
             spaceId,
@@ -1980,8 +2394,8 @@ export async function updateSpaceAshtrays(
       );
       if (res.rowCount === 0) {
         await pool.query(
-          `INSERT INTO spaces (id, name, category, is_public, ashtrays)
-           VALUES ($1, $2, 'General', true, $3)
+          `INSERT INTO spaces (id, name, is_public, ashtrays)
+           VALUES ($1, $2, true, $3)
            ON CONFLICT (id) DO UPDATE SET ashtrays = EXCLUDED.ashtrays, updated_at = CURRENT_TIMESTAMP`,
           [
             spaceId,
@@ -2037,8 +2451,8 @@ export async function updateSpaceChessBoards(
       );
       if (res.rowCount === 0) {
         await pool.query(
-          `INSERT INTO spaces (id, name, category, is_public, chess_boards)
-           VALUES ($1, $2, 'General', true, $3)
+          `INSERT INTO spaces (id, name, is_public, chess_boards)
+           VALUES ($1, $2, true, $3)
            ON CONFLICT (id) DO UPDATE SET chess_boards = EXCLUDED.chess_boards, updated_at = CURRENT_TIMESTAMP`,
           [
             spaceId,
@@ -2095,8 +2509,8 @@ export async function updateSpaceAquariums(
       );
       if (res.rowCount === 0) {
         await pool.query(
-          `INSERT INTO spaces (id, name, category, is_public, aquariums)
-           VALUES ($1, $2, 'General', true, $3)
+          `INSERT INTO spaces (id, name, is_public, aquariums)
+           VALUES ($1, $2, true, $3)
            ON CONFLICT (id) DO UPDATE SET aquariums = EXCLUDED.aquariums, updated_at = CURRENT_TIMESTAMP`,
           [
             spaceId,
@@ -2113,6 +2527,64 @@ export async function updateSpaceAquariums(
   let inMem = inMemorySpaces.get(spaceId);
   if (inMem) {
     inMem.aquariums = [...aquariums];
+    inMem.updated_at = new Date();
+  }
+  return true;
+}
+
+/**
+ * Get the single Seller NPC configuration for a space
+ */
+export async function getSpaceSellerNpc(spaceId: string): Promise<SellerNpcState | null> {
+  if (isDbConnected) {
+    try {
+      const res = await pool.query("SELECT seller_npc FROM spaces WHERE id = $1", [spaceId]);
+      if (res.rows[0]) {
+        return parseSellerNpc(res.rows[0].seller_npc);
+      }
+      return null;
+    } catch (err) {
+      handleDbQueryError("Error fetching space seller NPC from DB", err);
+    }
+  }
+  const inMem = inMemorySpaces.get(spaceId);
+  return inMem?.seller_npc ? { ...inMem.seller_npc } : null;
+}
+
+/**
+ * Update and persist the single Seller NPC for a space
+ */
+export async function updateSpaceSellerNpc(
+  spaceId: string,
+  sellerNpc: SellerNpcState | null
+): Promise<boolean> {
+  const serialized = sellerNpc ? JSON.stringify(sellerNpc) : null;
+  if (isDbConnected) {
+    try {
+      const res = await pool.query(
+        "UPDATE spaces SET seller_npc = $2::jsonb, updated_at = CURRENT_TIMESTAMP WHERE id = $1",
+        [spaceId, serialized]
+      );
+      if (res.rowCount === 0) {
+        await pool.query(
+          `INSERT INTO spaces (id, name, is_public, seller_npc)
+           VALUES ($1, $2, true, $3::jsonb)
+           ON CONFLICT (id) DO UPDATE SET seller_npc = EXCLUDED.seller_npc, updated_at = CURRENT_TIMESTAMP`,
+          [
+            spaceId,
+            spaceId.startsWith("user_space_") ? "Personal Space" : spaceId,
+            serialized,
+          ]
+        );
+      }
+    } catch (err) {
+      handleDbQueryError("Error updating space seller NPC in DB", err);
+    }
+  }
+
+  const inMem = inMemorySpaces.get(spaceId);
+  if (inMem) {
+    inMem.seller_npc = sellerNpc ? { ...sellerNpc } : null;
     inMem.updated_at = new Date();
   }
   return true;
@@ -2626,15 +3098,15 @@ export async function createOrganisation(
         return { success: false, error: "An organisation with that name already exists." };
       }
 
-      // Atomically deduct parking points (skip if effectiveCost <= 0, e.g. superadmin)
-      let updatedPoints = await getUserParkingPoints(creatorId);
+      // Atomically deduct Focus Points (skip if effectiveCost <= 0, e.g. superadmin)
+      let updatedPoints = await getUserFocusPoints(creatorId);
       if (effectiveCost > 0) {
         const pointsRes = await client.query(
           `UPDATE users
-           SET parking_points = parking_points - $2,
+           SET focus_points = focus_points - $2,
                updated_at = CURRENT_TIMESTAMP
-           WHERE id = $1 AND COALESCE(parking_points, 0) >= $2
-           RETURNING COALESCE(parking_points, 0) as parking_points`,
+           WHERE id = $1 AND COALESCE(focus_points, 0) >= $2
+           RETURNING COALESCE(focus_points, 0) as focus_points`,
           [creatorId, effectiveCost]
         );
         if (pointsRes.rows.length === 0) {
@@ -2642,10 +3114,10 @@ export async function createOrganisation(
           return {
             success: false,
             newPoints: updatedPoints,
-            error: `Requires ${effectiveCost} parking points (you have ${updatedPoints}).`,
+            error: `Requires ${effectiveCost} FP (you have ${updatedPoints}).`,
           };
         }
-        updatedPoints = Number(pointsRes.rows[0].parking_points) || 0;
+        updatedPoints = Number(pointsRes.rows[0].focus_points) || 0;
       }
 
       // Insert organisation
@@ -2679,7 +3151,7 @@ export async function createOrganisation(
       // Sync in-memory user cache
       for (const u of inMemoryUsers.values()) {
         if (u.id === creatorId) {
-          u.parking_points = updatedPoints;
+          u.focus_points = updatedPoints;
         }
       }
 
@@ -2711,20 +3183,20 @@ export async function createOrganisation(
     return { success: false, error: "An organisation with that name already exists." };
   }
 
-  const currentPoints = creator.parking_points || 0;
+  const currentPoints = creator.focus_points || 0;
   if (effectiveCost > 0 && currentPoints < effectiveCost) {
     return {
       success: false,
       newPoints: currentPoints,
-      error: `Requires ${effectiveCost} parking points (you have ${currentPoints}).`,
+      error: `Requires ${effectiveCost} FP (you have ${currentPoints}).`,
     };
   }
 
   if (effectiveCost > 0) {
-    creator.parking_points = currentPoints - effectiveCost;
+    creator.focus_points = currentPoints - effectiveCost;
     for (const u of inMemoryUsers.values()) {
       if (u.id === creatorId) {
-        u.parking_points = creator.parking_points;
+        u.focus_points = creator.focus_points;
       }
     }
   }
@@ -2762,7 +3234,7 @@ export async function createOrganisation(
   return {
     success: true,
     organisation: org || undefined,
-    newPoints: creator.parking_points,
+    newPoints: creator.focus_points,
   };
 }
 
@@ -3008,6 +3480,67 @@ export async function deleteOrganisation(
   } catch (err) {
     console.error("Error deleting organisation:", err);
     return { success: false, error: "Failed to disband organisation." };
+  }
+}
+
+export async function transferOrganisationLeadership(
+  organisationId: number,
+  requesterId: number,
+  newLeaderUserId: number
+): Promise<{ success: boolean; organisation?: Organisation; error?: string }> {
+  const org = await getOrganisationById(organisationId);
+  if (!org) return { success: false, error: "Organisation not found." };
+  if (org.creatorId !== requesterId) {
+    return { success: false, error: "Only the organisation leader can transfer leadership." };
+  }
+  if (newLeaderUserId === requesterId) {
+    return { success: false, error: "You are already the leader of this organisation." };
+  }
+  if (!org.members.some((m) => m.userId === newLeaderUserId)) {
+    return { success: false, error: "Selected player is not a member of this organisation." };
+  }
+
+  if (!isDbConnected) {
+    const inMemOrg = inMemoryOrganisations.find((o) => o.id === organisationId);
+    if (!inMemOrg) return { success: false, error: "Organisation not found." };
+    inMemOrg.creator_id = newLeaderUserId;
+    inMemOrg.updated_at = new Date();
+    for (const m of inMemoryOrganisationMembers) {
+      if (m.organisation_id === organisationId) {
+        if (m.user_id === requesterId) m.role = "member";
+        if (m.user_id === newLeaderUserId) m.role = "leader";
+      }
+    }
+    const updated = await getOrganisationById(organisationId);
+    return { success: true, organisation: updated || undefined };
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(
+      `UPDATE organisations SET creator_id = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND creator_id = $3`,
+      [organisationId, newLeaderUserId, requesterId]
+    );
+    await client.query(
+      `UPDATE organisation_members SET role = 'member' WHERE organisation_id = $1 AND user_id = $2`,
+      [organisationId, requesterId]
+    );
+    await client.query(
+      `UPDATE organisation_members SET role = 'leader' WHERE organisation_id = $1 AND user_id = $2`,
+      [organisationId, newLeaderUserId]
+    );
+    await client.query("COMMIT");
+    const updated = await getOrganisationById(organisationId);
+    return { success: true, organisation: updated || undefined };
+  } catch (err) {
+    try {
+      await client.query("ROLLBACK");
+    } catch {}
+    console.error("Error transferring organisation leadership:", err);
+    return { success: false, error: "Failed to transfer leadership." };
+  } finally {
+    client.release();
   }
 }
 
@@ -4646,5 +5179,250 @@ export async function deleteSpaceInventoryItem(params: {
   } catch (err) {
     console.error("Error deleting space inventory item:", err);
     return { success: false, error: "Failed to delete inventory item." };
+  }
+}
+
+// ==========================================
+// Netherworld Focus RPG Database Operations
+// ==========================================
+
+const inMemoryRpgProfiles = new Map<number, { profileJson: any; powerScore: string }>();
+const inMemoryRpgTrades = new Map<string, any>();
+const inMemoryRpgRaids = new Map<string, any>();
+
+export async function deductUserFocusPoints(
+  userId: number,
+  cost: number
+): Promise<{ success: boolean; newPoints: number; error?: string }> {
+  const cleanCost = Math.max(0, Math.ceil(cost));
+  if (cleanCost === 0) {
+    const current = await getUserFocusPoints(userId);
+    return { success: true, newPoints: current };
+  }
+
+  if (isDbConnected) {
+    try {
+      const res = await pool.query(
+        `UPDATE users
+         SET focus_points = COALESCE(focus_points, 0) - $2,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = $1 AND COALESCE(focus_points, 0) >= $2
+         RETURNING COALESCE(focus_points, 0) as focus_points`,
+        [userId, cleanCost]
+      );
+      if (res.rows.length === 0) {
+        const current = await getUserFocusPoints(userId);
+        return { success: false, newPoints: current, error: `Insufficient Focus Points (need ${cleanCost} FP).` };
+      }
+      const newPoints = Number(res.rows[0].focus_points) || 0;
+      for (const u of inMemoryUsers.values()) {
+        if (u.id === userId) {
+          u.focus_points = newPoints;
+          break;
+        }
+      }
+      return { success: true, newPoints };
+    } catch (err) {
+      handleDbQueryError("Error deducting user focus points", err);
+    }
+  }
+
+  for (const u of inMemoryUsers.values()) {
+    if (u.id === userId) {
+      const curr = Number(u.focus_points) || 0;
+      if (curr < cleanCost) {
+        return { success: false, newPoints: curr, error: `Insufficient Focus Points (need ${cleanCost} FP).` };
+      }
+      u.focus_points = curr - cleanCost;
+      return { success: true, newPoints: u.focus_points };
+    }
+  }
+  return { success: false, newPoints: 0, error: "User not found." };
+}
+
+export async function getRpgProfileJson(userId: number): Promise<any | null> {
+  if (isDbConnected) {
+    try {
+      const res = await pool.query(
+        "SELECT profile_json FROM rpg_profiles WHERE user_id = $1",
+        [userId]
+      );
+      if (res.rows.length > 0) {
+        const val = res.rows[0].profile_json;
+        inMemoryRpgProfiles.set(userId, { profileJson: val, powerScore: "0" });
+        return val;
+      }
+    } catch (err) {
+      handleDbQueryError("Error loading RPG profile", err);
+    }
+  }
+  return inMemoryRpgProfiles.get(userId)?.profileJson || null;
+}
+
+export async function saveRpgProfileJson(
+  userId: number,
+  profileJson: any,
+  powerScore: string
+): Promise<void> {
+  inMemoryRpgProfiles.set(userId, { profileJson, powerScore });
+  if (isDbConnected) {
+    try {
+      await pool.query(
+        `INSERT INTO rpg_profiles (user_id, profile_json, power_score, updated_at)
+         VALUES ($1, $2::jsonb, $3, CURRENT_TIMESTAMP)
+         ON CONFLICT (user_id) DO UPDATE
+         SET profile_json = EXCLUDED.profile_json,
+             power_score = EXCLUDED.power_score,
+             updated_at = CURRENT_TIMESTAMP`,
+        [userId, JSON.stringify(profileJson), powerScore]
+      );
+    } catch (err) {
+      handleDbQueryError("Error saving RPG profile", err);
+    }
+  }
+}
+
+export async function listArenaProfileRecords(
+  excludeUserId: number,
+  limit = 12
+): Promise<Array<{ userId: number; username: string; displayName: string | null; profileJson: any; powerScore: string }>> {
+  if (isDbConnected) {
+    try {
+      const res = await pool.query(
+        `SELECT p.user_id, p.profile_json, p.power_score, u.username, u.display_name
+         FROM rpg_profiles p
+         JOIN users u ON u.id = p.user_id
+         WHERE p.user_id != $1
+         ORDER BY p.updated_at DESC
+         LIMIT $2`,
+        [excludeUserId, limit]
+      );
+      return res.rows.map((r) => ({
+        userId: Number(r.user_id),
+        username: r.username,
+        displayName: r.display_name || null,
+        profileJson: r.profile_json,
+        powerScore: String(r.power_score || "0"),
+      }));
+    } catch (err) {
+      handleDbQueryError("Error listing arena profiles", err);
+    }
+  }
+
+  const out: Array<{ userId: number; username: string; displayName: string | null; profileJson: any; powerScore: string }> = [];
+  for (const [uid, entry] of inMemoryRpgProfiles.entries()) {
+    if (uid === excludeUserId) continue;
+    const u = Array.from(inMemoryUsers.values()).find((usr) => usr.id === uid);
+    out.push({
+      userId: uid,
+      username: u?.username || `player_${uid}`,
+      displayName: u?.display_name || null,
+      profileJson: entry.profileJson,
+      powerScore: entry.powerScore,
+    });
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+export async function getActiveTradeOffersForSquad(squadId: string, now = Date.now()): Promise<any[]> {
+  if (isDbConnected) {
+    try {
+      await pool.query("DELETE FROM rpg_trade_offers WHERE expires_at <= $1", [now]);
+      const res = await pool.query(
+        "SELECT offer_json FROM rpg_trade_offers WHERE squad_id = $1 AND expires_at > $2 ORDER BY created_at DESC",
+        [squadId, now]
+      );
+      return res.rows.map((r) => r.offer_json);
+    } catch (err) {
+      handleDbQueryError("Error fetching squad trade offers", err);
+    }
+  }
+  const out: any[] = [];
+  for (const [id, offer] of inMemoryRpgTrades.entries()) {
+    if (offer.expiresAt <= now) {
+      inMemoryRpgTrades.delete(id);
+    } else if (offer.squadId === squadId) {
+      out.push(offer);
+    }
+  }
+  return out.sort((a, b) => b.createdAt - a.createdAt);
+}
+
+export async function getTradeOfferById(offerId: string): Promise<any | null> {
+  if (isDbConnected) {
+    try {
+      const res = await pool.query(
+        "SELECT offer_json FROM rpg_trade_offers WHERE offer_id = $1",
+        [offerId]
+      );
+      if (res.rows[0]) return res.rows[0].offer_json;
+    } catch (err) {
+      handleDbQueryError("Error loading trade offer", err);
+    }
+  }
+  return inMemoryRpgTrades.get(offerId) || null;
+}
+
+export async function insertTradeOffer(offer: any): Promise<void> {
+  inMemoryRpgTrades.set(offer.offerId, offer);
+  if (isDbConnected) {
+    try {
+      await pool.query(
+        `INSERT INTO rpg_trade_offers (offer_id, squad_id, sender_id, offer_json, expires_at, created_at)
+         VALUES ($1, $2, $3, $4::jsonb, $5, $6)
+         ON CONFLICT (offer_id) DO NOTHING`,
+        [offer.offerId, offer.squadId, offer.senderId, JSON.stringify(offer), offer.expiresAt, offer.createdAt]
+      );
+    } catch (err) {
+      handleDbQueryError("Error inserting trade offer", err);
+    }
+  }
+}
+
+export async function deleteTradeOffer(offerId: string): Promise<void> {
+  inMemoryRpgTrades.delete(offerId);
+  if (isDbConnected) {
+    try {
+      await pool.query("DELETE FROM rpg_trade_offers WHERE offer_id = $1", [offerId]);
+    } catch (err) {
+      handleDbQueryError("Error deleting trade offer", err);
+    }
+  }
+}
+
+export async function getRaidBossJson(weekKey: string): Promise<any | null> {
+  if (isDbConnected) {
+    try {
+      const res = await pool.query(
+        "SELECT raid_json FROM rpg_raid_state WHERE week_key = $1",
+        [weekKey]
+      );
+      if (res.rows[0]) {
+        inMemoryRpgRaids.set(weekKey, res.rows[0].raid_json);
+        return res.rows[0].raid_json;
+      }
+    } catch (err) {
+      handleDbQueryError("Error loading raid state", err);
+    }
+  }
+  return inMemoryRpgRaids.get(weekKey) || null;
+}
+
+export async function saveRaidBossJson(weekKey: string, raidJson: any): Promise<void> {
+  inMemoryRpgRaids.set(weekKey, raidJson);
+  if (isDbConnected) {
+    try {
+      await pool.query(
+        `INSERT INTO rpg_raid_state (week_key, raid_json, updated_at)
+         VALUES ($1, $2::jsonb, CURRENT_TIMESTAMP)
+         ON CONFLICT (week_key) DO UPDATE
+         SET raid_json = EXCLUDED.raid_json,
+             updated_at = CURRENT_TIMESTAMP`,
+        [weekKey, JSON.stringify(raidJson)]
+      );
+    } catch (err) {
+      handleDbQueryError("Error saving raid state", err);
+    }
   }
 }

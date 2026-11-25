@@ -421,7 +421,9 @@ export class FishingGame {
     this.btnSound?.addEventListener("click", () => {
       this.soundEnabled = !this.soundEnabled;
       if (this.btnSound) {
-        this.btnSound.textContent = this.soundEnabled ? "🔊" : "🔇";
+        this.btnSound.innerHTML = this.soundEnabled
+      ? `<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>`
+      : `<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>`;
       }
     });
 
@@ -559,7 +561,7 @@ export class FishingGame {
 
     if (this.btnCastLine) {
       this.btnCastLine.removeAttribute("disabled");
-      this.btnCastLine.innerHTML = "<span>🎣</span> Cast Fishing Line (Space)";
+      this.btnCastLine.innerHTML = `<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="5" r="2"/><path d="M12 7v14"/><path d="M5 13a7 7 0 0 0 14 0"/></svg> Cast Fishing Line (Space)`;
     }
     if (this.castStatusTitle) {
       this.castStatusTitle.textContent = "Cast your line into the aquarium";
@@ -582,7 +584,7 @@ export class FishingGame {
       this.castStatusTitle.textContent = "Line is cast... Watch for a bite!";
     }
     if (this.castStatusDesc) {
-      this.castStatusDesc.textContent = "When you see '❗ HIT!', click quickly or press Space to hook the fish!";
+      this.castStatusDesc.textContent = "When you see '! HIT!', click quickly or press Space to hook the fish!";
     }
 
     // Select random fish from current filter
@@ -640,7 +642,7 @@ export class FishingGame {
         }
         if (this.btnCastLine) {
           this.btnCastLine.removeAttribute("disabled");
-          this.btnCastLine.innerHTML = "<span>🎣</span> Cast Again (Space)";
+          this.btnCastLine.innerHTML = `<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="5" r="2"/><path d="M12 7v14"/><path d="M5 13a7 7 0 0 0 14 0"/></svg> Cast Again (Space)`;
         }
         this.isCasting = false;
       }
@@ -899,14 +901,14 @@ export class FishingGame {
       this.bobberBarEl?.classList.add("hooked");
       this.hookSparksEl?.classList.remove("hidden");
       if (this.tensionStatusEl) {
-        this.tensionStatusEl.textContent = "REELING IN! 🟢";
+        this.tensionStatusEl.textContent = "REELING IN!";
         this.tensionStatusEl.style.color = "#34d399";
       }
     } else {
       this.bobberBarEl?.classList.remove("hooked");
       this.hookSparksEl?.classList.add("hidden");
       if (this.tensionStatusEl) {
-        this.tensionStatusEl.textContent = "FISH ESCAPING! 🔴";
+        this.tensionStatusEl.textContent = "FISH ESCAPING!";
         this.tensionStatusEl.style.color = "#f87171";
       }
     }

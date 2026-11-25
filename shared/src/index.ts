@@ -3,3 +3,7 @@ export * from "./types";
 export * from "./schema";
 export * from "./collision";
 export * from "./assetBitmaps";
+export * from "./assetCatalog";
+export * from "./focus";
+export * from "./diner";
+export * from "./rpg";

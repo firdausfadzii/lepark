@@ -1,20 +1,39 @@
 import Phaser from "phaser";
 import { MultiplayerManager } from "./network/MultiplayerManager";
 import { GameScene, InspectableMapItem } from "./scenes/GameScene";
+import { FocusUiController } from "./focus/FocusUiController";
+import { NetherworldUiController } from "./rpg/NetherworldUiController";
+import { DinerUiController } from "./diner/DinerUiController";
 import { OFFICE_ONE_DECORATION_ASSETS } from "./officeOneAssets";
 import { OFFICE_TWO_DECORATION_ASSETS } from "./officeTwoAssets";
 import { PET_SHOP_DECORATION_ASSETS } from "./petShopAssets";
+import { ADVENTURE_GUILD_DECORATION_ASSETS } from "./adventureGuildAssets";
+import { RESTAURANT_DECORATION_ASSETS } from "./restaurantAssets";
 import { LIVING_ROOM_ONE_DECORATION_ASSETS } from "./livingRoomOneAssets";
+import { LIVING_ROOM_TWO_DECORATION_ASSETS } from "./livingRoomTwoAssets";
+import { LIVING_ROOM_FLOOR_ASSETS } from "./livingRoomFloorAssets";
 import { hydrateEditorAssetThumbnails, resolveAssetThumbnailUrl } from "./atlasThumbnails";
+import {
+  hydrateSheetImages,
+  imgSrcAttr,
+  normalizeSpriteRef,
+  setImgSrcResolved,
+} from "./spriteSheetResolver";
+import { renderFashionPreviewFrame } from "./fashionRenderer";
 import {
   DEFAULT_PRESET_COLORS,
   PlayerAvatars,
+  PlayerOutfit,
+  ShirtStyle,
+  DEFAULT_PLAYER_OUTFIT,
+  OUTERWEAR_CATALOG,
   AuthUser,
   AuthResponse,
   Space,
   SpacesListResponse,
   SpaceResponse,
   MAX_AVATAR_FRAMES,
+  DEFAULT_AVATAR_ICON,
   DEFAULT_AVATARS,
   ChatMessage,
   PrivateZone,
@@ -34,6 +53,9 @@ import {
   FriendEntry,
   FriendRequestEntry,
   FriendsListResponse,
+  FocusStats,
+  FocusTheme,
+  isValidFocusTheme,
   isWallAsset,
   isOverlayWallAsset,
   isOverlayFloorAsset,
@@ -46,6 +68,13 @@ import {
   ORGANISATION_CREATION_COST,
   ASSET_UNLOCK_COST,
   isPaidAssetId,
+  ASSET_SHOP_THEME_OPTIONS,
+  SELLER_NPC_SPRITE_OPTIONS,
+  AssetShopTheme,
+  SellerNpcSpriteKey,
+  SellerNpcState,
+  SpaceShopResponse,
+  SpaceShopCatalogItem,
   NoteType,
   NoteDto,
   AccessibleNoteSpace,
@@ -238,10 +267,28 @@ const topbarStatusSubtitle = document.getElementById(
   "topbar-status-subtitle",
 ) as HTMLSpanElement;
 
-// User Profile Dropdown
-const userProfileDropdown = document.getElementById(
-  "user-profile-dropdown",
+// User Profile Modal Menu
+const profileMenuModal = document.getElementById(
+  "profile-menu-modal",
 ) as HTMLDivElement;
+const btnCloseProfileModal = document.getElementById(
+  "btn-close-profile-modal",
+) as HTMLButtonElement | null;
+const profileModalAvatarImg = document.getElementById(
+  "profile-modal-avatar-img",
+) as HTMLImageElement | null;
+const profileModalStatusDot = document.getElementById(
+  "profile-modal-status-dot",
+) as HTMLSpanElement | null;
+const profileModalUserName = document.getElementById(
+  "profile-modal-user-name",
+) as HTMLElement | null;
+const profileModalAdminBadge = document.getElementById(
+  "profile-modal-admin-badge",
+) as HTMLSpanElement | null;
+const profileModalUsername = document.getElementById(
+  "profile-modal-username",
+) as HTMLSpanElement | null;
 const dropdownMySpaceBtn = document.getElementById(
   "dropdown-my-space-btn",
 ) as HTMLButtonElement;
@@ -278,36 +325,30 @@ const btnMapSettings = document.getElementById(
   "btn-map-settings",
 ) as HTMLButtonElement;
 const btnEditMap = document.getElementById("btn-edit-map") as HTMLButtonElement;
-const mapEditBanner = document.getElementById(
-  "map-edit-banner",
-) as HTMLDivElement;
-const editBannerAssetText = document.getElementById(
-  "edit-banner-asset-text",
-) as HTMLElement;
-const btnBannerDone = document.getElementById(
-  "btn-banner-done",
-) as HTMLButtonElement | null;
 const mapEditorSidebar = document.getElementById(
   "map-editor-sidebar",
 ) as HTMLElement;
 const btnCloseMapEditor = document.getElementById(
   "btn-close-map-editor",
 ) as HTMLButtonElement;
+const btnToggleTileOptions = document.getElementById(
+  "btn-toggle-tile-options",
+) as HTMLButtonElement | null;
+const btnToggleDragFill = document.getElementById(
+  "btn-toggle-drag-fill",
+) as HTMLButtonElement | null;
+const btnCloseTileOptions = document.getElementById(
+  "btn-close-tile-options",
+) as HTMLButtonElement | null;
+const editorOptionsBtnThumb = document.getElementById(
+  "editor-options-btn-thumb",
+) as HTMLImageElement | null;
 const editorPlacingToast = document.getElementById(
   "editor-placing-toast",
 ) as HTMLElement | null;
 const placingToastName = document.getElementById(
   "placing-toast-name",
 ) as HTMLElement | null;
-const placingToastLayer = document.getElementById(
-  "placing-toast-layer",
-) as HTMLElement | null;
-const placingToastHint = document.getElementById(
-  "placing-toast-hint",
-) as HTMLElement | null;
-const btnToastDonePlacing = document.getElementById(
-  "btn-toast-done-placing",
-) as HTMLButtonElement | null;
 const mapEditorTileOptionsSidebar = document.getElementById(
   "map-editor-tile-options-sidebar",
 ) as HTMLElement | null;
@@ -351,22 +392,22 @@ const tileOptFlipXHint = document.getElementById(
   "tile-opt-flip-x-hint",
 ) as HTMLElement | null;
 
-// Top Bar Right Actions (Map) & Parking Points & Bottom-Left Ping
+// Top Bar Right Actions (Map) & Focus Points & Bottom-Left Ping
 const btnOpenMap = document.getElementById("btn-open-map") as HTMLButtonElement;
-const topbarParkingPoints = document.getElementById(
-  "topbar-parking-points",
+const topbarFocusPointsVal = document.getElementById(
+  "topbar-focus-points-val",
 ) as HTMLElement | null;
-const dropdownParkingPointsVal = document.getElementById(
-  "dropdown-parking-points-val",
+const dropdownFocusPointsVal = document.getElementById(
+  "dropdown-focus-points-val",
 ) as HTMLElement | null;
 
-function updateParkingPointsDisplay(points: number) {
-  const label = `${points} Parking`;
-  if (topbarParkingPoints) {
-    topbarParkingPoints.textContent = label;
+function updateFocusPointsDisplay(points: number) {
+  const label = `${points} FP`;
+  if (topbarFocusPointsVal) {
+    topbarFocusPointsVal.textContent = label;
   }
-  if (dropdownParkingPointsVal) {
-    dropdownParkingPointsVal.textContent = label;
+  if (dropdownFocusPointsVal) {
+    dropdownFocusPointsVal.textContent = label;
   }
 }
 const topbarPingStat = document.getElementById(
@@ -384,9 +425,6 @@ const btnAdminAddSpace = document.getElementById(
 const btnCloseMapModal = document.getElementById(
   "btn-close-map-modal",
 ) as HTMLButtonElement;
-const mapCategoryTabs = document.getElementById(
-  "map-category-tabs",
-) as HTMLElement;
 const mapSpacesGrid = document.getElementById("map-spaces-grid") as HTMLElement;
 
 // DOM Elements - Update Character Modal
@@ -406,6 +444,39 @@ const colorGrid = document.getElementById("color-grid") as HTMLDivElement | null
 const previewAvatar = document.getElementById(
   "preview-avatar",
 ) as HTMLImageElement;
+const previewFashionCloth = document.getElementById(
+  "preview-fashion-cloth",
+) as HTMLImageElement | null;
+const fashionPickerGroup = document.getElementById(
+  "fashion-picker-group",
+) as HTMLDivElement | null;
+const btnOpenWardrobe = document.getElementById(
+  "btn-open-wardrobe",
+) as HTMLButtonElement | null;
+const wardrobeTriggerSummary = document.getElementById(
+  "wardrobe-trigger-summary",
+) as HTMLSpanElement | null;
+const wardrobeModal = document.getElementById(
+  "wardrobe-modal",
+) as HTMLDivElement | null;
+const btnCloseWardrobeModal = document.getElementById(
+  "btn-close-wardrobe-modal",
+) as HTMLButtonElement | null;
+const btnSaveWardrobe = document.getElementById(
+  "btn-save-wardrobe",
+) as HTMLButtonElement | null;
+const wardrobePreviewAvatar = document.getElementById(
+  "wardrobe-preview-avatar",
+) as HTMLImageElement | null;
+const wardrobePreviewHint = document.getElementById(
+  "wardrobe-preview-hint",
+) as HTMLDivElement | null;
+const fashionItemsGrid = document.getElementById(
+  "fashion-items-grid",
+) as HTMLDivElement | null;
+const fashionColorRow = document.getElementById(
+  "fashion-color-row",
+) as HTMLDivElement | null;
 const previewDirectionsBar = document.getElementById(
   "preview-directions-bar",
 ) as HTMLDivElement;
@@ -495,12 +566,9 @@ const adminSpaceEditId = document.getElementById(
 const adminSpaceName = document.getElementById(
   "admin-space-name",
 ) as HTMLInputElement;
-const adminSpaceCategorySelect = document.getElementById(
-  "admin-space-category-select",
-) as HTMLSelectElement;
-const adminSpaceCategoryCustom = document.getElementById(
-  "admin-space-category-custom",
-) as HTMLInputElement;
+const adminSpaceFocusTheme = document.getElementById(
+  "admin-space-focus-theme",
+) as HTMLSelectElement | null;
 const adminSpaceSwitchPublic = document.getElementById(
   "admin-space-switch-public",
 ) as HTMLInputElement;
@@ -584,6 +652,7 @@ const btnClosePlayerMenu = document.getElementById("btn-close-player-menu") as H
 const btnPlayerMenuWhisper = document.getElementById("btn-player-menu-whisper") as HTMLButtonElement | null;
 const btnPlayerMenuVisitSpace = document.getElementById("btn-player-menu-visit-space") as HTMLButtonElement | null;
 const btnPlayerMenuThrowBattle = document.getElementById("btn-player-menu-throw-battle") as HTMLButtonElement | null;
+const btnPlayerMenuInviteSquad = document.getElementById("btn-player-menu-invite-squad") as HTMLButtonElement | null;
 const btnPlayerMenuAddFriend = document.getElementById("btn-player-menu-add-friend") as HTMLButtonElement | null;
 const playerMenuAddFriendLabel = document.getElementById("player-menu-add-friend-label") as HTMLSpanElement | null;
 
@@ -771,46 +840,444 @@ let gameInstance: Phaser.Game | null = null;
 let multiplayer: MultiplayerManager | null = null;
 let activePreviewDir: DirectionSlot = "idle";
 
-// Spaces & Categories State
+// Spaces State
 let currentSpaceId = "space_central_plaza";
 let currentSpaceName = "CO3";
 let loadedSpaces: Space[] = [];
-let loadedCategories: string[] = [];
 let myPersonalSpace: Space | null = null;
 let loadedSharedSpaces: Space[] = [];
 let editingTargetSpace: Space | null = null;
-let activeCategoryFilter = "All";
 let isSidePanelCollapsed = false;
 
-// Offline Modal Elements
+// Offline / Reconnecting Modal Elements & Auto-Reconnect Controller
 const offlineModal = document.getElementById("offline-modal") as HTMLDivElement | null;
+const offlineModalTitle = document.getElementById("offline-modal-title") as HTMLHeadingElement | null;
+const offlineModalBadge = document.getElementById("offline-modal-badge") as HTMLSpanElement | null;
+const offlineModalBadgeText = document.getElementById("offline-modal-badge-text") as HTMLSpanElement | null;
 const offlineModalMessage = document.getElementById("offline-modal-message") as HTMLParagraphElement | null;
-const btnOfflineReload = document.getElementById("btn-offline-reload") as HTMLButtonElement | null;
+const btnOfflineReconnect = document.getElementById("btn-offline-reconnect") as HTMLButtonElement | null;
 
-function showOfflineModal(message?: string) {
+let reconnectTimer: number | null = null;
+let reconnectAttempt = 0;
+let isReconnectInProgress = false;
+let isDisconnectedState = false;
+let hasPendingAuthRestore = false;
+
+function isLikelyNetworkError(err: any): boolean {
+  if (typeof navigator !== "undefined" && !navigator.onLine) return true;
+  if (!err) return false;
+  const code = typeof err.code === "number" ? err.code : 0;
+  // Explicit server-side rejection codes (401/403/404) are NOT network errors
+  if (code === 401 || code === 403 || code === 404) return false;
+  const msg = String(err.message || err).toLowerCase();
+  return (
+    err instanceof TypeError ||
+    msg.includes("network") ||
+    msg.includes("failed to fetch") ||
+    msg.includes("fetch") ||
+    msg.includes("websocket") ||
+    msg.includes("socket") ||
+    msg.includes("timeout") ||
+    msg.includes("aborted") ||
+    msg.includes("econnrefused") ||
+    msg.includes("connection") ||
+    msg.includes("offline")
+  );
+}
+
+function showOfflineModal(
+  message?: string,
+  options?: {
+    title?: string;
+    badgeText?: string;
+    reconnecting?: boolean;
+    buttonText?: string;
+    buttonDisabled?: boolean;
+  },
+) {
+  if (offlineModalTitle) {
+    offlineModalTitle.textContent =
+      options?.title || (typeof navigator !== "undefined" && !navigator.onLine ? "You Are Offline" : "Connection Lost");
+  }
+  if (offlineModalBadge) {
+    offlineModalBadge.classList.toggle("is-reconnecting", options?.reconnecting ?? true);
+  }
+  if (offlineModalBadgeText) {
+    offlineModalBadgeText.textContent =
+      options?.badgeText || (typeof navigator !== "undefined" && !navigator.onLine ? "Offline" : "Reconnecting");
+  }
   if (offlineModalMessage && message) {
     offlineModalMessage.textContent = message;
+  }
+  if (btnOfflineReconnect) {
+    btnOfflineReconnect.textContent = options?.buttonText || "Reconnect Now";
+    btnOfflineReconnect.disabled = !!options?.buttonDisabled;
   }
   if (offlineModal) {
     offlineModal.classList.remove("hidden");
   }
 }
 
-if (btnOfflineReload) {
-  btnOfflineReload.addEventListener("click", () => {
-    window.location.reload();
+function hideOfflineModal() {
+  if (reconnectTimer !== null) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+  isDisconnectedState = false;
+  reconnectAttempt = 0;
+  if (offlineModal) {
+    offlineModal.classList.add("hidden");
+  }
+}
+
+function stopAutoReconnect() {
+  isReconnectInProgress = false;
+  hasPendingAuthRestore = false;
+  hideOfflineModal();
+}
+
+async function checkServerReachable(timeoutMs: number = 4000): Promise<boolean> {
+  if (typeof navigator !== "undefined" && !navigator.onLine) {
+    return false;
+  }
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(getApiUrl("/health"), {
+      method: "GET",
+      cache: "no-store",
+      signal: controller.signal,
+    });
+    return res.ok;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function getReconnectDelayMs(attempt: number): number {
+  if (attempt <= 1) return 1000;
+  if (attempt === 2) return 2000;
+  if (attempt === 3) return 3500;
+  return 5000;
+}
+
+function scheduleAutoReconnect(immediate: boolean = false) {
+  if (!isDisconnectedState && !hasPendingAuthRestore) return;
+  if (isReconnectInProgress) return;
+  if (reconnectTimer !== null) {
+    if (!immediate) return;
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+  const delay = immediate ? 0 : getReconnectDelayMs(reconnectAttempt + 1);
+  reconnectTimer = window.setTimeout(() => {
+    reconnectTimer = null;
+    void attemptAutoReconnect();
+  }, delay);
+}
+
+function handleOfflineDetected(message?: string) {
+  isDisconnectedState = true;
+  const isOffline = typeof navigator !== "undefined" && !navigator.onLine;
+  const defaultMsg = isOffline
+    ? "You are currently offline. Waiting for your connection to return to reconnect automatically..."
+    : "Disconnected from the game server. Trying to reconnect automatically...";
+
+  if (gameInstance || multiplayer) {
+    topbarStatusDot.style.background = isOffline ? "#ef4444" : "#f59e0b";
+    topbarStatusDot.style.boxShadow = isOffline ? "0 0 6px #ef4444" : "0 0 6px #f59e0b";
+    topbarStatusSubtitle.textContent = isOffline ? "Offline" : "Reconnecting...";
+    if (topbarPingStat) topbarPingStat.textContent = "-- ms";
+  }
+
+  showOfflineModal(message || defaultMsg, {
+    title: isOffline ? "You Are Offline" : "Connection Lost",
+    badgeText: isOffline ? "Offline" : "Reconnecting",
+    reconnecting: true,
+    buttonText: isReconnectInProgress ? "Reconnecting..." : "Reconnect Now",
+    buttonDisabled: isReconnectInProgress,
+  });
+
+  scheduleAutoReconnect(false);
+}
+
+async function attemptAutoReconnect() {
+  if (isReconnectInProgress) return;
+  if (!isDisconnectedState && !hasPendingAuthRestore) return;
+
+  isReconnectInProgress = true;
+  reconnectAttempt += 1;
+  const attemptLabel = reconnectAttempt > 1 ? ` (attempt ${reconnectAttempt})` : "";
+
+  try {
+    const isOffline = typeof navigator !== "undefined" && !navigator.onLine;
+    showOfflineModal(
+      isOffline
+        ? `You are currently offline. Waiting for your connection to return to reconnect automatically${attemptLabel}...`
+        : `Trying to reconnect automatically${attemptLabel}...`,
+      {
+        title: isOffline ? "You Are Offline" : "Reconnecting...",
+        badgeText: isOffline ? "Offline" : "Reconnecting",
+        reconnecting: true,
+        buttonText: "Reconnecting...",
+        buttonDisabled: true,
+      },
+    );
+
+    if (isOffline) {
+      return;
+    }
+
+    // Case 1: Stored session restore failed at startup due to being offline
+    if (!gameInstance && hasPendingAuthRestore) {
+      const storedToken = localStorage.getItem("lepark_auth_token");
+      if (!storedToken) {
+        hasPendingAuthRestore = false;
+        hideOfflineModal();
+        openAuthModal("login");
+        return;
+      }
+
+      const controller = new AbortController();
+      const timer = window.setTimeout(() => controller.abort(), 5000);
+      try {
+        const res = await fetch(getApiUrl("/api/auth/me"), {
+          headers: { Authorization: `Bearer ${storedToken}` },
+          signal: controller.signal,
+        });
+        if (res.status === 401 || res.status === 403) {
+          localStorage.removeItem("lepark_auth_token");
+          localStorage.removeItem("lepark_auth_user");
+          hasPendingAuthRestore = false;
+          hideOfflineModal();
+          openAuthModal("login");
+          return;
+        }
+        if (!res.ok) {
+          return;
+        }
+        const data: AuthResponse = await res.json();
+        if (data.success && data.user) {
+          authToken = storedToken;
+          currentUser = data.user;
+          hasPendingAuthRestore = false;
+          setupSpriteTemplates();
+          closeAuthModal();
+          await enterGameSession({ fromAutoReconnect: true });
+          hideOfflineModal();
+          checkAndShowLinkEmailModal();
+          return;
+        }
+        localStorage.removeItem("lepark_auth_token");
+        localStorage.removeItem("lepark_auth_user");
+        hasPendingAuthRestore = false;
+        hideOfflineModal();
+        openAuthModal("login");
+        return;
+      } catch {
+        return;
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+
+    // Case 2: Logged in, but initial enterGameSession failed before gameInstance was created
+    if (!gameInstance && authToken && currentUser) {
+      const reachable = await checkServerReachable(4000);
+      if (!reachable) return;
+
+      await enterGameSession({ fromAutoReconnect: true });
+      hideOfflineModal();
+      return;
+    }
+
+    // Case 3: Not logged in (on auth modal) and went offline
+    if (!gameInstance && !multiplayer && !authToken) {
+      const reachable = await checkServerReachable(4000);
+      if (reachable) {
+        hideOfflineModal();
+      }
+      return;
+    }
+
+    // Case 4: User is actively in the app (gameInstance / multiplayer)
+    if (multiplayer && multiplayer.isConnected) {
+      const alive = await multiplayer.verifyConnection(2500);
+      if (alive) {
+        topbarStatusDot.style.background = "#10b981";
+        topbarStatusDot.style.boxShadow = "0 0 6px #10b981";
+        topbarStatusSubtitle.textContent = "Online";
+        hideOfflineModal();
+        void fetchSpaces();
+        if (authToken) {
+          void fetchFriendsData();
+          void fetchOrganisationsData();
+        }
+        return;
+      }
+      // Socket is stale/zombie; cleanly close it before rejoining
+      multiplayer.leave();
+    }
+
+    const reachable = await checkServerReachable(4000);
+    if (!reachable) {
+      return;
+    }
+
+    // Reset GameScene players/tiles cleanly before joining the new room
+    if (gameInstance) {
+      const scene = gameInstance.scene.getScene("GameScene") as GameScene;
+      if (scene && typeof scene.resetPlayers === "function") {
+        scene.resetPlayers();
+      }
+    }
+
+    const effectiveName = getEffectivePlayerName();
+    const color = selectedColor;
+    const avatars = computeActiveAvatars();
+
+    if (!multiplayer) {
+      multiplayer = new MultiplayerManager();
+      bindMultiplayerLifecycleEvents(multiplayer);
+      setupMultiplayerChatListeners(multiplayer);
+      initVoiceManager(multiplayer);
+      initJukeboxManager(multiplayer);
+      setupMultiplayerTypeRaceListeners(multiplayer);
+      setupMultiplayerSmokingGameListeners(multiplayer);
+      setupMultiplayerChessListeners(multiplayer);
+      setupMultiplayerFocusListeners(multiplayer);
+      setupMultiplayerFriendListeners(multiplayer);
+      setupMultiplayerThrowBattleListeners(multiplayer);
+      setupMultiplayerDinerListeners(multiplayer);
+    }
+
+    try {
+      await multiplayer.joinGame({
+        name: effectiveName,
+        color,
+        avatars,
+        outfit: selectedOutfit,
+        spaceId: currentSpaceId,
+        token: authToken || undefined,
+      });
+    } catch (joinErr: any) {
+      const errCode = typeof joinErr?.code === "number" ? joinErr.code : 0;
+      if (errCode === 401) {
+        stopAutoReconnect();
+        handleLogout();
+        return;
+      }
+      if (!isLikelyNetworkError(joinErr) && currentSpaceId !== "space_central_plaza") {
+        console.warn(`Could not rejoin space ${currentSpaceId}, falling back to CO3:`, joinErr);
+        currentSpaceId = "space_central_plaza";
+        currentSpaceName = "CO3";
+        updateTopBarUI();
+        onSpaceChanged(currentSpaceName);
+        await multiplayer.joinGame({
+          name: effectiveName,
+          color,
+          avatars,
+          outfit: selectedOutfit,
+          spaceId: currentSpaceId,
+          token: authToken || undefined,
+        });
+      } else {
+        throw joinErr;
+      }
+    }
+
+    if (gameInstance) {
+      const scene = gameInstance.scene.getScene("GameScene") as GameScene;
+      if (scene && typeof scene.respawnCurrentPlayers === "function") {
+        scene.respawnCurrentPlayers();
+      }
+    }
+
+    topbarStatusDot.style.background = "#10b981";
+    topbarStatusDot.style.boxShadow = "0 0 6px #10b981";
+    topbarStatusSubtitle.textContent = "Online";
+    hideOfflineModal();
+    void fetchSpaces();
+    if (authToken) {
+      void fetchFriendsData();
+      void fetchOrganisationsData();
+    }
+  } catch (err) {
+    console.warn("Auto-reconnect attempt failed:", err);
+  } finally {
+    isReconnectInProgress = false;
+    if (isDisconnectedState || hasPendingAuthRestore) {
+      const stillOffline = typeof navigator !== "undefined" && !navigator.onLine;
+      showOfflineModal(
+        stillOffline
+          ? "You are currently offline. Waiting for your connection to return to reconnect automatically..."
+          : `Unable to reach the server yet. Retrying automatically (attempt ${reconnectAttempt + 1})...`,
+        {
+          title: stillOffline ? "You Are Offline" : "Reconnecting...",
+          badgeText: stillOffline ? "Offline" : "Reconnecting",
+          reconnecting: true,
+          buttonText: "Reconnect Now",
+          buttonDisabled: false,
+        },
+      );
+      scheduleAutoReconnect(false);
+    }
+  }
+}
+
+async function verifyActiveConnection() {
+  if (!multiplayer || !gameInstance || isReconnectInProgress || isDisconnectedState) return;
+  if (typeof navigator !== "undefined" && !navigator.onLine) {
+    handleOfflineDetected();
+    return;
+  }
+  if (!multiplayer.isConnected) {
+    handleOfflineDetected("Disconnected from the game server. Trying to reconnect automatically...");
+    return;
+  }
+  const alive = await multiplayer.verifyConnection(3000);
+  if (!alive && multiplayer && !isReconnectInProgress && !isDisconnectedState) {
+    multiplayer.handleConnectionLost();
+  }
+}
+
+if (btnOfflineReconnect) {
+  btnOfflineReconnect.addEventListener("click", () => {
+    isDisconnectedState = true;
+    scheduleAutoReconnect(true);
   });
 }
 
 window.addEventListener("offline", () => {
-  showOfflineModal(
-    "You are currently offline. Please check your internet connection and reload the page.",
+  handleOfflineDetected(
+    "You are currently offline. Waiting for your internet connection to reconnect automatically...",
   );
 });
 
+window.addEventListener("online", () => {
+  if (isDisconnectedState || hasPendingAuthRestore || (gameInstance && (!multiplayer || !multiplayer.isConnected))) {
+    isDisconnectedState = true;
+    scheduleAutoReconnect(true);
+  } else if (gameInstance && multiplayer) {
+    void verifyActiveConnection();
+  }
+});
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") {
+    if (isDisconnectedState || hasPendingAuthRestore || (typeof navigator !== "undefined" && !navigator.onLine)) {
+      scheduleAutoReconnect(true);
+    } else if (gameInstance && multiplayer) {
+      void verifyActiveConnection();
+    }
+  }
+});
+
 if (typeof navigator !== "undefined" && !navigator.onLine) {
-  showOfflineModal(
-    "You are currently offline. Please check your internet connection and reload the page.",
+  handleOfflineDetected(
+    "You are currently offline. Waiting for your internet connection to reconnect automatically...",
   );
 }
 
@@ -887,6 +1354,12 @@ function setGameControlsActive(active: boolean) {
     }
     const tbModal = document.getElementById("throw-battle-modal");
     if (tbModal && !tbModal.classList.contains("hidden")) {
+      return;
+    }
+    if (wardrobeModal && !wardrobeModal.classList.contains("hidden")) {
+      return;
+    }
+    if (modal && !modal.classList.contains("hidden")) {
       return;
     }
   }
@@ -973,7 +1446,7 @@ function setLoginMethod(method: "username" | "email") {
     loginTabEmail.classList.add("active");
     loginTabUsername.classList.remove("active");
     loginIdentifierLabel.textContent = "Email";
-    loginIdentifierIcon.textContent = "✉️";
+    loginIdentifierIcon.innerHTML = '<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>';
     loginUsernameInput.type = "email";
     loginUsernameInput.placeholder = "Enter your email...";
     loginUsernameInput.autocomplete = "email";
@@ -981,7 +1454,7 @@ function setLoginMethod(method: "username" | "email") {
     loginTabUsername.classList.add("active");
     loginTabEmail.classList.remove("active");
     loginIdentifierLabel.textContent = "Username";
-    loginIdentifierIcon.textContent = "👤";
+    loginIdentifierIcon.innerHTML = '<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>';
     loginUsernameInput.type = "text";
     loginUsernameInput.placeholder = "Enter your username...";
     loginUsernameInput.autocomplete = "username";
@@ -1133,10 +1606,10 @@ document.querySelectorAll(".btn-toggle-pwd").forEach((btn) => {
     if (input) {
       if (input.type === "password") {
         input.type = "text";
-        btn.textContent = "🙈";
+        btn.innerHTML = '<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
       } else {
         input.type = "password";
-        btn.textContent = "👁️";
+        btn.innerHTML = '<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
       }
     }
   });
@@ -1421,6 +1894,7 @@ dropdownLogoutBtn.addEventListener("click", () => {
 });
 
 function handleLogout() {
+  stopAutoReconnect();
   if (spacesRefreshTimer !== null) {
     clearInterval(spacesRefreshTimer);
     spacesRefreshTimer = null;
@@ -1446,7 +1920,6 @@ function handleLogout() {
   myPersonalSpace = null;
   loadedSharedSpaces = [];
   loadedSpaces = [];
-  loadedCategories = [];
 
   topbarStatusDot.style.background = "#ef4444";
   topbarStatusDot.style.boxShadow = "0 0 6px #ef4444";
@@ -1526,63 +1999,63 @@ const SPRITE_TEMPLATES: SpriteTemplate[] = [
     id: "default",
     name: "Default",
     idleFrames: [
-      "/assets/sprites/default/sprite1.png",
-      "/assets/sprites/default/sprite2.png",
-      "/assets/sprites/default/sprite3.png",
-      "/assets/sprites/default/sprite4.png",
+      "sheet:default_idle:sprite1",
+      "sheet:default_idle:sprite2",
+      "sheet:default_idle:sprite3",
+      "sheet:default_idle:sprite4",
     ],
   },
   {
     id: "slime",
     name: "Slime",
     idleFrames: [
-      "/assets/sprites/slime/sprite-1-1.png",
-      "/assets/sprites/slime/sprite-1-2.png",
-      "/assets/sprites/slime/sprite-1-3.png",
-      "/assets/sprites/slime/sprite-1-4.png",
-      "/assets/sprites/slime/sprite-1-5.png",
-      "/assets/sprites/slime/sprite-1-6.png",
+      "sheet:slime:sprite-1-1",
+      "sheet:slime:sprite-1-2",
+      "sheet:slime:sprite-1-3",
+      "sheet:slime:sprite-1-4",
+      "sheet:slime:sprite-1-5",
+      "sheet:slime:sprite-1-6",
     ],
     directionalFrames: {
       idle: [
-        "/assets/sprites/slime/sprite-1-1.png",
-        "/assets/sprites/slime/sprite-1-2.png",
-        "/assets/sprites/slime/sprite-1-3.png",
-        "/assets/sprites/slime/sprite-1-4.png",
-        "/assets/sprites/slime/sprite-1-5.png",
-        "/assets/sprites/slime/sprite-1-6.png",
+        "sheet:slime:sprite-1-1",
+        "sheet:slime:sprite-1-2",
+        "sheet:slime:sprite-1-3",
+        "sheet:slime:sprite-1-4",
+        "sheet:slime:sprite-1-5",
+        "sheet:slime:sprite-1-6",
       ],
       down: [
-        "/assets/sprites/slime/sprite-1-1.png",
-        "/assets/sprites/slime/sprite-1-2.png",
-        "/assets/sprites/slime/sprite-1-3.png",
-        "/assets/sprites/slime/sprite-1-4.png",
-        "/assets/sprites/slime/sprite-1-5.png",
-        "/assets/sprites/slime/sprite-1-6.png",
+        "sheet:slime:sprite-1-1",
+        "sheet:slime:sprite-1-2",
+        "sheet:slime:sprite-1-3",
+        "sheet:slime:sprite-1-4",
+        "sheet:slime:sprite-1-5",
+        "sheet:slime:sprite-1-6",
       ],
       left: [
-        "/assets/sprites/slime/sprite-3-1.png",
-        "/assets/sprites/slime/sprite-3-2.png",
-        "/assets/sprites/slime/sprite-3-3.png",
-        "/assets/sprites/slime/sprite-3-4.png",
-        "/assets/sprites/slime/sprite-3-5.png",
-        "/assets/sprites/slime/sprite-3-6.png",
+        "sheet:slime:sprite-3-1",
+        "sheet:slime:sprite-3-2",
+        "sheet:slime:sprite-3-3",
+        "sheet:slime:sprite-3-4",
+        "sheet:slime:sprite-3-5",
+        "sheet:slime:sprite-3-6",
       ],
       right: [
-        "/assets/sprites/slime/sprite-4-1.png",
-        "/assets/sprites/slime/sprite-4-2.png",
-        "/assets/sprites/slime/sprite-4-3.png",
-        "/assets/sprites/slime/sprite-4-4.png",
-        "/assets/sprites/slime/sprite-4-5.png",
-        "/assets/sprites/slime/sprite-4-6.png",
+        "sheet:slime:sprite-4-1",
+        "sheet:slime:sprite-4-2",
+        "sheet:slime:sprite-4-3",
+        "sheet:slime:sprite-4-4",
+        "sheet:slime:sprite-4-5",
+        "sheet:slime:sprite-4-6",
       ],
       up: [
-        "/assets/sprites/slime/sprite-2-1.png",
-        "/assets/sprites/slime/sprite-2-2.png",
-        "/assets/sprites/slime/sprite-2-3.png",
-        "/assets/sprites/slime/sprite-2-4.png",
-        "/assets/sprites/slime/sprite-2-5.png",
-        "/assets/sprites/slime/sprite-2-6.png",
+        "sheet:slime:sprite-2-1",
+        "sheet:slime:sprite-2-2",
+        "sheet:slime:sprite-2-3",
+        "sheet:slime:sprite-2-4",
+        "sheet:slime:sprite-2-5",
+        "sheet:slime:sprite-2-6",
       ],
     },
   },
@@ -1591,65 +2064,65 @@ const SPRITE_TEMPLATES: SpriteTemplate[] = [
     name: "Ghost Slime",
     cost: 10,
     idleFrames: [
-      "/assets/sprites/ghost_slime/sprite-1-1.png",
-      "/assets/sprites/ghost_slime/sprite-1-2.png",
-      "/assets/sprites/ghost_slime/sprite-1-3.png",
-      "/assets/sprites/ghost_slime/sprite-1-4.png",
-      "/assets/sprites/ghost_slime/sprite-1-5.png",
-      "/assets/sprites/ghost_slime/sprite-1-6.png",
-      "/assets/sprites/ghost_slime/sprite-1-7.png",
-      "/assets/sprites/ghost_slime/sprite-1-8.png",
+      "sheet:ghost_slime:sprite-1-1",
+      "sheet:ghost_slime:sprite-1-2",
+      "sheet:ghost_slime:sprite-1-3",
+      "sheet:ghost_slime:sprite-1-4",
+      "sheet:ghost_slime:sprite-1-5",
+      "sheet:ghost_slime:sprite-1-6",
+      "sheet:ghost_slime:sprite-1-7",
+      "sheet:ghost_slime:sprite-1-8",
     ],
     directionalFrames: {
       idle: [
-        "/assets/sprites/ghost_slime/sprite-1-1.png",
-        "/assets/sprites/ghost_slime/sprite-1-2.png",
-        "/assets/sprites/ghost_slime/sprite-1-3.png",
-        "/assets/sprites/ghost_slime/sprite-1-4.png",
-        "/assets/sprites/ghost_slime/sprite-1-5.png",
-        "/assets/sprites/ghost_slime/sprite-1-6.png",
-        "/assets/sprites/ghost_slime/sprite-1-7.png",
-        "/assets/sprites/ghost_slime/sprite-1-8.png",
+        "sheet:ghost_slime:sprite-1-1",
+        "sheet:ghost_slime:sprite-1-2",
+        "sheet:ghost_slime:sprite-1-3",
+        "sheet:ghost_slime:sprite-1-4",
+        "sheet:ghost_slime:sprite-1-5",
+        "sheet:ghost_slime:sprite-1-6",
+        "sheet:ghost_slime:sprite-1-7",
+        "sheet:ghost_slime:sprite-1-8",
       ],
       down: [
-        "/assets/sprites/ghost_slime/sprite-1-1.png",
-        "/assets/sprites/ghost_slime/sprite-1-2.png",
-        "/assets/sprites/ghost_slime/sprite-1-3.png",
-        "/assets/sprites/ghost_slime/sprite-1-4.png",
-        "/assets/sprites/ghost_slime/sprite-1-5.png",
-        "/assets/sprites/ghost_slime/sprite-1-6.png",
-        "/assets/sprites/ghost_slime/sprite-1-7.png",
-        "/assets/sprites/ghost_slime/sprite-1-8.png",
+        "sheet:ghost_slime:sprite-1-1",
+        "sheet:ghost_slime:sprite-1-2",
+        "sheet:ghost_slime:sprite-1-3",
+        "sheet:ghost_slime:sprite-1-4",
+        "sheet:ghost_slime:sprite-1-5",
+        "sheet:ghost_slime:sprite-1-6",
+        "sheet:ghost_slime:sprite-1-7",
+        "sheet:ghost_slime:sprite-1-8",
       ],
       up: [
-        "/assets/sprites/ghost_slime/sprite-2-1.png",
-        "/assets/sprites/ghost_slime/sprite-2-2.png",
-        "/assets/sprites/ghost_slime/sprite-2-4.png",
-        "/assets/sprites/ghost_slime/sprite-2-6.png",
-        "/assets/sprites/ghost_slime/sprite-2-8.png",
-        "/assets/sprites/ghost_slime/sprite-2-9.png",
-        "/assets/sprites/ghost_slime/sprite-2-10.png",
-        "/assets/sprites/ghost_slime/sprite-2-11.png",
+        "sheet:ghost_slime:sprite-2-1",
+        "sheet:ghost_slime:sprite-2-2",
+        "sheet:ghost_slime:sprite-2-4",
+        "sheet:ghost_slime:sprite-2-6",
+        "sheet:ghost_slime:sprite-2-8",
+        "sheet:ghost_slime:sprite-2-9",
+        "sheet:ghost_slime:sprite-2-10",
+        "sheet:ghost_slime:sprite-2-11",
       ],
       left: [
-        "/assets/sprites/ghost_slime/sprite-3-1.png",
-        "/assets/sprites/ghost_slime/sprite-3-3.png",
-        "/assets/sprites/ghost_slime/sprite-3-5.png",
-        "/assets/sprites/ghost_slime/sprite-3-6.png",
-        "/assets/sprites/ghost_slime/sprite-3-8.png",
-        "/assets/sprites/ghost_slime/sprite-3-9.png",
-        "/assets/sprites/ghost_slime/sprite-3-10.png",
-        "/assets/sprites/ghost_slime/sprite-3-11.png",
+        "sheet:ghost_slime:sprite-3-1",
+        "sheet:ghost_slime:sprite-3-3",
+        "sheet:ghost_slime:sprite-3-5",
+        "sheet:ghost_slime:sprite-3-6",
+        "sheet:ghost_slime:sprite-3-8",
+        "sheet:ghost_slime:sprite-3-9",
+        "sheet:ghost_slime:sprite-3-10",
+        "sheet:ghost_slime:sprite-3-11",
       ],
       right: [
-        "/assets/sprites/ghost_slime/sprite-4-1.png",
-        "/assets/sprites/ghost_slime/sprite-4-3.png",
-        "/assets/sprites/ghost_slime/sprite-4-5.png",
-        "/assets/sprites/ghost_slime/sprite-4-7.png",
-        "/assets/sprites/ghost_slime/sprite-4-8.png",
-        "/assets/sprites/ghost_slime/sprite-4-10.png",
-        "/assets/sprites/ghost_slime/sprite-4-11.png",
-        "/assets/sprites/ghost_slime/sprite-4-12.png",
+        "sheet:ghost_slime:sprite-4-1",
+        "sheet:ghost_slime:sprite-4-3",
+        "sheet:ghost_slime:sprite-4-5",
+        "sheet:ghost_slime:sprite-4-7",
+        "sheet:ghost_slime:sprite-4-8",
+        "sheet:ghost_slime:sprite-4-10",
+        "sheet:ghost_slime:sprite-4-11",
+        "sheet:ghost_slime:sprite-4-12",
       ],
     },
   },
@@ -1706,29 +2179,23 @@ function renderSpriteTemplatesGrid() {
     card.setAttribute("data-template-id", tpl.id);
     card.setAttribute("role", "button");
     card.setAttribute("tabindex", "0");
-    card.title = isLocked
-      ? `${tpl.name} (Locked - Requires ${tpl.cost} Parking Points)`
-      : `${tpl.name} Sprite`;
 
-    const initialImg = tpl.idleFrames[0] || "/assets/sprites/default/sprite1.png";
+    const initialImg = tpl.idleFrames[0] || DEFAULT_AVATAR_ICON;
 
     const badgeHtml = isLocked
-      ? `<span class="template-card-lock-badge" title="${tpl.cost} Parking Points Required">🔒 ${tpl.cost}</span>`
+      ? `<span class="template-card-lock-badge">${tpl.cost}</span>`
       : `<span class="template-card-check">✓</span>`;
 
-    const statusText = isActive
-      ? "Active"
-      : isLocked
-      ? `🔒 ${tpl.cost} pts`
-      : "Select";
+    const statusHtml = isLocked
+      ? `<span class="template-card-status status-locked">${tpl.cost} FP</span>`
+      : "";
 
     card.innerHTML = `
       ${badgeHtml}
       <div class="template-preview-box">
-        <img id="template-anim-${tpl.id}" class="template-idle-img ${isLocked ? "locked-preview" : ""}" src="${initialImg}" alt="${tpl.name} Sprite" />
+        <img id="template-anim-${tpl.id}" class="template-idle-img ${isLocked ? "locked-preview" : ""}" ${imgSrcAttr(initialImg)} alt="" />
       </div>
-      <span class="template-card-name">${escapeHtml(tpl.name)}</span>
-      <span class="template-card-status ${isLocked ? "status-locked" : ""}">${statusText}</span>
+      ${statusHtml}
     `;
 
     card.addEventListener("click", () => {
@@ -1741,22 +2208,23 @@ function renderSpriteTemplatesGrid() {
 
     grid.appendChild(card);
   });
+  hydrateSheetImages(grid);
 }
 
 async function handleUnlockTemplate(tpl: SpriteTemplate) {
   if (!currentUser) return;
   const cost = tpl.cost || 10;
-  const currentPoints = currentUser?.parkingPoints ?? 0;
+  const currentPoints = currentUser?.focusPoints ?? 0;
 
   if (currentPoints < cost) {
     alert(
-      `🔒 ${tpl.name} requires ${cost} parking points to unlock.\n\nYou currently have ${currentPoints} parking points. Stay online in Lepark to earn more parking points!`
+      `${tpl.name} requires ${cost} Focus Points (FP) to unlock.\n\nYou currently have ${currentPoints} FP. Complete a Pomodoro session in a Focus Room to earn more FP!`
     );
     return;
   }
 
   const confirmed = confirm(
-    `✨ Unlock ${tpl.name} for ${cost} parking points?\n\nYou currently have ${currentPoints} parking points. After unlocking, you will have ${currentPoints - cost} points remaining.`
+    `Unlock ${tpl.name} for ${cost} FP?\n\nYou currently have ${currentPoints} FP. After unlocking, you will have ${currentPoints - cost} FP remaining.`
   );
 
   if (!confirmed) return;
@@ -1793,7 +2261,7 @@ async function handleUnlockTemplate(tpl: SpriteTemplate) {
     if (unlockSuccess) {
       // Update currentUser
       if (currentUser) {
-        currentUser.parkingPoints = newPoints;
+        currentUser.focusPoints = newPoints;
         if (!currentUser.unlockedSkins) currentUser.unlockedSkins = [];
         if (!currentUser.unlockedSkins.includes(tpl.id)) {
           currentUser.unlockedSkins.push(tpl.id);
@@ -1813,7 +2281,8 @@ async function handleUnlockTemplate(tpl: SpriteTemplate) {
       } catch {}
 
       // Update topbar UI
-      updateParkingPointsDisplay(newPoints);
+      updateFocusPointsDisplay(newPoints);
+      focusUiController?.syncUserAuth(currentUser);
 
       // Re-render templates grid & select the newly unlocked template
       renderSpriteTemplatesGrid();
@@ -1822,15 +2291,280 @@ async function handleUnlockTemplate(tpl: SpriteTemplate) {
       // Auto update character in multiplayer if connected
       const avatars = computeActiveAvatars();
       if (multiplayer) {
-        multiplayer.updateProfile(getEffectivePlayerName(), selectedColor, avatars || null);
+        multiplayer.updateProfile(getEffectivePlayerName(), selectedColor, avatars || null, selectedOutfit);
       }
 
-      alert(`🎉 Congratulations! You have unlocked ${tpl.name}! It is now equipped as your character.`);
+      alert(`Congratulations! You have unlocked ${tpl.name}! It is now equipped as your character.`);
     }
   } catch (err: any) {
     console.error("Error unlocking sprite template:", err);
     alert("Network error while unlocking sprite template.");
   }
+}
+
+type FashionCategory = "cloth" | "pants" | "skin" | "hair";
+
+interface ClothModeOption {
+  id: ShirtStyle;
+  name: string;
+}
+
+const CLOTH_OPTIONS: ClothModeOption[] = [
+  { id: "sleeveless", name: "Sleeveless Shirt" },
+  { id: "short_sleeve", name: "Short-Sleeve T-Shirt" },
+  { id: "long_sleeve", name: "Long-Sleeve T-Shirt" },
+];
+
+const SHIRT_COLOR_SWATCHES = [
+  { name: "Crisp White", hex: "#ffffff" },
+  { name: "Sky Blue", hex: "#3498db" },
+  { name: "Crimson", hex: "#e74c3c" },
+  { name: "Emerald", hex: "#10b981" },
+  { name: "Charcoal", hex: "#1e293b" },
+  { name: "Ochre", hex: "#f59e0b" },
+  { name: "Lavender", hex: "#8b5cf6" },
+  { name: "Rose", hex: "#ec4899" },
+];
+
+const PANTS_COLOR_SWATCHES = [
+  { name: "Slate", hex: "#2c3e50" },
+  { name: "Denim", hex: "#2563eb" },
+  { name: "Charcoal", hex: "#18181b" },
+  { name: "Khaki", hex: "#b9b3a1" },
+  { name: "Olive", hex: "#4d7c0f" },
+  { name: "Burgundy", hex: "#7f1d1d" },
+  { name: "Stone", hex: "#64748b" },
+  { name: "Ivory", hex: "#e2e8f0" },
+];
+
+const SKIN_COLOR_SWATCHES = [
+  { name: "Cream", hex: "#faf3e8" },
+  { name: "Peach", hex: "#f5cba7" },
+  { name: "Warm Ivory", hex: "#fde2c4" },
+  { name: "Golden", hex: "#e0ac69" },
+  { name: "Caramel", hex: "#c68642" },
+  { name: "Deep Brown", hex: "#8d5524" },
+];
+
+let activeFashionTab: FashionCategory = "cloth";
+let selectedOutfit: PlayerOutfit = loadSavedOutfit();
+
+function loadSavedOutfit(): PlayerOutfit {
+  try {
+    const raw = localStorage.getItem("player_outfit");
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === "object") {
+        const shirtStyle: ShirtStyle =
+          parsed.shirtStyle === "sleeveless" ||
+          parsed.shirtStyle === "short_sleeve" ||
+          parsed.shirtStyle === "long_sleeve"
+            ? parsed.shirtStyle
+            : DEFAULT_PLAYER_OUTFIT.shirtStyle;
+        const rawOuterKey = typeof parsed.outerwearKey === "string" ? parsed.outerwearKey : "";
+        const validOuter = OUTERWEAR_CATALOG.some((o) => o.id === rawOuterKey) ? rawOuterKey : "";
+        return {
+          shirtStyle,
+          shirtColor: typeof parsed.shirtColor === "string" ? parsed.shirtColor : DEFAULT_PLAYER_OUTFIT.shirtColor,
+          sleeveColor: typeof parsed.sleeveColor === "string" ? parsed.sleeveColor : DEFAULT_PLAYER_OUTFIT.sleeveColor,
+          pantsColor: typeof parsed.pantsColor === "string" ? parsed.pantsColor : DEFAULT_PLAYER_OUTFIT.pantsColor,
+          skinColor: typeof parsed.skinColor === "string" ? parsed.skinColor : DEFAULT_PLAYER_OUTFIT.skinColor,
+          outerwearKey: validOuter,
+          outerwearColor: typeof parsed.outerwearColor === "string" ? parsed.outerwearColor : DEFAULT_PLAYER_OUTFIT.outerwearColor,
+          hatKey: typeof parsed.hatKey === "string" ? parsed.hatKey : DEFAULT_PLAYER_OUTFIT.hatKey,
+        };
+      }
+    }
+  } catch {
+    // Fallback to default outfit
+  }
+  return { ...DEFAULT_PLAYER_OUTFIT };
+}
+
+function saveOutfitToStorage(outfit: PlayerOutfit) {
+  try {
+    localStorage.setItem("player_outfit", JSON.stringify(outfit));
+  } catch (err) {
+    console.warn("Could not save outfit:", err);
+  }
+}
+
+function getActiveClothMode(): ShirtStyle {
+  return selectedOutfit.shirtStyle || DEFAULT_PLAYER_OUTFIT.shirtStyle;
+}
+
+function updateFashionPickerVisibility() {
+  if (!fashionPickerGroup) return;
+  const isSwitchOn = switchUploadPictures ? switchUploadPictures.checked : false;
+  const isDefaultSelected = selectedTemplateId === "default" && !isSwitchOn;
+  fashionPickerGroup.classList.toggle("hidden", !isDefaultSelected);
+  if (wardrobeTriggerSummary) {
+    wardrobeTriggerSummary.textContent = "Customize shirt, pants & skin";
+  }
+}
+
+function renderColorSwatchRow(
+  label: string,
+  swatches: Array<{ name: string; hex: string }>,
+  currentHex: string,
+  onPick: (hex: string) => void
+) {
+  if (!fashionColorRow) return;
+  fashionColorRow.innerHTML = "";
+  fashionColorRow.classList.remove("hidden");
+
+  const labelEl = document.createElement("span");
+  labelEl.className = "fashion-color-label";
+  labelEl.textContent = label;
+  fashionColorRow.appendChild(labelEl);
+
+  swatches.forEach((sw) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = `fashion-swatch-btn ${sw.hex.toLowerCase() === currentHex.toLowerCase() ? "active" : ""}`;
+    btn.style.backgroundColor = sw.hex;
+    btn.title = sw.name;
+    btn.addEventListener("click", () => {
+      onPick(sw.hex);
+      renderFashionPicker();
+      updatePreviewFrame();
+      updateTemplateGridAnimations();
+    });
+    fashionColorRow.appendChild(btn);
+  });
+
+  const customInput = document.createElement("input");
+  customInput.type = "color";
+  customInput.className = "fashion-custom-color";
+  customInput.title = "Custom Color";
+  customInput.value = /^#[0-9a-f]{6}$/i.test(currentHex) ? currentHex : "#ffffff";
+  customInput.addEventListener("input", () => {
+    onPick(customInput.value);
+    renderFashionPicker();
+    updatePreviewFrame();
+    updateTemplateGridAnimations();
+  });
+  fashionColorRow.appendChild(customInput);
+}
+
+function renderFashionPicker() {
+  updateFashionPickerVisibility();
+
+  const tabBtns = document.querySelectorAll<HTMLButtonElement>(".fashion-tab-btn");
+  tabBtns.forEach((btn) => {
+    const tab = btn.getAttribute("data-fashion-tab") as FashionCategory | null;
+    const isActive = tab === activeFashionTab;
+    btn.classList.toggle("active", isActive);
+    btn.setAttribute("aria-selected", isActive ? "true" : "false");
+  });
+
+  if (!fashionItemsGrid) return;
+  fashionItemsGrid.innerHTML = "";
+  if (fashionColorRow) fashionColorRow.classList.add("hidden");
+
+  if (activeFashionTab === "cloth") {
+    const activeMode = getActiveClothMode();
+    CLOTH_OPTIONS.forEach((item) => {
+      const isActive = item.id === activeMode;
+      const card = document.createElement("div");
+      card.className = `sprite-template-card ${isActive ? "active" : ""}`;
+      card.setAttribute("role", "button");
+      card.setAttribute("tabindex", "0");
+
+      const fill = escapeHtml(selectedOutfit.shirtColor);
+      const previewContent =
+        item.id === "sleeveless"
+          ? `<svg class="fashion-item-icon" width="40" height="40" viewBox="0 0 32 32" preserveAspectRatio="xMidYMid meet" fill="${fill}" stroke="#94a3b8" stroke-width="1.4" stroke-linejoin="round" aria-hidden="true"><path d="M8 6 H12 C12.5 11 19.5 11 20 6 H24 L23 11.5 C23 13.2 24 14.2 25 14.8 V26 H7 V14.8 C8 14.2 9 13.2 9 11.5 Z"/></svg>`
+          : item.id === "short_sleeve"
+          ? `<svg class="fashion-item-icon" width="40" height="40" viewBox="0 0 32 32" preserveAspectRatio="xMidYMid meet" fill="${fill}" stroke="#94a3b8" stroke-width="1.4" stroke-linejoin="round" aria-hidden="true"><path d="M12 6 Q16 10 20 6 L24 6.5 L30 11.5 L27.5 15.5 L24 13.5 V26 H8 V13.5 L4.5 15.5 L2 11.5 L8 6.5 Z"/></svg>`
+          : `<svg class="fashion-item-icon" width="40" height="40" viewBox="0 0 32 32" preserveAspectRatio="xMidYMid meet" fill="${fill}" stroke="#94a3b8" stroke-width="1.4" stroke-linejoin="round" aria-hidden="true"><path d="M12 6 Q16 10 20 6 L24 6.5 L30 20 L26.5 21.5 L24 13.5 V26 H8 V13.5 L5.5 21.5 L2 20 L8 6.5 Z"/></svg>`;
+
+      card.innerHTML = `
+        <span class="template-card-check">✓</span>
+        <div class="template-preview-box">${previewContent}</div>
+      `;
+
+      card.addEventListener("click", () => {
+        selectedOutfit = {
+          ...selectedOutfit,
+          shirtStyle: item.id,
+          sleeveColor: "",
+          outerwearKey: "",
+        };
+        saveOutfitToStorage(selectedOutfit);
+        renderFashionPicker();
+        updatePreviewFrame();
+        updateTemplateGridAnimations();
+      });
+
+      fashionItemsGrid.appendChild(card);
+    });
+
+    renderColorSwatchRow(
+      "Shirt Color:",
+      SHIRT_COLOR_SWATCHES,
+      selectedOutfit.shirtColor,
+      (hex) => {
+        selectedOutfit = {
+          ...selectedOutfit,
+          shirtColor: hex,
+          sleeveColor: "",
+        };
+        saveOutfitToStorage(selectedOutfit);
+      }
+    );
+  } else if (activeFashionTab === "pants") {
+    const card = document.createElement("div");
+    card.className = "sprite-template-card active";
+    card.innerHTML = `
+      <span class="template-card-check">✓</span>
+      <div class="template-preview-box"><svg class="fashion-item-icon" width="40" height="40" viewBox="0 0 32 32" preserveAspectRatio="xMidYMid meet" fill="${escapeHtml(selectedOutfit.pantsColor)}" stroke="#cbd5e1" stroke-width="1.4" stroke-linejoin="round" aria-hidden="true"><path d="M8 6 H24 L25.5 26 H18.5 L16 14 L13.5 26 H6.5 Z"/></svg></div>
+    `;
+    fashionItemsGrid.appendChild(card);
+
+    renderColorSwatchRow("Pants Color:", PANTS_COLOR_SWATCHES, selectedOutfit.pantsColor, (hex) => {
+      selectedOutfit = { ...selectedOutfit, pantsColor: hex };
+      saveOutfitToStorage(selectedOutfit);
+    });
+  } else if (activeFashionTab === "skin") {
+    const card = document.createElement("div");
+    card.className = "sprite-template-card active";
+    card.innerHTML = `
+      <span class="template-card-check">✓</span>
+      <div class="template-preview-box"><span class="fashion-none-icon" style="background:${escapeHtml(selectedOutfit.skinColor)};width:28px;height:28px;border-radius:8px;border:1px solid rgba(255,255,255,0.35);display:inline-block;flex-shrink:0;"></span></div>
+    `;
+    fashionItemsGrid.appendChild(card);
+
+    renderColorSwatchRow("Skin Tone:", SKIN_COLOR_SWATCHES, selectedOutfit.skinColor, (hex) => {
+      selectedOutfit = {
+        ...selectedOutfit,
+        skinColor: hex,
+      };
+      saveOutfitToStorage(selectedOutfit);
+    });
+  } else {
+    // Hair / Hats
+    const card = document.createElement("div");
+    card.className = "sprite-template-card active";
+    card.innerHTML = `
+      <span class="template-card-check">✓</span>
+      <div class="template-preview-box"><span class="fashion-none-icon">—</span></div>
+    `;
+    fashionItemsGrid.appendChild(card);
+  }
+}
+
+function setupFashionTabs() {
+  const tabBtns = document.querySelectorAll<HTMLButtonElement>(".fashion-tab-btn");
+  tabBtns.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const tab = btn.getAttribute("data-fashion-tab") as FashionCategory | null;
+      if (!tab) return;
+      activeFashionTab = tab;
+      renderFashionPicker();
+    });
+  });
+  renderFashionPicker();
 }
 
 function selectSpriteTemplate(templateId: string) {
@@ -1843,7 +2577,7 @@ function selectSpriteTemplate(templateId: string) {
     console.warn("Could not save sprite template:", err);
   }
 
-  const cards = document.querySelectorAll<HTMLElement>(".sprite-template-card");
+  const cards = document.querySelectorAll<HTMLElement>("#sprite-templates-grid .sprite-template-card");
   cards.forEach((card) => {
     const tplId = card.getAttribute("data-template-id");
     const statusSpan = card.querySelector(".template-card-status");
@@ -1856,12 +2590,15 @@ function selectSpriteTemplate(templateId: string) {
     }
   });
 
+  updateFashionPickerVisibility();
   updatePreview();
 }
 
 function setupSpriteTemplates() {
   renderSpriteTemplatesGrid();
   selectSpriteTemplate(selectedTemplateId);
+  setupFashionTabs();
+  updateTemplateGridAnimations();
 }
 
 function updateTemplateGridAnimations() {
@@ -1869,9 +2606,16 @@ function updateTemplateGridAnimations() {
     if (tpl.idleFrames && tpl.idleFrames.length > 0) {
       const img = document.getElementById(`template-anim-${tpl.id}`) as HTMLImageElement | null;
       if (img) {
-        const frame = tpl.idleFrames[previewFrameIndex % tpl.idleFrames.length];
-        if (img.src !== frame && !img.src.endsWith(frame)) {
-          img.src = frame;
+        if (tpl.id === "default") {
+          const idx = previewFrameIndex % 4;
+          renderFashionPreviewFrame(selectedOutfit, 0, idx, false)
+            .then((url) => {
+              if (url && img.src !== url) img.src = url;
+            })
+            .catch(() => {});
+        } else {
+          const frame = tpl.idleFrames[previewFrameIndex % tpl.idleFrames.length];
+          setImgSrcResolved(img, frame);
         }
       }
     }
@@ -1901,7 +2645,8 @@ function updatePreviewFrame() {
 
   if (isSwitchOn && uploadedFrames.idle.length > 0) {
     const currentImg = uploadedFrames.idle[previewFrameIndex % uploadedFrames.idle.length];
-    if (previewAvatar) previewAvatar.src = currentImg;
+    if (previewAvatar) setImgSrcResolved(previewAvatar, currentImg);
+    if (previewFashionCloth) previewFashionCloth.classList.add("hidden");
     if (previewStatusHint) {
       previewStatusHint.textContent = `Custom character (idle)`;
       previewStatusHint.classList.remove("hidden");
@@ -1909,12 +2654,29 @@ function updatePreviewFrame() {
   } else {
     // Selected template still idle preview animation
     const tpl = getActiveTemplate();
-    const frames = tpl.idleFrames.length > 0 ? tpl.idleFrames : DEFAULT_AVATARS.idle;
-    const currentImg = frames[previewFrameIndex % frames.length];
-    if (previewAvatar) previewAvatar.src = currentImg;
+    if (previewFashionCloth) previewFashionCloth.classList.add("hidden");
+    if (tpl.id === "default") {
+      const frameIdx = previewFrameIndex % 4;
+      renderFashionPreviewFrame(selectedOutfit, 0, frameIdx, false)
+        .then((url) => {
+          if (url) {
+            if (previewAvatar) previewAvatar.src = url;
+            if (wardrobePreviewAvatar) wardrobePreviewAvatar.src = url;
+          }
+        })
+        .catch(() => {});
+      if (wardrobePreviewHint) {
+        wardrobePreviewHint.textContent = "Outfit Preview";
+      }
+    } else {
+      const frames = tpl.idleFrames.length > 0 ? tpl.idleFrames : DEFAULT_AVATARS.idle;
+      const frameIdx = previewFrameIndex % frames.length;
+      const currentImg = frames[frameIdx];
+      if (previewAvatar) setImgSrcResolved(previewAvatar, currentImg);
+    }
 
     if (previewStatusHint) {
-      previewStatusHint.textContent = `${tpl.name} character (idle)`;
+      previewStatusHint.textContent = "Character (idle)";
       previewStatusHint.classList.remove("hidden");
     }
   }
@@ -1977,7 +2739,7 @@ function renderSlotFrames(slot: DirectionSlot) {
 
     const img = document.createElement("img");
     img.className = "frame-thumb-img";
-    img.src = frameUrl;
+    setImgSrcResolved(img, frameUrl);
     img.alt = `${slot} frame ${idx + 1}`;
 
     const pill = document.createElement("span");
@@ -2174,7 +2936,9 @@ function openUpdateCharacterModal() {
       : "";
   }
   selectSpriteTemplate(selectedTemplateId);
+  renderFashionPicker();
   updatePreview();
+  updateTemplateGridAnimations();
 
   modal.classList.remove("hidden");
   setGameControlsActive(false);
@@ -2185,10 +2949,70 @@ function openUpdateCharacterModal() {
   }, 50);
 }
 
-function closeUpdateCharacterModal() {
-  modal.classList.add("hidden");
-  setGameControlsActive(true);
+function openWardrobeModal() {
+  if (!wardrobeModal) return;
+  renderFashionPicker();
+  updatePreviewFrame();
+  updateTemplateGridAnimations();
+  wardrobeModal.classList.remove("hidden");
+  setGameControlsActive(false);
 }
+
+function closeWardrobeModal(syncMultiplayer = false) {
+  if (!wardrobeModal) return;
+  wardrobeModal.classList.add("hidden");
+  saveOutfitToStorage(selectedOutfit);
+  updateFashionPickerVisibility();
+  updatePreviewFrame();
+  updateTemplateGridAnimations();
+  updateTopBarUI();
+
+  if (syncMultiplayer && multiplayer) {
+    multiplayer.changeOutfit(selectedOutfit);
+    if (multiplayer.sessionId && gameInstance) {
+      const activeScene = gameInstance.scene.getScene("GameScene") as GameScene;
+      if (activeScene && typeof activeScene.setPlayerOutfit === "function") {
+        activeScene.setPlayerOutfit(multiplayer.sessionId, selectedOutfit);
+      }
+    }
+  }
+
+  if (!isAnyModalOpen()) {
+    setGameControlsActive(true);
+  }
+}
+
+function closeUpdateCharacterModal() {
+  if (wardrobeModal) wardrobeModal.classList.add("hidden");
+  modal.classList.add("hidden");
+  if (!isAnyModalOpen()) {
+    setGameControlsActive(true);
+  }
+}
+
+btnOpenWardrobe?.addEventListener("click", () => {
+  openWardrobeModal();
+});
+
+btnCloseWardrobeModal?.addEventListener("click", () => {
+  closeWardrobeModal(false);
+});
+
+btnSaveWardrobe?.addEventListener("click", () => {
+  closeWardrobeModal(true);
+});
+
+wardrobeModal?.addEventListener("click", (e) => {
+  if (e.target === wardrobeModal) {
+    closeWardrobeModal(false);
+  }
+});
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && wardrobeModal && !wardrobeModal.classList.contains("hidden")) {
+    closeWardrobeModal(false);
+  }
+});
 
 dropdownUpdateCharBtn.addEventListener("click", () => {
   closeProfileDropdown();
@@ -2279,6 +3103,7 @@ async function handleUpdateCharacter(e: Event) {
       switchUploadPictures ? (switchUploadPictures.checked ? "true" : "false") : "false",
     );
     localStorage.setItem("player_sprite_template", selectedTemplateId);
+    localStorage.setItem("player_outfit", JSON.stringify(selectedOutfit));
     localStorage.setItem(
       "player_avatar_frames",
       JSON.stringify(uploadedFrames),
@@ -2293,12 +3118,15 @@ async function handleUpdateCharacter(e: Event) {
   const effectiveName = getEffectivePlayerName();
 
   if (multiplayer) {
-    multiplayer.updateProfile(effectiveName, color, avatars || null);
+    multiplayer.updateProfile(effectiveName, color, avatars || null, selectedOutfit);
 
     if (multiplayer.sessionId && gameInstance) {
       const activeScene = gameInstance.scene.getScene("GameScene") as GameScene;
       if (activeScene && typeof activeScene.setPlayerAvatars === "function") {
         activeScene.setPlayerAvatars(multiplayer.sessionId, avatars || null);
+      }
+      if (activeScene && typeof activeScene.setPlayerOutfit === "function") {
+        activeScene.setPlayerOutfit(multiplayer.sessionId, selectedOutfit);
       }
     }
   }
@@ -2311,7 +3139,7 @@ profileForm.addEventListener("submit", handleUpdateCharacter);
 // ==========================================
 
 function toggleProfileDropdown() {
-  const isCurrentlyOpen = !userProfileDropdown.classList.contains("hidden");
+  const isCurrentlyOpen = !profileMenuModal.classList.contains("hidden");
   if (isCurrentlyOpen) {
     closeProfileDropdown();
   } else {
@@ -2321,26 +3149,63 @@ function toggleProfileDropdown() {
 
 function openProfileDropdown() {
   closeAudioSettingsDropdown();
-  userProfileDropdown.classList.remove("hidden");
+  syncProfileModalUserInfo();
+  profileMenuModal.classList.remove("hidden");
   topbarProfileTrigger.classList.add("active");
 }
 
 function closeProfileDropdown() {
-  userProfileDropdown.classList.add("hidden");
+  profileMenuModal.classList.add("hidden");
   topbarProfileTrigger.classList.remove("active");
 }
 
-topbarProfileTrigger.addEventListener("click", (e) => {
-  // Prevent click on trigger inside dropdown from closing immediately
-  if ((e.target as HTMLElement).closest(".user-profile-dropdown")) {
-    return;
+function syncProfileModalUserInfo() {
+  if (profileModalUserName) {
+    profileModalUserName.textContent = getEffectivePlayerName();
   }
+  if (profileModalUsername) {
+    profileModalUsername.textContent = currentUser?.username ? `@${currentUser.username}` : "";
+    profileModalUsername.classList.toggle("hidden", !currentUser?.username);
+  }
+  if (profileModalAdminBadge) {
+    profileModalAdminBadge.classList.toggle("hidden", currentUser?.role !== "superadmin");
+  }
+  if (profileModalAvatarImg && topbarAvatarImg) {
+    profileModalAvatarImg.src = topbarAvatarImg.src;
+  }
+  if (profileModalStatusDot && topbarStatusDot) {
+    profileModalStatusDot.style.background = topbarStatusDot.style.background;
+    profileModalStatusDot.style.boxShadow = topbarStatusDot.style.boxShadow;
+  }
+}
+
+topbarProfileTrigger.addEventListener("click", () => {
   toggleProfileDropdown();
 });
 
-// Close dropdown on outside click
-document.addEventListener("click", (e) => {
-  if (!topbarProfileTrigger.contains(e.target as Node)) {
+topbarProfileTrigger.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" || e.key === " ") {
+    e.preventDefault();
+    toggleProfileDropdown();
+  }
+});
+
+if (btnCloseProfileModal) {
+  btnCloseProfileModal.addEventListener("click", () => {
+    closeProfileDropdown();
+  });
+}
+
+if (profileMenuModal) {
+  profileMenuModal.addEventListener("click", (e) => {
+    if (e.target === profileMenuModal) {
+      closeProfileDropdown();
+    }
+  });
+}
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && profileMenuModal && !profileMenuModal.classList.contains("hidden")) {
     closeProfileDropdown();
   }
 });
@@ -2417,8 +3282,83 @@ let isEditorUIHidden = false;
 let currentSelectedAssetId = "";
 let currentSelectedAssetName = "No Asset Selected";
 let placingToastFadeTimeout: any = null;
+let isTileOptionsOpen = false;
+let activeEditorTab: "utilities" | "flooring" | "wall" | "decoration" = "utilities";
+let isMobileDragFillEnabled = false;
+
+function isTouchDeviceCapable(): boolean {
+  return (
+    (navigator.maxTouchPoints ?? 0) > 0 ||
+    window.matchMedia("(hover: none) and (pointer: coarse)").matches
+  );
+}
+
+function isAreaDragToolActive(): boolean {
+  return (
+    activeEditorTool === "flooring" ||
+    activeEditorTool === "decoration" ||
+    activeEditorTool === "clear_decoration" ||
+    activeEditorTool === "private_zone" ||
+    activeEditorTool === "clear_private_zone"
+  );
+}
+
+function syncMobileDragFillButton() {
+  if (!btnToggleDragFill) return;
+  const show = isEditModeActive && isTouchDeviceCapable() && isAreaDragToolActive();
+  btnToggleDragFill.classList.toggle("hidden", !show);
+  btnToggleDragFill.classList.toggle("active", isMobileDragFillEnabled);
+  btnToggleDragFill.setAttribute("aria-pressed", String(isMobileDragFillEnabled));
+}
+
+function setMobileDragFillEnabled(enabled: boolean) {
+  isMobileDragFillEnabled = enabled;
+  syncMobileDragFillButton();
+  if (gameInstance) {
+    const scene = gameInstance.scene.getScene("GameScene") as GameScene | undefined;
+    scene?.setMobileDragFillMode?.(enabled);
+  }
+}
+
+function setEditorDrawerMinimized(minimized: boolean) {
+  if (!mapEditorSidebar) return;
+  mapEditorSidebar.classList.toggle("minimized", minimized);
+  if (!minimized) {
+    setTileOptionsOpen(false);
+  }
+  const btnExpandMapEditor = document.getElementById("btn-expand-map-editor");
+  if (btnExpandMapEditor) {
+    btnExpandMapEditor.setAttribute("aria-expanded", String(!minimized));
+    btnExpandMapEditor.setAttribute(
+      "aria-label",
+      minimized ? "Open Map Editor drawer" : "Minimize Map Editor drawer"
+    );
+  }
+}
+
+function setTileOptionsOpen(open: boolean) {
+  isTileOptionsOpen = open;
+  if (open) {
+    if (mapEditorSidebar && !mapEditorSidebar.classList.contains("minimized")) {
+      mapEditorSidebar.classList.add("minimized");
+      const btnExpandMapEditor = document.getElementById("btn-expand-map-editor");
+      if (btnExpandMapEditor) {
+        btnExpandMapEditor.setAttribute("aria-expanded", "false");
+        btnExpandMapEditor.setAttribute("aria-label", "Open Map Editor drawer");
+      }
+    }
+  }
+  if (mapEditorTileOptionsSidebar) {
+    mapEditorTileOptionsSidebar.classList.toggle("hidden", !open);
+  }
+  if (btnToggleTileOptions) {
+    btnToggleTileOptions.classList.toggle("active", open);
+    btnToggleTileOptions.setAttribute("aria-expanded", String(open));
+  }
+}
 
 function switchEditorTab(tabName: "utilities" | "flooring" | "wall" | "decoration") {
+  activeEditorTab = tabName;
   const tabBtns = document.querySelectorAll<HTMLButtonElement>(".editor-tab-btn[data-editor-tab]");
   tabBtns.forEach((btn) => {
     const isActive = btn.dataset.editorTab === tabName;
@@ -2464,6 +3404,12 @@ function isEditorAssetUnlocked(assetId: string): boolean {
 }
 
 function updateEditorAssetLockStates() {
+  const isSuperadmin = currentUser?.role === "superadmin";
+  const toolSellerNpc = document.getElementById("tool-seller-npc");
+  if (toolSellerNpc) {
+    toolSellerNpc.classList.toggle("hidden", !isSuperadmin);
+  }
+
   const cards = document.querySelectorAll<HTMLButtonElement>(
     "#map-editor-sidebar .editor-asset-card[data-asset-id]"
   );
@@ -2471,119 +3417,83 @@ function updateEditorAssetLockStates() {
     const assetId = card.dataset.assetId;
     if (!assetId) return;
     const isPaid = isPaidAssetId(assetId);
-    const isLocked = isPaid && !isEditorAssetUnlocked(assetId);
-    card.classList.toggle("locked", isLocked);
+    const isOwned = !isPaid || isEditorAssetUnlocked(assetId);
 
-    const codeEl = card.querySelector<HTMLElement>(".asset-card-code");
-    if (codeEl && isPaid) {
-      if (!card.dataset.groupLabel) {
-        card.dataset.groupLabel = codeEl.textContent || "";
-      }
-      codeEl.textContent = isLocked
-        ? `🔒 ${ASSET_UNLOCK_COST} pts`
-        : card.dataset.groupLabel;
-    }
-
-    const baseName = card.dataset.assetName || assetId;
-    if (isLocked) {
-      card.title = `${baseName} (${assetId}) - Locked (${ASSET_UNLOCK_COST} Parking Points to unlock)`;
-    } else if (isPaid) {
-      card.title = `${baseName} (${assetId}) - ${card.dataset.groupLabel || "Unlocked"} decoration`;
-    }
+    // Non-superadmin users ONLY see free assets and assets they have bought from Seller NPCs
+    card.classList.toggle("hidden", isPaid && !isOwned);
+    card.classList.remove("locked");
+    card.removeAttribute("title");
   });
-}
 
-async function handleUnlockEditorAsset(
-  card: HTMLButtonElement,
-  assetId: string,
-  assetName: string
-) {
-  if (!currentUser || !authToken) {
-    alert("Please sign in to unlock and use premium map editor sprites.");
-    return;
-  }
-
-  const cost = ASSET_UNLOCK_COST;
-  const currentPoints = currentUser.parkingPoints ?? 0;
-
-  if (currentPoints < cost) {
-    alert(
-      `🔒 ${assetName} requires ${cost} parking points to unlock.\n\nYou currently have ${currentPoints} parking points. Stay online in Lepark to earn more parking points!`
-    );
-    return;
-  }
-
-  const confirmed = confirm(
-    `✨ Unlock "${assetName}" for ${cost} parking points?\n\nYou currently have ${currentPoints} parking points. After unlocking, you will have ${currentPoints - cost} points remaining.`
-  );
-  if (!confirmed) return;
-
-  try {
-    const res = await fetch(getApiUrl("/api/assets/unlock"), {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${authToken}`,
-      },
-      body: JSON.stringify({ assetId }),
-    });
-
-    const data = await res.json();
-    if (!res.ok || !data.success) {
-      alert(data.error || "Failed to unlock sprite.");
-      return;
+  if (
+    currentSelectedAssetId &&
+    isPaidAssetId(currentSelectedAssetId) &&
+    !isEditorAssetUnlocked(currentSelectedAssetId)
+  ) {
+    currentSelectedAssetId = "";
+    currentSelectedAssetName = "No Asset Selected";
+    if (
+      activeEditorTool === "flooring" ||
+      activeEditorTool === "decoration" ||
+      activeEditorTool === "freeform_decoration"
+    ) {
+      activeEditorTool = "none";
+      const scene = gameInstance?.scene?.getScene("GameScene") as GameScene | undefined;
+      scene?.setActiveEditorTool("none");
+      updateEditBannerText();
     }
-
-    const newPoints =
-      typeof data.points === "number" ? data.points : currentPoints - cost;
-    const unlockedAssets: string[] = Array.isArray(data.unlockedAssets)
-      ? data.unlockedAssets
-      : [...(currentUser.unlockedAssets || []), assetId];
-
-    currentUser.parkingPoints = newPoints;
-    currentUser.unlockedAssets = unlockedAssets;
-    try {
-      localStorage.setItem("lepark_auth_user", JSON.stringify(currentUser));
-    } catch {}
-
-    updateParkingPointsDisplay(newPoints);
-    updateEditorAssetLockStates();
-
-    if (card.dataset.tileType === "decoration") {
-      selectDecorationAsset(assetId, assetName);
-    } else {
-      selectEditorAsset(assetId, assetName);
-    }
-  } catch (err) {
-    console.error("Failed to unlock asset:", err);
-    alert("Network error while unlocking sprite.");
   }
 }
 
 /**
- * Show all map editor asset/sprite categories and update per-sprite lock states.
+ * Filter map editor sub-tabs and update counts so users only see bought/owned asset packs.
  */
 function updateEditorAssetGroupVisibility() {
+  updateEditorAssetLockStates();
+
   const categoryGroups = document.querySelectorAll<HTMLElement>(
     "#map-editor-sidebar .editor-category-group"
   );
   categoryGroups.forEach((categoryGroup) => {
-    const groupBtns = categoryGroup.querySelectorAll<HTMLButtonElement>(
-      ".editor-group-tab-btn[data-asset-group-tab]"
-    );
-    groupBtns.forEach((btn) => {
-      btn.classList.remove("hidden");
-    });
-
+    const category = categoryGroup.dataset.category;
     const groupPanels = categoryGroup.querySelectorAll<HTMLElement>(
       ".editor-group-panel[data-asset-group-panel]"
     );
-    groupPanels.forEach((panel) => {
-      panel.classList.remove("hidden");
-    });
-  });
+    const groupTabBtns = Array.from(
+      categoryGroup.querySelectorAll<HTMLButtonElement>(
+        ".editor-group-tab-btn[data-asset-group-tab]"
+      )
+    );
+    let totalVisibleInCategory = 0;
 
-  updateEditorAssetLockStates();
+    groupPanels.forEach((panel) => {
+      const groupName = panel.dataset.assetGroupPanel || "";
+      const visibleCards = panel.querySelectorAll(
+        ".editor-asset-card:not(.hidden)"
+      ).length;
+      const shouldHideGroup = groupName !== "Free" && visibleCards === 0;
+
+      panel.classList.toggle("hidden", shouldHideGroup);
+      const tabBtn = groupTabBtns.find((btn) => btn.dataset.assetGroupTab === groupName);
+      if (tabBtn) {
+        const wasActive = tabBtn.classList.contains("active");
+        tabBtn.classList.toggle("hidden", shouldHideGroup);
+        if (shouldHideGroup && wasActive) {
+          switchAssetGroupTab(categoryGroup, "Free");
+        }
+      }
+
+      if (!shouldHideGroup) {
+        totalVisibleInCategory += visibleCards;
+      }
+    });
+
+    const countEl = categoryGroup.querySelector<HTMLElement>(".category-count");
+    if (countEl && (category === "flooring" || category === "decoration")) {
+      const unit = category === "flooring" ? "styles" : "items";
+      countEl.textContent = `${totalVisibleInCategory} ${unit}`;
+    }
+  });
 }
 
 function setupMapEditorAccordions() {
@@ -2597,8 +3507,19 @@ function setupMapEditorAccordions() {
         | "wall"
         | "decoration"
         | undefined;
-      if (tab) {
+      if (!tab) return;
+
+      const isMinimized = mapEditorSidebar?.classList.contains("minimized");
+      if (isMinimized) {
         switchEditorTab(tab);
+        isEditorUIHidden = false;
+        document.body.classList.remove("editor-placing-mode");
+        setEditorDrawerMinimized(false);
+      } else if (tab === activeEditorTab) {
+        setEditorDrawerMinimized(true);
+      } else {
+        switchEditorTab(tab);
+        setTileOptionsOpen(false);
       }
     });
   });
@@ -2617,55 +3538,39 @@ function setupMapEditorAccordions() {
     });
   });
 
-  // 1c. Bottom bar Expand / Collapse toggle
+  // 1c. Bottom bar Drawer Open / Minimize toggle
   const btnExpandMapEditor = document.getElementById("btn-expand-map-editor");
-  const expandLabelEl = btnExpandMapEditor?.querySelector<HTMLElement>(".editor-expand-label");
   if (btnExpandMapEditor && mapEditorSidebar) {
     btnExpandMapEditor.addEventListener("click", () => {
-      const isExpanded = mapEditorSidebar.classList.toggle("expanded");
-      btnExpandMapEditor.setAttribute("aria-expanded", String(isExpanded));
-      btnExpandMapEditor.setAttribute(
-        "aria-label",
-        isExpanded ? "Collapse Map Editor bar" : "Expand Map Editor bar"
-      );
-      if (expandLabelEl) {
-        expandLabelEl.textContent = isExpanded ? "Collapse" : "Expand";
+      const isNowMinimized = !mapEditorSidebar.classList.contains("minimized");
+      if (!isNowMinimized) {
+        isEditorUIHidden = false;
+        document.body.classList.remove("editor-placing-mode");
       }
+      setEditorDrawerMinimized(isNowMinimized);
     });
   }
 
-  // 2. Right Tile Options Sidebar Hide & Expand controls
-  const rightHeader = document.getElementById("right-sidebar-header-toggle");
-  const btnToggleRight = document.getElementById("btn-toggle-right-sidebar");
-  const btnExpandRight = document.getElementById("btn-expand-right-sidebar");
-
-  const setRightSidebarCollapsed = (collapsed: boolean) => {
-    if (!mapEditorTileOptionsSidebar) return;
-    mapEditorTileOptionsSidebar.classList.toggle("collapsed", collapsed);
-    if (rightHeader) {
-      rightHeader.setAttribute("aria-expanded", String(!collapsed));
-    }
-  };
-
-  if (btnToggleRight) {
-    btnToggleRight.addEventListener("click", (e) => {
+  // 2. Minimalist Tile Options Popover & Mobile Drag Fill toggle controls
+  if (btnToggleDragFill) {
+    btnToggleDragFill.addEventListener("click", (e) => {
       e.stopPropagation();
-      const isNowCollapsed = !mapEditorTileOptionsSidebar?.classList.contains("collapsed");
-      setRightSidebarCollapsed(isNowCollapsed);
+      setMobileDragFillEnabled(!isMobileDragFillEnabled);
     });
   }
 
-  if (btnExpandRight) {
-    btnExpandRight.addEventListener("click", (e) => {
+  if (btnToggleTileOptions) {
+    btnToggleTileOptions.addEventListener("click", (e) => {
       e.stopPropagation();
-      setRightSidebarCollapsed(false);
+      if (btnToggleTileOptions.disabled) return;
+      setTileOptionsOpen(!isTileOptionsOpen);
     });
   }
 
-    if (rightHeader) {
-    rightHeader.addEventListener("click", () => {
-      const isNowCollapsed = !mapEditorTileOptionsSidebar?.classList.contains("collapsed");
-      setRightSidebarCollapsed(isNowCollapsed);
+  if (btnCloseTileOptions) {
+    btnCloseTileOptions.addEventListener("click", (e) => {
+      e.stopPropagation();
+      setTileOptionsOpen(false);
     });
   }
 
@@ -2791,15 +3696,33 @@ function syncRightTileOptionsSidebar() {
           tileOptionsPreviewImg.src = assetPath;
           tileOptionsPreviewImg.classList.remove("hidden");
           tileOptionsPreviewPlaceholder.classList.add("hidden");
+          if (editorOptionsBtnThumb) {
+            editorOptionsBtnThumb.src = assetPath;
+            editorOptionsBtnThumb.classList.remove("hidden");
+          }
         } else {
           tileOptionsPreviewImg.classList.add("hidden");
           tileOptionsPreviewPlaceholder.classList.remove("hidden");
+          if (editorOptionsBtnThumb) {
+            editorOptionsBtnThumb.classList.add("hidden");
+          }
         }
       });
     } else {
       tileOptionsPreviewImg.classList.add("hidden");
       tileOptionsPreviewPlaceholder.classList.remove("hidden");
+      if (editorOptionsBtnThumb) {
+        editorOptionsBtnThumb.classList.add("hidden");
+      }
     }
+  }
+
+  if (btnToggleTileOptions) {
+    btnToggleTileOptions.disabled = !info.active;
+    btnToggleTileOptions.title = info.active ? "Tile Options" : "Select a tile or item first";
+  }
+  if (!info.active && isTileOptionsOpen) {
+    setTileOptionsOpen(false);
   }
 
   if (tileOptionsControls) {
@@ -2810,7 +3733,7 @@ function syncRightTileOptionsSidebar() {
     tileOptPassableSwitch.checked = info.passable;
   }
   if (tileOptPassableHint) {
-    tileOptPassableHint.textContent = info.passable ? "Walkable" : "Solid (Obstacle)";
+    tileOptPassableHint.textContent = info.passable ? "Walkable" : "Solid";
     tileOptPassableHint.classList.toggle("solid", !info.passable);
   }
   if (tileOptRenderLayer) {
@@ -2829,6 +3752,9 @@ function syncRightTileOptionsSidebar() {
   }
   if (tileOptionsPreviewImg) {
     tileOptionsPreviewImg.classList.toggle("flipped-x", info.flipX);
+  }
+  if (editorOptionsBtnThumb) {
+    editorOptionsBtnThumb.classList.toggle("flipped-x", info.flipX);
   }
 }
 
@@ -2967,6 +3893,7 @@ let activeEditorTool:
   | "ashtray"
   | "chess_board"
   | "aquarium"
+  | "seller_npc"
   | "freeform_decoration"
   | "spawn_point" = "none";
 
@@ -2991,34 +3918,7 @@ function isCurrentToolLayerable(): boolean {
 
 function updatePlacementLayerUI() {
   syncRightTileOptionsSidebar();
-
-  // Update placing toast layer badge
-  if (placingToastLayer) {
-    if (isCurrentToolLayerable()) {
-      placingToastLayer.textContent = `Layer ${currentPlacementLayer} (↑/↓)`;
-      placingToastLayer.classList.remove("hidden");
-    } else {
-      placingToastLayer.classList.add("hidden");
-    }
-  }
-
   updateEditBannerText();
-
-  // If in placing mode, refresh toast and wake from faded state
-  if (isEditModeActive && isEditorUIHidden && isCurrentToolLayerable()) {
-    if (editorPlacingToast) {
-      editorPlacingToast.classList.remove("hidden");
-      editorPlacingToast.classList.remove("faded");
-      if (placingToastFadeTimeout) {
-        clearTimeout(placingToastFadeTimeout);
-      }
-      placingToastFadeTimeout = setTimeout(() => {
-        if (isEditorUIHidden && editorPlacingToast) {
-          editorPlacingToast.classList.add("faded");
-        }
-      }, 3500);
-    }
-  }
 }
 
 function setPlacementLayer(layer: number, notifyScene: boolean = true) {
@@ -3105,120 +4005,13 @@ function setPlacementFlipX(flipX: boolean) {
 
 function updateEditBannerText() {
   syncRightTileOptionsSidebar();
-  if (!editBannerAssetText) return;
-
-  if (activeEditorTool === "none") {
-    editBannerAssetText.innerHTML = `<em>No tool selected • Pick a tool or asset from the bottom bar</em>`;
-    return;
-  }
-
-  if (activeEditorTool === "cursor") {
-    editBannerAssetText.innerHTML = `<span class="banner-cursor-tag">🖱️ Cursor</span> Active: <strong>Inspect &amp; Delete</strong> • <em>Click any item on the map (wall, typewriter, jukebox, decoration, floor) to open its menu</em>`;
-    return;
-  }
-
-  if (activeEditorTool === "jukebox") {
-    editBannerAssetText.innerHTML = `<span class="banner-private-tag" style="background: rgba(245, 158, 11, 0.2); color: #fbbf24; border-color: rgba(245, 158, 11, 0.4);">📻 YouTube Jukebox</span> Active: <strong>Freeform Placement</strong> • <span class="banner-layer-tag">Layer ${currentPlacementLayer} (↑/↓)</span> • <em>Click anywhere to place • Use ↑/↓ arrow keys to change layer</em>`;
-    return;
-  }
-
-  if (activeEditorTool === "typewriter") {
-    editBannerAssetText.innerHTML = `<span class="banner-private-tag" style="background: rgba(139, 92, 246, 0.2); color: #c084fc; border-color: rgba(139, 92, 246, 0.4);">⌨️ Typewriter</span> Active: <strong>Type Racing Game (Freeform)</strong> • <span class="banner-layer-tag">Layer ${currentPlacementLayer} (↑/↓)</span> • <em>Click anywhere to place • Use ↑/↓ arrow keys to change layer</em>`;
-    return;
-  }
-
-  if (activeEditorTool === "ashtray") {
-    editBannerAssetText.innerHTML = `<span class="banner-private-tag" style="background: rgba(234, 88, 12, 0.2); color: #fb923c; border-color: rgba(234, 88, 12, 0.4);">🚬 Ashtray</span> Active: <strong>Smoking Game (Freeform)</strong> • <span class="banner-layer-tag">Layer ${currentPlacementLayer} (↑/↓)</span> • <em>Click anywhere to place • Use ↑/↓ arrow keys to change layer</em>`;
-    return;
-  }
-
-  if (activeEditorTool === "chess_board") {
-    editBannerAssetText.innerHTML = `<span class="banner-private-tag" style="background: rgba(168, 85, 247, 0.2); color: #e9d5ff; border-color: rgba(168, 85, 247, 0.4);">♟️ Chess Board</span> Active: <strong>Chess Arena (Freeform)</strong> • <span class="banner-layer-tag">Layer ${currentPlacementLayer} (↑/↓)</span> • <em>Click anywhere to place • Use ↑/↓ arrow keys to change layer</em>`;
-    return;
-  }
-
-  if (activeEditorTool === "aquarium") {
-    editBannerAssetText.innerHTML = `<span class="banner-private-tag" style="background: rgba(14, 165, 233, 0.2); color: #38bdf8; border-color: rgba(14, 165, 233, 0.4);">🐟 Aquarium</span> Active: <strong>Fishing Minigame (Freeform)</strong> • <span class="banner-layer-tag">Layer ${currentPlacementLayer} (↑/↓)</span> • <em>Click anywhere to place • Use ↑/↓ arrow keys to change layer</em>`;
-    return;
-  }
-
-  if (activeEditorTool === "spawn_point") {
-    editBannerAssetText.innerHTML = `<span class="banner-spawn-tag">📍 Spawn Point</span> Active: <strong>Player Spawn Point</strong> • <em>Click anywhere to place spawn point (1 per map)</em>`;
-    return;
-  }
-
-  if (activeEditorTool === "private_zone") {
-    editBannerAssetText.innerHTML = `<span class="banner-private-tag">🔒 Flag Private Area</span> Active: <strong>Private Tile Flagging</strong> • <em>Drag area on map to mark</em>`;
-    return;
-  }
-  if (activeEditorTool === "clear_private_zone") {
-    editBannerAssetText.innerHTML = `<span class="banner-clear-tag">✕ Clear Private</span> Active: <strong>Remove Private Area</strong> • <em>Drag area on map to clear</em>`;
-    return;
-  }
-  if (activeEditorTool === "clear_decoration") {
-    editBannerAssetText.innerHTML = `<span class="banner-clear-tag">✕ Remove Deco</span> Active: <strong>Remove Decoration</strong> • <em>Click on decoration item to remove</em>`;
-    return;
-  }
-  if (activeEditorTool === "freeform_decoration") {
-    const passageMarkup = isDecorationPassable
-      ? `<span class="banner-passable-tag">🟢 Passable</span>`
-      : `<span class="banner-solid-tag">🚫 Solid (Impassable)</span>`;
-    const layerMarkup = isDecorationOntop
-      ? `<span class="banner-layer-tag">🔼 On Top</span>`
-      : `<span class="banner-layer-tag">🔽 Behind</span>`;
-    const levelMarkup = `<span class="banner-layer-tag">Layer ${currentPlacementLayer} (↑/↓)</span>`;
-    editBannerAssetText.innerHTML = `<span class="banner-deco-tag" style="background:linear-gradient(135deg,#8b5cf6,#ec4899);">🪑 Freeform</span> Active: <strong>${currentSelectedAssetName}</strong> • ${passageMarkup} • ${layerMarkup} • ${levelMarkup} • <em>Click to place • ↑/↓ arrows for layer</em>`;
-    return;
-  }
-  if (activeEditorTool === "decoration") {
-    const passageMarkup = isDecorationPassable
-      ? `<span class="banner-passable-tag">🟢 Passable</span>`
-      : `<span class="banner-solid-tag">🚫 Solid (Impassable)</span>`;
-    const layerMarkup = isDecorationOntop
-      ? `<span class="banner-layer-tag">🔼 On Top</span>`
-      : `<span class="banner-layer-tag">🔽 Behind</span>`;
-    const levelMarkup = `<span class="banner-layer-tag">Layer ${currentPlacementLayer} (↑/↓)</span>`;
-    editBannerAssetText.innerHTML = `<span class="banner-deco-tag">🪴 Decoration</span> Active: <strong>${currentSelectedAssetName}</strong> • ${passageMarkup} • ${layerMarkup} • ${levelMarkup} • <em>Click to place • ↑/↓ arrows for layer</em>`;
-    return;
-  }
-
-  const isWall = isWallAsset(currentSelectedAssetId);
-  const isOverlayWall = isOverlayWallAsset(currentSelectedAssetId);
-  const isOverlayFloor = isOverlayFloorAsset(currentSelectedAssetId);
-  const obstacleTag = isObstacleEnabled
-    ? `<span class="banner-solid-tag">🚫 Solid</span> `
-    : `<span class="banner-passable-tag">🟢 Passable</span> `;
-  const wallTag = isOverlayWall
-    ? `<span class="banner-wall-tag" style="background:rgba(59,130,246,0.3);border-color:rgba(59,130,246,0.6);">🧱 Overlay Wall</span> ${obstacleTag}`
-    : isOverlayFloor
-    ? `<span class="banner-wall-tag" style="background:rgba(59,130,246,0.3);border-color:rgba(59,130,246,0.6);">🟦 Overlay Floor</span> ${obstacleTag}`
-    : isWall
-    ? `<span class="banner-wall-tag">🧱 Wall</span> ${obstacleTag}`
-    : obstacleTag;
-  const layerText = isDecorationOntop ? "🔼 On Top" : "🔽 Behind";
-  const levelTag = ` • <span class="banner-layer-tag">${layerText} • Layer ${currentPlacementLayer} (↑/↓)</span>`;
-  editBannerAssetText.innerHTML = `${wallTag}Active: <strong>${currentSelectedAssetName}</strong>${levelTag}`;
+  syncMobileDragFillButton();
 }
 
-function showPlacingToast(assetName: string) {
+function showPlacingToast(message: string) {
   if (!editorPlacingToast) return;
   if (placingToastName) {
-    placingToastName.textContent = assetName;
-  }
-  if (placingToastLayer) {
-    if (isCurrentToolLayerable()) {
-      placingToastLayer.textContent = `Layer ${currentPlacementLayer} (↑/↓)`;
-      placingToastLayer.classList.remove("hidden");
-    } else {
-      placingToastLayer.classList.add("hidden");
-    }
-  }
-  if (placingToastHint) {
-    if (isCurrentToolLayerable()) {
-      placingToastHint.innerHTML = `Press <kbd class="placing-kbd">↑</kbd> <kbd class="placing-kbd">↓</kbd> to change layer • <kbd class="placing-kbd">Esc</kbd> when done`;
-    } else {
-      placingToastHint.innerHTML = `Drag map to put tiles • Press <kbd class="placing-kbd">Esc</kbd> when done`;
-    }
+    placingToastName.textContent = message;
   }
   if (placingToastFadeTimeout) {
     clearTimeout(placingToastFadeTimeout);
@@ -3229,10 +4022,16 @@ function showPlacingToast(assetName: string) {
   editorPlacingToast.classList.remove("faded");
 
   placingToastFadeTimeout = setTimeout(() => {
-    if (isEditorUIHidden && editorPlacingToast) {
+    if (editorPlacingToast) {
       editorPlacingToast.classList.add("faded");
+      setTimeout(() => {
+        if (editorPlacingToast?.classList.contains("faded")) {
+          editorPlacingToast.classList.add("hidden");
+          editorPlacingToast.classList.remove("faded");
+        }
+      }, 300);
     }
-  }, 3500);
+  }, 2600);
 }
 
 function hidePlacingToast() {
@@ -3246,17 +4045,19 @@ function hidePlacingToast() {
   }
 }
 
-function hideEditorUIForPlacing(assetName?: string) {
+function hideEditorUIForPlacing(_assetName?: string) {
   if (!isEditModeActive) return;
   isEditorUIHidden = true;
   document.body.classList.add("editor-placing-mode");
-  showPlacingToast(assetName || currentSelectedAssetName);
+  setEditorDrawerMinimized(true);
 }
 
 function showEditorUI() {
   if (!isEditModeActive) return;
   isEditorUIHidden = false;
   document.body.classList.remove("editor-placing-mode");
+  setEditorDrawerMinimized(false);
+  setTileOptionsOpen(false);
   hidePlacingToast();
   closeEditorItemContextMenu();
 
@@ -3295,10 +4096,12 @@ function enterEditMode() {
   if (toprightBar) toprightBar.classList.add("hidden");
   if (chatSidebar) chatSidebar.classList.add("hidden");
 
-  if (mapEditorSidebar) mapEditorSidebar.classList.remove("hidden");
+  if (mapEditorSidebar) {
+    mapEditorSidebar.classList.remove("hidden", "expanded");
+  }
+  setEditorDrawerMinimized(false);
+  setTileOptionsOpen(false);
   updateEditorAssetGroupVisibility();
-  if (mapEditorTileOptionsSidebar) mapEditorTileOptionsSidebar.classList.remove("hidden");
-  if (mapEditBanner) mapEditBanner.classList.remove("hidden");
   if (btnEditMap) {
     btnEditMap.classList.add("active");
     const label = btnEditMap.querySelector(".edit-btn-label");
@@ -3316,6 +4119,7 @@ function enterEditMode() {
       setupSceneAquariumEvents(scene);
       setupSceneEditorToolEvents(scene);
       scene.setEditMode(true);
+      dinerUiController?.setEditMode(true);
       scene.setActiveEditorTool(activeEditorTool);
       scene.setSelectedAsset(currentSelectedAssetId);
       scene.setDecorationPassable(isDecorationPassable);
@@ -3324,6 +4128,7 @@ function enterEditMode() {
     }
   }
 
+  setMobileDragFillEnabled(false);
   syncRightTileOptionsSidebar();
   updatePlacementLayerUI();
   updateEditBannerText();
@@ -3333,17 +4138,21 @@ function exitEditMode() {
   if (!isEditModeActive) return;
   isEditModeActive = false;
   isEditorUIHidden = false;
+  setMobileDragFillEnabled(false);
   document.body.classList.remove("edit-mode-active");
+  dinerUiController?.setEditMode(false);
   document.body.classList.remove("editor-placing-mode");
   hidePlacingToast();
   const toprightBar = document.getElementById("topright-bar");
   if (toprightBar) toprightBar.classList.remove("hidden");
   if (chatSidebar) chatSidebar.classList.remove("hidden");
 
-  if (mapEditorSidebar) mapEditorSidebar.classList.add("hidden");
-  if (mapEditorTileOptionsSidebar) mapEditorTileOptionsSidebar.classList.add("hidden");
+  setTileOptionsOpen(false);
+  if (mapEditorSidebar) {
+    mapEditorSidebar.classList.add("hidden");
+    mapEditorSidebar.classList.remove("minimized", "expanded");
+  }
   closeEditorItemContextMenu();
-  if (mapEditBanner) mapEditBanner.classList.add("hidden");
   if (btnEditMap) {
     btnEditMap.classList.remove("active");
     const label = btnEditMap.querySelector(".edit-btn-label");
@@ -3635,6 +4444,35 @@ function selectSpawnPointTool() {
   hideEditorUIForPlacing("Spawn Point (Click map to place spawn point)");
 }
 
+function selectSellerNpcTool() {
+  if (currentUser?.role !== "superadmin") {
+    alert("Only superadmin can place or configure Seller NPC counters.");
+    return;
+  }
+  activeEditorTool = "seller_npc";
+
+  const cards = document.querySelectorAll(".editor-asset-card");
+  cards.forEach((card) => {
+    if ((card as HTMLElement).dataset.toolType === "seller_npc") {
+      card.classList.add("selected");
+    } else {
+      card.classList.remove("selected");
+    }
+  });
+
+  updateEditBannerText();
+
+  if (gameInstance) {
+    const scene = gameInstance.scene.getScene("GameScene") as GameScene;
+    if (scene) {
+      scene.setActiveEditorTool("seller_npc");
+      scene.setPlacementLayer(currentPlacementLayer);
+    }
+  }
+
+  hideEditorUIForPlacing("Seller NPC & Counter (Click map to place / relocate)");
+}
+
 function selectCursorTool() {
   activeEditorTool = "cursor";
   closeEditorItemContextMenu();
@@ -3670,12 +4508,12 @@ function updateEditorItemObstacleButton(isObstacle: boolean) {
 
   if (isObstacle) {
     btnObstacle.classList.remove("is-passable");
-    if (obstacleIcon) obstacleIcon.textContent = "🚫";
+    if (obstacleIcon) obstacleIcon.innerHTML = '<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>';
     if (obstacleLabel) obstacleLabel.textContent = "Obstacle: ON";
     btnObstacle.title = "Click to make walkable (passable)";
   } else {
     btnObstacle.classList.add("is-passable");
-    if (obstacleIcon) obstacleIcon.textContent = "🟢";
+    if (obstacleIcon) obstacleIcon.innerHTML = '<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>';
     if (obstacleLabel) obstacleLabel.textContent = "Obstacle: OFF";
     btnObstacle.title = "Click to make obstacle (solid)";
   }
@@ -3713,8 +4551,37 @@ function updateEditorItemInteractionUI(
   if (selectedLabelEl) {
     const matched = DECORATION_INTERACTIONS.find((o) => o.id === interaction);
     selectedLabelEl.textContent = matched
-      ? `${matched.icon} ${matched.label}`
+      ? matched.label
       : "Select interaction...";
+  }
+}
+
+function getInteractionIconSvg(interactionId: string): string {
+  switch (interactionId) {
+    case "type_race":
+      return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M6 12h.01M10 12h.01M14 12h.01M18 12h.01M7 16h10"/></svg>`;
+    case "smoke_duel":
+      return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2c.5 2.5-1.5 4-1.5 6.5a2.5 2.5 0 0 0 5 0c0-1.5-.5-2.5-1.5-3.5"/><path d="M8.5 14.5A2.5 2.5 0 0 1 11 12c2.5 0 4.5 2 4.5 4.5a4.5 4.5 0 1 1-9 0c0-.7.2-1.4.5-2"/></svg>`;
+    case "chess":
+      return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 4h6l-1 5 2 8H8l2-8-1-5z"/><path d="M6 20h12"/></svg>`;
+    case "jukebox":
+      return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>`;
+    case "fishing":
+      return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="5" r="2"/><path d="M12 7v14"/><path d="M5 13a7 7 0 0 0 14 0"/></svg>`;
+    case "organisation":
+      return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M13 8h4M13 12h4M13 16h4"/></svg>`;
+    case "notes":
+      return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/></svg>`;
+    case "calendar":
+      return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>`;
+    case "meals":
+      return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2v0a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/></svg>`;
+    case "inventory":
+      return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>`;
+    case "asset_shop":
+      return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7"/><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><path d="M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4"/><path d="M2 7h20"/><path d="M22 7v3a2 2 0 0 1-2 2v0a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 16 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 12 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 8 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 4 12v0a2 2 0 0 1-2-2V7"/></svg>`;
+    default:
+      return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>`;
   }
 }
 
@@ -3747,7 +4614,7 @@ function renderEditorInteractionOptions(
     btn.className =
       "editor-interaction-option" +
       (opt.id === selectedInteraction ? " active" : "");
-    btn.innerHTML = `<span>${opt.icon}</span><span>${opt.label}</span>`;
+    btn.innerHTML = `<span class="editor-interaction-option-icon">${getInteractionIconSvg(opt.id)}</span><span>${opt.label}</span>`;
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
       if (!activeEditorContextMenuItem || !gameInstance) return;
@@ -3777,6 +4644,9 @@ function showEditorItemContextMenu(
   const btnInteract = document.getElementById("btn-editor-item-interactable");
   const pickerEl = document.getElementById("editor-item-interaction-picker");
   const dropdownPanel = document.getElementById("editor-interaction-dropdown-panel");
+  const sellerControlsEl = document.getElementById("editor-seller-npc-controls");
+  const btnMove = document.getElementById("btn-editor-item-move");
+  const btnDelete = document.getElementById("btn-editor-item-delete");
   if (!menuEl) return;
 
   dropdownPanel?.classList.add("hidden");
@@ -3789,8 +4659,11 @@ function showEditorItemContextMenu(
     ? (gameInstance.scene.getScene("GameScene") as GameScene)
     : null;
 
+  const isSellerNpc = item.kind === "seller_npc";
+  const isSuperadmin = currentUser?.role === "superadmin";
+
   if (btnObstacle) {
-    if (item.kind === "spawn_point" || item.kind === "private_zone") {
+    if (isSellerNpc || item.kind === "spawn_point" || item.kind === "private_zone") {
       btnObstacle.style.display = "none";
     } else {
       btnObstacle.style.display = "flex";
@@ -3803,7 +4676,9 @@ function showEditorItemContextMenu(
   }
 
   const supportsInteraction =
-    scene && typeof scene.isItemInteractableSupported === "function"
+    !isSellerNpc &&
+    scene &&
+    typeof scene.isItemInteractableSupported === "function"
       ? scene.isItemInteractableSupported(item)
       : false;
 
@@ -3817,6 +4692,22 @@ function showEditorItemContextMenu(
       btnInteract.classList.add("hidden");
       pickerEl?.classList.add("hidden");
     }
+  }
+
+  if (sellerControlsEl) {
+    if (isSellerNpc && isSuperadmin && scene) {
+      sellerControlsEl.classList.remove("hidden");
+      populateSellerNpcMenuControls(scene.getSellerNpcState());
+    } else {
+      sellerControlsEl.classList.add("hidden");
+    }
+  }
+
+  if (btnMove) {
+    btnMove.style.display = isSellerNpc && !isSuperadmin ? "none" : "flex";
+  }
+  if (btnDelete) {
+    btnDelete.style.display = isSellerNpc && !isSuperadmin ? "none" : "flex";
   }
 
   positionEditorItemContextMenu(screenX, screenY);
@@ -3918,7 +4809,7 @@ function openPrivateZoneNameModal(
     pendingZoneBounds = options.bounds || null;
     if (privateZoneModalZoneId) privateZoneModalZoneId.value = "";
     if (privateZoneModalTitle) {
-      privateZoneModalTitle.textContent = "🔒 Name Private Area";
+      privateZoneModalTitle.textContent = "Name Private Area";
     }
     if (btnSavePrivateZoneName) {
       btnSavePrivateZoneName.textContent = "Save Area Name";
@@ -3930,7 +4821,7 @@ function openPrivateZoneNameModal(
       privateZoneModalZoneId.value = options.zoneId || "";
     }
     if (privateZoneModalTitle) {
-      privateZoneModalTitle.textContent = "✏️ Rename Private Area";
+      privateZoneModalTitle.textContent = "Rename Private Area";
     }
     if (btnSavePrivateZoneName) {
       btnSavePrivateZoneName.textContent = "Update Name";
@@ -3989,14 +4880,14 @@ function renderEditorZonesList(zones: any[]) {
     item.title = "Click to rename this private area";
     item.innerHTML = `
       <div class="zone-item-left">
-        <span class="zone-item-icon">🔒</span>
+        <span class="zone-item-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
         <div class="zone-item-details">
           <span class="zone-item-name">${escapeHtml(zone.name || `Area ${idx + 1}`)}</span>
           <span class="zone-item-meta">${cols}×${rows} (${totalTiles} tiles)</span>
         </div>
       </div>
       <div class="zone-item-actions">
-        <button type="button" class="zone-item-edit-btn" title="Rename this private area" data-zone-id="${zone.id}">✏️</button>
+        <button type="button" class="zone-item-edit-btn" title="Rename this private area" data-zone-id="${zone.id}"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></button>
         <button type="button" class="zone-item-del-btn" title="Remove this private area" data-zone-id="${zone.id}">✕</button>
       </div>
     `;
@@ -4099,7 +4990,7 @@ function showPlayerContextMenu(player: {
   menuOpenTimestamp = Date.now();
 
   if (playerMenuName) {
-    const crown = player.isSuperadmin ? "👑 " : "";
+    const crown = player.isSuperadmin ? "[Admin] " : "";
     playerMenuName.textContent = `${crown}${player.name}`;
   }
   if (playerMenuColorDot) {
@@ -4113,6 +5004,10 @@ function showPlayerContextMenu(player: {
   }
   if (btnPlayerMenuThrowBattle) {
     btnPlayerMenuThrowBattle.style.display = isMe ? "none" : "flex";
+  }
+  if (btnPlayerMenuInviteSquad) {
+    const canInvite = !isMe && !!(currentUser && player.userId && player.userId > 0);
+    btnPlayerMenuInviteSquad.style.display = canInvite ? "flex" : "none";
   }
   if (btnPlayerMenuAddFriend) {
     btnPlayerMenuAddFriend.style.display = isMe ? "none" : "flex";
@@ -4256,7 +5151,7 @@ function ensureDmTabElement(convo: DmConversation) {
   tab.title = `Whisper with ${convo.userName}`;
 
   tab.innerHTML = `
-    <span class="chat-tab-icon">💬</span>
+    <span class="chat-tab-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>
     <span class="chat-tab-name">${escapeHtml(convo.userName)}</span>
     <span class="chat-tab-badge hidden"></span>
     <span class="chat-tab-close" title="Close whisper">✕</span>
@@ -4335,7 +5230,7 @@ function updateOrgTabBadge(orgId: number) {
 function renderOrgTabContent(tab: HTMLButtonElement, org: Organisation) {
   const iconHtml = org.logo
     ? `<img src="${escapeHtml(org.logo)}" alt="${escapeHtml(org.name)}" class="chat-tab-org-logo" />`
-    : `<span class="chat-tab-icon">🏢</span>`;
+    : `<span class="chat-tab-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M13 8h4M13 12h4M13 16h4"/></svg></span>`;
   tab.title = `Organisation: ${org.name}`;
   tab.innerHTML = `
     ${iconHtml}
@@ -4490,7 +5385,7 @@ function switchChatTab(target: string) {
       chatChannelDot.style.backgroundColor = "";
     }
     if (chatChannelDesc) {
-      chatChannelDesc.textContent = `🔒 Private Area • Only players inside "${zoneName}" can see messages`;
+      chatChannelDesc.textContent = `Private Area • Only players inside "${zoneName}" can see messages`;
     }
     if (chatActiveChannelLabel) chatActiveChannelLabel.textContent = zoneName;
     if (chatInputField) chatInputField.placeholder = `Message #${zoneName} (Private)...`;
@@ -4510,7 +5405,7 @@ function switchChatTab(target: string) {
         chatChannelDot.style.backgroundColor = convo.userColor || "#38bdf8";
       }
       if (chatChannelDesc) {
-        chatChannelDesc.textContent = `💬 Direct Message • Private chat with @${convo.userName}`;
+        chatChannelDesc.textContent = `Direct Message • Private chat with @${convo.userName}`;
       }
       if (chatActiveChannelLabel) chatActiveChannelLabel.textContent = `@${convo.userName}`;
       if (chatInputField) chatInputField.placeholder = `Message @${convo.userName} (Whisper)...`;
@@ -4531,7 +5426,7 @@ function switchChatTab(target: string) {
         chatChannelDot.style.backgroundColor = "";
       }
       if (chatChannelDesc) {
-        chatChannelDesc.textContent = `🏢 ${convo.org.name} • ${convo.org.members.length} member${convo.org.members.length === 1 ? "" : "s"}`;
+        chatChannelDesc.textContent = `${convo.org.name} • ${convo.org.members.length} member${convo.org.members.length === 1 ? "" : "s"}`;
       }
       if (chatActiveChannelLabel) chatActiveChannelLabel.textContent = convo.org.name;
       if (chatInputField) chatInputField.placeholder = `Message ${convo.org.name}...`;
@@ -4568,28 +5463,28 @@ function renderCurrentChatMessages() {
     welcome.className = "chat-welcome-notice";
     let title = "";
     let sub = "";
-    let icon = "💬";
+    let icon = '<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
 
     if (activeChatRoom.startsWith("org_")) {
       const orgId = Number(activeChatRoom.replace("org_", ""));
       const convo = orgConversations.get(orgId);
       const orgName = convo?.org.name || "Organisation";
-      icon = "🏢";
+      icon = '<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M13 8h4M13 12h4M13 16h4"/></svg>';
       title = `${escapeHtml(orgName)}`;
       sub = `Private organisation channel for ${escapeHtml(orgName)} members.`;
     } else if (activeChatRoom.startsWith("dm_")) {
       const targetSessionId = activeChatRoom.replace("dm_", "");
       const convo = dmConversations.get(targetSessionId);
       const name = convo?.userName || "Player";
-      icon = "💬";
+      icon = '<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
       title = `Whisper with ${escapeHtml(name)}`;
       sub = `Direct message conversation with @${escapeHtml(name)}. Only the two of you can see these messages.`;
     } else if (activeChatRoom === "map") {
-      icon = "🗺️";
+      icon = '<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>';
       title = `Welcome to ${escapeHtml(currentSpaceName)}!`;
       sub = "Talk to everyone exploring this space.";
     } else {
-      icon = "🔒";
+      icon = '<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>';
       title = `Welcome to ${escapeHtml(currentInsideZone?.name || "Private Area")}!`;
       sub = "This is an isolated private channel. Only players currently inside this area can read or send messages.";
     }
@@ -4626,12 +5521,12 @@ function appendChatMessageElement(msg: ChatMessage, autoScroll = true) {
     minute: "2-digit",
   });
 
-  const crownHtml = msg.isSuperadmin ? `<span class="chat-msg-crown" title="Superadmin">👑</span>` : "";
+  const crownHtml = msg.isSuperadmin ? `<span class="chat-msg-crown" title="Superadmin"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 4l3 12h14l3-12-6 7-4-7-4 7-6-7z"/><path d="M5 20h14"/></svg></span>` : "";
   const tagHtml =
     msg.roomType === "zone"
-      ? `<span class="chat-msg-tag-zone">🔒 ${escapeHtml(msg.roomName)}</span>`
+      ? `<span class="chat-msg-tag-zone">${escapeHtml(msg.roomName)}</span>`
       : msg.roomType === "whisper"
-      ? `<span class="chat-msg-tag-whisper">💬 Whisper</span>`
+      ? `<span class="chat-msg-tag-whisper">Whisper</span>`
       : "";
 
   item.innerHTML = `
@@ -4827,6 +5722,8 @@ function isAnyModalOpen(): boolean {
   if (tbWaitingModal && !tbWaitingModal.classList.contains("hidden")) return true;
   const atModal = document.getElementById("ashtray-modal");
   if (atModal && !atModal.classList.contains("hidden")) return true;
+  const shopModalEl = document.getElementById("asset-shop-modal");
+  if (shopModalEl && !shopModalEl.classList.contains("hidden")) return true;
   const twModal = document.getElementById("typerace-modal");
   if (twModal && !twModal.classList.contains("hidden")) return true;
   const jbModal = document.getElementById("jukebox-modal");
@@ -4838,10 +5735,12 @@ function isAnyModalOpen(): boolean {
   if (authModal && !authModal.classList.contains("hidden")) return true;
   if (linkEmailModal && !linkEmailModal.classList.contains("hidden")) return true;
   if (mapModal && !mapModal.classList.contains("hidden")) return true;
+  if (wardrobeModal && !wardrobeModal.classList.contains("hidden")) return true;
   if (modal && !modal.classList.contains("hidden")) return true;
   if (mySpaceSettingsModal && !mySpaceSettingsModal.classList.contains("hidden")) return true;
   if (adminSpaceModal && !adminSpaceModal.classList.contains("hidden")) return true;
   if (privateZoneNameModal && !privateZoneNameModal.classList.contains("hidden")) return true;
+  if (offlineModal && !offlineModal.classList.contains("hidden")) return true;
   if (playerContextMenu && !playerContextMenu.classList.contains("hidden")) return true;
   return false;
 }
@@ -4912,7 +5811,7 @@ async function visitPlayerSpace(target: {
       "Space Not Found",
       `Could not find personal space for ${target.name}.`,
       currentSpaceName,
-      "❓"
+      '<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>'
     );
     return;
   }
@@ -4955,6 +5854,16 @@ if (btnPlayerMenuThrowBattle) {
 
     throwBattleSetupModal?.classList.remove("hidden");
     setGameControlsActive(false);
+  });
+}
+
+if (btnPlayerMenuInviteSquad) {
+  btnPlayerMenuInviteSquad.addEventListener("click", () => {
+    if (!activeMenuPlayer) return;
+    const targetUserId = activeMenuPlayer.userId;
+    const targetSessionId = activeMenuPlayer.sessionId;
+    closePlayerContextMenu();
+    ensureFocusUiController().invitePlayerBySessionOrUser(targetUserId, targetSessionId);
   });
 }
 
@@ -5125,12 +6034,12 @@ function showSpaceErrorModal(
   title: string,
   message: string,
   returnSpaceName: string,
-  icon: string = "🔒"
+  icon: string = '<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>'
 ) {
   if (spaceErrorTitle) spaceErrorTitle.textContent = title;
   if (spaceErrorMessage) spaceErrorMessage.textContent = message;
   if (spaceErrorReturnName) spaceErrorReturnName.textContent = returnSpaceName;
-  if (spaceErrorIcon) spaceErrorIcon.textContent = icon;
+  if (spaceErrorIcon) spaceErrorIcon.innerHTML = icon;
   spaceErrorModal?.classList.remove("hidden");
 }
 
@@ -5663,9 +6572,10 @@ async function toggleMic() {
     setupMultiplayerTypeRaceListeners(multiplayer);
     setupMultiplayerSmokingGameListeners(multiplayer);
     setupMultiplayerChessListeners(multiplayer);
-    setupMultiplayerParkingPointsListeners(multiplayer);
+    setupMultiplayerFocusListeners(multiplayer);
     setupMultiplayerFriendListeners(multiplayer);
     setupMultiplayerThrowBattleListeners(multiplayer);
+    setupMultiplayerDinerListeners(multiplayer);
     } else {
       showVoiceNotification({
         code: "CONNECTING",
@@ -5827,7 +6737,7 @@ function initJukeboxManager(mgr: MultiplayerManager) {
 
   jukeboxManager.onTrackError((track, message, title) => {
     if (jukeboxStatusBadge) {
-      jukeboxStatusBadge.textContent = "⚠️ RESTRICTED (ERROR 150)";
+      jukeboxStatusBadge.textContent = "RESTRICTED (ERROR 150)";
       jukeboxStatusBadge.classList.add("status-restricted");
     }
     if (jukeboxNowPlayingSubmitter) {
@@ -5879,18 +6789,18 @@ function initJukeboxManager(mgr: MultiplayerManager) {
 
   mgr.onJukeboxPlaylistAdded((data) => {
     showJukeboxStatus(
-      `🎉 Successfully added ${data.count} track${data.count === 1 ? "" : "s"} from playlist "${data.title}"!`,
+      `Successfully added ${data.count} track${data.count === 1 ? "" : "s"} from playlist "${data.title}"!`,
       "success",
       6000
     );
     if (btnJukeboxAddPlaylist) btnJukeboxAddPlaylist.disabled = false;
-    if (btnJukeboxPlaylistLabel) btnJukeboxPlaylistLabel.textContent = "📥 Extract Videos";
+    if (btnJukeboxPlaylistLabel) btnJukeboxPlaylistLabel.textContent = "Extract";
   });
 
   mgr.onJukeboxError((data) => {
     showJukeboxStatus(data.message || "Failed to process jukebox request.", "error", 7000);
     if (btnJukeboxAddPlaylist) btnJukeboxAddPlaylist.disabled = false;
-    if (btnJukeboxPlaylistLabel) btnJukeboxPlaylistLabel.textContent = "📥 Extract Videos";
+    if (btnJukeboxPlaylistLabel) btnJukeboxPlaylistLabel.textContent = "Extract";
   });
 }
 
@@ -5916,10 +6826,10 @@ function showJukeboxStatus(
       jukeboxStatusIcon.textContent = "⏳";
       jukeboxStatusIcon.className = "jukebox-status-icon jukebox-status-spinner";
     } else if (type === "success") {
-      jukeboxStatusIcon.textContent = "✅";
+      jukeboxStatusIcon.innerHTML = '<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>';
       jukeboxStatusIcon.className = "jukebox-status-icon";
     } else {
-      jukeboxStatusIcon.textContent = "⚠️";
+      jukeboxStatusIcon.innerHTML = '<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>';
       jukeboxStatusIcon.className = "jukebox-status-icon";
     }
   }
@@ -5984,7 +6894,7 @@ function openJukeboxModal(jukeboxId?: string) {
 
   hideJukeboxStatus();
   if (btnJukeboxAddPlaylist) btnJukeboxAddPlaylist.disabled = false;
-  if (btnJukeboxPlaylistLabel) btnJukeboxPlaylistLabel.textContent = "📥 Extract Videos";
+  if (btnJukeboxPlaylistLabel) btnJukeboxPlaylistLabel.textContent = "Extract";
 
   const previousModalJukeboxId = currentModalJukeboxId;
   if (jukeboxId) {
@@ -6076,6 +6986,11 @@ function updateJukeboxBulkToolbar(playlist: JukeboxState["playlist"] | null | un
   if (btnJukeboxBulkDelete) btnJukeboxBulkDelete.disabled = selectedCount === 0;
 }
 
+const JUKEBOX_PAUSE_SVG =
+  '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>';
+const JUKEBOX_PLAY_SVG =
+  '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20 6 4"/></svg>';
+
 function renderJukeboxModal(jb: JukeboxState | null) {
   if (!jukeboxModal) return;
 
@@ -6096,7 +7011,7 @@ function renderJukeboxModal(jb: JukeboxState | null) {
     if (jukeboxQueueList) {
       jukeboxQueueList.innerHTML = `
         <div class="jukebox-empty-queue">
-          <span class="empty-queue-icon">📻</span>
+          <span class="empty-queue-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="8" width="18" height="12" rx="2"/><path d="M7 8l9-5"/><circle cx="8" cy="14" r="2"/><line x1="14" y1="12" x2="17" y2="12"/><line x1="14" y1="16" x2="17" y2="16"/></svg></span>
           <p>No jukebox active in this space.</p>
           <span class="empty-queue-sub">Use Edit Map to place a jukebox!</span>
         </div>`;
@@ -6119,28 +7034,28 @@ function renderJukeboxModal(jb: JukeboxState | null) {
       btnJukeboxPlayPause.disabled = false;
       if (jb.isPlaying) {
         btnJukeboxPlayPause.title = "Pause playback";
-        if (btnJukeboxPlayPauseIcon) btnJukeboxPlayPauseIcon.textContent = "⏸️";
+        if (btnJukeboxPlayPauseIcon) btnJukeboxPlayPauseIcon.innerHTML = JUKEBOX_PAUSE_SVG;
         if (btnJukeboxPlayPauseText) btnJukeboxPlayPauseText.textContent = "Pause";
       } else {
         btnJukeboxPlayPause.title = "Resume playback";
-        if (btnJukeboxPlayPauseIcon) btnJukeboxPlayPauseIcon.textContent = "▶️";
+        if (btnJukeboxPlayPauseIcon) btnJukeboxPlayPauseIcon.innerHTML = JUKEBOX_PLAY_SVG;
         if (btnJukeboxPlayPauseText) btnJukeboxPlayPauseText.textContent = "Play";
       }
     }
 
     if (jukeboxStatusBadge) {
       if (jb.isPlaying) {
-        jukeboxStatusBadge.textContent = `🎶 NOW PLAYING (${jb.currentTrackIndex + 1}/${jb.playlist.length})`;
+        jukeboxStatusBadge.textContent = `PLAYING (${jb.currentTrackIndex + 1}/${jb.playlist.length})`;
         jukeboxStatusBadge.classList.remove("status-paused");
       } else {
-        jukeboxStatusBadge.textContent = `⏸️ PAUSED (${jb.currentTrackIndex + 1}/${jb.playlist.length})`;
+        jukeboxStatusBadge.textContent = `PAUSED (${jb.currentTrackIndex + 1}/${jb.playlist.length})`;
         jukeboxStatusBadge.classList.add("status-paused");
       }
     }
   } else {
     if (jukeboxNowPlayingTitle) jukeboxNowPlayingTitle.textContent = "Playlist Empty";
     if (jukeboxNowPlayingSubmitter)
-      jukeboxNowPlayingSubmitter.textContent = "Add a YouTube link below to start playing";
+      jukeboxNowPlayingSubmitter.textContent = "Add a YouTube link below to start";
     if (jukeboxStatusBadge) {
       jukeboxStatusBadge.textContent = "IDLE";
       jukeboxStatusBadge.classList.remove("status-paused");
@@ -6148,7 +7063,7 @@ function renderJukeboxModal(jb: JukeboxState | null) {
     if (btnJukeboxSkip) btnJukeboxSkip.disabled = true;
     if (btnJukeboxPlayPause) {
       btnJukeboxPlayPause.disabled = true;
-      if (btnJukeboxPlayPauseIcon) btnJukeboxPlayPauseIcon.textContent = "⏸️";
+      if (btnJukeboxPlayPauseIcon) btnJukeboxPlayPauseIcon.innerHTML = JUKEBOX_PAUSE_SVG;
       if (btnJukeboxPlayPauseText) btnJukeboxPlayPauseText.textContent = "Pause";
     }
     if (jukeboxVideoPlaceholder) jukeboxVideoPlaceholder.classList.remove("hidden");
@@ -6173,7 +7088,7 @@ function renderJukeboxModal(jb: JukeboxState | null) {
     if (!hasTracks) {
       jukeboxQueueList.innerHTML = `
         <div class="jukebox-empty-queue">
-          <span class="empty-queue-icon">🎵</span>
+          <span class="empty-queue-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg></span>
           <p>The playlist is empty.</p>
           <span class="empty-queue-sub">Paste a YouTube link above to start the jukebox!</span>
         </div>`;
@@ -6263,7 +7178,7 @@ function renderJukeboxModal(jb: JukeboxState | null) {
         btnRemove.className = "btn-queue-remove";
         btnRemove.title = "Remove from playlist";
         btnRemove.setAttribute("aria-label", "Remove from playlist");
-        btnRemove.innerHTML = "🗑️";
+        btnRemove.innerHTML = '<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>';
         btnRemove.addEventListener("click", (e) => {
           e.stopPropagation();
           if (multiplayer && currentModalJukeboxId) {
@@ -6323,7 +7238,7 @@ function initJukeboxUI() {
       e.stopPropagation();
       if (jukeboxManager) {
         const isMuted = jukeboxManager.toggleMute();
-        btnJukeboxHudMute.textContent = isMuted ? "🔇" : "🔊";
+        btnJukeboxHudMute.innerHTML = isMuted ? '<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>' : '<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>';
       }
     });
   }
@@ -6439,7 +7354,7 @@ function initJukeboxUI() {
 
       showJukeboxStatus("Extracting videos from YouTube playlist... Please wait.", "loading");
       if (btnJukeboxAddPlaylist) btnJukeboxAddPlaylist.disabled = true;
-      if (btnJukeboxPlaylistLabel) btnJukeboxPlaylistLabel.textContent = "⏳ Extracting...";
+      if (btnJukeboxPlaylistLabel) btnJukeboxPlaylistLabel.textContent = "Extracting...";
 
       multiplayer.addJukeboxPlaylist(currentModalJukeboxId, val);
       if (jukeboxPlaylistInput) {
@@ -6463,7 +7378,7 @@ function initJukeboxUI() {
         if (playlistMatch && playlistMatch[0]) {
           showJukeboxStatus("Found playlist in file! Extracting videos...", "loading");
           if (btnJukeboxAddPlaylist) btnJukeboxAddPlaylist.disabled = true;
-          if (btnJukeboxPlaylistLabel) btnJukeboxPlaylistLabel.textContent = "⏳ Extracting...";
+          if (btnJukeboxPlaylistLabel) btnJukeboxPlaylistLabel.textContent = "Extracting...";
           multiplayer.addJukeboxPlaylist(currentModalJukeboxId, playlistMatch[0]);
         } else {
           const videoMatches = text.match(
@@ -6712,7 +7627,7 @@ function updateTypeRaceUI(state: TypeRaceRoomState) {
       if (isViewer) {
         btnTypeRaceReady.disabled = true;
         btnTypeRaceReady.classList.remove("is-ready");
-        btnTypeRaceReadyText.textContent = "👀 Spectating Current Match";
+        btnTypeRaceReadyText.textContent = "Spectating Current Match";
       } else {
         btnTypeRaceReady.disabled = false;
         if (me?.isReady) {
@@ -6746,7 +7661,7 @@ function updateTypeRaceUI(state: TypeRaceRoomState) {
 
         let readyBadge = "";
         if (p.isViewer) {
-          readyBadge = `<span class="player-ready-tag viewer">👀 Viewer</span>`;
+          readyBadge = `<span class="player-ready-tag viewer">Viewer</span>`;
         } else if (p.isReady) {
           readyBadge = `<span class="player-ready-tag ready">✓ Ready</span>`;
         } else {
@@ -6783,7 +7698,7 @@ function updateTypeRaceUI(state: TypeRaceRoomState) {
         typeraceTextInput.value = "";
         if (isViewer) {
           typeraceTextInput.disabled = true;
-          typeraceTextInput.placeholder = "👀 Spectating live race...";
+          typeraceTextInput.placeholder = "Spectating live race...";
         } else {
           typeraceTextInput.disabled = false;
           typeraceTextInput.placeholder = "Start typing the quote here...";
@@ -6804,7 +7719,7 @@ function updateTypeRaceUI(state: TypeRaceRoomState) {
 
         let statsText = `${p.wpm} WPM`;
         if (p.finished) {
-          statsText = `🏁 #${p.finishRank} Finished (${p.finishTime}s) • ${p.wpm} WPM`;
+          statsText = `#${p.finishRank} Finished (${p.finishTime}s) • ${p.wpm} WPM`;
         }
 
         const isMeText = p.sessionId === mySessionId ? ` <span style="font-size:10px;color:#94a3b8;">(You)</span>` : "";
@@ -6819,7 +7734,7 @@ function updateTypeRaceUI(state: TypeRaceRoomState) {
           </div>
           <div class="track-lane-bar-wrap">
             <div class="track-lane-progress" style="width:${p.progress}%; background:${p.color || '#3b82f6'};"></div>
-            <div class="track-lane-racer-icon" style="left:${p.progress}%;">🏎️</div>
+            <div class="track-lane-racer-icon" style="left:${p.progress}%;"></div>
           </div>
         `;
         typeraceTrackLanes.appendChild(lane);
@@ -6852,9 +7767,9 @@ function updateTypeRaceUI(state: TypeRaceRoomState) {
         row.className = `rank-${res.rank <= 3 ? res.rank : "other"}`;
 
         let rankBadge = `#${res.rank}`;
-        if (res.rank === 1) rankBadge = "🥇 1st";
-        else if (res.rank === 2) rankBadge = "🥈 2nd";
-        else if (res.rank === 3) rankBadge = "🥉 3rd";
+        if (res.rank === 1) rankBadge = "1st";
+        else if (res.rank === 2) rankBadge = "2nd";
+        else if (res.rank === 3) rankBadge = "3rd";
 
         const isMe = res.sessionId === mySessionId;
         const youTag = isMe ? ` <span style="font-size:10px;color:#a855f7;">(You)</span>` : "";
@@ -7331,7 +8246,7 @@ function handleMashInput(slot: 1 | 2) {
       const pct = Math.min(100, Math.max(0, Math.round((localCurrentMashes / mashesPerCig) * 100)));
       if (statsSpan) statsSpan.textContent = `${pct}%`;
       if (fillBar) fillBar.style.width = `${pct}%`;
-      if (finishedBadge) finishedBadge.textContent = `🚬 ${localCigarettesFinished} ${localCigarettesFinished === 1 ? 'cigarette' : 'cigarettes'} finished`;
+      if (finishedBadge) finishedBadge.textContent = `${localCigarettesFinished} ${localCigarettesFinished === 1 ? 'cigarette' : 'cigarettes'} finished`;
       if (totalMashesSpan) totalMashesSpan.textContent = `Total: ${localTotalMashes} mashes`;
       if (mpsSpan) mpsSpan.textContent = `${localMashesPerSec} mash/s`;
     }
@@ -7371,9 +8286,9 @@ function updateSmokingGameUI(state: SmokingGameRoomState) {
     // Starter Pill & Settings configuration
     if (ashtrayStarterInfoBadge) {
       if (isStarter) {
-        ashtrayStarterInfoBadge.innerHTML = `👑 <strong>You are the Game Starter</strong> • Configure rules below`;
+        ashtrayStarterInfoBadge.innerHTML = `<strong>You are the Game Starter</strong> • Configure rules below`;
       } else {
-        ashtrayStarterInfoBadge.innerHTML = `👑 Game Starter: <strong>${escapeHtml(starter?.name || "Waiting...")}</strong>`;
+        ashtrayStarterInfoBadge.innerHTML = `Game Starter: <strong>${escapeHtml(starter?.name || "Waiting...")}</strong>`;
       }
     }
 
@@ -7444,9 +8359,9 @@ function updateSmokingGameUI(state: SmokingGameRoomState) {
 
         let statusBadge = "";
         if (p.isViewer) {
-          statusBadge = `<span class="player-ready-tag viewer">👀 Spectator</span>`;
+          statusBadge = `<span class="player-ready-tag viewer">Spectator</span>`;
         } else if (p.isStarter) {
-          statusBadge = `<span class="player-ready-tag starter">👑 Starter</span>`;
+          statusBadge = `<span class="player-ready-tag starter">Starter</span>`;
         } else if (p.isReady) {
           statusBadge = `<span class="player-ready-tag ready">✓ Ready</span>`;
         } else {
@@ -7454,12 +8369,12 @@ function updateSmokingGameUI(state: SmokingGameRoomState) {
         }
 
         const isMeTag = p.sessionId === mySessionId ? ` <span class="ashtray-you-tag">(You)</span>` : "";
-        const avatarUrl = p.avatarUrl || "/assets/sprites/default/sprite1.png";
+        const avatarUrl = p.avatarUrl || DEFAULT_AVATAR_ICON;
 
         card.innerHTML = `
           <div class="lobby-player-meta">
             <div class="lobby-avatar-wrap" style="border-color: ${p.color || '#3b82f6'};">
-              <img src="${avatarUrl}" class="lobby-avatar-img" alt="${escapeHtml(p.name)}" />
+              <img ${imgSrcAttr(avatarUrl)} class="lobby-avatar-img" alt="${escapeHtml(p.name)}" />
             </div>
             <div class="lobby-player-name-box">
               <span class="lobby-player-name">${escapeHtml(p.name)}${isMeTag}</span>
@@ -7470,6 +8385,7 @@ function updateSmokingGameUI(state: SmokingGameRoomState) {
         `;
         ashtrayLobbyPlayersList.appendChild(card);
       }
+      hydrateSheetImages(ashtrayLobbyPlayersList);
     }
 
   } else if (state.status === "smoking") {
@@ -7510,9 +8426,9 @@ function updateSmokingGameUI(state: SmokingGameRoomState) {
         const curMashes = isMe ? localCurrentMashes : (p.currentMashes || 0);
         const finishedCount = isMe ? localCigarettesFinished : (p.cigarettesFinished || 0);
         const pct = Math.min(100, Math.max(0, Math.round((curMashes / mashesNeeded) * 100)));
-        const avatarUrl = p.avatarUrl || "/assets/sprites/default/sprite1.png";
+        const avatarUrl = p.avatarUrl || DEFAULT_AVATAR_ICON;
         const isMeTag = isMe ? ` <span class="smoking-you-tag">(You)</span>` : "";
-        const starterCrown = p.isStarter ? ` <span class="smoking-crown-icon" title="Starter">👑</span>` : "";
+        const starterCrown = p.isStarter ? ` <span class="smoking-crown-icon" title="Starter"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 4l3 12h14l3-12-6 7-4-7-4 7-6-7z"/><path d="M5 20h14"/></svg></span>` : "";
 
         const lane = document.createElement("div");
         lane.className = `smoking-lane-card ${isMe ? "is-me" : ""}`;
@@ -7522,7 +8438,7 @@ function updateSmokingGameUI(state: SmokingGameRoomState) {
           <!-- Player Model with Name -->
           <div class="smoking-lane-player">
             <div class="smoking-avatar-box" style="border-color: ${p.color || '#3b82f6'};">
-              <img src="${avatarUrl}" class="smoking-avatar-img" alt="${escapeHtml(p.name)}" />
+              <img ${imgSrcAttr(avatarUrl)} class="smoking-avatar-img" alt="${escapeHtml(p.name)}" />
             </div>
             <div class="smoking-name-col">
               <span class="smoking-player-name">${escapeHtml(p.name)}${isMeTag}${starterCrown}</span>
@@ -7538,19 +8454,20 @@ function updateSmokingGameUI(state: SmokingGameRoomState) {
             </div>
             <div class="smoking-mini-bar-track">
               <div class="smoking-mini-bar-fill" style="width: ${pct}%; background: ${p.color || '#f97316'};">
-                <span class="smoking-mini-ember">🔥</span>
+                <span class="smoking-mini-ember"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2c.5 2.5-1.5 4-1.5 6.5a2.5 2.5 0 0 0 5 0c0-1.5-.5-2.5-1.5-3.5"/><path d="M8.5 14.5A2.5 2.5 0 0 1 11 12c2.5 0 4.5 2 4.5 4.5a4.5 4.5 0 1 1-9 0c0-.7.2-1.4.5-2"/></svg></span>
               </div>
             </div>
 
             <!-- Under the mini progress: Total cigarettes already finished -->
             <div class="smoking-mini-finished-row">
-              <span class="smoking-finished-badge">🚬 ${finishedCount} ${finishedCount === 1 ? 'cigarette' : 'cigarettes'} finished</span>
+              <span class="smoking-finished-badge">${finishedCount} ${finishedCount === 1 ? 'cigarette' : 'cigarettes'} finished</span>
               <span class="smoking-total-mashes">Total: ${isMe ? localTotalMashes : (p.totalMashes || 0)} mashes</span>
             </div>
           </div>
         `;
         ashtrayPlayersLanes.appendChild(lane);
       }
+      hydrateSheetImages(ashtrayPlayersLanes);
     }
 
   } else if (state.status === "ended") {
@@ -7567,8 +8484,8 @@ function updateSmokingGameUI(state: SmokingGameRoomState) {
       if (winner) {
         const isMeWinner = winner.sessionId === mySessionId;
         ashtrayWinnerTitle.textContent = isMeWinner
-          ? `🏆 You Won the Smoking Duel!`
-          : `🏆 ${winner.name} Won the Duel!`;
+          ? `You Won the Smoking Duel!`
+          : `${winner.name} Won the Duel!`;
         ashtrayWinnerSub.textContent = `Smoked ${winner.cigarettesFinished} cigarettes with ${winner.totalMashes} total mashes!`;
       } else {
         ashtrayWinnerTitle.textContent = "Showdown Concluded!";
@@ -7583,30 +8500,31 @@ function updateSmokingGameUI(state: SmokingGameRoomState) {
         row.className = `rank-${res.rank <= 3 ? res.rank : "other"}`;
 
         let rankBadge = `#${res.rank}`;
-        if (res.rank === 1) rankBadge = "🥇 1st";
-        else if (res.rank === 2) rankBadge = "🥈 2nd";
-        else if (res.rank === 3) rankBadge = "🥉 3rd";
+        if (res.rank === 1) rankBadge = "1st";
+        else if (res.rank === 2) rankBadge = "2nd";
+        else if (res.rank === 3) rankBadge = "3rd";
 
         const isMeTag = res.sessionId === mySessionId ? ` <span style="font-size:10px;color:#94a3b8;">(You)</span>` : "";
-        const avatarUrl = res.avatarUrl || "/assets/sprites/default/sprite1.png";
+        const avatarUrl = res.avatarUrl || DEFAULT_AVATAR_ICON;
 
         row.innerHTML = `
           <td class="col-rank"><strong>${rankBadge}</strong></td>
           <td class="col-player">
             <div class="scoreboard-player-meta">
               <div class="scoreboard-avatar-wrap" style="border-color: ${res.color || '#3b82f6'};">
-                <img src="${avatarUrl}" class="scoreboard-avatar-img" alt="${escapeHtml(res.name)}" />
+                <img ${imgSrcAttr(avatarUrl)} class="scoreboard-avatar-img" alt="${escapeHtml(res.name)}" />
               </div>
               <span class="scoreboard-player-name">${escapeHtml(res.name)}${isMeTag}</span>
             </div>
           </td>
-          <td class="col-finished"><strong style="color:#f97316;font-size:15px;">🚬 ${res.cigarettesFinished}</strong></td>
+          <td class="col-finished"><strong style="color:#f97316;font-size:15px;">${res.cigarettesFinished}</strong></td>
           <td class="col-last">${res.currentMashes} mashes</td>
           <td class="col-speed">${res.mashesPerSecond || 0} mps</td>
           <td class="col-total">${res.totalMashes || 0}</td>
         `;
         ashtrayScoreboardBody.appendChild(row);
       });
+      hydrateSheetImages(ashtrayScoreboardBody);
     }
   }
 }
@@ -7959,7 +8877,7 @@ function setupSceneAquariumEvents(scene: GameScene) {
       if (multiplayer) {
         multiplayer.sendChatMessage({
           roomType: "map",
-          text: `🎣 Caught a ${quality.toUpperCase()} ${fish.name} (${size} in) at the Aquarium!`,
+          text: `Caught a ${quality.toUpperCase()} ${fish.name} (${size} in) at the Aquarium!`,
         });
       }
     });
@@ -7981,6 +8899,18 @@ function setupSceneAquariumEvents(scene: GameScene) {
     openSpaceInventoryModal(currentSpaceId || undefined);
   };
 
+  scene.onAssetShopClick = () => {
+    void openAssetShopModal();
+  };
+
+  scene.onSellerNpcClick = (sellerNpc) => {
+    void openAssetShopModal(sellerNpc);
+  };
+
+  scene.onGuildHelperNpcClick = () => {
+    ensureNetherworldUiController().handleGuildHelperNpcInteract();
+  };
+
   scene.onCalendarClick = () => {
     openCalendarModal();
   };
@@ -7991,6 +8921,10 @@ function setupSceneAquariumEvents(scene: GameScene) {
 
   scene.onNearbyInteractableChange = (nearby) => {
     updateMobileInteractButton(nearby);
+  };
+  scene.onDinerNearbyChange = (dinerAction) => {
+    ensureDinerUiController().updateNearbyAction(dinerAction);
+    updateMobileInteractButton(scene.getActiveNearbyInteractable());
   };
   updateMobileInteractButton(scene.getActiveNearbyInteractable());
 }
@@ -8093,14 +9027,14 @@ function renderChessLobby(state: ChessLobbyState) {
       createCard.innerHTML = `
         <div class="chess-create-card-inner">
           <div class="chess-create-icon-badge">
-            <span class="chess-create-icon">➕</span>
+            <span class="chess-create-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
           </div>
           <div class="chess-create-info">
             <h4 class="chess-create-title">Create Game</h4>
-            <p class="chess-create-desc">Host a match as White ⚪ and wait for a second player to join</p>
+            <p class="chess-create-desc">Host a match as White and wait for a second player to join</p>
           </div>
           <button type="button" class="btn-create-chess-game">
-            <span>➕ Create Game</span>
+            <span>Create Game</span>
           </button>
         </div>
       `;
@@ -8116,7 +9050,7 @@ function renderChessLobby(state: ChessLobbyState) {
       const myCard = document.createElement("div");
       myCard.className = "chess-waiting-card chess-my-waiting-card";
       const hostName = myWaitingMatch.whitePlayer?.name || "You";
-      const hostAvatar = myWaitingMatch.whitePlayer?.avatarUrl || "/assets/sprites/default/sprite1.png";
+      const hostAvatar = myWaitingMatch.whitePlayer?.avatarUrl || DEFAULT_AVATAR_ICON;
 
       myCard.innerHTML = `
         <div class="chess-card-top-row">
@@ -8127,13 +9061,13 @@ function renderChessLobby(state: ChessLobbyState) {
         </div>
         <div class="chess-card-players-row">
           <div class="chess-card-player-item" title="Host: ${escapeHtml(hostName)}">
-            <img src="${hostAvatar}" class="chess-card-player-avatar" alt="${escapeHtml(hostName)}" />
-            <span class="chess-card-player-name">⚪ ${escapeHtml(hostName)}</span>
+            <img ${imgSrcAttr(hostAvatar)} class="chess-card-player-avatar" alt="${escapeHtml(hostName)}" />
+            <span class="chess-card-player-name"><span class="chess-color-dot white"></span> ${escapeHtml(hostName)}</span>
           </div>
           <span class="chess-card-vs">VS</span>
           <div class="chess-card-player-item waiting-slot" title="Waiting for player 2 to join...">
             <div class="chess-slot-avatar-placeholder">⏳</div>
-            <span class="chess-card-player-name slot-hint">⚫ Open Slot</span>
+            <span class="chess-card-player-name slot-hint"><span class="chess-color-dot black"></span> Open Slot</span>
           </div>
         </div>
         <div class="chess-card-footer">
@@ -8165,7 +9099,7 @@ function renderChessLobby(state: ChessLobbyState) {
       card.className = "chess-waiting-card";
 
       const hostName = game.whitePlayer?.name || "Player 1";
-      const hostAvatar = game.whitePlayer?.avatarUrl || "/assets/sprites/default/sprite1.png";
+      const hostAvatar = game.whitePlayer?.avatarUrl || DEFAULT_AVATAR_ICON;
 
       card.innerHTML = `
         <div class="chess-card-top-row">
@@ -8176,21 +9110,21 @@ function renderChessLobby(state: ChessLobbyState) {
         </div>
         <div class="chess-card-players-row">
           <div class="chess-card-player-item" title="Host: ${escapeHtml(hostName)}">
-            <img src="${hostAvatar}" class="chess-card-player-avatar" alt="${escapeHtml(hostName)}" />
-            <span class="chess-card-player-name">⚪ ${escapeHtml(hostName)}</span>
+            <img ${imgSrcAttr(hostAvatar)} class="chess-card-player-avatar" alt="${escapeHtml(hostName)}" />
+            <span class="chess-card-player-name"><span class="chess-color-dot white"></span> ${escapeHtml(hostName)}</span>
           </div>
           <span class="chess-card-vs">VS</span>
           <div class="chess-card-player-item waiting-slot" title="Waiting for second player!">
-            <div class="chess-slot-avatar-placeholder">⚔️</div>
-            <span class="chess-card-player-name slot-hint">⚫ Join as Player 2</span>
+            <div class="chess-slot-avatar-placeholder"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="14.5 17.5 3 6 3 3 6 3 17.5 14.5"/><line x1="13" y1="19" x2="19" y2="13"/><line x1="16" y1="16" x2="20" y2="20"/><line x1="19" y1="21" x2="21" y2="19"/></svg></div>
+            <span class="chess-card-player-name slot-hint"><span class="chess-color-dot black"></span> Join as Player 2</span>
           </div>
         </div>
         <div class="chess-card-footer">
           <div class="chess-waiting-meta">
-            <span>♟️ Ready for Challenger</span>
+            <span>Ready for Challenger</span>
           </div>
           <button type="button" class="btn-join-waiting-game" data-match-id="${game.matchId}">
-            ⚔️ Join Game
+            Join Game
           </button>
         </div>
       `;
@@ -8212,13 +9146,14 @@ function renderChessLobby(state: ChessLobbyState) {
       hintCard.className = "chess-waiting-card chess-waiting-hint-card";
       hintCard.innerHTML = `
         <div class="chess-hint-content">
-          <span class="chess-hint-icon">♟️</span>
+          <span class="chess-hint-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 4h6l-1 5 2 8H8l2-8-1-5z"/><path d="M6 20h12"/></svg></span>
           <strong class="chess-hint-title">No other players waiting</strong>
           <span class="chess-hint-desc">Click "Create Game" to host a match and wait for a challenger!</span>
         </div>
       `;
       chessWaitingGrid.appendChild(hintCard);
     }
+    hydrateSheetImages(chessWaitingGrid);
   }
 
   // 2. Render ongoing games
@@ -8241,12 +9176,12 @@ function renderChessLobby(state: ChessLobbyState) {
 
       const turnLabel = game.turn === "white" ? "White's Turn" : "Black's Turn";
       const statusClass = game.inCheck ? "chess-card-status-pill check" : "chess-card-status-pill";
-      const statusText = game.inCheck ? `⚠️ Check! (${turnLabel})` : `🟢 In Progress • ${turnLabel}`;
+      const statusText = game.inCheck ? `Check! (${turnLabel})` : `In Progress • ${turnLabel}`;
 
       const whiteName = game.whitePlayer?.name || "Player 1";
-      const whiteAvatar = game.whitePlayer?.avatarUrl || "/assets/sprites/default/sprite1.png";
+      const whiteAvatar = game.whitePlayer?.avatarUrl || DEFAULT_AVATAR_ICON;
       const blackName = game.blackPlayer?.name || "Player 2";
-      const blackAvatar = game.blackPlayer?.avatarUrl || "/assets/sprites/default/sprite1.png";
+      const blackAvatar = game.blackPlayer?.avatarUrl || DEFAULT_AVATAR_ICON;
 
       card.innerHTML = `
         <div class="chess-card-top-row">
@@ -8255,22 +9190,22 @@ function renderChessLobby(state: ChessLobbyState) {
         </div>
         <div class="chess-card-players-row">
           <div class="chess-card-player-item" title="White: ${escapeHtml(whiteName)}">
-            <img src="${whiteAvatar}" class="chess-card-player-avatar" alt="${escapeHtml(whiteName)}" />
-            <span class="chess-card-player-name">⚪ ${escapeHtml(whiteName)}</span>
+            <img ${imgSrcAttr(whiteAvatar)} class="chess-card-player-avatar" alt="${escapeHtml(whiteName)}" />
+            <span class="chess-card-player-name"><span class="chess-color-dot white"></span> ${escapeHtml(whiteName)}</span>
           </div>
           <span class="chess-card-vs">VS</span>
           <div class="chess-card-player-item" title="Black: ${escapeHtml(blackName)}">
-            <img src="${blackAvatar}" class="chess-card-player-avatar" alt="${escapeHtml(blackName)}" />
-            <span class="chess-card-player-name">⚫ ${escapeHtml(blackName)}</span>
+            <img ${imgSrcAttr(blackAvatar)} class="chess-card-player-avatar" alt="${escapeHtml(blackName)}" />
+            <span class="chess-card-player-name"><span class="chess-color-dot black"></span> ${escapeHtml(blackName)}</span>
           </div>
         </div>
         <div class="chess-card-footer">
           <div class="chess-card-meta">
-            <span>♟️ ${game.moveCount} moves</span>
-            <span>👀 ${game.spectatorCount}</span>
+            <span>${game.moveCount} moves</span>
+            <span><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg> ${game.spectatorCount}</span>
           </div>
           <button type="button" class="btn-spectate-game" data-match-id="${game.matchId}">
-            👁️ Spectate
+            Spectate
           </button>
         </div>
       `;
@@ -8286,6 +9221,7 @@ function renderChessLobby(state: ChessLobbyState) {
 
       chessGamesGrid.appendChild(card);
     });
+    hydrateSheetImages(chessGamesGrid);
   }
 }
 
@@ -8318,21 +9254,21 @@ function renderChessGame(state: ChessGameState) {
   if (chessMatchStatusBadge) {
     if (state.status === "checkmate") {
       const winnerName = state.winner === "white" ? state.whitePlayer?.name : state.blackPlayer?.name;
-      chessMatchStatusBadge.textContent = `🏆 Checkmate! ${winnerName || "Winner"} wins!`;
+      chessMatchStatusBadge.textContent = `Checkmate! ${winnerName || "Winner"} wins!`;
       chessMatchStatusBadge.style.borderColor = "#eab308";
     } else if (state.status === "resigned") {
-      chessMatchStatusBadge.textContent = `🏳️ ${state.winReason || "Game ended by resignation"}`;
+      chessMatchStatusBadge.textContent = `${state.winReason || "Game ended by resignation"}`;
       chessMatchStatusBadge.style.borderColor = "#ef4444";
     } else if (state.status === "draw" || state.status === "stalemate") {
-      chessMatchStatusBadge.textContent = `🤝 ${state.winReason || "Game drawn"}`;
+      chessMatchStatusBadge.textContent = `${state.winReason || "Game drawn"}`;
       chessMatchStatusBadge.style.borderColor = "#3b82f6";
     } else if (state.inCheck) {
       const turnName = state.turn === "white" ? state.whitePlayer?.name : state.blackPlayer?.name;
-      chessMatchStatusBadge.textContent = `⚠️ Check! (${turnName}'s turn)`;
+      chessMatchStatusBadge.textContent = `Check! (${turnName}'s turn)`;
       chessMatchStatusBadge.style.borderColor = "#ef4444";
     } else {
       const turnName = state.turn === "white" ? state.whitePlayer?.name : state.blackPlayer?.name;
-      chessMatchStatusBadge.textContent = `${turnName || state.turn}'s turn (${state.turn === "white" ? "White ⚪" : "Black ⚫"})`;
+      chessMatchStatusBadge.textContent = `${turnName || state.turn}'s turn (${state.turn === "white" ? "White" : "Black"})`;
       chessMatchStatusBadge.style.borderColor = "rgba(168, 85, 247, 0.4)";
     }
   }
@@ -8344,9 +9280,9 @@ function renderChessGame(state: ChessGameState) {
   if (btnChessOfferDraw) {
     btnChessOfferDraw.classList.toggle("hidden", !isPlaying || state.status !== "playing");
     if (state.drawOffer && state.drawOffer !== (isWhite ? "white" : "black")) {
-      btnChessOfferDraw.textContent = "🤝 Accept Draw";
+      btnChessOfferDraw.textContent = "Accept Draw";
     } else {
-      btnChessOfferDraw.textContent = "🤝 Draw";
+      btnChessOfferDraw.textContent = "Draw";
     }
   }
   if (btnChessRematch) {
@@ -8355,9 +9291,9 @@ function renderChessGame(state: ChessGameState) {
 
   // 3. Top players bar
   if (chessWhiteName) chessWhiteName.textContent = state.whitePlayer?.name || "Waiting...";
-  if (chessWhiteAvatar && state.whitePlayer?.avatarUrl) chessWhiteAvatar.src = state.whitePlayer.avatarUrl;
+  if (chessWhiteAvatar) setImgSrcResolved(chessWhiteAvatar, state.whitePlayer?.avatarUrl || DEFAULT_AVATAR_ICON);
   if (chessBlackName) chessBlackName.textContent = state.blackPlayer?.name || "Waiting...";
-  if (chessBlackAvatar && state.blackPlayer?.avatarUrl) chessBlackAvatar.src = state.blackPlayer.avatarUrl;
+  if (chessBlackAvatar) setImgSrcResolved(chessBlackAvatar, state.blackPlayer?.avatarUrl || DEFAULT_AVATAR_ICON);
 
   const isWhiteTurn = state.status === "playing" && state.turn === "white";
   const isBlackTurn = state.status === "playing" && state.turn === "black";
@@ -8646,14 +9582,15 @@ function renderSpectatorsList(spectators: Record<string, any>) {
   list.forEach((spec: any) => {
     const item = document.createElement("div");
     item.className = "chess-spectator-item";
-    const avatarUrl = spec.avatarUrl || "/assets/sprites/default/sprite1.png";
+    const avatarUrl = spec.avatarUrl || DEFAULT_AVATAR_ICON;
     item.innerHTML = `
-      <img src="${avatarUrl}" class="chess-spectator-avatar" alt="${escapeHtml(spec.name || "Spectator")}" />
+      <img ${imgSrcAttr(avatarUrl)} class="chess-spectator-avatar" alt="${escapeHtml(spec.name || "Spectator")}" />
       <span class="chess-spectator-name">${escapeHtml(spec.name || "Spectator")}</span>
       <span class="chess-spectator-badge">Watching</span>
     `;
     chessSpectatorsList.appendChild(item);
   });
+  hydrateSheetImages(chessSpectatorsList);
 }
 
 function renderMoveHistory(history: string[]) {
@@ -8816,17 +9753,127 @@ function setupMultiplayerChessListeners(mgr: MultiplayerManager) {
   });
 }
 
-function setupMultiplayerParkingPointsListeners(mgr: MultiplayerManager) {
-  mgr.onParkingPointsAwarded((data) => {
-    console.log(`[Parking Points] Awarded point! New total: ${data.points} Parking`, data);
-    if (currentUser) {
-      currentUser.parkingPoints = data.points;
-      try {
-        localStorage.setItem("lepark_auth_user", JSON.stringify(currentUser));
-      } catch {}
+let focusUiController: FocusUiController | null = null;
+let netherworldUiController: NetherworldUiController | null = null;
+
+function ensureNetherworldUiController(): NetherworldUiController {
+  if (!netherworldUiController) {
+    netherworldUiController = new NetherworldUiController({
+      getMultiplayer: () => multiplayer,
+      getCurrentUser: () => currentUser,
+      getFocusPoints: () => currentUser?.focusPoints || 0,
+      getPlayerVisualInfo: () => ({
+        outfit: selectedOutfit,
+        avatars: computeActiveAvatars() || null,
+      }),
+      isFocusLocked: () => focusUiController?.isFocusLocked() ?? false,
+      setGameControlsActive: (active: boolean) => setGameControlsActive(active),
+      onOpenGuildDecorShop: () => {
+        void openAssetShopModal();
+      },
+    });
+  }
+  return netherworldUiController;
+}
+
+function ensureFocusUiController(): FocusUiController {
+  if (!focusUiController) {
+    focusUiController = new FocusUiController({
+      getMultiplayer: () => multiplayer,
+      getGameScene: () => {
+        if (!gameInstance) return null;
+        return (gameInstance.scene.getScene("GameScene") as GameScene) || null;
+      },
+      getCurrentUser: () => currentUser,
+      getAuthToken: () => authToken,
+      getCurrentSpaceId: () => currentSpaceId,
+      getCurrentSpaceName: () => currentSpaceName,
+      getAllSpaces: () => {
+        const list = [...loadedSpaces, ...loadedSharedSpaces];
+        if (myPersonalSpace) list.push(myPersonalSpace);
+        return list;
+      },
+      getFriendsOnline: () => friendsCache.online,
+      onRefreshFriends: async () => {
+        if (authToken) await fetchFriendsData();
+      },
+      onPointsUpdated: (totalPoints: number, stats?: FocusStats) => {
+        if (currentUser) {
+          currentUser.focusPoints = totalPoints;
+          if (stats) {
+            currentUser.focusStats = stats;
+            if (stats.lastPublicSpaceId !== undefined) {
+              currentUser.lastPublicSpaceId = stats.lastPublicSpaceId;
+            }
+          }
+          try {
+            localStorage.setItem("lepark_auth_user", JSON.stringify(currentUser));
+          } catch {}
+        }
+        updateFocusPointsDisplay(totalPoints);
+        renderSpriteTemplatesGrid();
+        updateOrgPointsBanner();
+      },
+      setGameControlsActive: (active: boolean) => setGameControlsActive(active),
+      onFocusLockChanged: (locked: boolean) => {
+        ensureNetherworldUiController().updateFocusLockButtonState(locked);
+      },
+    });
+    focusUiController.syncUserAuth(currentUser);
+    ensureNetherworldUiController();
+  }
+  return focusUiController;
+}
+
+function setupMultiplayerFocusListeners(mgr: MultiplayerManager) {
+  ensureFocusUiController().attachMultiplayer(mgr);
+  ensureNetherworldUiController().attachMultiplayer(mgr);
+}
+
+let dinerUiController: DinerUiController | null = null;
+const registeredDinerManagers = new WeakSet<MultiplayerManager>();
+
+function ensureDinerUiController(): DinerUiController {
+  if (!dinerUiController) {
+    dinerUiController = new DinerUiController({
+      onPrimaryAction: () => {
+        const scene = gameInstance?.scene.getScene("GameScene") as GameScene | undefined;
+        scene?.triggerDinerAction();
+      },
+      onLeaveShift: () => {
+        const scene = gameInstance?.scene.getScene("GameScene") as GameScene | undefined;
+        scene?.triggerDinerLeaveShift();
+      },
+    });
+  }
+  return dinerUiController;
+}
+
+function setupMultiplayerDinerListeners(mgr: MultiplayerManager) {
+  const ui = ensureDinerUiController();
+  ui.setSessionId(mgr.sessionId || "");
+  if (mgr.currentDinerState) {
+    ui.updateState(mgr.currentDinerState, mgr.sessionId || "");
+  }
+  if (registeredDinerManagers.has(mgr)) return;
+  registeredDinerManagers.add(mgr);
+
+  mgr.onDinerState((state) => {
+    ui.updateState(state, mgr.sessionId || "");
+  });
+  mgr.onDinerError((err) => {
+    ui.handleError(err);
+  });
+  mgr.onDinerEvent((ev) => {
+    ui.handleEvent(ev);
+  });
+  mgr.onRoomJoined(() => {
+    ui.setSessionId(mgr.sessionId || "");
+  });
+  mgr.onConnectionStatus((connected) => {
+    if (!connected) {
+      ui.reset();
     }
-    updateParkingPointsDisplay(data.points);
-    renderSpriteTemplatesGrid();
   });
 }
 
@@ -9020,12 +10067,6 @@ if (privateZoneNameModal) {
 
 
 
-if (btnToastDonePlacing) {
-  btnToastDonePlacing.addEventListener("click", () => {
-    showEditorUI();
-  });
-}
-
 if (btnEditMap) {
   btnEditMap.addEventListener("click", () => {
     toggleEditMode();
@@ -9038,17 +10079,12 @@ if (btnCloseMapEditor) {
   });
 }
 
-if (btnBannerDone) {
-  btnBannerDone.addEventListener("click", () => {
-    exitEditMode();
-  });
-}
-
 function populateOfficeDecorationGrid(
   gridId: string,
   assets: readonly string[],
   prefix: string,
-  groupLabel: string
+  _groupLabel: string,
+  tileType: "decoration" | "floor" = "decoration"
 ) {
   const grid = document.getElementById(gridId);
   if (!grid) return;
@@ -9061,14 +10097,15 @@ function populateOfficeDecorationGrid(
     btn.className = "editor-asset-card";
     btn.dataset.assetId = assetId;
     btn.dataset.assetName = fileBase;
-    btn.dataset.tileType = "decoration";
-    btn.title = `${fileBase} (${assetId}) - ${groupLabel} decoration`;
+    if (tileType === "decoration") {
+      btn.dataset.tileType = "decoration";
+    }
 
     const thumb = document.createElement("div");
     thumb.className = "asset-card-thumb";
 
     const img = document.createElement("img");
-    img.alt = fileBase;
+    img.alt = "";
     img.className = "asset-thumb-img";
     img.loading = "lazy";
 
@@ -9076,25 +10113,8 @@ function populateOfficeDecorationGrid(
     check.className = "asset-card-check";
     check.textContent = "✓";
 
-    const lockBadge = document.createElement("span");
-    lockBadge.className = "asset-card-lock-badge";
-    lockBadge.textContent = `🔒 ${ASSET_UNLOCK_COST}`;
-
-    thumb.append(img, check, lockBadge);
-
-    const info = document.createElement("div");
-    info.className = "asset-card-info";
-
-    const nameSpan = document.createElement("span");
-    nameSpan.className = "asset-card-name";
-    nameSpan.textContent = fileBase;
-
-    const codeSpan = document.createElement("span");
-    codeSpan.className = "asset-card-code";
-    codeSpan.textContent = groupLabel;
-
-    info.append(nameSpan, codeSpan);
-    btn.append(thumb, info);
+    thumb.append(img, check);
+    btn.append(thumb);
     fragment.appendChild(btn);
   }
   grid.appendChild(fragment);
@@ -9103,7 +10123,11 @@ function populateOfficeDecorationGrid(
 populateOfficeDecorationGrid("office-one-deco-grid", OFFICE_ONE_DECORATION_ASSETS, "office_one", "Office One");
 populateOfficeDecorationGrid("office-two-deco-grid", OFFICE_TWO_DECORATION_ASSETS, "office_two", "Office Two");
 populateOfficeDecorationGrid("pet-shop-deco-grid", PET_SHOP_DECORATION_ASSETS, "pet_shop", "Pet Shop");
+populateOfficeDecorationGrid("adventure-guild-deco-grid", ADVENTURE_GUILD_DECORATION_ASSETS, "adventure_guild", "Adventure Guild");
+populateOfficeDecorationGrid("restaurant-deco-grid", RESTAURANT_DECORATION_ASSETS, "restaurant", "Restaurant");
 populateOfficeDecorationGrid("living-room-one-deco-grid", LIVING_ROOM_ONE_DECORATION_ASSETS, "living_room_one", "Living Room One");
+populateOfficeDecorationGrid("living-room-two-deco-grid", LIVING_ROOM_TWO_DECORATION_ASSETS, "living_room_two", "Living Room Two");
+populateOfficeDecorationGrid("living-room-floor-grid", LIVING_ROOM_FLOOR_ASSETS, "living_room_floor", "Living Room", "floor");
 hydrateEditorAssetThumbnails();
 const defaultBrushPattern = document.querySelector<HTMLElement>(".brush-pattern-layer");
 if (defaultBrushPattern && !defaultBrushPattern.style.backgroundImage) {
@@ -9137,12 +10161,13 @@ editorAssetCards.forEach((card) => {
       selectAquariumTool();
     } else if (toolType === "spawn_point") {
       selectSpawnPointTool();
+    } else if (toolType === "seller_npc") {
+      selectSellerNpcTool();
     } else {
       const id = card.dataset.assetId || "wood_5";
       const name = card.dataset.assetName || "Wood 5";
       const tileType = card.dataset.tileType;
       if (!isEditorAssetUnlocked(id)) {
-        void handleUnlockEditorAsset(card, id, name);
         return;
       }
       if (tileType === "decoration") {
@@ -9407,6 +10432,11 @@ window.addEventListener("keydown", (e: KeyboardEvent) => {
       closeChessModal();
       return;
     }
+    const shopModalEl = document.getElementById("asset-shop-modal");
+    if (shopModalEl && !shopModalEl.classList.contains("hidden")) {
+      closeAssetShopModal();
+      return;
+    }
     if (calendarImageLightbox && !calendarImageLightbox.classList.contains("hidden")) {
       closeCalendarImageLightbox();
       return;
@@ -9458,7 +10488,11 @@ window.addEventListener("keydown", (e: KeyboardEvent) => {
         closeEditorItemContextMenu();
         return;
       }
-      if (isEditorUIHidden) {
+      if (isTileOptionsOpen) {
+        setTileOptionsOpen(false);
+        return;
+      }
+      if (isEditorUIHidden || mapEditorSidebar?.classList.contains("minimized")) {
         showEditorUI();
         return;
       }
@@ -9515,7 +10549,6 @@ function openMapModal() {
   if (mapCurrentSpaceName) {
     mapCurrentSpaceName.textContent = currentSpaceName;
   }
-  renderCategories();
   renderSpacesList();
   mapModal.classList.remove("hidden");
   setGameControlsActive(false);
@@ -9535,6 +10568,17 @@ mapModal.addEventListener("click", (e) => {
   }
 });
 
+document.addEventListener("keydown", (e) => {
+  if (
+    e.key === "Escape" &&
+    mapModal &&
+    !mapModal.classList.contains("hidden") &&
+    (!adminSpaceModal || adminSpaceModal.classList.contains("hidden"))
+  ) {
+    closeMapModal();
+  }
+});
+
 if (btnAdminAddSpace) {
   btnAdminAddSpace.addEventListener("click", () => {
     openAdminCreateSpaceModal();
@@ -9544,12 +10588,16 @@ if (btnAdminAddSpace) {
 /**
  * Updates UI elements in top bar and dropdown
  */
+const MY_SPACE_ICON_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5L12 3l9 7.5"/><path d="M5 9.5V20a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9.5"/><path d="M9 21V13h6v8"/></svg>`;
+const SPACE_INVENTORY_ICON_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>`;
+
 function updateTopBarUI() {
   const name = getEffectivePlayerName();
   topbarUserName.textContent = name;
 
-  const pts = currentUser?.parkingPoints ?? 0;
-  updateParkingPointsDisplay(pts);
+  const pts = currentUser?.focusPoints ?? 0;
+  updateFocusPointsDisplay(pts);
+  focusUiController?.syncUserAuth(currentUser);
 
   const isSuperadmin = currentUser?.role === "superadmin";
   (window as any).currentUserRole = currentUser?.role || "user";
@@ -9565,19 +10613,32 @@ function updateTopBarUI() {
   // Update Avatar Visual in Top Bar
   const isCustomActive = switchUploadPictures ? switchUploadPictures.checked && uploadedFrames.idle.length > 0 && uploadedFrames.idle[0].startsWith("data:image/") : false;
   const activeTpl = getActiveTemplate();
-  const templateImg = (activeTpl && activeTpl.idleFrames.length > 0) ? activeTpl.idleFrames[0] : "/assets/sprites/default/sprite1.png";
-  const topbarImgUrl = isCustomActive ? uploadedFrames.idle[0] : templateImg;
-  topbarAvatarImg.src = topbarImgUrl;
+  if (!isCustomActive && activeTpl.id === "default") {
+    renderFashionPreviewFrame(selectedOutfit, 0, 0, false)
+      .then((url) => {
+        if (url && topbarAvatarImg) {
+          topbarAvatarImg.src = url;
+          syncProfileModalUserInfo();
+        }
+      })
+      .catch(() => {});
+  } else {
+    const templateImg = (activeTpl && activeTpl.idleFrames.length > 0) ? activeTpl.idleFrames[0] : DEFAULT_AVATAR_ICON;
+    const topbarImgUrl = isCustomActive ? uploadedFrames.idle[0] : templateImg;
+    setImgSrcResolved(topbarAvatarImg, topbarImgUrl);
+  }
   topbarAvatarImg.classList.remove("hidden");
   if (topbarAvatarDot) topbarAvatarDot.classList.add("hidden");
 
-  // Dropdown title & subtitle
+  syncProfileModalUserInfo();
+
+  // Profile menu item title & subtitle
   if (myPersonalSpace && currentSpaceId === myPersonalSpace.id) {
-    if (dropdownMySpaceIcon) dropdownMySpaceIcon.textContent = "📦";
+    if (dropdownMySpaceIcon) dropdownMySpaceIcon.innerHTML = SPACE_INVENTORY_ICON_SVG;
     if (dropdownMySpaceTitle) dropdownMySpaceTitle.textContent = "Space's Inventory";
     dropdownMySpaceSub.textContent = "Manage house inventory";
   } else {
-    if (dropdownMySpaceIcon) dropdownMySpaceIcon.textContent = "🏠";
+    if (dropdownMySpaceIcon) dropdownMySpaceIcon.innerHTML = MY_SPACE_ICON_SVG;
     if (dropdownMySpaceTitle) dropdownMySpaceTitle.textContent = "Go to my space";
     if (myPersonalSpace) {
       dropdownMySpaceSub.textContent = `${myPersonalSpace.name} (${myPersonalSpace.isPublic ? "Public" : "Private"})`;
@@ -9647,7 +10708,7 @@ function updateMapSettingsVisibility() {
 }
 
 /**
- * Fetch spaces list, categories, and user personal space from backend
+ * Fetch spaces list and user personal space from backend
  */
 async function fetchSpaces() {
   if (!authToken) return;
@@ -9663,7 +10724,6 @@ async function fetchSpaces() {
     const data: SpacesListResponse = await res.json();
     if (res.ok && data.success) {
       loadedSpaces = data.spaces || [];
-      loadedCategories = data.categories || [];
       loadedSharedSpaces = data.sharedSpaces || [];
       if (data.mySpace) {
         myPersonalSpace = data.mySpace;
@@ -9679,7 +10739,6 @@ async function fetchSpaces() {
         if (found) currentSpaceName = found.name;
       }
 
-      renderCategories();
       renderSpacesList();
       updateTopBarUI();
     }
@@ -9704,72 +10763,21 @@ function getAllListedSpaces(): Space[] {
   return combined;
 }
 
-function renderCategories() {
-  mapCategoryTabs.innerHTML = "";
-  const allSpaces = getAllListedSpaces();
-
-  // "All" Tab
-  const allBtn = document.createElement("button");
-  allBtn.type = "button";
-  allBtn.className = `map-cat-tab ${activeCategoryFilter === "All" ? "active" : ""}`;
-  allBtn.innerHTML = `<span>All</span><span class="map-cat-count">${allSpaces.length}</span>`;
-  allBtn.addEventListener("click", () => {
-    activeCategoryFilter = "All";
-    renderCategories();
-    renderSpacesList();
-  });
-  mapCategoryTabs.appendChild(allBtn);
-
-  // "Shared With Me" Tab (only if user has shared spaces)
-  if (loadedSharedSpaces.length > 0) {
-    const sharedBtn = document.createElement("button");
-    sharedBtn.type = "button";
-    sharedBtn.className = `map-cat-tab ${activeCategoryFilter === "Shared With Me" ? "active" : ""}`;
-    sharedBtn.innerHTML = `<span>🏠 Shared With Me</span><span class="map-cat-count">${loadedSharedSpaces.length}</span>`;
-    sharedBtn.addEventListener("click", () => {
-      activeCategoryFilter = "Shared With Me";
-      renderCategories();
-      renderSpacesList();
-    });
-    mapCategoryTabs.appendChild(sharedBtn);
-  }
-
-  // Each Category Tab
-  loadedCategories.forEach((cat) => {
-    const count = loadedSpaces.filter((s) => s.category === cat).length;
-    const catBtn = document.createElement("button");
-    catBtn.type = "button";
-    catBtn.className = `map-cat-tab ${activeCategoryFilter === cat ? "active" : ""}`;
-    catBtn.innerHTML = `<span>${escapeHtml(cat)}</span><span class="map-cat-count">${count}</span>`;
-    catBtn.addEventListener("click", () => {
-      activeCategoryFilter = cat;
-      renderCategories();
-      renderSpacesList();
-    });
-    mapCategoryTabs.appendChild(catBtn);
-  });
-}
-
 function renderSpacesList() {
   mapSpacesGrid.innerHTML = "";
 
-  const filtered =
-    activeCategoryFilter === "All"
-      ? getAllListedSpaces()
-      : activeCategoryFilter === "Shared With Me"
-        ? loadedSharedSpaces
-        : loadedSpaces.filter((s) => s.category === activeCategoryFilter);
+  const spacesList = getAllListedSpaces();
 
-  if (filtered.length === 0) {
+  if (spacesList.length === 0) {
     mapSpacesGrid.innerHTML = `
-      <div style="grid-column: 1 / -1; text-align: center; padding: 36px 12px; color: var(--text-muted); font-size: 13px;">
-        No spaces found in category "${escapeHtml(activeCategoryFilter)}".
+      <div class="map-spaces-empty">
+        No destinations available.
       </div>
     `;
     return;
   }
 
-  filtered.forEach((space) => {
+  spacesList.forEach((space) => {
     const isCurrent = space.id === currentSpaceId;
     const isSuperadmin = currentUser?.role === "superadmin";
     const isWhitelisted = currentUser
@@ -9783,57 +10791,94 @@ function renderSpacesList() {
         )
       : false;
     const canJoin = space.isPublic || isSuperadmin || isWhitelisted || isHousemate;
+    const isClickable = !isCurrent && canJoin;
+    const onlineCount = space.playerCount || 0;
+
+    const metaParts: string[] = [];
+    if (isHousemate) {
+      metaParts.push(
+        space.ownerUsername
+          ? `Housemate · @${escapeHtml(space.ownerUsername)}`
+          : "Housemate",
+      );
+    } else if (!space.isPublic && isWhitelisted) {
+      metaParts.push("Invited");
+    }
 
     const card = document.createElement("div");
-    card.className = `map-space-card ${isCurrent ? "current" : ""}`;
+    card.className = [
+      "map-space-card",
+      isCurrent ? "current" : "",
+      isClickable ? "joinable" : "",
+      !canJoin ? "locked" : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
+
+    if (isClickable) {
+      card.tabIndex = 0;
+      card.setAttribute("role", "button");
+      card.setAttribute("aria-label", `Travel to ${space.name}`);
+    }
 
     card.innerHTML = `
-      <div>
-        <div class="space-card-top-row">
-          <span class="space-category-pill">📂 ${escapeHtml(space.category || "General")}</span>
-          <div style="display: flex; gap: 4px; align-items: center;">
-            <span class="badge-privacy ${space.isPublic ? "public" : "private"}">
-              ${space.isPublic ? "🌐 Public" : "🔒 Private"}
+      <div class="space-card-top">
+        <div class="space-card-main">
+          <div class="space-card-title-row">
+            <h3 class="space-card-name-title">${escapeHtml(space.name)}</h3>
+            ${
+              !space.isPublic
+                ? `<span class="space-privacy-icon" title="Private space" aria-label="Private space"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>`
+                : ""
+            }
+          </div>
+          <div class="space-card-meta">
+            <span class="space-online-count">
+              <span class="space-online-dot ${onlineCount > 0 ? "active" : ""}" aria-hidden="true"></span>
+              <span>${onlineCount} online</span>
             </span>
-            ${isHousemate ? `<span class="badge-housemate">🏠 Housemate</span>` : !space.isPublic && isWhitelisted ? `<span class="badge-invited">✨ Invited</span>` : ""}
+            ${metaParts.length > 0 ? `<span class="space-meta-sep" aria-hidden="true">·</span><span class="space-meta-extra">${metaParts.join(" · ")}</span>` : ""}
           </div>
         </div>
-        <h3 class="space-card-name-title">${escapeHtml(space.name)}</h3>
-        ${isHousemate && space.ownerUsername ? `<div class="space-online-count" style="margin-bottom: 2px;"><span>🔑</span><span>Owner: @${escapeHtml(space.ownerUsername)}</span></div>` : ""}
-        <div class="space-online-count">
-          <span>👥</span>
-          <span>${space.playerCount || 0} online</span>
-        </div>
-      </div>
-      <div class="space-card-bottom">
-        <div class="space-actions-group">
+        <div class="space-card-right">
           ${
-            isSuperadmin
-              ? `
-            <button type="button" class="btn-space-admin-action edit-admin-space" data-id="${space.id}" title="Edit Space">⚙️</button>
-            <button type="button" class="btn-space-admin-action delete delete-admin-space" data-id="${space.id}" title="Delete Space">🗑️</button>
-          `
-              : ""
+            isCurrent
+              ? `<span class="space-state-pill current">Here</span>`
+              : canJoin
+                ? `<span class="space-travel-arrow" aria-hidden="true"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></span>`
+                : `<span class="space-state-pill locked" title="Requires invitation from superadmin">Locked</span>`
           }
         </div>
-        ${
-          isCurrent
-            ? `<button type="button" class="btn-space-join current" disabled>✓ Current</button>`
-            : canJoin
-              ? `<button type="button" class="btn-space-join action-travel" data-id="${space.id}" data-name="${escapeHtml(space.name)}">🚀 Travel</button>`
-              : `<button type="button" class="btn-space-join locked" disabled title="Requires invitation from superadmin">🔒 Locked</button>`
-        }
       </div>
+      ${
+        isSuperadmin
+          ? `
+        <div class="space-card-admin-row">
+          <button type="button" class="btn-space-admin-action edit-admin-space" data-id="${space.id}" title="Edit Space" aria-label="Edit ${escapeHtml(space.name)}">
+            <svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            <span>Edit</span>
+          </button>
+          <button type="button" class="btn-space-admin-action delete delete-admin-space" data-id="${space.id}" title="Delete Space" aria-label="Delete ${escapeHtml(space.name)}">
+            <svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+            <span>Delete</span>
+          </button>
+        </div>
+      `
+          : ""
+      }
     `;
 
-    // Hook up Travel button
-    const travelBtn = card.querySelector(
-      ".action-travel",
-    ) as HTMLButtonElement | null;
-    if (travelBtn) {
-      travelBtn.addEventListener("click", () => {
+    if (isClickable) {
+      const triggerTravel = () => {
         closeMapModal();
         switchSpace(space.id, space.name);
+      };
+      card.addEventListener("click", triggerTravel);
+      card.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          triggerTravel();
+        }
       });
     }
 
@@ -9920,14 +10965,16 @@ async function switchSpace(
     setupMultiplayerTypeRaceListeners(multiplayer);
     setupMultiplayerSmokingGameListeners(multiplayer);
     setupMultiplayerChessListeners(multiplayer);
-    setupMultiplayerParkingPointsListeners(multiplayer);
+    setupMultiplayerFocusListeners(multiplayer);
     setupMultiplayerFriendListeners(multiplayer);
     setupMultiplayerThrowBattleListeners(multiplayer);
+    setupMultiplayerDinerListeners(multiplayer);
 
     await multiplayer.joinGame({
       name: effectiveName,
       color,
       avatars,
+      outfit: selectedOutfit,
       spaceId: currentSpaceId,
       token: authToken || undefined,
     });
@@ -9949,6 +10996,13 @@ async function switchSpace(
   } catch (err: any) {
     console.error("Failed to switch space:", err);
 
+    if (isLikelyNetworkError(err)) {
+      handleOfflineDetected(
+        "You are currently offline or disconnected from the server. Trying to reconnect automatically...",
+      );
+      return;
+    }
+
     if (!isFallback) {
       const fallbackId = previousSpaceId || "space_central_plaza";
       const fallbackName = previousSpaceName || "CO3";
@@ -9969,7 +11023,7 @@ async function switchSpace(
         title,
         message,
         fallbackName,
-        isPrivateOrForbidden ? "🔒" : "⚠️"
+        isPrivateOrForbidden ? '<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>' : '<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>'
       );
 
       // Lead back to previous space
@@ -10136,7 +11190,7 @@ function populateMySpaceShareFriendDropdown() {
   for (const friend of allFriends) {
     const opt = document.createElement("option");
     opt.value = friend.username;
-    const statusDot = friend.isOnline ? "🟢" : "⚫";
+    const statusDot = `<span class="friend-status-dot ${friend.isOnline ? "online" : "offline"}"></span>`;
     const label =
       friend.displayName && friend.displayName !== friend.username
         ? `${statusDot} ${friend.displayName} (@${friend.username})`
@@ -10277,51 +11331,6 @@ mySpaceSettingsForm.addEventListener("submit", async (e) => {
 // Superadmin Create & Edit Space Modal
 // ==========================================
 
-function populateCategoryDropdown(selectedCategory?: string) {
-  adminSpaceCategorySelect.innerHTML = "";
-
-  const defaultCategories = [
-    "Town Square",
-    "Hangout Lounges",
-    "Gaming Zones",
-    "Chill Parks",
-    "Events & Arenas",
-  ];
-  const combined = Array.from(
-    new Set([...defaultCategories, ...loadedCategories]),
-  );
-
-  combined.forEach((cat) => {
-    const opt = document.createElement("option");
-    opt.value = cat;
-    opt.textContent = cat;
-    if (
-      selectedCategory &&
-      cat.toLowerCase() === selectedCategory.toLowerCase()
-    ) {
-      opt.selected = true;
-    }
-    adminSpaceCategorySelect.appendChild(opt);
-  });
-
-  const customOpt = document.createElement("option");
-  customOpt.value = "__custom__";
-  customOpt.textContent = "+ Custom Category...";
-  adminSpaceCategorySelect.appendChild(customOpt);
-
-  adminSpaceCategoryCustom.classList.add("hidden");
-  adminSpaceCategoryCustom.value = "";
-}
-
-adminSpaceCategorySelect.addEventListener("change", () => {
-  if (adminSpaceCategorySelect.value === "__custom__") {
-    adminSpaceCategoryCustom.classList.remove("hidden");
-    adminSpaceCategoryCustom.focus();
-  } else {
-    adminSpaceCategoryCustom.classList.add("hidden");
-  }
-});
-
 adminSpaceSwitchPublic.addEventListener("change", () => {
   if (adminSpaceSwitchPublic.checked) {
     adminSpaceWhitelistSection.classList.add("hidden");
@@ -10391,10 +11400,10 @@ adminSpaceInviteUsername.addEventListener("keydown", (e) => {
 });
 
 function openAdminCreateSpaceModal() {
-  adminSpaceModalTitle.textContent = "🌌 Create New Space";
+  adminSpaceModalTitle.textContent = "Create New Space";
   adminSpaceEditId.value = "";
   adminSpaceName.value = "";
-  populateCategoryDropdown();
+  if (adminSpaceFocusTheme) adminSpaceFocusTheme.value = "auto";
   adminSpaceSwitchPublic.checked = true;
   adminSpaceWhitelistSection.classList.add("hidden");
   tempAdminSpaceWhitelist = [];
@@ -10406,10 +11415,13 @@ function openAdminCreateSpaceModal() {
 }
 
 function openAdminEditSpaceModal(space: Space) {
-  adminSpaceModalTitle.textContent = "⚙️ Edit Space";
+  adminSpaceModalTitle.textContent = "Edit Space";
   adminSpaceEditId.value = space.id;
   adminSpaceName.value = space.name;
-  populateCategoryDropdown(space.category);
+  if (adminSpaceFocusTheme) {
+    adminSpaceFocusTheme.value =
+      space.focusTheme && isValidFocusTheme(space.focusTheme) ? space.focusTheme : "auto";
+  }
   adminSpaceSwitchPublic.checked = space.isPublic;
   if (space.isPublic) {
     adminSpaceWhitelistSection.classList.add("hidden");
@@ -10426,7 +11438,9 @@ function openAdminEditSpaceModal(space: Space) {
 
 function closeAdminSpaceModal() {
   adminSpaceModal.classList.add("hidden");
-  setGameControlsActive(true);
+  if (!mapModal || mapModal.classList.contains("hidden")) {
+    setGameControlsActive(true);
+  }
 }
 
 btnCloseAdminSpaceModal.addEventListener("click", closeAdminSpaceModal);
@@ -10443,11 +11457,10 @@ adminSpaceForm.addEventListener("submit", async (e) => {
   const spaceId = adminSpaceEditId.value;
   const name = adminSpaceName.value.trim();
 
-  let category = adminSpaceCategorySelect.value;
-  if (category === "__custom__") {
-    category = adminSpaceCategoryCustom.value.trim() || "General";
-  }
-
+  const focusTheme: FocusTheme =
+    adminSpaceFocusTheme && isValidFocusTheme(adminSpaceFocusTheme.value)
+      ? adminSpaceFocusTheme.value
+      : "auto";
   const isPublic = adminSpaceSwitchPublic.checked;
   const whitelist = isPublic ? [] : tempAdminSpaceWhitelist;
 
@@ -10461,7 +11474,7 @@ adminSpaceForm.addEventListener("submit", async (e) => {
           "Content-Type": "application/json",
           Authorization: `Bearer ${authToken}`,
         },
-        body: JSON.stringify({ name, category, isPublic, whitelist }),
+        body: JSON.stringify({ name, focusTheme, isPublic, whitelist }),
       });
     } else {
       // Create new
@@ -10471,7 +11484,7 @@ adminSpaceForm.addEventListener("submit", async (e) => {
           "Content-Type": "application/json",
           Authorization: `Bearer ${authToken}`,
         },
-        body: JSON.stringify({ name, category, isPublic, whitelist }),
+        body: JSON.stringify({ name, focusTheme, isPublic, whitelist }),
       });
     }
 
@@ -10538,26 +11551,27 @@ function bindMultiplayerLifecycleEvents(manager: MultiplayerManager) {
   });
 
   manager.onUnexpectedDisconnect(() => {
-    showOfflineModal(
-      "You are offline or disconnected from the game server. Please reload the page to reconnect.",
+    if (!authToken && !gameInstance) return;
+    handleOfflineDetected(
+      "Disconnected from the game server. Trying to reconnect automatically...",
     );
   });
 
   manager.onError((data) => {
     if (data?.message) {
-      showPlacingToast(`⚠️ ${data.message}`);
+      showPlacingToast(`${data.message}`);
     }
   });
 }
 
-async function enterGameSession() {
+async function enterGameSession(options?: { fromAutoReconnect?: boolean }) {
   const effectiveName = getEffectivePlayerName();
   const color = selectedColor;
   const avatars = computeActiveAvatars();
 
   if (gameInstance) {
     if (multiplayer) {
-      multiplayer.updateProfile(effectiveName, color, avatars || null);
+      multiplayer.updateProfile(effectiveName, color, avatars || null, selectedOutfit);
     }
     return;
   }
@@ -10577,13 +11591,14 @@ async function enterGameSession() {
   setupMultiplayerTypeRaceListeners(manager);
   setupMultiplayerSmokingGameListeners(manager);
   setupMultiplayerChessListeners(manager);
-  setupMultiplayerParkingPointsListeners(manager);
+  setupMultiplayerFocusListeners(manager);
   setupMultiplayerFriendListeners(manager);
   if (authToken) {
     fetchFriendsData();
     fetchOrganisationsData();
   }
   setupMultiplayerThrowBattleListeners(manager);
+  setupMultiplayerDinerListeners(manager);
 
   try {
     try {
@@ -10591,6 +11606,7 @@ async function enterGameSession() {
         name: effectiveName,
         color,
         avatars,
+        outfit: selectedOutfit,
         spaceId: currentSpaceId,
         token: authToken || undefined,
       });
@@ -10606,6 +11622,7 @@ async function enterGameSession() {
           name: effectiveName,
           color,
           avatars,
+          outfit: selectedOutfit,
           spaceId: currentSpaceId,
           token: authToken || undefined,
         });
@@ -10620,10 +11637,14 @@ async function enterGameSession() {
     }
 
     const config: Phaser.Types.Core.GameConfig = {
-      type: Phaser.AUTO,
+      type: Phaser.WEBGL,
+      pixelArt: true,
       parent: "game-container",
       backgroundColor: "#ffffff",
       roundPixels: true,
+      input: {
+        activePointers: 3,
+      },
       scale: {
         mode: Phaser.Scale.RESIZE,
         autoCenter: Phaser.Scale.CENTER_BOTH,
@@ -10686,6 +11707,15 @@ async function enterGameSession() {
   } catch (err: any) {
     console.error("Connection or join error:", err);
     multiplayer = null;
+    if (options?.fromAutoReconnect) {
+      throw err;
+    }
+    if (authToken && currentUser && isLikelyNetworkError(err)) {
+      handleOfflineDetected(
+        "Disconnected from the game server. Trying to reconnect automatically...",
+      );
+      return;
+    }
     alert(
       "Could not connect to multiplayer server. Please ensure the backend is running!",
     );
@@ -10693,17 +11723,41 @@ async function enterGameSession() {
   }
 }
 
+function syncPwaStandaloneClass(): void {
+  const nav = window.navigator as Navigator & { standalone?: boolean };
+  const isStandalonePwa =
+    window.matchMedia("(display-mode: standalone)").matches ||
+    nav.standalone === true;
+  const isTouchDevice =
+    window.matchMedia("(hover: none) and (pointer: coarse)").matches ||
+    navigator.maxTouchPoints > 0;
+  document.documentElement.classList.toggle(
+    "pwa-standalone",
+    isStandalonePwa && isTouchDevice,
+  );
+}
+
+syncPwaStandaloneClass();
+
 function getTopBarHeight(): number {
   const topBar = document.getElementById("top-bar");
   const measured = topBar ? topBar.getBoundingClientRect().height : 0;
-  return measured > 0 ? Math.round(measured) : 40;
+  if (measured > 0) return Math.round(measured);
+  const gameContainer = document.getElementById("game-container");
+  const topOffset = gameContainer ? gameContainer.getBoundingClientRect().top : 0;
+  return topOffset > 0 ? Math.round(topOffset) : 40;
 }
 
-// Window Resize Handler
-window.addEventListener("resize", () => {
+function resizeGameToViewport(): void {
   if (gameInstance) {
     gameInstance.scale.resize(window.innerWidth, window.innerHeight - getTopBarHeight());
   }
+}
+
+// Window Resize & Orientation Handlers
+window.addEventListener("resize", resizeGameToViewport);
+window.addEventListener("orientationchange", () => {
+  setTimeout(resizeGameToViewport, 100);
 });
 
 function setupHudControlBadges() {
@@ -10786,6 +11840,8 @@ function setupMobileJoystick() {
   let waitForAllTouchesUp = false;
   let pinchStartDist = 0;
   let pinchStartZoom = 1;
+  let pinchLastMidX = 0;
+  let pinchLastMidY = 0;
   let curLeft = false;
   let curRight = false;
   let curUp = false;
@@ -10885,8 +11941,14 @@ function setupMobileJoystick() {
     isPinching = true;
     waitForAllTouchesUp = true;
     pinchStartDist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+    const rect = gameContainer.getBoundingClientRect();
+    pinchLastMidX = (t1.clientX + t2.clientX) * 0.5 - rect.left;
+    pinchLastMidY = (t1.clientY + t2.clientY) * 0.5 - rect.top;
     const scene = gameInstance?.scene.getScene("GameScene") as GameScene | undefined;
     pinchStartZoom = scene?.cameras?.main?.zoom ?? 1;
+    if (isEditModeActive()) {
+      scene?.cancelTouchPlacement?.();
+    }
   };
 
   const updatePinch = (t1: Touch, t2: Touch) => {
@@ -10898,6 +11960,13 @@ function setupMobileJoystick() {
       const rect = gameContainer.getBoundingClientRect();
       const midX = (t1.clientX + t2.clientX) * 0.5 - rect.left;
       const midY = (t1.clientY + t2.clientY) * 0.5 - rect.top;
+      if (scene.isEditMode) {
+        const zoom = scene.cameras?.main?.zoom || 1;
+        scene.cameras.main.scrollX -= (midX - pinchLastMidX) / zoom;
+        scene.cameras.main.scrollY -= (midY - pinchLastMidY) / zoom;
+      }
+      pinchLastMidX = midX;
+      pinchLastMidY = midY;
       scene.setPinchZoom(pinchStartZoom * scale, midX, midY);
     }
   };
@@ -10919,7 +11988,7 @@ function setupMobileJoystick() {
 
       if (
         document.querySelector(
-          "#player-context-menu:not(.hidden), #editor-item-context-menu:not(.hidden), #editor-interaction-dropdown-panel:not(.hidden), #user-profile-dropdown:not(.hidden), #audio-settings-dropdown:not(.hidden)"
+          "#player-context-menu:not(.hidden), #editor-item-context-menu:not(.hidden), #editor-interaction-dropdown-panel:not(.hidden), #audio-settings-dropdown:not(.hidden)"
         )
       ) {
         return;
@@ -10990,6 +12059,10 @@ function setupMobileJoystick() {
       if (activeTouchId !== null) {
         resetStick();
       }
+      if (isEditModeActive()) {
+        const scene = gameInstance?.scene.getScene("GameScene") as GameScene | undefined;
+        scene?.notifyAllTouchesEnded?.();
+      }
     }
   };
 
@@ -11000,6 +12073,10 @@ function setupMobileJoystick() {
     waitForAllTouchesUp = false;
     if (activeTouchId !== null) {
       resetStick();
+    }
+    if (isEditModeActive()) {
+      const scene = gameInstance?.scene.getScene("GameScene") as GameScene | undefined;
+      scene?.notifyAllTouchesEnded?.();
     }
   });
 }
@@ -11012,13 +12089,19 @@ function updateMobileInteractButton(
   const labelEl = document.getElementById("mobile-interact-label");
   if (!btn) return;
 
+  const scene = gameInstance?.scene.getScene("GameScene") as GameScene | undefined;
+  if (scene?.getActiveDinerNearbyAction?.()) {
+    btn.classList.add("hidden");
+    return;
+  }
+
   if (!nearby) {
     btn.classList.add("hidden");
     return;
   }
 
   const meta = DECORATION_INTERACTIONS.find((item) => item.id === nearby.interaction);
-  if (iconEl) iconEl.textContent = meta?.icon ?? "✨";
+  if (iconEl) iconEl.innerHTML = getInteractionIconSvg(nearby.interaction);
   if (labelEl) labelEl.textContent = meta?.label ?? "Interact";
   btn.setAttribute("aria-label", `Interact: ${meta?.label ?? "Object"}`);
   btn.classList.remove("hidden");
@@ -11158,7 +12241,7 @@ function createFriendVisitSpaceButton(friend: FriendEntry): HTMLButtonElement {
   const btnVisitSpace = document.createElement("button");
   btnVisitSpace.type = "button";
   btnVisitSpace.className = "friend-online-menu-btn visit-space";
-  btnVisitSpace.textContent = "🏠 Visit Space";
+  btnVisitSpace.textContent = "Visit Space";
   btnVisitSpace.addEventListener("click", async (e) => {
     e.stopPropagation();
     closeFriendsModal();
@@ -11171,7 +12254,7 @@ function renderFriendsList() {
   if (!friendsListContainer) return;
   friendsListContainer.innerHTML = "";
 
-  const defaultAvatar = "/assets/sprites/default/sprite1.png";
+  const defaultAvatar = DEFAULT_AVATAR_ICON;
 
   if (activeFriendsTab === "online") {
     if (friendsCache.online.length === 0) {
@@ -11184,19 +12267,19 @@ function renderFriendsList() {
       wrapper.className = "friend-item-wrapper clickable";
       const isExpanded = expandedFriendUserId === friend.userId;
       const avatarUrl = friend.avatar || defaultAvatar;
-      const crown = friend.isSuperadmin ? "👑 " : "";
+      const crown = friend.isSuperadmin ? "[Admin] " : "";
       const locText = friend.spaceName || friend.spaceId || "Unknown";
 
       wrapper.innerHTML = `
         <div class="friend-item-row">
           <div class="friend-item-left">
             <div class="friend-avatar-wrap">
-              <img class="friend-avatar-img" src="${escapeHtml(avatarUrl)}" alt="${escapeHtml(friend.name)}" />
+              <img class="friend-avatar-img" ${imgSrcAttr(avatarUrl)} alt="${escapeHtml(friend.name)}" />
               <span class="friend-status-dot online" title="Online"></span>
             </div>
             <div class="friend-info">
               <div class="friend-name">${crown}${escapeHtml(friend.name)}</div>
-              <div class="friend-meta">📍 <span class="friend-location-badge">${escapeHtml(locText)}</span></div>
+              <div class="friend-meta"><span class="friend-location-badge">${escapeHtml(locText)}</span></div>
             </div>
           </div>
           <div class="friend-item-actions">
@@ -11212,7 +12295,7 @@ function renderFriendsList() {
         const btnGoTo = document.createElement("button");
         btnGoTo.type = "button";
         btnGoTo.className = "friend-online-menu-btn goto";
-        btnGoTo.textContent = "📍 Go To Location";
+        btnGoTo.textContent = "Go To Location";
         btnGoTo.addEventListener("click", async (e) => {
           e.stopPropagation();
           closeFriendsModal();
@@ -11224,7 +12307,7 @@ function renderFriendsList() {
         const btnWhisper = document.createElement("button");
         btnWhisper.type = "button";
         btnWhisper.className = "friend-online-menu-btn whisper";
-        btnWhisper.textContent = "💬 Whisper";
+        btnWhisper.textContent = "Whisper";
         btnWhisper.addEventListener("click", (e) => {
           e.stopPropagation();
           closeFriendsModal();
@@ -11267,7 +12350,7 @@ function renderFriendsList() {
         <div class="friend-item-row">
           <div class="friend-item-left">
             <div class="friend-avatar-wrap">
-              <img class="friend-avatar-img offline" src="${escapeHtml(avatarUrl)}" alt="${escapeHtml(friend.name)}" />
+              <img class="friend-avatar-img offline" ${imgSrcAttr(avatarUrl)} alt="${escapeHtml(friend.name)}" />
               <span class="friend-status-dot offline" title="Offline"></span>
             </div>
             <div class="friend-info">
@@ -11310,7 +12393,7 @@ function renderFriendsList() {
         <div class="friend-item-row">
           <div class="friend-item-left">
             <div class="friend-avatar-wrap">
-              <img class="friend-avatar-img" src="${escapeHtml(avatarUrl)}" alt="${escapeHtml(reqItem.name)}" />
+              <img class="friend-avatar-img" ${imgSrcAttr(avatarUrl)} alt="${escapeHtml(reqItem.name)}" />
             </div>
             <div class="friend-info">
               <div class="friend-name">${escapeHtml(reqItem.name)}</div>
@@ -11345,7 +12428,7 @@ function renderFriendsList() {
         <div class="friend-item-row">
           <div class="friend-item-left">
             <div class="friend-avatar-wrap">
-              <img class="friend-avatar-img" src="${escapeHtml(avatarUrl)}" alt="${escapeHtml(reqItem.name)}" />
+              <img class="friend-avatar-img" ${imgSrcAttr(avatarUrl)} alt="${escapeHtml(reqItem.name)}" />
             </div>
             <div class="friend-info">
               <div class="friend-name">${escapeHtml(reqItem.name)}</div>
@@ -11372,6 +12455,7 @@ function renderFriendsList() {
       friendsListContainer.appendChild(wrapper);
     });
   }
+  hydrateSheetImages(friendsListContainer);
 }
 
 async function handleFriendAccept(friendshipId: number) {
@@ -11506,7 +12590,7 @@ async function init() {
       const parsed = JSON.parse(savedFramesStr);
       slots.forEach((s) => {
         if (Array.isArray(parsed[s]) && parsed[s].length > 0) {
-          uploadedFrames[s] = parsed[s].slice(0, MAX_AVATAR_FRAMES);
+          uploadedFrames[s] = parsed[s].slice(0, MAX_AVATAR_FRAMES).map((f: string) => normalizeSpriteRef(f));
         } else {
           uploadedFrames[s] = [...DEFAULT_AVATARS[s]];
         }
@@ -11548,31 +12632,53 @@ async function init() {
   initOrganisationUI();
   initNotesUI();
   initSpaceInventoryUI();
+  initAssetShopUI();
   initCalendarUI();
 
   // Check stored auth session
   const storedToken = localStorage.getItem("lepark_auth_token");
   if (storedToken) {
+    let tokenInvalid = false;
     try {
       const res = await fetch(getApiUrl("/api/auth/me"), {
         headers: { Authorization: `Bearer ${storedToken}` },
       });
-      const data: AuthResponse = await res.json();
-      if (res.ok && data.success && data.user) {
-        authToken = storedToken;
-        currentUser = data.user;
-        setupSpriteTemplates();
-        closeAuthModal();
-        await enterGameSession();
-        checkAndShowLinkEmailModal();
+      if (res.status === 401 || res.status === 403) {
+        tokenInvalid = true;
+      } else if (res.status >= 500) {
+        hasPendingAuthRestore = true;
+        handleOfflineDetected(
+          "Server is temporarily unavailable. Trying to reconnect automatically...",
+        );
         return;
+      } else {
+        const data: AuthResponse = await res.json();
+        if (res.ok && data.success && data.user) {
+          authToken = storedToken;
+          currentUser = data.user;
+          setupSpriteTemplates();
+          closeAuthModal();
+          await enterGameSession();
+          checkAndShowLinkEmailModal();
+          return;
+        }
+        if (res.ok && !data.success) {
+          tokenInvalid = true;
+        }
       }
     } catch (err) {
-      console.warn("Could not verify saved session token:", err);
+      console.warn("Could not verify saved session token (offline/network error):", err);
+      hasPendingAuthRestore = true;
+      handleOfflineDetected(
+        "You are currently offline or server is unreachable. Waiting to reconnect automatically...",
+      );
+      return;
     }
-    // Stale token
-    localStorage.removeItem("lepark_auth_token");
-    localStorage.removeItem("lepark_auth_user");
+    if (tokenInvalid) {
+      // Stale token
+      localStorage.removeItem("lepark_auth_token");
+      localStorage.removeItem("lepark_auth_user");
+    }
   }
 
   // Not authenticated: Show Auth Modal
@@ -11674,14 +12780,14 @@ function clearOrgFeedback() {
 }
 
 function updateOrgPointsBanner() {
-  const pts = currentUser?.parkingPoints ?? 0;
+  const pts = currentUser?.focusPoints ?? 0;
   const isAdmin = isSuperadminUser();
   if (orgCurrentPointsEl) {
     orgCurrentPointsEl.textContent = String(pts);
   }
   const costPill = orgPointsBanner?.querySelector(".org-cost-pill");
   if (costPill) {
-    costPill.textContent = isAdmin ? "Cost: FREE (Superadmin)" : `Cost: ${ORGANISATION_CREATION_COST} Points`;
+    costPill.textContent = isAdmin ? "Cost: FREE (Superadmin)" : `Cost: ${ORGANISATION_CREATION_COST} FP`;
   }
   const hasEnough = isAdmin || pts >= ORGANISATION_CREATION_COST;
   if (orgPointsBanner) {
@@ -11690,7 +12796,7 @@ function updateOrgPointsBanner() {
   if (btnOrgCreateSubmit) {
     btnOrgCreateSubmit.textContent = isAdmin
       ? "Create Organisation (Free for Superadmin)"
-      : `Create Organisation (${ORGANISATION_CREATION_COST} Park Points)`;
+      : `Create Organisation (${ORGANISATION_CREATION_COST} FP)`;
     btnOrgCreateSubmit.disabled = !authToken || !hasEnough;
   }
   if (orgFriendSearchInput) {
@@ -11859,7 +12965,7 @@ async function fetchOrganisationsData() {
 function renderOrganisationsList() {
   if (!orgListContainer) return;
   if (organisationsCache.length === 0) {
-    orgListContainer.innerHTML = `<div class="org-empty-friends">You are not in any organisation yet. Create one using ${ORGANISATION_CREATION_COST} Park Points!</div>`;
+    orgListContainer.innerHTML = `<div class="org-empty-friends">You are not in any organisation yet. Create one using ${ORGANISATION_CREATION_COST} FP!</div>`;
     return;
   }
 
@@ -11877,7 +12983,7 @@ function renderOrganisationsList() {
 
     const logoHtml = org.logo
       ? `<img src="${escapeOrgHtml(org.logo)}" alt="${escapeOrgHtml(org.name)}" class="org-card-logo" />`
-      : `<div class="org-card-logo">🏢</div>`;
+      : `<div class="org-card-logo"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M13 8h4M13 12h4M13 16h4"/></svg></div>`;
 
     const membersHtml = org.members
       .map((m) => {
@@ -11885,7 +12991,7 @@ function renderOrganisationsList() {
           isLeader && m.role !== "leader"
             ? ` <button type="button" class="org-remove-member-btn" data-org-id="${org.id}" data-user-id="${m.userId}" title="Remove member" style="background:none;border:none;color:#fca5a5;cursor:pointer;padding:0 2px;">✕</button>`
             : "";
-        return `<span class="org-member-pill ${m.role}">${m.role === "leader" ? "👑 " : ""}${escapeOrgHtml(m.name || m.username)}${removeBtn}</span>`;
+        return `<span class="org-member-pill ${m.role}">${m.role === "leader" ? "[Leader] " : ""}${escapeOrgHtml(m.name || m.username)}${removeBtn}</span>`;
       })
       .join("");
 
@@ -11900,10 +13006,23 @@ function renderOrganisationsList() {
                <button type="button" class="btn-secondary org-btn-sm org-add-member-btn" data-org-id="${org.id}">${isAdmin ? "+ Add Player" : "+ Add Friend"}</button>
              </div>`
           : `<span class="org-helper-text">${isAdmin ? "All players are already members" : "All friends are already members"}</span>`;
+      const otherMembers = org.members.filter((m) => m.userId !== org.creatorId);
+      const transferHtml =
+        otherMembers.length > 0
+          ? `<div class="org-add-member-row">
+               <select class="org-add-member-select" data-org-transfer-select="${org.id}">
+                 ${otherMembers.map((m) => `<option value="${m.userId}">${escapeOrgHtml(m.name || m.username)} (@${escapeOrgHtml(m.username)})</option>`).join("")}
+               </select>
+               <button type="button" class="btn-secondary org-btn-sm org-transfer-btn" data-org-id="${org.id}" data-org-name="${escapeOrgHtml(org.name)}">Transfer Leader</button>
+             </div>`
+          : "";
       actionsHtml = `
         <div class="org-card-actions">
           ${selectHtml}
-          <button type="button" class="org-btn-sm org-btn-danger org-disband-btn" data-org-id="${org.id}">Disband</button>
+          <div class="org-add-member-row">
+            ${transferHtml}
+            <button type="button" class="org-btn-sm org-btn-danger org-disband-btn" data-org-id="${org.id}">Disband</button>
+          </div>
         </div>
       `;
     } else if (currentUser) {
@@ -11983,6 +13102,32 @@ function renderOrganisationsList() {
       const data = await res.json();
       if (!res.ok || !data.success) {
         alert(data.error || "Failed to disband organisation.");
+        return;
+      }
+      await fetchOrganisationsData();
+    });
+  });
+
+  orgListContainer.querySelectorAll<HTMLButtonElement>(".org-transfer-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const orgId = Number(btn.dataset.orgId);
+      const orgName = btn.dataset.orgName || "this organisation";
+      const select = orgListContainer.querySelector<HTMLSelectElement>(`[data-org-transfer-select="${orgId}"]`);
+      const targetUserId = Number(select?.value);
+      const targetLabel = select?.options[select.selectedIndex]?.text || "this member";
+      if (!orgId || !targetUserId || !authToken) return;
+      if (!confirm(`Transfer leadership of "${orgName}" to ${targetLabel}? You will become a regular member.`)) return;
+      const res = await fetch(getApiUrl(`/api/organisations/${orgId}/transfer`), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({ userId: targetUserId }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        alert(data.error || "Failed to transfer leadership.");
         return;
       }
       await fetchOrganisationsData();
@@ -12069,10 +13214,10 @@ function initOrganisationUI() {
       return;
     }
 
-    const pts = currentUser.parkingPoints ?? 0;
+    const pts = currentUser.focusPoints ?? 0;
     if (!isSuperadminUser() && pts < ORGANISATION_CREATION_COST) {
       showOrgFeedback(
-        `You need ${ORGANISATION_CREATION_COST} Park Points to create an organisation (you have ${pts}).`,
+        `You need ${ORGANISATION_CREATION_COST} FP to create an organisation (you have ${pts} FP).`,
         "error"
       );
       return;
@@ -12095,8 +13240,9 @@ function initOrganisationUI() {
       const data: CreateOrganisationResponse = await res.json();
       if (!res.ok || !data.success) {
         if (typeof data.points === "number" && currentUser) {
-          currentUser.parkingPoints = data.points;
-          updateParkingPointsDisplay(data.points);
+          currentUser.focusPoints = data.points;
+          updateFocusPointsDisplay(data.points);
+          focusUiController?.syncUserAuth(currentUser);
           updateOrgPointsBanner();
         }
         showOrgFeedback(data.error || "Failed to create organisation.", "error");
@@ -12104,11 +13250,12 @@ function initOrganisationUI() {
       }
 
       if (typeof data.points === "number" && currentUser) {
-        currentUser.parkingPoints = data.points;
+        currentUser.focusPoints = data.points;
         try {
           localStorage.setItem("lepark_auth_user", JSON.stringify(currentUser));
         } catch {}
-        updateParkingPointsDisplay(data.points);
+        updateFocusPointsDisplay(data.points);
+        focusUiController?.syncUserAuth(currentUser);
         updateOrgPointsBanner();
       }
 
@@ -12118,7 +13265,7 @@ function initOrganisationUI() {
       setOrgLogoPreview(null);
       renderOrgFriendsPicker();
       await fetchOrganisationsData();
-      showOrgFeedback(`🎉 Organisation "${name}" created!`, "success");
+      showOrgFeedback(`Organisation "${name}" created!`, "success");
       switchOrgTab("list");
     } catch (err: any) {
       showOrgFeedback(err?.message || "Network error creating organisation.", "error");
@@ -12956,16 +14103,16 @@ function formatRepeatSummary(interval: number, unit: CalendarRepeatUnit): string
 function formatCalendarEventWhen(ev: CalendarEventDto): string {
   const repeatSuffix =
     ev.repeatInterval && ev.repeatInterval > 0 && ev.repeatUnit
-      ? ` • 🔁 ${formatRepeatSummary(ev.repeatInterval, ev.repeatUnit)}`
+      ? ` • Repeat: ${formatRepeatSummary(ev.repeatInterval, ev.repeatUnit)}`
       : "";
   if (ev.endDate > ev.startDate) {
-    return `📅 ${formatCalendarDateDisplay(ev.startDate)} – ${formatCalendarDateDisplay(ev.endDate)} (Multi-day)${repeatSuffix}`;
+    return `${formatCalendarDateDisplay(ev.startDate)} – ${formatCalendarDateDisplay(ev.endDate)} (Multi-day)${repeatSuffix}`;
   }
   const datePart = formatCalendarDateDisplay(ev.startDate);
   if (ev.isAllDay || !ev.startTime || !ev.endTime) {
-    return `📅 ${datePart} • All day${repeatSuffix}`;
+    return `${datePart} • All day${repeatSuffix}`;
   }
-  return `📅 ${datePart} • ${ev.startTime} – ${ev.endTime}${repeatSuffix}`;
+  return `${datePart} • ${ev.startTime} – ${ev.endTime}${repeatSuffix}`;
 }
 
 function canModifyCalendarEvent(ev: CalendarEventDto): boolean {
@@ -13339,7 +14486,7 @@ function renderCalendarView() {
         !isMultiDay && !ev.isAllDay && ev.startTime
           ? `${ev.startTime} ${ev.title}`
           : ev.title;
-      const baseLabel = isRepeating ? `🔁 ${timeOrTitle}` : timeOrTitle;
+      const baseLabel = isRepeating ? `[R] ${timeOrTitle}` : timeOrTitle;
       const occAssignees = getOccurrenceAssignees(ev, occ.occIndex);
       let assigneeSuffix = "";
       if (occAssignees.length === 1) {
@@ -13596,7 +14743,7 @@ function openCalendarDayView(isoDate: string) {
         const isRepeating = Boolean(ev.repeatInterval && ev.repeatInterval > 0 && ev.repeatUnit);
         const titleEl = document.createElement("div");
         titleEl.className = "calendar-day-list-title";
-        titleEl.textContent = isRepeating ? `🔁 ${ev.title}` : ev.title;
+        titleEl.textContent = isRepeating ? `[R] ${ev.title}` : ev.title;
 
         const metaParts: string[] = [];
         if (ev.endDate > ev.startDate) {
@@ -13609,7 +14756,7 @@ function openCalendarDayView(isoDate: string) {
 
         const occAssignees = getOccurrenceAssignees(ev, occ.occIndex);
         if (occAssignees.length > 0) {
-          metaParts.push(`👤 ${occAssignees.map((a) => a.name).join(", ")}`);
+          metaParts.push(`Assignee: ${occAssignees.map((a) => a.name).join(", ")}`);
         }
 
         const metaEl = document.createElement("div");
@@ -13729,15 +14876,15 @@ function openCalendarEventDetailView(
     calendarDetailWhen.innerHTML = "";
     const dateLine = document.createElement("div");
     if (ev.endDate > ev.startDate) {
-      dateLine.textContent = `📅 ${formatCalendarDateDisplay(ev.startDate)} – ${formatCalendarDateDisplay(ev.endDate)}`;
+      dateLine.textContent = `${formatCalendarDateDisplay(ev.startDate)} – ${formatCalendarDateDisplay(ev.endDate)}`;
     } else {
-      dateLine.textContent = `📅 ${formatCalendarDateDisplay(occDate || ev.startDate)}`;
+      dateLine.textContent = `${formatCalendarDateDisplay(occDate || ev.startDate)}`;
     }
     const timeLine = document.createElement("div");
     timeLine.textContent =
       ev.isAllDay || !ev.startTime || !ev.endTime
-        ? "🕒 All day"
-        : `🕒 ${ev.startTime} – ${ev.endTime}`;
+        ? "All day"
+        : `${ev.startTime} – ${ev.endTime}`;
     calendarDetailWhen.appendChild(dateLine);
     calendarDetailWhen.appendChild(timeLine);
   }
@@ -13745,7 +14892,7 @@ function openCalendarEventDetailView(
     const assignees = ev.assignees || [];
     if (ev.type !== "personal" && assignees.length > 0) {
       const occAssignees = getOccurrenceAssignees(ev, occIndex);
-      calendarDetailAssignees.textContent = `👤 Assignee: ${occAssignees.map((a) => a.name).join(", ")}`;
+      calendarDetailAssignees.textContent = `Assignee: ${occAssignees.map((a) => a.name).join(", ")}`;
       calendarDetailAssignees.classList.remove("hidden");
     } else {
       calendarDetailAssignees.textContent = "";
@@ -14503,7 +15650,7 @@ function renderInventoryList() {
 
     const iconEl = document.createElement("div");
     iconEl.className = "inventory-empty-icon";
-    iconEl.textContent = activeInventoryTab === "bought" ? "✅" : "🛒";
+    iconEl.innerHTML = activeInventoryTab === "bought" ? '<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>' : '<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>';
 
     const textEl = document.createElement("div");
     textEl.textContent =
@@ -14530,7 +15677,7 @@ function renderInventoryList() {
 
     const icon = document.createElement("span");
     icon.className = "inventory-item-icon";
-    icon.textContent = item.bought ? "✅" : "🛒";
+    icon.innerHTML = item.bought ? '<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>' : '<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>';
 
     const name = document.createElement("span");
     name.className = "inventory-item-name";
@@ -14827,6 +15974,543 @@ function initSpaceInventoryUI() {
   });
 }
 
+// ==========================================
+// Seller NPC Context Menu & Asset Shop Modal
+// ==========================================
+
+function populateSellerNpcMenuControls(state: SellerNpcState | null) {
+  const nameInput = document.getElementById("editor-seller-name-input") as HTMLInputElement | null;
+  const themeSelect = document.getElementById("editor-seller-theme-select") as HTMLSelectElement | null;
+  const spriteSelect = document.getElementById("editor-seller-sprite-select") as HTMLSelectElement | null;
+  const counterLabel = document.getElementById("editor-seller-counter-label");
+
+  if (themeSelect && themeSelect.options.length === 0) {
+    for (const opt of ASSET_SHOP_THEME_OPTIONS) {
+      const option = document.createElement("option");
+      option.value = opt.id;
+      option.textContent = opt.label;
+      themeSelect.appendChild(option);
+    }
+  }
+  if (spriteSelect && spriteSelect.options.length === 0) {
+    for (const opt of SELLER_NPC_SPRITE_OPTIONS) {
+      const option = document.createElement("option");
+      option.value = opt.key;
+      option.textContent = opt.label;
+      spriteSelect.appendChild(option);
+    }
+  }
+
+  if (nameInput) nameInput.value = state?.name || "";
+  if (themeSelect) themeSelect.value = state?.shopTheme || "auto";
+  if (spriteSelect) spriteSelect.value = state?.spriteKey || "general_seller";
+  if (counterLabel) {
+    counterLabel.textContent = state?.showCounter !== false ? "Counter: ON" : "Counter: OFF";
+  }
+}
+
+const ASSET_SHOP_PAGE_SIZE = 24;
+let activeShopCatalog: SpaceShopResponse | null = null;
+let activeShopSelectedGroupId: string = "all";
+let activeShopUnboughtOnly: boolean = false;
+let activeShopPage: number = 1;
+let activeShopThumbObserver: IntersectionObserver | null = null;
+
+const SHOP_SHORT_TITLES: Record<string, string> = {
+  office: "Office",
+  pet_shop: "Pet Shop",
+  guild: "Adventure Guild",
+  restaurant: "Restaurant",
+  living_room: "Living Room",
+  all: "Asset Shop",
+  general: "Shop",
+};
+
+function showAssetShopFeedback(message: string, kind: "success" | "error") {
+  const el = document.getElementById("asset-shop-feedback");
+  if (!el) return;
+  el.textContent = message;
+  el.className = `asset-shop-feedback ${kind}`;
+}
+
+function clearAssetShopFeedback() {
+  const el = document.getElementById("asset-shop-feedback");
+  if (!el) return;
+  el.textContent = "";
+  el.className = "asset-shop-feedback hidden";
+}
+
+function getEffectiveOwnedAssetSet(): Set<string> {
+  const owned = new Set<string>(activeShopCatalog?.ownedAssets || []);
+  if (currentUser?.unlockedAssets) {
+    for (const id of currentUser.unlockedAssets) {
+      owned.add(id);
+    }
+  }
+  return owned;
+}
+
+function renderAssetShopPagination(paginationEl: HTMLElement, totalPages: number) {
+  paginationEl.innerHTML = "";
+  if (totalPages <= 1) {
+    paginationEl.classList.add("hidden");
+    return;
+  }
+  paginationEl.classList.remove("hidden");
+
+  const goToPage = (nextPage: number) => {
+    const clamped = Math.max(1, Math.min(totalPages, nextPage));
+    if (clamped === activeShopPage) return;
+    activeShopPage = clamped;
+    const bodyEl = document.getElementById("asset-shop-body");
+    if (bodyEl) bodyEl.scrollTop = 0;
+    renderAssetShopCatalogView();
+  };
+
+  const prevBtn = document.createElement("button");
+  prevBtn.type = "button";
+  prevBtn.className = "asset-shop-page-btn asset-shop-page-nav";
+  prevBtn.textContent = "‹";
+  prevBtn.setAttribute("aria-label", "Previous page");
+  prevBtn.disabled = activeShopPage <= 1;
+  prevBtn.addEventListener("click", () => goToPage(activeShopPage - 1));
+  paginationEl.appendChild(prevBtn);
+
+  const tokens: Array<number | "..."> = [];
+  if (totalPages <= 7) {
+    for (let p = 1; p <= totalPages; p++) tokens.push(p);
+  } else {
+    tokens.push(1);
+    const start = Math.max(2, activeShopPage - 1);
+    const end = Math.min(totalPages - 1, activeShopPage + 1);
+    if (start > 2) tokens.push("...");
+    for (let p = start; p <= end; p++) tokens.push(p);
+    if (end < totalPages - 1) tokens.push("...");
+    tokens.push(totalPages);
+  }
+
+  for (const tok of tokens) {
+    if (tok === "...") {
+      const dots = document.createElement("span");
+      dots.className = "asset-shop-page-ellipsis";
+      dots.textContent = "…";
+      paginationEl.appendChild(dots);
+    } else {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "asset-shop-page-btn" + (tok === activeShopPage ? " active" : "");
+      btn.textContent = String(tok);
+      btn.setAttribute("aria-label", `Page ${tok}`);
+      if (tok === activeShopPage) btn.setAttribute("aria-current", "page");
+      btn.addEventListener("click", () => goToPage(tok));
+      paginationEl.appendChild(btn);
+    }
+  }
+
+  const nextBtn = document.createElement("button");
+  nextBtn.type = "button";
+  nextBtn.className = "asset-shop-page-btn asset-shop-page-nav";
+  nextBtn.textContent = "›";
+  nextBtn.setAttribute("aria-label", "Next page");
+  nextBtn.disabled = activeShopPage >= totalPages;
+  nextBtn.addEventListener("click", () => goToPage(activeShopPage + 1));
+  paginationEl.appendChild(nextBtn);
+}
+
+function renderAssetShopCatalogView() {
+  const grid = document.getElementById("asset-shop-grid");
+  const emptyEl = document.getElementById("asset-shop-empty");
+  const paginationEl = document.getElementById("asset-shop-pagination");
+  const fpEl = document.getElementById("asset-shop-fp-balance");
+  const ownedCountEl = document.getElementById("asset-shop-owned-count");
+  const packTabsEl = document.getElementById("asset-shop-pack-tabs");
+  const adminBanner = document.getElementById("asset-shop-admin-banner");
+  const hideOwnedBtn = document.getElementById("btn-asset-shop-hide-owned");
+
+  if (!grid || !emptyEl || !paginationEl) return;
+
+  const isSuperadmin =
+    currentUser?.role === "superadmin" || Boolean(activeShopCatalog?.isSuperadmin);
+  const ownedSet = getEffectiveOwnedAssetSet();
+  const fpBalance = currentUser?.focusPoints ?? activeShopCatalog?.focusPoints ?? 0;
+
+  if (fpEl) fpEl.textContent = `${fpBalance} FP`;
+  if (adminBanner) adminBanner.classList.toggle("hidden", !isSuperadmin);
+  if (hideOwnedBtn) {
+    hideOwnedBtn.classList.toggle("active", activeShopUnboughtOnly);
+    hideOwnedBtn.setAttribute("aria-pressed", String(activeShopUnboughtOnly));
+  }
+
+  const groups = activeShopCatalog?.groups || [];
+  const allItems: SpaceShopCatalogItem[] = groups.flatMap((g) => g.items);
+  const ownedTotal = isSuperadmin
+    ? allItems.length
+    : allItems.filter((item) => ownedSet.has(item.assetId)).length;
+
+  if (ownedCountEl) {
+    ownedCountEl.textContent = `${ownedTotal}/${allItems.length}`;
+  }
+
+  if (packTabsEl) {
+    packTabsEl.innerHTML = "";
+    if (groups.length > 1) {
+      const allBtn = document.createElement("button");
+      allBtn.type = "button";
+      allBtn.className =
+        "asset-shop-pack-tab-btn" + (activeShopSelectedGroupId === "all" ? " active" : "");
+      allBtn.textContent = "All";
+      allBtn.addEventListener("click", () => {
+        activeShopSelectedGroupId = "all";
+        activeShopPage = 1;
+        const bodyEl = document.getElementById("asset-shop-body");
+        if (bodyEl) bodyEl.scrollTop = 0;
+        renderAssetShopCatalogView();
+      });
+      packTabsEl.appendChild(allBtn);
+
+      for (const grp of groups) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className =
+          "asset-shop-pack-tab-btn" + (activeShopSelectedGroupId === grp.id ? " active" : "");
+        btn.textContent = grp.label;
+        btn.addEventListener("click", () => {
+          activeShopSelectedGroupId = grp.id;
+          activeShopPage = 1;
+          const bodyEl = document.getElementById("asset-shop-body");
+          if (bodyEl) bodyEl.scrollTop = 0;
+          renderAssetShopCatalogView();
+        });
+        packTabsEl.appendChild(btn);
+      }
+    }
+  }
+
+  if (allItems.length === 0) {
+    grid.innerHTML = "";
+    paginationEl.classList.add("hidden");
+    emptyEl.classList.remove("hidden");
+    emptyEl.innerHTML =
+      "Base items here are free. Visit <strong>Office</strong>, <strong>Pet Shop</strong>, <strong>Adventure Guild</strong>, or <strong>Living Room</strong> to buy themed assets.";
+    return;
+  }
+
+  const filtered = allItems.filter((item) => {
+    if (activeShopSelectedGroupId !== "all" && item.groupId !== activeShopSelectedGroupId) {
+      return false;
+    }
+    const isOwned = isSuperadmin || ownedSet.has(item.assetId);
+    if (activeShopUnboughtOnly && isOwned) {
+      return false;
+    }
+    return true;
+  });
+
+  grid.innerHTML = "";
+  if (filtered.length === 0) {
+    paginationEl.classList.add("hidden");
+    emptyEl.classList.remove("hidden");
+    emptyEl.textContent = activeShopUnboughtOnly
+      ? "All matching assets owned!"
+      : "No items.";
+    return;
+  }
+
+  emptyEl.classList.add("hidden");
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / ASSET_SHOP_PAGE_SIZE));
+  activeShopPage = Math.max(1, Math.min(totalPages, activeShopPage));
+
+  if (!activeShopThumbObserver && typeof IntersectionObserver !== "undefined") {
+    activeShopThumbObserver = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          const img = entry.target as HTMLImageElement;
+          const assetId = img.dataset.shopThumbId;
+          if (!assetId) continue;
+          activeShopThumbObserver?.unobserve(img);
+          void resolveAssetThumbnailUrl(assetId).then((url) => {
+            if (url) img.src = url;
+          });
+        }
+      },
+      { root: document.getElementById("asset-shop-body"), rootMargin: "140px" }
+    );
+  }
+
+  const startIdx = (activeShopPage - 1) * ASSET_SHOP_PAGE_SIZE;
+  const visibleSlice = filtered.slice(startIdx, startIdx + ASSET_SHOP_PAGE_SIZE);
+  const fragment = document.createDocumentFragment();
+
+  for (const item of visibleSlice) {
+    const isOwned = isSuperadmin || ownedSet.has(item.assetId);
+
+    const card = document.createElement("div");
+    card.className = `asset-shop-card${isOwned ? " owned" : ""}`;
+
+    const thumbBox = document.createElement("div");
+    thumbBox.className = "asset-shop-thumb-box";
+
+    const img = document.createElement("img");
+    img.className = "asset-shop-thumb-img";
+    img.alt = "";
+    img.dataset.shopThumbId = item.assetId;
+    if (activeShopThumbObserver) {
+      activeShopThumbObserver.observe(img);
+    } else {
+      void resolveAssetThumbnailUrl(item.assetId).then((url) => {
+        if (url) img.src = url;
+      });
+    }
+    thumbBox.appendChild(img);
+
+    const actionWrap = document.createElement("div");
+    actionWrap.className = "asset-shop-card-action";
+
+    if (isOwned) {
+      const badge = document.createElement("div");
+      badge.className = "asset-shop-owned-badge";
+      badge.textContent = "✓";
+      badge.setAttribute("aria-label", "Owned");
+      actionWrap.appendChild(badge);
+    } else {
+      const buyBtn = document.createElement("button");
+      buyBtn.type = "button";
+      buyBtn.className = "asset-shop-buy-btn";
+      buyBtn.textContent = `${item.cost} FP`;
+      buyBtn.addEventListener("click", () => {
+        void handleBuyAssetFromShop(item, buyBtn);
+      });
+      actionWrap.appendChild(buyBtn);
+    }
+
+    card.append(thumbBox, actionWrap);
+    fragment.appendChild(card);
+  }
+
+  grid.appendChild(fragment);
+  renderAssetShopPagination(paginationEl, totalPages);
+}
+
+async function handleBuyAssetFromShop(
+  item: SpaceShopCatalogItem,
+  btn: HTMLButtonElement
+) {
+  if (!currentUser || !authToken) {
+    showAssetShopFeedback(
+      "Sign in to buy assets.",
+      "error"
+    );
+    return;
+  }
+
+  const currentPoints = currentUser.focusPoints ?? 0;
+  if (currentPoints < item.cost) {
+    showAssetShopFeedback(
+      `Need ${item.cost} FP (${currentPoints} FP available).`,
+      "error"
+    );
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = "...";
+
+  try {
+    const res = await fetch(getApiUrl("/api/assets/unlock"), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${authToken}`,
+      },
+      body: JSON.stringify({
+        assetId: item.assetId,
+        spaceId: currentSpaceId,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      showAssetShopFeedback(data.error || "Purchase failed.", "error");
+      btn.disabled = false;
+      btn.textContent = `${item.cost} FP`;
+      return;
+    }
+
+    const newPoints =
+      typeof data.points === "number" ? data.points : currentPoints - item.cost;
+    const unlockedAssets: string[] = Array.isArray(data.unlockedAssets)
+      ? data.unlockedAssets
+      : [...(currentUser.unlockedAssets || []), item.assetId];
+
+    currentUser.focusPoints = newPoints;
+    currentUser.unlockedAssets = unlockedAssets;
+    try {
+      localStorage.setItem("lepark_auth_user", JSON.stringify(currentUser));
+    } catch {}
+
+    if (activeShopCatalog) {
+      activeShopCatalog.focusPoints = newPoints;
+      activeShopCatalog.ownedAssets = Array.from(
+        new Set([...(activeShopCatalog.ownedAssets || []), item.assetId])
+      );
+    }
+
+    updateFocusPointsDisplay(newPoints);
+    focusUiController?.syncUserAuth(currentUser);
+    updateEditorAssetGroupVisibility();
+    showAssetShopFeedback(`Purchased for ${item.cost} FP`, "success");
+    renderAssetShopCatalogView();
+  } catch (err) {
+    console.error("Asset shop purchase error:", err);
+    showAssetShopFeedback("Network error.", "error");
+    btn.disabled = false;
+    btn.textContent = `${item.cost} FP`;
+  }
+}
+
+async function openAssetShopModal(_sellerNpcOverride?: SellerNpcState | null) {
+  const modalEl = document.getElementById("asset-shop-modal");
+  if (!modalEl) return;
+
+  const titleEl = document.getElementById("asset-shop-modal-title");
+
+  clearAssetShopFeedback();
+  activeShopSelectedGroupId = "all";
+  activeShopUnboughtOnly = false;
+  activeShopPage = 1;
+
+  if (titleEl) {
+    titleEl.textContent = "Shop";
+  }
+
+  modalEl.classList.remove("hidden");
+  const bodyEl = document.getElementById("asset-shop-body");
+  if (bodyEl) bodyEl.scrollTop = 0;
+  setGameControlsActive(false);
+
+  const spaceId = currentSpaceId || "space_central_plaza";
+  try {
+    const headers: Record<string, string> = {};
+    if (authToken) {
+      headers.Authorization = `Bearer ${authToken}`;
+    }
+    const res = await fetch(getApiUrl(`/api/spaces/${encodeURIComponent(spaceId)}/shop`), {
+      headers,
+    });
+    const data = (await res.json()) as SpaceShopResponse;
+    if (!res.ok || !data.success) {
+      showAssetShopFeedback(data.error || "Failed to load shop.", "error");
+      return;
+    }
+
+    activeShopCatalog = data;
+    if (titleEl) {
+      titleEl.textContent =
+        SHOP_SHORT_TITLES[data.resolvedTheme || "general"] || "Shop";
+    }
+    renderAssetShopCatalogView();
+  } catch (err) {
+    console.error("Failed to load space shop:", err);
+    showAssetShopFeedback("Network error.", "error");
+  }
+}
+
+function closeAssetShopModal() {
+  const modalEl = document.getElementById("asset-shop-modal");
+  if (!modalEl) return;
+  modalEl.classList.add("hidden");
+  if (activeShopThumbObserver) {
+    activeShopThumbObserver.disconnect();
+    activeShopThumbObserver = null;
+  }
+  setGameControlsActive(true);
+}
+
+function initAssetShopUI() {
+  const modalEl = document.getElementById("asset-shop-modal");
+  const closeBtn = document.getElementById("btn-close-asset-shop-modal");
+  const hideOwnedBtn = document.getElementById("btn-asset-shop-hide-owned");
+
+  closeBtn?.addEventListener("click", closeAssetShopModal);
+  modalEl?.addEventListener("click", (e) => {
+    if (e.target === modalEl) {
+      closeAssetShopModal();
+    }
+  });
+
+  hideOwnedBtn?.addEventListener("click", () => {
+    activeShopUnboughtOnly = !activeShopUnboughtOnly;
+    activeShopPage = 1;
+    const bodyEl = document.getElementById("asset-shop-body");
+    if (bodyEl) bodyEl.scrollTop = 0;
+    renderAssetShopCatalogView();
+  });
+
+  // Bind Seller NPC Cursor Context Menu controls (Superadmin only)
+  const sellerNameInput = document.getElementById(
+    "editor-seller-name-input"
+  ) as HTMLInputElement | null;
+  const btnSaveSellerName = document.getElementById("btn-editor-seller-save-name");
+  const sellerThemeSelect = document.getElementById(
+    "editor-seller-theme-select"
+  ) as HTMLSelectElement | null;
+  const sellerSpriteSelect = document.getElementById(
+    "editor-seller-sprite-select"
+  ) as HTMLSelectElement | null;
+  const btnCounterToggle = document.getElementById("btn-editor-seller-counter-toggle");
+
+  const saveSellerName = () => {
+    if (!sellerNameInput) return;
+    const nextName = sellerNameInput.value.trim();
+    multiplayer?.updateSellerNpc({ name: nextName });
+    const nameEl = document.getElementById("editor-item-menu-name");
+    if (nameEl) nameEl.textContent = nextName || "Seller NPC";
+    showPlacingToast(nextName ? `Seller NPC renamed to ${nextName}` : "Seller NPC name reset to theme default");
+  };
+
+  sellerNameInput?.addEventListener("click", (e) => e.stopPropagation());
+  sellerNameInput?.addEventListener("keydown", (e) => {
+    e.stopPropagation();
+    if (e.key === "Enter") {
+      e.preventDefault();
+      saveSellerName();
+    }
+  });
+  btnSaveSellerName?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    saveSellerName();
+  });
+
+  sellerThemeSelect?.addEventListener("click", (e) => e.stopPropagation());
+  sellerThemeSelect?.addEventListener("change", (e) => {
+    e.stopPropagation();
+    const nextTheme = sellerThemeSelect.value as AssetShopTheme;
+    multiplayer?.updateSellerNpc({ shopTheme: nextTheme });
+    showPlacingToast(`Seller NPC catalog updated`);
+  });
+
+  sellerSpriteSelect?.addEventListener("click", (e) => e.stopPropagation());
+  sellerSpriteSelect?.addEventListener("change", (e) => {
+    e.stopPropagation();
+    const nextSprite = sellerSpriteSelect.value as SellerNpcSpriteKey;
+    multiplayer?.updateSellerNpc({ spriteKey: nextSprite });
+    showPlacingToast(`Seller NPC outfit updated`);
+  });
+
+  btnCounterToggle?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const scene = gameInstance?.scene?.getScene("GameScene") as GameScene | undefined;
+    const state = scene?.getSellerNpcState();
+    const nextShow = !(state?.showCounter !== false);
+    multiplayer?.updateSellerNpc({ showCounter: nextShow });
+    const label = document.getElementById("editor-seller-counter-label");
+    if (label) label.textContent = nextShow ? "Counter: ON" : "Counter: OFF";
+    showPlacingToast(nextShow ? "Shop counter shown" : "Shop counter hidden");
+  });
+}
+
+ensureFocusUiController();
 init();
 
 if ("serviceWorker" in navigator) {

@@ -6,6 +6,14 @@ CREATE TABLE IF NOT EXISTS users (
     display_name VARCHAR(50),
     password_hash VARCHAR(255) NOT NULL,
     role VARCHAR(20) DEFAULT 'user' NOT NULL,
+    focus_points INT DEFAULT 0 NOT NULL,
+    focus_streak_days INT DEFAULT 0 NOT NULL,
+    last_focus_date VARCHAR(10),
+    focus_freeze_shields INT DEFAULT 2 NOT NULL,
+    focus_shield_week VARCHAR(10),
+    daily_focus_date VARCHAR(10),
+    daily_focus_minutes INT DEFAULT 0 NOT NULL,
+    last_public_space_id VARCHAR(64),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -28,10 +36,10 @@ CREATE INDEX IF NOT EXISTS idx_players_last_seen ON players (last_seen DESC);
 CREATE TABLE IF NOT EXISTS spaces (
     id VARCHAR(64) PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
-    category VARCHAR(50) DEFAULT 'General',
     owner_id INT REFERENCES users(id) ON DELETE CASCADE,
     is_public BOOLEAN DEFAULT TRUE,
     is_superadmin_space BOOLEAN DEFAULT FALSE,
+    focus_theme VARCHAR(32) DEFAULT 'auto' NOT NULL,
     whitelist JSONB DEFAULT '[]'::jsonb,
     shared_owners JSONB DEFAULT '[]'::jsonb,
     tiles JSONB DEFAULT '{}'::jsonb,
@@ -40,11 +48,13 @@ CREATE TABLE IF NOT EXISTS spaces (
     typewriters JSONB DEFAULT '[]'::jsonb,
     ashtrays JSONB DEFAULT '[]'::jsonb,
     chess_boards JSONB DEFAULT '[]'::jsonb,
+    aquariums JSONB DEFAULT '[]'::jsonb,
+    seller_npc JSONB DEFAULT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX IF NOT EXISTS idx_spaces_superadmin ON spaces (is_superadmin_space, category);
+CREATE INDEX IF NOT EXISTS idx_spaces_superadmin_name ON spaces (is_superadmin_space, name);
 
 CREATE TABLE IF NOT EXISTS chat_messages (
     id VARCHAR(64) PRIMARY KEY,

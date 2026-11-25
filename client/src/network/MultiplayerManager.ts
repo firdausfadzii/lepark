@@ -4,6 +4,8 @@ import {
   PlayerInputPayload,
   PlayerJoinOptions,
   PlayerAvatars,
+  PlayerOutfit,
+  DEFAULT_PLAYER_OUTFIT,
   SERVER_TICK_RATE,
   PrivateZone,
   ChatMessage,
@@ -19,11 +21,38 @@ import {
   ChessLobbyState,
   ChessGameState,
   AquariumState,
+  SellerNpcState,
+  SellerNpcPlacePayload,
+  SellerNpcUpdatePayload,
   ThrowBattleState,
   ThrowBattleInviteData,
   ThrowBattleTurnResultPayload,
   DecorationInteractionType,
   InteractiveEntityKind,
+  FocusStats,
+  FocusRewardBreakdown,
+  FocusRoomSessionState,
+  FocusRoomStartPayload,
+  FocusRoomUpdateSettingsPayload,
+  FocusSquadState,
+  FocusSquadInviteData,
+  FocusTheme,
+  ResolvedFocusTheme,
+  DinerGameState,
+  DinerActionErrorPayload,
+  DinerEventPayload,
+  RpgProfileState,
+  PartyMemberSnapshot,
+  RaidBossState,
+  LiveRaidHitEvent,
+  TradeOffer,
+  SquadBarterEligibility,
+  ExpeditionResult,
+  CheatShopState,
+  ClassId,
+  EquipSlot,
+  WeaponType,
+  PlayerAvatarState,
 } from "shared";
 
 export interface NetworkStats {
@@ -33,6 +62,7 @@ export interface NetworkStats {
 export type PlayerChangeCallback = (sessionId: string, player: any) => void;
 export type PlayerRemoveCallback = (sessionId: string) => void;
 export type PlayerAvatarCallback = (sessionId: string, avatars: PlayerAvatars | null) => void;
+export type PlayerOutfitCallback = (sessionId: string, outfit: PlayerOutfit) => void;
 export type NetworkStatsCallback = (stats: NetworkStats) => void;
 export type TilesUpdateCallback = (updates: Record<string, string>) => void;
 export type PrivateZonesUpdateCallback = (zones: PrivateZone[]) => void;
@@ -58,11 +88,62 @@ export type ChessBoardDeleteCallback = (chessBoardId: string) => void;
 export type AquariumsSyncCallback = (aquariums: AquariumState[]) => void;
 export type AquariumUpdateCallback = (aquarium: AquariumState) => void;
 export type AquariumDeleteCallback = (aquariumId: string) => void;
+export type SellerNpcSyncCallback = (sellerNpc: SellerNpcState | null) => void;
 export type ChessLobbyStateCallback = (state: ChessLobbyState) => void;
 export type ChessGameStateCallback = (state: ChessGameState) => void;
 export type ChessGameStartCallback = (state: ChessGameState) => void;
 export type ChessGameEndedCallback = (state: ChessGameState) => void;
-export type ParkingPointsAwardedCallback = (data: { points: number; added: number }) => void;
+export type FocusPointsUpdatedCallback = (data: {
+  points: number;
+  added: number;
+  stats?: FocusStats;
+}) => void;
+export type SpaceInfoUpdatedCallback = (data: {
+  spaceId: string;
+  name: string;
+  isSuperadminSpace: boolean;
+  focusTheme: FocusTheme;
+  resolvedTheme: ResolvedFocusTheme;
+}) => void;
+export type FocusRoomStateCallback = (state: FocusRoomSessionState | null) => void;
+export type FocusSessionCompletedCallback = (data: {
+  breakdown: FocusRewardBreakdown;
+  roomType: "personal" | "squad";
+  theme: ResolvedFocusTheme;
+  spaceName: string;
+  isGuest?: boolean;
+}) => void;
+export type FocusStrictViolatedCallback = (data: { graceSeconds: number }) => void;
+export type FocusNoticeCallback = (data: { type: "info" | "success" | "warning"; message: string }) => void;
+export type FocusStatsSyncCallback = (stats: FocusStats) => void;
+export type SquadStateUpdatedCallback = (data: { squad: FocusSquadState | null }) => void;
+export type SquadInviteReceivedCallback = (invite: FocusSquadInviteData) => void;
+export type SquadNoticeCallback = (data: { type: "info" | "success" | "warning"; message: string }) => void;
+
+export interface RpgClientBundle {
+  profile: RpgProfileState;
+  alliedParty: PartyMemberSnapshot[];
+  raid: RaidBossState;
+  tradeOffers: TradeOffer[];
+  barterEligibility: SquadBarterEligibility;
+}
+export type RpgStateSyncCallback = (bundle: RpgClientBundle) => void;
+export type RpgProfileUpdatedCallback = (data: {
+  profile?: RpgProfileState;
+  alliedParty?: PartyMemberSnapshot[];
+  notice?: string;
+}) => void;
+export type RpgExpeditionResultCallback = (data: { profile?: RpgProfileState; expedition?: ExpeditionResult }) => void;
+export type RpgBarterUpdatedCallback = (data: { offers?: TradeOffer[]; profile?: RpgProfileState; notice?: string }) => void;
+export type RpgRaidResultCallback = (data: {
+  raid?: RaidBossState;
+  profile?: RpgProfileState;
+  hitEvent?: LiveRaidHitEvent;
+  karmaEarned?: number;
+}) => void;
+export type RpgRaidHitCallback = (data: { raid?: RaidBossState; hitEvent?: LiveRaidHitEvent }) => void;
+export type RpgCheerReceivedCallback = (data: { fromName: string; bonusLabel: string }) => void;
+export type RpgActionErrorCallback = (data: { message: string }) => void;
 
 // Throw Battle Callbacks
 export type ThrowBattleInviteCallback = (data: ThrowBattleInviteData) => void;
@@ -80,6 +161,24 @@ export type ThrowBattleGameOverCallback = (data: { matchId: string; winnerSessio
 export type ThrowBattlePlayerLeftCallback = (data: { matchId: string; sessionId: string }) => void;
 
 
+export function extractPlayerOutfit(raw: any): PlayerOutfit {
+  const src = raw && typeof raw.toJSON === "function" ? raw.toJSON() : raw || {};
+  const shirtStyle =
+    src.shirtStyle === "sleeveless" || src.shirtStyle === "short_sleeve" || src.shirtStyle === "long_sleeve"
+      ? src.shirtStyle
+      : DEFAULT_PLAYER_OUTFIT.shirtStyle;
+  return {
+    shirtStyle,
+    shirtColor: typeof src.shirtColor === "string" && src.shirtColor ? src.shirtColor : DEFAULT_PLAYER_OUTFIT.shirtColor,
+    sleeveColor: typeof src.sleeveColor === "string" ? src.sleeveColor : DEFAULT_PLAYER_OUTFIT.sleeveColor,
+    pantsColor: typeof src.pantsColor === "string" && src.pantsColor ? src.pantsColor : DEFAULT_PLAYER_OUTFIT.pantsColor,
+    skinColor: typeof src.skinColor === "string" && src.skinColor ? src.skinColor : DEFAULT_PLAYER_OUTFIT.skinColor,
+    outerwearKey: typeof src.outerwearKey === "string" ? src.outerwearKey : DEFAULT_PLAYER_OUTFIT.outerwearKey,
+    outerwearColor: typeof src.outerwearColor === "string" && src.outerwearColor ? src.outerwearColor : DEFAULT_PLAYER_OUTFIT.outerwearColor,
+    hatKey: typeof src.hatKey === "string" ? src.hatKey : DEFAULT_PLAYER_OUTFIT.hatKey,
+  };
+}
+
 export class MultiplayerManager {
   private client!: Client;
   public room: Room | null = null;
@@ -93,6 +192,7 @@ export class MultiplayerManager {
   private onUnexpectedDisconnectCallbacks: ((code?: number) => void)[] = [];
   private onPlayerCountCallbacks: ((count: number) => void)[] = [];
   private onPlayerAvatarCallbacks: PlayerAvatarCallback[] = [];
+  private onPlayerOutfitCallbacks: PlayerOutfitCallback[] = [];
   private onNetworkStatsCallbacks: NetworkStatsCallback[] = [];
   private onTilesUpdateCallbacks: TilesUpdateCallback[] = [];
   private onPrivateZonesUpdateCallbacks: PrivateZonesUpdateCallback[] = [];
@@ -123,11 +223,42 @@ export class MultiplayerManager {
   private onAquariumsSyncCallbacks: AquariumsSyncCallback[] = [];
   private onAquariumUpdateCallbacks: AquariumUpdateCallback[] = [];
   private onAquariumDeleteCallbacks: AquariumDeleteCallback[] = [];
+  private onSellerNpcSyncCallbacks: SellerNpcSyncCallback[] = [];
   private onChessLobbyStateCallbacks: ChessLobbyStateCallback[] = [];
   private onChessGameStateCallbacks: ChessGameStateCallback[] = [];
   private onChessGameStartCallbacks: ChessGameStartCallback[] = [];
   private onChessGameEndedCallbacks: ChessGameEndedCallback[] = [];
-  private onParkingPointsAwardedCallbacks: ParkingPointsAwardedCallback[] = [];
+  private onFocusPointsUpdatedCallbacks: FocusPointsUpdatedCallback[] = [];
+  private onSpaceInfoUpdatedCallbacks: SpaceInfoUpdatedCallback[] = [];
+  private onFocusRoomStateCallbacks: FocusRoomStateCallback[] = [];
+  private onFocusSessionCompletedCallbacks: FocusSessionCompletedCallback[] = [];
+  private onFocusStrictViolatedCallbacks: FocusStrictViolatedCallback[] = [];
+  private onFocusNoticeCallbacks: FocusNoticeCallback[] = [];
+  private onFocusStatsSyncCallbacks: FocusStatsSyncCallback[] = [];
+  private onSquadStateUpdatedCallbacks: SquadStateUpdatedCallback[] = [];
+  private onSquadInviteReceivedCallbacks: SquadInviteReceivedCallback[] = [];
+  private onSquadNoticeCallbacks: SquadNoticeCallback[] = [];
+  private onRpgStateSyncCallbacks: RpgStateSyncCallback[] = [];
+  private onRpgClassChosenCallbacks: RpgStateSyncCallback[] = [];
+  private onRpgProfileUpdatedCallbacks: RpgProfileUpdatedCallback[] = [];
+  private onRpgExpeditionResultCallbacks: RpgExpeditionResultCallback[] = [];
+  private onRpgBarterUpdatedCallbacks: RpgBarterUpdatedCallback[] = [];
+  private onRpgRaidResultCallbacks: RpgRaidResultCallback[] = [];
+  private onRpgRaidHitCallbacks: RpgRaidHitCallback[] = [];
+  private onRpgCheerReceivedCallbacks: RpgCheerReceivedCallback[] = [];
+  private onRpgActionErrorCallbacks: RpgActionErrorCallback[] = [];
+
+  public currentRpgBundle: RpgClientBundle | null = null;
+
+  public currentSpaceInfo: {
+    spaceId: string;
+    name: string;
+    isSuperadminSpace: boolean;
+    focusTheme: FocusTheme;
+    resolvedTheme: ResolvedFocusTheme;
+  } | null = null;
+  public currentSquadState: FocusSquadState | null = null;
+  public currentFocusStats: FocusStats | null = null;
   private onFriendUpdateCallbacks: Array<() => void> = [];
   private onThrowBattleInviteCallbacks: ThrowBattleInviteCallback[] = [];
   private onThrowBattleChallengeSentCallbacks: ThrowBattleChallengeSentCallback[] = [];
@@ -150,12 +281,21 @@ export class MultiplayerManager {
   public currentAshtrays: Map<string, AshtrayState> = new Map();
   public currentChessBoards: Map<string, ChessBoardState> = new Map();
   public currentAquariums: Map<string, AquariumState> = new Map();
+  public currentSellerNpc: SellerNpcState | null = null;
+  public currentDinerState: DinerGameState | null = null;
   public playerAvatarsMap = new Map<string, PlayerAvatars>();
+  private onDinerStateCallbacks: Array<(state: DinerGameState) => void> = [];
+  private onDinerErrorCallbacks: Array<(err: DinerActionErrorPayload) => void> = [];
+  private onDinerEventCallbacks: Array<(ev: DinerEventPayload) => void> = [];
 
   private pingTimer: number | null = null;
   private pingSeq = 0;
   private recentPings: { seq: number; sentAt: number; received: boolean; rtt?: number }[] = [];
   private lastPingMs = 0;
+  private lastPongAt = 0;
+  private lastPingSentAt = 0;
+  private consecutiveMissedPings = 0;
+  private pongWaiters = new Map<number, (ok: boolean) => void>();
   private readonly MAX_PING_HISTORY = 15;
 
   constructor() {
@@ -207,13 +347,34 @@ export class MultiplayerManager {
     return this.room?.sessionId;
   }
 
-  public leave() {
-    this.stopPingLoop();
+  private clearRoomTransientState() {
     this.playerAvatarsMap.clear();
     this.currentTiles = {};
     this.currentPrivateZones = [];
+    this.currentJukeboxes.clear();
     this.currentTypewriters.clear();
     this.currentAshtrays.clear();
+    this.currentChessBoards.clear();
+    this.currentAquariums.clear();
+    this.currentSellerNpc = null;
+    this.currentDinerState = null;
+    this.si = new SnapshotInterpolation(SERVER_TICK_RATE);
+  }
+
+  private resolveAllPongWaiters(ok: boolean) {
+    const waiters = Array.from(this.pongWaiters.values());
+    this.pongWaiters.clear();
+    for (const resolve of waiters) {
+      try {
+        resolve(ok);
+      } catch {}
+    }
+  }
+
+  public leave() {
+    this.stopPingLoop();
+    this.resolveAllPongWaiters(false);
+    this.clearRoomTransientState();
     if (this.room) {
       const leavingRoom = this.room;
       this.intentionallyLeftRooms.add(leavingRoom);
@@ -227,12 +388,78 @@ export class MultiplayerManager {
     this.notifyConnectionStatus(false);
   }
 
+  public handleConnectionLost() {
+    const staleRoom = this.room;
+    if (!staleRoom) return;
+    this.stopPingLoop();
+    this.resolveAllPongWaiters(false);
+    this.intentionallyLeftRooms.add(staleRoom);
+    this.room = null;
+    this.clearRoomTransientState();
+    try {
+      staleRoom.leave(false);
+    } catch (err) {
+      console.warn("Error closing stale room:", err);
+    }
+    this.notifyConnectionStatus(false);
+    this.onUnexpectedDisconnectCallbacks.forEach((cb) => cb());
+  }
+
+  public async verifyConnection(timeoutMs: number = 2500): Promise<boolean> {
+    const room = this.room;
+    if (!room) return false;
+    const seq = ++this.pingSeq;
+    const now = Date.now();
+    this.recentPings.push({
+      seq,
+      sentAt: now,
+      received: false,
+    });
+    if (this.recentPings.length > this.MAX_PING_HISTORY) {
+      this.recentPings.shift();
+    }
+
+    return new Promise<boolean>((resolve) => {
+      let settled = false;
+      const finish = (ok: boolean) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        this.pongWaiters.delete(seq);
+        resolve(ok);
+      };
+      const timer = window.setTimeout(() => finish(false), timeoutMs);
+      this.pongWaiters.set(seq, finish);
+      try {
+        room.send("PING", { seq, t: now });
+      } catch {
+        finish(false);
+      }
+    });
+  }
+
   public async joinGame(options: PlayerJoinOptions): Promise<Room> {
     try {
+      if (this.room) {
+        const previousRoom = this.room;
+        this.intentionallyLeftRooms.add(previousRoom);
+        this.stopPingLoop();
+        this.resolveAllPongWaiters(false);
+        this.room = null;
+        try {
+          previousRoom.leave();
+        } catch (err) {
+          console.warn("Error leaving previous room before join:", err);
+        }
+      }
+      this.clearRoomTransientState();
       this.currentSpaceId = options.spaceId || "space_central_plaza";
       // Use schema reflection (no root class) — passing `GameState` from `shared`
       // pulls in a second @colyseus/schema instance and breaks decoding ("refId not found").
       this.room = await this.client.joinOrCreate("game_room", options);
+      this.lastPongAt = Date.now();
+      this.lastPingSentAt = 0;
+      this.consecutiveMissedPings = 0;
       this.notifyConnectionStatus(true);
       this.setupRoomEvents();
 
@@ -284,6 +511,13 @@ export class MultiplayerManager {
 
     this.room.onMessage("PONG", (data: { seq: number; t: number }) => {
       const now = Date.now();
+      this.lastPongAt = now;
+      this.consecutiveMissedPings = 0;
+      const waiter = this.pongWaiters.get(data.seq);
+      if (waiter) {
+        this.pongWaiters.delete(data.seq);
+        waiter(true);
+      }
       const rtt = Math.max(1, now - data.t);
       const record = this.recentPings.find((p) => p.seq === data.seq);
       if (record) {
@@ -531,6 +765,16 @@ export class MultiplayerManager {
       }
     });
 
+    this.room.onMessage("CURRENT_SELLER_NPC", (sellerNpc: SellerNpcState | null) => {
+      this.currentSellerNpc = sellerNpc || null;
+      this.notifySellerNpcSync(this.currentSellerNpc);
+    });
+
+    this.room.onMessage("SELLER_NPC_UPDATED", (sellerNpc: SellerNpcState | null) => {
+      this.currentSellerNpc = sellerNpc || null;
+      this.notifySellerNpcSync(this.currentSellerNpc);
+    });
+
     this.room.onMessage("CHESS_LOBBY_STATE", (state: ChessLobbyState) => {
       if (state) {
         this.notifyChessLobbyState(state);
@@ -634,10 +878,259 @@ export class MultiplayerManager {
       }
     });
 
-    this.room.onMessage("PARKING_POINTS_AWARDED", (data: { points: number; added: number }) => {
-      if (data && typeof data.points === "number") {
-        this.notifyParkingPointsAwarded(data);
+    this.room.onMessage(
+      "FOCUS_POINTS_UPDATED",
+      (data: { totalPoints?: number; points?: number; added: number; stats?: FocusStats }) => {
+        if (!data) return;
+        const points = typeof data.totalPoints === "number" ? data.totalPoints : data.points;
+        if (typeof points === "number") {
+          if (data.stats) {
+            this.currentFocusStats = data.stats;
+          }
+          this.notifyFocusPointsUpdated({
+            points,
+            added: Number(data.added) || 0,
+            stats: data.stats,
+          });
+        }
       }
+    );
+
+    const handleSpaceInfo = (data: any) => {
+      if (!data || !data.spaceId) return;
+      this.currentSpaceInfo = data;
+      this.onSpaceInfoUpdatedCallbacks.forEach((cb) => {
+        try {
+          cb(data);
+        } catch (err) {
+          console.error("Error in onSpaceInfoUpdated callback:", err);
+        }
+      });
+    };
+    this.room.onMessage("CURRENT_SPACE_INFO", handleSpaceInfo);
+    this.room.onMessage("SPACE_INFO_UPDATED", handleSpaceInfo);
+
+    this.room.onMessage("FOCUS_STATS_SYNC", (stats: FocusStats) => {
+      if (!stats) return;
+      this.currentFocusStats = stats;
+      this.onFocusStatsSyncCallbacks.forEach((cb) => {
+        try {
+          cb(stats);
+        } catch (err) {
+          console.error("Error in onFocusStatsSync callback:", err);
+        }
+      });
+    });
+
+    this.room.onMessage("FOCUS_ROOM_STATE", (state: FocusRoomSessionState | null) => {
+      this.onFocusRoomStateCallbacks.forEach((cb) => {
+        try {
+          cb(state ?? null);
+        } catch (err) {
+          console.error("Error in onFocusRoomState callback:", err);
+        }
+      });
+    });
+
+    this.room.onMessage("FOCUS_SESSION_COMPLETED", (data: any) => {
+      if (!data) return;
+      this.onFocusSessionCompletedCallbacks.forEach((cb) => {
+        try {
+          cb(data);
+        } catch (err) {
+          console.error("Error in onFocusSessionCompleted callback:", err);
+        }
+      });
+    });
+
+    this.room.onMessage("FOCUS_STRICT_VIOLATED", (data: { graceSeconds: number }) => {
+      if (!data) return;
+      this.onFocusStrictViolatedCallbacks.forEach((cb) => {
+        try {
+          cb(data);
+        } catch (err) {
+          console.error("Error in onFocusStrictViolated callback:", err);
+        }
+      });
+    });
+
+    this.room.onMessage("FOCUS_NOTICE", (data: { type: "info" | "success" | "warning"; message: string }) => {
+      if (!data) return;
+      this.onFocusNoticeCallbacks.forEach((cb) => {
+        try {
+          cb(data);
+        } catch (err) {
+          console.error("Error in onFocusNotice callback:", err);
+        }
+      });
+    });
+
+    this.room.onMessage("RPG_STATE_SYNC", (bundle: RpgClientBundle) => {
+      if (!bundle) return;
+      this.currentRpgBundle = bundle;
+      this.onRpgStateSyncCallbacks.forEach((cb) => {
+        try {
+          cb(bundle);
+        } catch (err) {
+          console.error("Error in onRpgStateSync callback:", err);
+        }
+      });
+    });
+
+    this.room.onMessage("RPG_CLASS_CHOSEN", (bundle: RpgClientBundle) => {
+      if (!bundle) return;
+      this.currentRpgBundle = bundle;
+      this.onRpgStateSyncCallbacks.forEach((cb) => {
+        try {
+          cb(bundle);
+        } catch (err) {
+          console.error("Error in onRpgStateSync callback:", err);
+        }
+      });
+      this.onRpgClassChosenCallbacks.forEach((cb) => {
+        try {
+          cb(bundle);
+        } catch (err) {
+          console.error("Error in onRpgClassChosen callback:", err);
+        }
+      });
+    });
+
+    this.room.onMessage("RPG_PROFILE_UPDATED", (data: { profile?: RpgProfileState; alliedParty?: PartyMemberSnapshot[]; notice?: string }) => {
+      if (!data) return;
+      if (this.currentRpgBundle) {
+        this.currentRpgBundle = {
+          ...this.currentRpgBundle,
+          ...(data.profile ? { profile: data.profile } : {}),
+          ...(data.alliedParty ? { alliedParty: data.alliedParty } : {}),
+        };
+      }
+      this.onRpgProfileUpdatedCallbacks.forEach((cb) => {
+        try {
+          cb(data);
+        } catch (err) {
+          console.error("Error in onRpgProfileUpdated callback:", err);
+        }
+      });
+    });
+
+    this.room.onMessage("RPG_EXPEDITION_RESULT", (data: { profile?: RpgProfileState; expedition?: ExpeditionResult }) => {
+      if (!data) return;
+      if (data.profile && this.currentRpgBundle) {
+        this.currentRpgBundle = { ...this.currentRpgBundle, profile: data.profile };
+      }
+      this.onRpgExpeditionResultCallbacks.forEach((cb) => {
+        try {
+          cb(data);
+        } catch (err) {
+          console.error("Error in onRpgExpeditionResult callback:", err);
+        }
+      });
+    });
+
+    this.room.onMessage("RPG_BARTER_UPDATED", (data: { offers?: TradeOffer[]; profile?: RpgProfileState; notice?: string }) => {
+      if (!data) return;
+      if (this.currentRpgBundle) {
+        this.currentRpgBundle = {
+          ...this.currentRpgBundle,
+          ...(data.offers ? { tradeOffers: data.offers } : {}),
+          ...(data.profile ? { profile: data.profile } : {}),
+        };
+      }
+      this.onRpgBarterUpdatedCallbacks.forEach((cb) => {
+        try {
+          cb(data);
+        } catch (err) {
+          console.error("Error in onRpgBarterUpdated callback:", err);
+        }
+      });
+    });
+
+    this.room.onMessage("RPG_RAID_RESULT", (data: { raid?: RaidBossState; profile?: RpgProfileState; hitEvent?: LiveRaidHitEvent; karmaEarned?: number }) => {
+      if (!data) return;
+      if (this.currentRpgBundle) {
+        this.currentRpgBundle = {
+          ...this.currentRpgBundle,
+          ...(data.raid ? { raid: data.raid } : {}),
+          ...(data.profile ? { profile: data.profile } : {}),
+        };
+      }
+      this.onRpgRaidResultCallbacks.forEach((cb) => {
+        try {
+          cb(data);
+        } catch (err) {
+          console.error("Error in onRpgRaidResult callback:", err);
+        }
+      });
+    });
+
+    this.room.onMessage("RPG_RAID_HIT", (data: { raid?: RaidBossState; hitEvent?: LiveRaidHitEvent }) => {
+      if (!data) return;
+      if (data.raid && this.currentRpgBundle) {
+        this.currentRpgBundle = { ...this.currentRpgBundle, raid: data.raid };
+      }
+      this.onRpgRaidHitCallbacks.forEach((cb) => {
+        try {
+          cb(data);
+        } catch (err) {
+          console.error("Error in onRpgRaidHit callback:", err);
+        }
+      });
+    });
+
+    this.room.onMessage("RPG_CHEER_RECEIVED", (data: { fromName: string; bonusLabel: string }) => {
+      if (!data) return;
+      this.onRpgCheerReceivedCallbacks.forEach((cb) => {
+        try {
+          cb(data);
+        } catch (err) {
+          console.error("Error in onRpgCheerReceived callback:", err);
+        }
+      });
+    });
+
+    this.room.onMessage("RPG_ACTION_ERROR", (data: { message: string }) => {
+      if (!data) return;
+      this.onRpgActionErrorCallbacks.forEach((cb) => {
+        try {
+          cb(data);
+        } catch (err) {
+          console.error("Error in onRpgActionError callback:", err);
+        }
+      });
+    });
+
+    this.room.onMessage("SQUAD_STATE_UPDATED", (data: { squad: FocusSquadState | null }) => {
+      this.currentSquadState = data?.squad ?? null;
+      this.onSquadStateUpdatedCallbacks.forEach((cb) => {
+        try {
+          cb({ squad: this.currentSquadState });
+        } catch (err) {
+          console.error("Error in onSquadStateUpdated callback:", err);
+        }
+      });
+    });
+
+    this.room.onMessage("SQUAD_INVITE_RECEIVED", (invite: FocusSquadInviteData) => {
+      if (!invite) return;
+      this.onSquadInviteReceivedCallbacks.forEach((cb) => {
+        try {
+          cb(invite);
+        } catch (err) {
+          console.error("Error in onSquadInviteReceived callback:", err);
+        }
+      });
+    });
+
+    this.room.onMessage("SQUAD_NOTICE", (data: { type: "info" | "success" | "warning"; message: string }) => {
+      if (!data) return;
+      this.onSquadNoticeCallbacks.forEach((cb) => {
+        try {
+          cb(data);
+        } catch (err) {
+          console.error("Error in onSquadNotice callback:", err);
+        }
+      });
     });
 
     this.room.onMessage("FRIEND_UPDATE", () => {
@@ -650,16 +1143,51 @@ export class MultiplayerManager {
       });
     });
 
+    this.room.onMessage("DINER_STATE", (state: DinerGameState) => {
+      this.currentDinerState = state;
+      this.onDinerStateCallbacks.forEach((cb) => {
+        try {
+          cb(state);
+        } catch (err) {
+          console.error("Error in onDinerState callback:", err);
+        }
+      });
+    });
+
+    this.room.onMessage("DINER_ACTION_ERROR", (err: DinerActionErrorPayload) => {
+      if (!err) return;
+      this.onDinerErrorCallbacks.forEach((cb) => {
+        try {
+          cb(err);
+        } catch (e) {
+          console.error("Error in onDinerError callback:", e);
+        }
+      });
+    });
+
+    this.room.onMessage("DINER_EVENT", (ev: DinerEventPayload) => {
+      if (!ev) return;
+      this.onDinerEventCallbacks.forEach((cb) => {
+        try {
+          cb(ev);
+        } catch (e) {
+          console.error("Error in onDinerEvent callback:", e);
+        }
+      });
+    });
+
     this.startPingLoop();
 
     room.onLeave((code) => {
       console.warn("Left room with code:", code);
       if (this.room === room) {
         this.stopPingLoop();
+        this.resolveAllPongWaiters(false);
         this.room = null;
         this.notifyConnectionStatus(false);
       }
       if (!this.intentionallyLeftRooms.has(room)) {
+        this.clearRoomTransientState();
         this.onUnexpectedDisconnectCallbacks.forEach((cb) => cb(code));
       }
     });
@@ -676,16 +1204,25 @@ export class MultiplayerManager {
         this.notifyPlayerAdd(sessionId, player);
         this.notifyPlayerCount(state.players.size || 1);
 
-        if (sessionId === this.room?.sessionId && player.parkingPoints !== undefined) {
-          this.notifyParkingPointsAwarded({ points: player.parkingPoints, added: 0 });
+        if (sessionId === this.room?.sessionId && player.focusPoints !== undefined) {
+          this.notifyFocusPointsUpdated({ points: player.focusPoints, added: 0 });
         }
 
         player.onChange(() => {
           this.notifyPlayerChange(sessionId, player);
-          if (sessionId === this.room?.sessionId && player.parkingPoints !== undefined) {
-            this.notifyParkingPointsAwarded({ points: player.parkingPoints, added: 0 });
+          if (sessionId === this.room?.sessionId && player.focusPoints !== undefined) {
+            this.notifyFocusPointsUpdated({ points: player.focusPoints, added: 0 });
           }
         });
+
+        if (player.outfit) {
+          this.notifyPlayerOutfit(sessionId, extractPlayerOutfit(player.outfit));
+          if (typeof player.outfit.onChange === "function") {
+            player.outfit.onChange(() => {
+              this.notifyPlayerOutfit(sessionId, extractPlayerOutfit(player.outfit));
+            });
+          }
+        }
       });
 
       state.players.onRemove((player: any, sessionId: string) => {
@@ -721,9 +1258,20 @@ export class MultiplayerManager {
     }
   }
 
-  public updateProfile(name: string, color: string, avatars?: PlayerAvatars | null) {
+  public updateProfile(
+    name: string,
+    color: string,
+    avatars?: PlayerAvatars | null,
+    outfit?: Partial<PlayerOutfit>
+  ) {
     if (this.room) {
-      this.room.send("UPDATE_PROFILE", { name, color, avatars });
+      this.room.send("UPDATE_PROFILE", { name, color, avatars, outfit });
+    }
+  }
+
+  public changeOutfit(outfit: Partial<PlayerOutfit>) {
+    if (this.room) {
+      this.room.send("change_outfit", outfit);
     }
   }
 
@@ -754,6 +1302,17 @@ export class MultiplayerManager {
     });
   }
 
+  public onPlayerOutfit(cb: PlayerOutfitCallback) {
+    this.onPlayerOutfitCallbacks.push(cb);
+    if (this.room?.state?.players) {
+      this.room.state.players.forEach((player: any, sessionId: string) => {
+        if (player?.outfit) {
+          cb(sessionId, extractPlayerOutfit(player.outfit));
+        }
+      });
+    }
+  }
+
   public onConnectionStatus(cb: (connected: boolean) => void) {
     this.onConnectionStatusCallbacks.push(cb);
   }
@@ -780,6 +1339,10 @@ export class MultiplayerManager {
 
   private notifyPlayerAvatars(sessionId: string, avatars: PlayerAvatars | null) {
     this.onPlayerAvatarCallbacks.forEach((cb) => cb(sessionId, avatars));
+  }
+
+  private notifyPlayerOutfit(sessionId: string, outfit: PlayerOutfit) {
+    this.onPlayerOutfitCallbacks.forEach((cb) => cb(sessionId, outfit));
   }
 
   private notifyConnectionStatus(connected: boolean) {
@@ -872,8 +1435,27 @@ export class MultiplayerManager {
 
   private sendPing() {
     if (!this.room) return;
-    const seq = ++this.pingSeq;
     const now = Date.now();
+
+    // Detect silent connection death when active pings receive no PONGs while page is visible
+    if (this.lastPingSentAt > 0 && now - this.lastPingSentAt < 4000) {
+      if (this.lastPongAt < this.lastPingSentAt) {
+        this.consecutiveMissedPings += 1;
+      } else {
+        this.consecutiveMissedPings = 0;
+      }
+      const isVisible = typeof document === "undefined" || document.visibilityState === "visible";
+      if (this.consecutiveMissedPings >= 6 && isVisible) {
+        console.warn("[MultiplayerManager] Missed 6 consecutive pings; treating connection as lost.");
+        this.handleConnectionLost();
+        return;
+      }
+    } else {
+      this.consecutiveMissedPings = 0;
+    }
+
+    const seq = ++this.pingSeq;
+    this.lastPingSentAt = now;
 
     this.recentPings.push({
       seq,
@@ -888,7 +1470,8 @@ export class MultiplayerManager {
     try {
       this.room.send("PING", { seq, t: now });
     } catch {
-      // Room disconnected
+      this.handleConnectionLost();
+      return;
     }
 
     this.calculateAndNotifyNetworkStats();
@@ -1585,22 +2168,265 @@ export class MultiplayerManager {
     this.onChessGameEndedCallbacks.push(cb);
   }
 
-  public onParkingPointsAwarded(cb: ParkingPointsAwardedCallback) {
-    this.onParkingPointsAwardedCallbacks.push(cb);
+  public onFocusPointsUpdated(cb: FocusPointsUpdatedCallback) {
+    this.onFocusPointsUpdatedCallbacks.push(cb);
+  }
+
+  public onSpaceInfoUpdated(cb: SpaceInfoUpdatedCallback) {
+    this.onSpaceInfoUpdatedCallbacks.push(cb);
+    if (this.currentSpaceInfo) {
+      cb(this.currentSpaceInfo);
+    }
+  }
+
+  public onFocusRoomState(cb: FocusRoomStateCallback) {
+    this.onFocusRoomStateCallbacks.push(cb);
+  }
+
+  public onFocusSessionCompleted(cb: FocusSessionCompletedCallback) {
+    this.onFocusSessionCompletedCallbacks.push(cb);
+  }
+
+  public onFocusStrictViolated(cb: FocusStrictViolatedCallback) {
+    this.onFocusStrictViolatedCallbacks.push(cb);
+  }
+
+  public onFocusNotice(cb: FocusNoticeCallback) {
+    this.onFocusNoticeCallbacks.push(cb);
+  }
+
+  public onFocusStatsSync(cb: FocusStatsSyncCallback) {
+    this.onFocusStatsSyncCallbacks.push(cb);
+    if (this.currentFocusStats) {
+      cb(this.currentFocusStats);
+    }
+  }
+
+  public onSquadStateUpdated(cb: SquadStateUpdatedCallback) {
+    this.onSquadStateUpdatedCallbacks.push(cb);
+    cb({ squad: this.currentSquadState });
+  }
+
+  public onSquadInviteReceived(cb: SquadInviteReceivedCallback) {
+    this.onSquadInviteReceivedCallbacks.push(cb);
+  }
+
+  public onSquadNotice(cb: SquadNoticeCallback) {
+    this.onSquadNoticeCallbacks.push(cb);
   }
 
   public onFriendUpdate(cb: () => void) {
     this.onFriendUpdateCallbacks.push(cb);
   }
 
-  private notifyParkingPointsAwarded(data: { points: number; added: number }) {
-    this.onParkingPointsAwardedCallbacks.forEach((cb) => {
+  private notifyFocusPointsUpdated(data: { points: number; added: number; stats?: FocusStats }) {
+    this.onFocusPointsUpdatedCallbacks.forEach((cb) => {
       try {
         cb(data);
       } catch (err) {
-        console.error("Error in onParkingPointsAwarded callback:", err);
+        console.error("Error in onFocusPointsUpdated callback:", err);
       }
     });
+  }
+
+  public sendFocusRoomStart(payload?: FocusRoomStartPayload) {
+    if (this.room) {
+      this.room.send("FOCUS_ROOM_START", payload || {});
+    }
+  }
+
+  public sendFocusRoomUpdateSettings(payload: FocusRoomUpdateSettingsPayload) {
+    if (this.room) {
+      this.room.send("FOCUS_ROOM_UPDATE_SETTINGS", payload);
+    }
+  }
+
+  public sendFocusRoomVisibility(hidden: boolean) {
+    if (this.room) {
+      this.room.send("FOCUS_ROOM_VISIBILITY", { hidden });
+    }
+  }
+
+  public sendFocusRoomEndEarly() {
+    if (this.room) {
+      this.room.send("FOCUS_ROOM_END_EARLY", {});
+    }
+  }
+
+  public sendFocusRoomExit() {
+    if (this.room) {
+      this.room.send("FOCUS_ROOM_EXIT", {});
+    }
+  }
+
+  public sendSquadCreate() {
+    if (this.room) {
+      this.room.send("SQUAD_CREATE", {});
+    }
+  }
+
+  public sendSquadInvite(targetUserId?: number, targetSessionId?: string) {
+    if (this.room) {
+      this.room.send("SQUAD_INVITE", { targetUserId, targetSessionId });
+    }
+  }
+
+  public sendSquadInviteRespond(fromUserId: number, accept: boolean) {
+    if (this.room) {
+      this.room.send("SQUAD_INVITE_RESPOND", { fromUserId, accept });
+    }
+  }
+
+  public sendSquadLeave() {
+    if (this.room) {
+      this.room.send("SQUAD_LEAVE", {});
+    }
+  }
+
+  public sendSquadKick(targetUserId: number) {
+    if (this.room) {
+      this.room.send("SQUAD_KICK", { targetUserId });
+    }
+  }
+
+  public requestSquadState() {
+    if (this.room) {
+      this.room.send("SQUAD_REQUEST_STATE", {});
+    }
+  }
+
+  public onRpgStateSync(cb: RpgStateSyncCallback) {
+    this.onRpgStateSyncCallbacks.push(cb);
+    if (this.currentRpgBundle) cb(this.currentRpgBundle);
+  }
+  public onRpgClassChosen(cb: RpgStateSyncCallback) {
+    this.onRpgClassChosenCallbacks.push(cb);
+  }
+  public onRpgProfileUpdated(cb: RpgProfileUpdatedCallback) {
+    this.onRpgProfileUpdatedCallbacks.push(cb);
+  }
+  public onRpgExpeditionResult(cb: RpgExpeditionResultCallback) {
+    this.onRpgExpeditionResultCallbacks.push(cb);
+  }
+  public onRpgBarterUpdated(cb: RpgBarterUpdatedCallback) {
+    this.onRpgBarterUpdatedCallbacks.push(cb);
+  }
+  public onRpgRaidResult(cb: RpgRaidResultCallback) {
+    this.onRpgRaidResultCallbacks.push(cb);
+  }
+  public onRpgRaidHit(cb: RpgRaidHitCallback) {
+    this.onRpgRaidHitCallbacks.push(cb);
+  }
+  public onRpgCheerReceived(cb: RpgCheerReceivedCallback) {
+    this.onRpgCheerReceivedCallbacks.push(cb);
+  }
+  public onRpgActionError(cb: RpgActionErrorCallback) {
+    this.onRpgActionErrorCallbacks.push(cb);
+  }
+
+  public requestRpgState() {
+    this.room?.send("RPG_GET_STATE", {});
+  }
+  public sendRpgChooseClass(classId: ClassId) {
+    this.room?.send("RPG_CHOOSE_CLASS", { classId });
+  }
+  public sendRpgTrainHero(fpAmount: number) {
+    this.room?.send("RPG_TRAIN_HERO", { fpAmount });
+  }
+  public sendRpgReincarnate(nextClassId?: ClassId, inheritedPassives?: string[]) {
+    this.room?.send("RPG_REINCARNATE", { nextClassId, inheritedPassives });
+  }
+  public sendRpgUpgradeKarma(node: "aptitude" | "shopRank" | "focusEfficiency" | "dimensional") {
+    this.room?.send("RPG_UPGRADE_KARMA", { node });
+  }
+  public sendRpgBuyGear(rank: number, slot: EquipSlot, weaponType?: WeaponType) {
+    this.room?.send("RPG_BUY_GEAR", { rank, slot, weaponType });
+  }
+  public sendRpgEquipItem(itemId: string) {
+    this.room?.send("RPG_EQUIP_ITEM", { itemId });
+  }
+  public sendRpgBlacksmithRarity(targetItemId: string, duplicateItemId: string) {
+    this.room?.send("RPG_BLACKSMITH_RARITY", { targetItemId, duplicateItemId });
+  }
+  public sendRpgBlacksmithTrait(targetItemId: string, sourceItemId: string, traitId: string) {
+    this.room?.send("RPG_BLACKSMITH_TRAIT", { targetItemId, sourceItemId, traitId });
+  }
+  public sendRpgLaunchExpedition(itemId: string, floors: 10 | 50) {
+    this.room?.send("RPG_LAUNCH_EXPEDITION", { itemId, floors });
+  }
+  public sendRpgMergeSpecialists(specId1: string, specId2: string) {
+    this.room?.send("RPG_MERGE_SPECIALISTS", { specId1, specId2 });
+  }
+  public sendRpgSocketSpecialist(specId: string, targetItemId: string) {
+    this.room?.send("RPG_SOCKET_SPECIALIST", { specId, targetItemId });
+  }
+  public sendRpgUnlockStarCap() {
+    this.room?.send("RPG_UNLOCK_STAR_CAP", {});
+  }
+  public sendRpgUpdateCheatShop(payload: Partial<CheatShopState>) {
+    this.room?.send("RPG_UPDATE_CHEAT_SHOP", payload);
+  }
+  public sendRpgUpdateTactics(payload: {
+    battleRow?: "FRONT" | "BACK";
+    aiRules?: Partial<PlayerAvatarState["aiRules"]>;
+    openPartyPool?: boolean;
+    recruitOpenPartyAllies?: boolean;
+  }) {
+    this.room?.send("RPG_UPDATE_TACTICS", payload);
+  }
+  public sendRpgClaimCampInbox() {
+    this.room?.send("RPG_CLAIM_CAMP_INBOX", {});
+  }
+  public sendRpgLiveCheer(targetUserId: number) {
+    this.room?.send("RPG_LIVE_CHEER", { targetUserId });
+  }
+  public sendRpgPostTrade(payload: {
+    kind: "SPECIALIST" | "EQUIPMENT";
+    itemId?: string;
+    specialistId?: string;
+    requestedLabel: string;
+    requestedMinLevelOrRank: number;
+  }) {
+    this.room?.send("RPG_POST_TRADE", payload);
+  }
+  public sendRpgAcceptTrade(offerId: string, offeredBackItemId: string) {
+    this.room?.send("RPG_ACCEPT_TRADE", { offerId, offeredBackItemId });
+  }
+  public sendRpgCancelTrade(offerId: string) {
+    this.room?.send("RPG_CANCEL_TRADE", { offerId });
+  }
+  public sendRpgAttackRaid() {
+    this.room?.send("RPG_ATTACK_RAID", {});
+  }
+
+  public getSpacePlayersList(): Array<{
+    sessionId: string;
+    userId: number;
+    name: string;
+    color: string;
+    focusStatus: string;
+    focusSquadId: string;
+  }> {
+    const out: Array<{
+      sessionId: string;
+      userId: number;
+      name: string;
+      color: string;
+      focusStatus: string;
+      focusSquadId: string;
+    }> = [];
+    if (!this.room?.state?.players) return out;
+    this.room.state.players.forEach((p: any, sid: string) => {
+      out.push({
+        sessionId: sid,
+        userId: Number(p?.userId) || 0,
+        name: p?.name || "Player",
+        color: p?.color || "#3B8282",
+        focusStatus: p?.focusStatus || "idle",
+        focusSquadId: p?.focusSquadId || "",
+      });
+    });
+    return out;
   }
 
   public placeChessBoard(
@@ -1778,6 +2604,47 @@ export class MultiplayerManager {
   }
 
   // ==========================================
+  // Seller NPC (Asset Shop Counter) Methods
+  // ==========================================
+  public onSellerNpcSync(cb: SellerNpcSyncCallback) {
+    this.onSellerNpcSyncCallbacks.push(cb);
+  }
+
+  private notifySellerNpcSync(sellerNpc: SellerNpcState | null) {
+    this.onSellerNpcSyncCallbacks.forEach((cb) => {
+      try {
+        cb(sellerNpc);
+      } catch (err) {
+        console.error("Error in onSellerNpcSync callback:", err);
+      }
+    });
+  }
+
+  public placeSellerNpc(payload: SellerNpcPlacePayload) {
+    if (this.room) {
+      this.room.send("SELLER_NPC_SET", payload);
+    }
+  }
+
+  public moveSellerNpc(x: number, y: number) {
+    if (this.room) {
+      this.room.send("SELLER_NPC_MOVE", { x, y });
+    }
+  }
+
+  public updateSellerNpc(payload: SellerNpcUpdatePayload) {
+    if (this.room) {
+      this.room.send("SELLER_NPC_UPDATE", payload);
+    }
+  }
+
+  public deleteSellerNpc() {
+    if (this.room) {
+      this.room.send("SELLER_NPC_DELETE");
+    }
+  }
+
+  // ==========================================
   // Throw Battle (Cat vs Dog / Fleabag vs Mutt) Methods
   // ==========================================
   public onThrowBattleInvite(cb: ThrowBattleInviteCallback) {
@@ -1908,5 +2775,61 @@ export class MultiplayerManager {
     if (this.room) {
       this.room.send("THROW_BATTLE_LEAVE", { matchId });
     }
+  }
+
+  // ==========================================
+  // Diner Dash Restaurant Minigame API
+  // ==========================================
+
+  public onDinerState(cb: (state: DinerGameState) => void): () => void {
+    this.onDinerStateCallbacks.push(cb);
+    if (this.currentDinerState) {
+      cb(this.currentDinerState);
+    }
+    return () => {
+      this.onDinerStateCallbacks = this.onDinerStateCallbacks.filter((c) => c !== cb);
+    };
+  }
+
+  public onDinerError(cb: (err: DinerActionErrorPayload) => void): () => void {
+    this.onDinerErrorCallbacks.push(cb);
+    return () => {
+      this.onDinerErrorCallbacks = this.onDinerErrorCallbacks.filter((c) => c !== cb);
+    };
+  }
+
+  public onDinerEvent(cb: (ev: DinerEventPayload) => void): () => void {
+    this.onDinerEventCallbacks.push(cb);
+    return () => {
+      this.onDinerEventCallbacks = this.onDinerEventCallbacks.filter((c) => c !== cb);
+    };
+  }
+
+  public dinerJoinShift() {
+    this.room?.send("DINER_JOIN_SHIFT", {});
+  }
+
+  public dinerLeaveShift() {
+    this.room?.send("DINER_LEAVE_SHIFT", {});
+  }
+
+  public dinerSeatCustomer() {
+    this.room?.send("DINER_SEAT_CUSTOMER", {});
+  }
+
+  public dinerTakeOrder(tableId?: string) {
+    this.room?.send("DINER_TAKE_ORDER", { tableId });
+  }
+
+  public dinerSubmitOrders() {
+    this.room?.send("DINER_SUBMIT_ORDERS", {});
+  }
+
+  public dinerPickupFood(orderId?: string) {
+    this.room?.send("DINER_PICKUP_FOOD", { orderId });
+  }
+
+  public dinerDeliverFood(tableId?: string) {
+    this.room?.send("DINER_DELIVER_FOOD", { tableId });
   }
 }

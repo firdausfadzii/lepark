@@ -31,7 +31,16 @@ export const DEFAULT_PRESET_COLORS = [
 
 export const SERVER_TICK_RATE = 20; // 20 Hz tick loop
 
-export const ASSET_UNLOCK_COST = 5; // Parking points required per paid map editor sprite
+export const ASSET_UNLOCK_COST = 50; // Focus Points (FP) required per paid map editor sprite
+
+export const FOCUS_IDLE_TIMEOUT_MS = 60_000; // 1 minute without moving opens Focus Room
+export const FOCUS_BASE_FP_PER_MINUTE = 4;
+export const FOCUS_MIN_MINUTES = 10; // Anti-spam minimum threshold for FP
+export const FOCUS_DAILY_FULL_RATE_MINUTES = 240; // 4 hours/day at 100% FP, 50% beyond
+export const FOCUS_STRICT_AWAY_GRACE_MS = 30_000; // 30s grace before Strict Lock bonus forfeits
+export const FOCUS_SQUAD_MAX_MEMBERS = 8;
+export const DEFAULT_POMODORO_MINUTES = 25;
+export const POMODORO_PRESET_MINUTES = [15, 25, 50] as const;
 
 export function isPaidAssetId(assetId: string | undefined | null): boolean {
   if (!assetId) return false;
@@ -39,7 +48,11 @@ export function isPaidAssetId(assetId: string | undefined | null): boolean {
     assetId.startsWith("office_one/") ||
     assetId.startsWith("office_two/") ||
     assetId.startsWith("pet_shop/") ||
-    assetId.startsWith("living_room_one/")
+    assetId.startsWith("adventure_guild/") ||
+    assetId.startsWith("restaurant/") ||
+    assetId.startsWith("living_room_one/") ||
+    assetId.startsWith("living_room_two/") ||
+    assetId.startsWith("living_room_floor/")
   );
 }
 

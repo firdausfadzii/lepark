@@ -11,6 +11,7 @@
     "@colyseus/schema": "^2.0.35",
     "@colyseus/ws-transport": "^0.15.0",
     "@types/nodemailer": "^8.0.2",
+    "break_infinity.js": "^2.2.0",
     "chess.js": "^1.4.0",
     "colyseus": "^0.15.57",
     "cors": "^2.8.5",

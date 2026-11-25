@@ -1,1 +1,1 @@
-export { GameState, PlayerState } from "shared";
+export { GameState, PlayerState, OutfitSchema } from "shared";

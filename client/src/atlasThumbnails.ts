@@ -7,12 +7,16 @@ interface AtlasJson {
   frames: AtlasFrameEntry[];
 }
 
-type AtlasKey = "floor_free" | "wall_free" | "decoration_free" | "office_one" | "office_two" | "pet_shop" | "living_room_one";
+type AtlasKey = "floor_free" | "wall_free" | "decoration_free" | "office_one" | "office_two" | "pet_shop" | "adventure_guild" | "restaurant" | "living_room_one" | "living_room_two" | "living_room_floor";
 
 const ATLAS_PATHS: Record<AtlasKey, { png: string; json: string }> = {
   floor_free: {
     png: "/assets/floor/floor_free.png",
     json: "/assets/floor/floor_free.json",
+  },
+  living_room_floor: {
+    png: "/assets/floor/living_room_spritesheet.png",
+    json: "/assets/floor/living_room_sprites.json",
   },
   wall_free: {
     png: "/assets/wall/wall_free.png",
@@ -34,9 +38,21 @@ const ATLAS_PATHS: Record<AtlasKey, { png: string; json: string }> = {
     png: "/assets/decoration/cat_shop_spritesheet.png",
     json: "/assets/decoration/cat_shop_sprites.json",
   },
+  adventure_guild: {
+    png: "/assets/decoration/adventure_guild_spritesheet.png",
+    json: "/assets/decoration/adventure_guild_sprites.json",
+  },
+  restaurant: {
+    png: "/assets/decoration/restaurant_spritesheet.png",
+    json: "/assets/decoration/restaurant_sprites.json",
+  },
   living_room_one: {
     png: "/assets/decoration/living_room_one_spritesheet.png",
     json: "/assets/decoration/living_room_one_sprites.json",
+  },
+  living_room_two: {
+    png: "/assets/decoration/living_room_two_spritesheet.png",
+    json: "/assets/decoration/living_room_two_sprites.json",
   },
 };
 
@@ -110,8 +126,20 @@ function resolveAtlasTarget(assetId: string): { atlas: AtlasKey; frame: string }
   if (normalized.startsWith("pet_shop/")) {
     return { atlas: "pet_shop", frame: normalized.slice("pet_shop/".length) };
   }
+  if (normalized.startsWith("adventure_guild/")) {
+    return { atlas: "adventure_guild", frame: normalized.slice("adventure_guild/".length) };
+  }
+  if (normalized.startsWith("restaurant/")) {
+    return { atlas: "restaurant", frame: normalized.slice("restaurant/".length) };
+  }
   if (normalized.startsWith("living_room_one/")) {
     return { atlas: "living_room_one", frame: normalized.slice("living_room_one/".length) };
+  }
+  if (normalized.startsWith("living_room_two/")) {
+    return { atlas: "living_room_two", frame: normalized.slice("living_room_two/".length) };
+  }
+  if (normalized.startsWith("living_room_floor/")) {
+    return { atlas: "living_room_floor", frame: normalized.slice("living_room_floor/".length) };
   }
   return null;
 }

@@ -38,9 +38,16 @@ export class VoiceManager {
 
   private peerConnections = new Map<string, RTCPeerConnection>();
   private peerAudioElements = new Map<string, HTMLAudioElement>();
+  private peerAudioNodes = new Map<
+    string,
+    { stream: MediaStream; source: MediaStreamAudioSourceNode; gain: GainNode }
+  >();
   private peerVolumes = new Map<string, number>();
   private pendingIceCandidates = new Map<string, any[]>();
   private boundRoom: any = null;
+
+  // Web Audio playback context for mobile/iOS-compatible proximity volume (GainNode)
+  private playbackAudioCtx: AudioContext | null = null;
 
   // Silent track for pre-negotiated bidirectional RTP pipe
   private silentAudioContext: AudioContext | null = null;
@@ -226,6 +233,9 @@ export class VoiceManager {
   public unlockAllAudio() {
     if (this.silentAudioContext && this.silentAudioContext.state === "suspended") {
       this.silentAudioContext.resume().catch(() => {});
+    }
+    if (this.playbackAudioCtx && this.playbackAudioCtx.state === "suspended") {
+      this.playbackAudioCtx.resume().catch(() => {});
     }
     if (this.audioCtx && this.audioCtx.state === "suspended") {
       this.audioCtx.resume().catch(() => {});
@@ -540,6 +550,17 @@ export class VoiceManager {
     } catch (_) {}
 
     const sinkId = deviceId === "default" ? "" : deviceId;
+    if (
+      this.playbackAudioCtx &&
+      typeof (this.playbackAudioCtx as any).setSinkId === "function"
+    ) {
+      try {
+        await (this.playbackAudioCtx as any).setSinkId(sinkId);
+        console.log("VoiceManager: Set playback AudioContext sinkId");
+      } catch (err) {
+        console.warn("playbackAudioCtx.setSinkId failed:", err);
+      }
+    }
     for (const [peerId, el] of this.peerAudioElements) {
       if (typeof (el as any).setSinkId === "function") {
         try {
@@ -619,16 +640,86 @@ export class VoiceManager {
   }
 
   /**
+   * Ensure a shared AudioContext exists for remote peer playback and GainNode volume control.
+   * Using Web Audio GainNode allows smooth proximity volume on iOS/mobile where HTMLAudioElement.volume is read-only.
+   */
+  private ensurePlaybackAudioContext(): AudioContext | null {
+    const AudioCtx =
+      window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioCtx) return null;
+
+    if (!this.playbackAudioCtx || this.playbackAudioCtx.state === "closed") {
+      this.playbackAudioCtx = new AudioCtx();
+      if (
+        this.selectedOutputDeviceId &&
+        this.selectedOutputDeviceId !== "default" &&
+        typeof (this.playbackAudioCtx as any).setSinkId === "function"
+      ) {
+        (this.playbackAudioCtx as any)
+          .setSinkId(this.selectedOutputDeviceId)
+          .catch(() => {});
+      }
+    }
+
+    if (this.playbackAudioCtx.state === "suspended") {
+      this.playbackAudioCtx.resume().catch(() => {});
+    }
+
+    return this.playbackAudioCtx;
+  }
+
+  /**
+   * Apply effective volume (proximity * master) to a peer's GainNode or fallback audio element.
+   */
+  private applyPeerGain(peerSessionId: string, proximityVolume: number) {
+    const target = Math.max(
+      0,
+      Math.min(1, proximityVolume * this.masterOutputVolume),
+    );
+    const nodes = this.peerAudioNodes.get(peerSessionId);
+    if (nodes) {
+      if (this.playbackAudioCtx && this.playbackAudioCtx.state === "running") {
+        nodes.gain.gain.setTargetAtTime(
+          target,
+          this.playbackAudioCtx.currentTime,
+          0.015,
+        );
+      } else {
+        nodes.gain.gain.value = target;
+      }
+      return;
+    }
+
+    const el = this.peerAudioElements.get(peerSessionId);
+    if (el && !el.muted) {
+      el.volume = target;
+    }
+  }
+
+  /**
+   * Disconnect and remove Web Audio nodes for a peer.
+   */
+  private disconnectPeerAudioNodes(peerSessionId: string) {
+    const nodes = this.peerAudioNodes.get(peerSessionId);
+    if (nodes) {
+      try {
+        nodes.source.disconnect();
+      } catch (_) {}
+      try {
+        nodes.gain.disconnect();
+      } catch (_) {}
+      this.peerAudioNodes.delete(peerSessionId);
+    }
+  }
+
+  /**
    * Set volume of a remote peer based on proximity or private zone
    * 0.0 = completely muted, 1.0 = full volume
    */
   public setPeerVolume(peerSessionId: string, volume: number) {
     const clamped = Math.max(0, Math.min(1, volume));
     this.peerVolumes.set(peerSessionId, clamped);
-    const el = this.peerAudioElements.get(peerSessionId);
-    if (el) {
-      el.volume = Math.max(0, Math.min(1, clamped * this.masterOutputVolume));
-    }
+    this.applyPeerGain(peerSessionId, clamped);
   }
 
   public setMasterOutputVolume(volume: number) {
@@ -637,9 +728,13 @@ export class VoiceManager {
       localStorage.setItem("lepark_output_volume", this.masterOutputVolume.toString());
     } catch (_) {}
 
-    for (const [peerId, el] of this.peerAudioElements) {
+    const peerIds = new Set<string>([
+      ...this.peerAudioNodes.keys(),
+      ...this.peerAudioElements.keys(),
+    ]);
+    for (const peerId of peerIds) {
       const prox = this.peerVolumes.get(peerId) ?? 1.0;
-      el.volume = Math.max(0, Math.min(1, prox * this.masterOutputVolume));
+      this.applyPeerGain(peerId, prox);
     }
   }
 
@@ -666,6 +761,10 @@ export class VoiceManager {
     this.peerConnections.forEach((pc) => pc.close());
     this.peerConnections.clear();
 
+    for (const peerId of Array.from(this.peerAudioNodes.keys())) {
+      this.disconnectPeerAudioNodes(peerId);
+    }
+
     this.peerAudioElements.forEach((el) => {
       el.pause();
       el.srcObject = null;
@@ -674,6 +773,13 @@ export class VoiceManager {
     this.peerAudioElements.clear();
     this.peerVolumes.clear();
     this.pendingIceCandidates.clear();
+
+    if (this.playbackAudioCtx) {
+      try {
+        this.playbackAudioCtx.close().catch(() => {});
+      } catch (_) {}
+      this.playbackAudioCtx = null;
+    }
 
     if (this.silentAudioContext) {
       try {
@@ -950,7 +1056,46 @@ export class VoiceManager {
     const currentVol = this.peerVolumes.has(peerSessionId)
       ? this.peerVolumes.get(peerSessionId)!
       : 1.0;
-    audioEl.volume = Math.max(0, Math.min(1, currentVol * this.masterOutputVolume));
+
+    // Route through Web Audio GainNode for smooth volume control on iOS/mobile
+    // while keeping the <audio> element muted as a silent WebRTC stream anchor.
+    const playbackCtx = this.ensurePlaybackAudioContext();
+    if (playbackCtx) {
+      audioEl.muted = true;
+      const existingNodes = this.peerAudioNodes.get(peerSessionId);
+      if (!existingNodes || existingNodes.stream !== stream) {
+        this.disconnectPeerAudioNodes(peerSessionId);
+        try {
+          const source = playbackCtx.createMediaStreamSource(stream);
+          const gain = playbackCtx.createGain();
+          gain.gain.value = Math.max(
+            0,
+            Math.min(1, currentVol * this.masterOutputVolume),
+          );
+          source.connect(gain);
+          gain.connect(playbackCtx.destination);
+          this.peerAudioNodes.set(peerSessionId, { stream, source, gain });
+        } catch (err) {
+          console.warn(
+            `VoiceManager: Failed to create Web Audio GainNode for peer ${peerSessionId}, falling back to <audio> volume:`,
+            err,
+          );
+          audioEl.muted = false;
+          audioEl.volume = Math.max(
+            0,
+            Math.min(1, currentVol * this.masterOutputVolume),
+          );
+        }
+      } else {
+        this.applyPeerGain(peerSessionId, currentVol);
+      }
+    } else {
+      audioEl.muted = false;
+      audioEl.volume = Math.max(
+        0,
+        Math.min(1, currentVol * this.masterOutputVolume),
+      );
+    }
 
     // Apply selected output device sinkId if supported
     if (
@@ -970,6 +1115,7 @@ export class VoiceManager {
       playPromise.catch((err) => {
         console.warn(`VoiceManager: Autoplay blocked for peer ${peerSessionId}, waiting for user gesture:`, err);
         const resumeAudio = () => {
+          this.unlockAllAudio();
           audioEl?.play().catch(() => {});
           window.removeEventListener("pointerdown", resumeAudio);
           window.removeEventListener("click", resumeAudio);
@@ -988,6 +1134,8 @@ export class VoiceManager {
       pc.close();
       this.peerConnections.delete(peerSessionId);
     }
+
+    this.disconnectPeerAudioNodes(peerSessionId);
 
     const audioEl = this.peerAudioElements.get(peerSessionId);
     if (audioEl) {
@@ -1145,7 +1293,7 @@ export class VoiceManager {
           title: "Microphone Access Denied",
           message:
             "Chrome or your operating system blocked access to your microphone.",
-          hint: "1. Click the site settings / lock icon (🔒) in Chrome's address bar and set Microphone to 'Allow'.\n2. On macOS, open System Settings > Privacy & Security > Microphone and ensure 'Google Chrome' is toggled ON.\n3. Then click 'Retry Microphone'.",
+          hint: "1. Click the site settings / lock icon in Chrome's address bar and set Microphone to 'Allow'.\n2. On macOS, open System Settings > Privacy & Security > Microphone and ensure 'Google Chrome' is toggled ON.\n3. Then click 'Retry Microphone'.",
         };
 
       case "NotFoundError":

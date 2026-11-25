@@ -1,6 +1,10 @@
 import Phaser from "phaser";
-import { MultiplayerManager } from "../network/MultiplayerManager";
+import { MultiplayerManager, extractPlayerOutfit } from "../network/MultiplayerManager";
 import { VoiceManager } from "../network/VoiceManager";
+import { parseSheetFrameRef, SPRITE_SHEET_CONFIGS } from "../spriteSheetResolver";
+import FashionPipeline from "../pipelines/FashionPipeline";
+import FrontArmPipeline from "../pipelines/FrontArmPipeline";
+import PlayerAvatar, { AvatarDirection } from "../entities/PlayerAvatar";
 import {
   TILE_SIZE,
   GRID_COLS,
@@ -12,6 +16,9 @@ import {
   CHARACTER_MAX_SIZE,
   PLAYER_SPEED,
   PlayerAvatars,
+  PlayerOutfit,
+  DEFAULT_PLAYER_OUTFIT,
+  OUTERWEAR_CATALOG,
   DEFAULT_AVATARS,
   normalizeFrames,
   getTileCenter,
@@ -30,6 +37,8 @@ import {
   AshtrayState,
   ChessBoardState,
   AquariumState,
+  SellerNpcState,
+  SELLER_NPC_SPRITE_OPTIONS,
   isFreeformAsset,
   FreeformDecorationData,
   parseFreeformTile,
@@ -44,6 +53,8 @@ import {
   isValidInteractionType,
 } from "shared";
 import { JukeboxManager } from "../audio/JukeboxManager";
+import { DinerSceneLayer, DinerNearbyAction } from "../diner/DinerSceneLayer";
+import { RPG_GEAR_SHEETS, hasCustomAvatarFrames } from "../rpg/rpgGearRenderer";
 
 interface JukeboxVisual {
   container: Phaser.GameObjects.Container;
@@ -87,9 +98,21 @@ interface AquariumVisual {
   state: AquariumState;
 }
 
+interface SellerNpcVisual {
+  container: Phaser.GameObjects.Container;
+  npcSprite: Phaser.GameObjects.Sprite;
+  counterSprite: Phaser.GameObjects.Image;
+  nameText: Phaser.GameObjects.Text;
+  promptText: Phaser.GameObjects.Text;
+  hitZone: Phaser.GameObjects.Rectangle;
+  state: SellerNpcState;
+}
+
 interface PlayerVisual {
   container: Phaser.GameObjects.Container;
   sprite: Phaser.GameObjects.Image;
+  avatar?: PlayerAvatar;
+  rpgGearSignature?: string;
   nameTagContainer: Phaser.GameObjects.Container;
   nameTagBg: Phaser.GameObjects.Graphics;
   nameTagText: Phaser.GameObjects.Text;
@@ -97,6 +120,7 @@ interface PlayerVisual {
   currentDirection: "idle" | "left" | "right" | "up" | "down";
   facingDirection: "left" | "right" | "up" | "down";
   avatars?: PlayerAvatars;
+  outfit: PlayerOutfit;
   player?: any;
   animTimer: number;
   currentFrameIdx: number;
@@ -127,6 +151,7 @@ export function normalizeDecorationAssetKey(key: string): string {
 
 export interface InspectableMapItem {
   kind:
+    | "seller_npc"
     | "aquarium"
     | "chess_board"
     | "ashtray"
@@ -177,6 +202,7 @@ export class GameScene extends Phaser.Scene {
   private lastInputState = { left: false, right: false, up: false, down: false };
   private lastInputSyncTime = 0;
   private lastLocalMoveTime = 0;
+  private lastFocusActivityTime = Date.now();
   public controlsActive = true;
   public virtualInput = { left: false, right: false, up: false, down: false };
   public voiceManager: VoiceManager | null = null;
@@ -217,6 +243,7 @@ export class GameScene extends Phaser.Scene {
     | "ashtray"
     | "chess_board"
     | "aquarium"
+    | "seller_npc"
     | "freeform_decoration"
     | "spawn_point" = "none";
   public activeEditorMenuItem: InspectableMapItem | null = null;
@@ -283,8 +310,16 @@ export class GameScene extends Phaser.Scene {
   public onCalendarClick?: (entityId: string) => void;
   public onMealsClick?: (entityId: string) => void;
   public onInventoryClick?: (entityId: string) => void;
+  public onAssetShopClick?: (entityId: string) => void;
   private nearbyAquariumId: string | null = null;
   private editorAquariumGhost: Phaser.GameObjects.Image | null = null;
+
+  // Seller NPC (Asset Shop Counter)
+  private sellerNpcVisual: SellerNpcVisual | null = null;
+  public onSellerNpcClick?: (sellerNpc?: SellerNpcState | null) => void;
+  public onGuildHelperNpcClick?: (sellerNpc?: SellerNpcState | null) => void;
+  private nearbySellerNpcId: string | null = null;
+  private editorSellerNpcGhost: Phaser.GameObjects.Container | null = null;
 
   // Freeform Decorations State (e.g. Chairs, not bounded by grid)
   private freeformVisuals: Map<
@@ -310,6 +345,14 @@ export class GameScene extends Phaser.Scene {
   ) => void;
   private lastReportedNearbyInteractableKey: string | null = null;
   private editorFreeformGhost: Phaser.GameObjects.Image | null = null;
+
+  // Diner Dash Minigame Layer
+  private dinerLayer: DinerSceneLayer | null = null;
+  private nearbyDinerAction: DinerNearbyAction | null = null;
+  public onDinerNearbyChange?: (action: DinerNearbyAction | null) => void;
+  private lastReportedDinerKey: string | null = null;
+  private dinerPromptText: Phaser.GameObjects.Text | null = null;
+  private dinerUnsubs: Array<() => void> = [];
 
   // Private Zones State & Effects
   public privateZones: PrivateZone[] = [];
@@ -343,6 +386,10 @@ export class GameScene extends Phaser.Scene {
         ashtrays: Array.from(this.ashtrayVisuals.values()).map((v) => v.state),
         chessBoards: Array.from(this.chessBoardVisuals.values()).map((v) => v.state),
         aquariums: Array.from(this.aquariumVisuals.values()).map((v) => v.state),
+        sellerNpc:
+          this.sellerNpcVisual && this.sellerNpcVisual.state.enabled !== false
+            ? this.sellerNpcVisual.state
+            : null,
         freeformDecorations: Array.from(this.freeformVisuals.values()).map((v) => v.data),
       });
     }
@@ -364,6 +411,26 @@ export class GameScene extends Phaser.Scene {
   private editorOverlayText!: Phaser.GameObjects.Text;
   private isRightMouseDown: boolean = false;
   private panStartPoint: { x: number; y: number; scrollX: number; scrollY: number } | null = null;
+  public mobileDragFillMode: boolean = false;
+  private hasMultiTouchInCurrentGesture: boolean = false;
+  private touchGestureState: {
+    pointerId: number;
+    startScreenX: number;
+    startScreenY: number;
+    startWorldX: number;
+    startWorldY: number;
+    startScrollX: number;
+    startScrollY: number;
+    isPanning: boolean;
+    isDragFilling: boolean;
+    cancelledByMultiTouch: boolean;
+    pendingSpecialEntity?: {
+      entityKind: "jukebox" | "typewriter" | "ashtray" | "chess_board" | "aquarium" | "seller_npc";
+      entityLayer: number | undefined;
+      inspectItem: InspectableMapItem;
+    } | null;
+    pendingFreeformData?: FreeformDecorationData | null;
+  } | null = null;
 
   constructor() {
     super({ key: "GameScene" });
@@ -389,6 +456,11 @@ export class GameScene extends Phaser.Scene {
       "floor_free_atlas",
       "/assets/floor/floor_free.png",
       "/assets/floor/floor_free.json"
+    );
+    this.load.atlas(
+      "living_room_floor_atlas",
+      "/assets/floor/living_room_spritesheet.png",
+      "/assets/floor/living_room_sprites.json"
     );
     this.load.atlas(
       "wall_free_atlas",
@@ -417,31 +489,47 @@ export class GameScene extends Phaser.Scene {
       "/assets/decoration/cat_shop_sprites.json"
     );
     this.load.atlas(
+      "adventure_guild_atlas",
+      "/assets/decoration/adventure_guild_spritesheet.png",
+      "/assets/decoration/adventure_guild_sprites.json"
+    );
+    this.load.atlas(
+      "restaurant_atlas",
+      "/assets/decoration/restaurant_spritesheet.png",
+      "/assets/decoration/restaurant_sprites.json"
+    );
+    this.load.atlas(
       "living_room_one_atlas",
       "/assets/decoration/living_room_one_spritesheet.png",
       "/assets/decoration/living_room_one_sprites.json"
     );
+    this.load.atlas(
+      "living_room_two_atlas",
+      "/assets/decoration/living_room_two_spritesheet.png",
+      "/assets/decoration/living_room_two_sprites.json"
+    );
 
-    // Default character avatar atlas & frames
-    this.load.atlas(
-      "player_idle_sheet",
-      "/assets/sprites/default/16x32_idle_sheet.png",
-      "/assets/sprites/default/idle_sprites_mapping.json"
-    );
-    this.load.atlas(
-      "player_walk_sheet",
-      "/assets/sprites/default/16x32_walk_sheet.png",
-      "/assets/sprites/default/walk_sprites_mapping.json"
-    );
-    this.load.image("default_avatar_idle", "/assets/sprites/default/sprite1.png");
-    this.load.image("default_avatar_left_0", "/assets/sprites/default/walk_sprite9_flip.png");
-    this.load.image("default_avatar_left_1", "/assets/sprites/default/walk_sprite10_flip.png");
-    this.load.image("default_avatar_right_0", "/assets/sprites/default/walk_sprite9.png");
-    this.load.image("default_avatar_right_1", "/assets/sprites/default/walk_sprite10.png");
-    this.load.image("default_avatar_up_0", "/assets/sprites/default/walk_sprite17.png");
-    this.load.image("default_avatar_up_1", "/assets/sprites/default/walk_sprite18.png");
-    this.load.image("default_avatar_down_0", "/assets/sprites/default/walk_sprite1.png");
-    this.load.image("default_avatar_down_1", "/assets/sprites/default/walk_sprite2.png");
+    // Modular Color-ID base character spritesheet (32x32 uniform cells: 4 cols x 8 rows)
+    this.load.spritesheet("player_base", "/assets/character_base_map.png", {
+      frameWidth: 32,
+      frameHeight: 32,
+    });
+
+    // Animated 4x8 (128x256) RPG Gear spritesheets synced 1-to-1 with player_base
+    for (const sheet of RPG_GEAR_SHEETS) {
+      this.load.spritesheet(sheet.key, sheet.url, {
+        frameWidth: 32,
+        frameHeight: 32,
+      });
+    }
+
+    // 4-frame static fashion overlays (South, West, East, North)
+    for (const item of OUTERWEAR_CATALOG) {
+      this.load.spritesheet(item.id, item.assetPath, {
+        frameWidth: 32,
+        frameHeight: 32,
+      });
+    }
 
     // Slime avatar atlas & frames
     this.load.atlas(
@@ -461,6 +549,17 @@ export class GameScene extends Phaser.Scene {
       "/assets/sprites/ghost_slime/ghost_slime_walk_spritesheet.png",
       "/assets/sprites/ghost_slime/ghost_slime_walk_sprites.json"
     );
+
+    // Seller NPC spritesheets & shop counter prop
+    for (const opt of SELLER_NPC_SPRITE_OPTIONS) {
+      this.load.spritesheet(
+        `npc_${opt.key}`,
+        `/assets/sprites/npcs/${opt.key}.png`,
+        { frameWidth: 32, frameHeight: 32 }
+      );
+    }
+    this.load.image("shop_counter_prop", "/assets/sprites/npcs/shop_counter.png");
+    DinerSceneLayer.preload(this);
   }
 
   create() {
@@ -491,16 +590,65 @@ export class GameScene extends Phaser.Scene {
       }
     });
 
-    if (this.textures.exists("player_idle_sheet")) {
-      const tex = this.textures.get("player_idle_sheet");
-      if (tex) {
-        tex.setFilter(Phaser.Textures.FilterMode.NEAREST);
+    // Register modular fashion PostFX shaders once
+    if (this.renderer instanceof Phaser.Renderer.WebGL.WebGLRenderer) {
+      this.renderer.pipelines.addPostPipeline("FashionPipeline", FashionPipeline);
+      this.renderer.pipelines.addPostPipeline("FrontArmPipeline", FrontArmPipeline);
+    }
+
+    if (this.textures.exists("player_base")) {
+      this.textures.get("player_base").setFilter(Phaser.Textures.FilterMode.NEAREST);
+    }
+    for (const sheet of RPG_GEAR_SHEETS) {
+      if (this.textures.exists(sheet.key)) {
+        this.textures.get(sheet.key).setFilter(Phaser.Textures.FilterMode.NEAREST);
       }
     }
-    if (this.textures.exists("player_walk_sheet")) {
-      const tex = this.textures.get("player_walk_sheet");
-      if (tex) {
-        tex.setFilter(Phaser.Textures.FilterMode.NEAREST);
+    for (const item of OUTERWEAR_CATALOG) {
+      if (this.textures.exists(item.id)) {
+        this.textures.get(item.id).setFilter(Phaser.Textures.FilterMode.NEAREST);
+      }
+    }
+
+    // Register 4-directional idle & walk animations on player_base (4 cols x 8 rows)
+    const animDefs: Array<{ key: string; start: number; end: number }> = [
+      { key: "idle_south", start: 0, end: 3 },
+      { key: "idle_west", start: 4, end: 7 },
+      { key: "idle_east", start: 8, end: 11 },
+      { key: "idle_north", start: 12, end: 15 },
+      { key: "walk_south", start: 16, end: 19 },
+      { key: "walk_west", start: 20, end: 23 },
+      { key: "walk_east", start: 24, end: 27 },
+      { key: "walk_north", start: 28, end: 31 },
+    ];
+    for (const def of animDefs) {
+      if (!this.anims.exists(def.key) && this.textures.exists("player_base")) {
+        this.anims.create({
+          key: def.key,
+          frames: this.anims.generateFrameNumbers("player_base", { start: def.start, end: def.end }),
+          frameRate: 6,
+          repeat: -1,
+        });
+      }
+    }
+
+    // Seller NPC spritesheets filter & friendly idle wave animations
+    if (this.textures.exists("shop_counter_prop")) {
+      this.textures.get("shop_counter_prop").setFilter(Phaser.Textures.FilterMode.NEAREST);
+    }
+    for (const opt of SELLER_NPC_SPRITE_OPTIONS) {
+      const texKey = `npc_${opt.key}`;
+      if (this.textures.exists(texKey)) {
+        this.textures.get(texKey).setFilter(Phaser.Textures.FilterMode.NEAREST);
+        const animKey = `npc_wave_${opt.key}`;
+        if (!this.anims.exists(animKey)) {
+          this.anims.create({
+            key: animKey,
+            frames: this.anims.generateFrameNumbers(texKey, { frames: [0, 0, 0, 1, 2, 3, 2, 0] }),
+            frameRate: 4,
+            repeat: -1,
+          });
+        }
       }
     }
 
@@ -702,6 +850,10 @@ export class GameScene extends Phaser.Scene {
       this.setPlayerAvatars(sessionId, avatars);
     });
 
+    this.multiplayer.onPlayerOutfit((sessionId, outfit) => {
+      this.setPlayerOutfit(sessionId, outfit);
+    });
+
     // Hook up map tile updates from multiplayer
     this.multiplayer.onTilesUpdated((updates) => {
       this.applyTileUpdates(updates);
@@ -752,6 +904,16 @@ export class GameScene extends Phaser.Scene {
     this.editorAquariumGhost.setAlpha(0.65);
     this.editorAquariumGhost.setDepth(136);
     this.editorAquariumGhost.setVisible(false);
+
+    // Ghost preview for Seller NPC + Counter placement (superadmin)
+    const ghostNpcSprite = this.add.sprite(0, 0, "npc_general_seller", 0);
+    ghostNpcSprite.setDisplaySize(46, 46);
+    const ghostCounterSprite = this.add.image(0, 26, "shop_counter_prop");
+    ghostCounterSprite.setDisplaySize(96, 44);
+    this.editorSellerNpcGhost = this.add.container(0, 0, [ghostNpcSprite, ghostCounterSprite]);
+    this.editorSellerNpcGhost.setAlpha(0.68);
+    this.editorSellerNpcGhost.setDepth(136);
+    this.editorSellerNpcGhost.setVisible(false);
 
     // Ghost preview for freeform decoration placement (e.g. chairs, not bounded by grid)
     this.editorFreeformGhost = this.add.image(0, 0, "decoration_free_atlas", "office_chair_1_front");
@@ -854,6 +1016,52 @@ export class GameScene extends Phaser.Scene {
     if (this.multiplayer.currentAquariums && this.multiplayer.currentAquariums.size > 0) {
       this.setAquariums(Array.from(this.multiplayer.currentAquariums.values()));
     }
+
+    // Hook up Seller NPC updates from multiplayer
+    this.multiplayer.onSellerNpcSync((sellerNpc) => {
+      this.setSellerNpc(sellerNpc);
+    });
+    this.multiplayer.onSpaceInfoUpdated(() => {
+      this.refreshAllPlayerRpgGearVisuals();
+      if (this.sellerNpcVisual) {
+        this.sellerNpcVisual.promptText.setText(
+          this.isAdventureGuildSpace() ? "Press E • Guild RPG" : "Press E • Shop"
+        );
+      }
+    });
+    if (this.multiplayer.currentSellerNpc !== undefined) {
+      this.setSellerNpc(this.multiplayer.currentSellerNpc);
+    }
+
+    // Hook up Diner Dash Restaurant Minigame Layer
+    this.dinerLayer = new DinerSceneLayer(this);
+    this.dinerLayer.createAnimations();
+    this.dinerPromptText = this.add.text(0, 0, "Press E", {
+      fontFamily: "Outfit, sans-serif",
+      fontSize: "11px",
+      fontStyle: "bold",
+      color: "#5eead4",
+      backgroundColor: "rgba(15, 23, 42, 0.92)",
+      padding: { x: 8, y: 3 },
+    });
+    this.dinerPromptText.setOrigin(0.5, 0.5);
+    this.dinerPromptText.setDepth(10001);
+    this.dinerPromptText.setVisible(false);
+
+    this.dinerUnsubs.forEach((u) => u());
+    this.dinerUnsubs = [
+      this.multiplayer.onDinerState((dState) => {
+        this.dinerLayer?.setState(dState);
+      }),
+      this.multiplayer.onDinerEvent((dEv) => {
+        this.dinerLayer?.handleEvent(dEv);
+      }),
+    ];
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.dinerUnsubs.forEach((u) => u());
+      this.dinerUnsubs = [];
+      this.dinerLayer?.clearAll();
+    });
 
     // Pointer events for Map Editor (click and drag to select area)
     this.setupEditorPointerEvents();
@@ -1243,18 +1451,23 @@ export class GameScene extends Phaser.Scene {
     // Initial facing direction (defaults to front/down)
     const initialDir = (player.direction && player.direction !== "idle" ? player.direction : "down") as ("left" | "right" | "up" | "down");
 
-    // Sprite for avatar (defaults to idle sheet atlas)
-    const sprite = this.textures.exists("player_idle_sheet")
-      ? this.add.image(0, CHARACTER_MAX_SIZE / 2, "player_idle_sheet", "sprite1")
-      : this.add.image(0, CHARACTER_MAX_SIZE / 2, "default_avatar_idle");
+    // Fallback image sprite used only when custom uploaded avatars or non-default templates (e.g. Slime) are active
+    const sprite = this.add.image(0, CHARACTER_MAX_SIZE / 2, "empty_pixel");
     sprite.setOrigin(0.5, 1.0);
-    sprite.setVisible(true);
+    sprite.setVisible(false);
 
     const scale = CHARACTER_MAX_SIZE / 25;
-    sprite.setDisplaySize(16 * scale, 25 * scale);
+
+    const initialOutfit: PlayerOutfit = player?.outfit
+      ? extractPlayerOutfit(player.outfit)
+      : { ...DEFAULT_PLAYER_OUTFIT };
+
+    const avatar = new PlayerAvatar(this, 0, CHARACTER_MAX_SIZE / 2, initialOutfit);
+    avatar.setScale(scale);
+    avatar.setVisible(true);
 
     // Name container floating above sprite with 4px border-radius background pill
-    const crownPrefix = player.isSuperadmin ? "👑 " : "";
+    const crownPrefix = player.isSuperadmin ? "[Admin] " : "";
     const displayName = `${crownPrefix}${player.name || "Player"}`;
 
     const nameTagBg = this.add.graphics();
@@ -1278,7 +1491,7 @@ export class GameScene extends Phaser.Scene {
     const spawnX = typeof player.x === "number" ? player.x : WORLD_WIDTH / 2;
     const spawnY = typeof player.y === "number" ? player.y : WORLD_HEIGHT / 2;
     const coords = getTileCoords(spawnX, spawnY);
-    const container = this.add.container(spawnX, spawnY, [sprite, nameTagContainer]);
+    const container = this.add.container(spawnX, spawnY, [sprite, avatar, nameTagContainer]);
     container.setDepth(100);
 
     // Hit zone for player hover (shows name) and click/press (opens player context menu)
@@ -1343,25 +1556,29 @@ export class GameScene extends Phaser.Scene {
     const visual: PlayerVisual = {
       container,
       sprite,
+      avatar,
       nameTagContainer,
       nameTagBg,
       nameTagText,
       hitZone,
+      rpgGearSignature: player?.rpgGearSignature || "",
       player,
+      outfit: initialOutfit,
       currentDirection: (player.direction as any) || "idle",
       facingDirection: initialDir,
       animTimer: 0,
       currentFrameIdx: 0,
       lastMoveTime: 0,
     };
-    this.updateNameTag(visual, displayName);
+    this.updateNameTag(visual, this.formatPlayerNameTag(player));
     this.playerVisuals.set(sessionId, visual);
 
-    console.log(`🎮 Spawned player for ${player.name} (${sessionId}) at tile (${coords.tileX}, ${coords.tileY})`);
+    console.log(`Spawned player for ${player.name} (${sessionId}) at tile (${coords.tileX}, ${coords.tileY})`);
 
     // If local player, center camera immediately on container and follow smoothly
     if (sessionId === this.multiplayer.sessionId) {
       this.localPlayerId = sessionId;
+      this.lastFocusActivityTime = Date.now();
       if (!this.isEditMode) {
         this.cameras.main.centerOn(container.x, container.y);
         this.cameras.main.startFollow(container, true, 1, 1);
@@ -1371,6 +1588,26 @@ export class GameScene extends Phaser.Scene {
     // Check if avatars are already available for this player
     const existingAvatars = this.multiplayer.playerAvatarsMap.get(sessionId);
     this.setPlayerAvatars(sessionId, existingAvatars || null);
+    this.refreshPlayerRpgGearVisual(visual);
+  }
+
+  public isAdventureGuildSpace(): boolean {
+    if (this.multiplayer?.currentSpaceInfo?.resolvedTheme === "guild") return true;
+    const npc = this.sellerNpcVisual?.state;
+    if (npc && (npc.spriteKey === "guild_seller" || npc.shopTheme === "guild")) return true;
+    return false;
+  }
+
+  public refreshAllPlayerRpgGearVisuals(): void {
+    this.playerVisuals.forEach((vis) => this.refreshPlayerRpgGearVisual(vis));
+  }
+
+  private refreshPlayerRpgGearVisual(visual: PlayerVisual): void {
+    if (!visual.avatar) return;
+    const sig = visual.rpgGearSignature || visual.player?.rpgGearSignature || "";
+    const isDefaultChar = !hasCustomAvatarFrames(visual.avatars);
+    const showGear = Boolean(this.isAdventureGuildSpace() && isDefaultChar && sig);
+    visual.avatar.setRpgGear(showGear ? sig : "", showGear);
   }
 
   private updateNameTag(visual: PlayerVisual, displayName: string) {
@@ -1470,6 +1707,13 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  public setPlayerOutfit(sessionId: string, outfit: Partial<PlayerOutfit> | null) {
+    const visual = this.playerVisuals.get(sessionId);
+    if (!visual) return;
+    visual.outfit = outfit ? { ...visual.outfit, ...outfit } : { ...DEFAULT_PLAYER_OUTFIT };
+    visual.avatar?.updateOutfit(visual.outfit);
+  }
+
   public setPlayerAvatars(sessionId: string, avatars: PlayerAvatars | null) {
     const visual = this.playerVisuals.get(sessionId);
     if (!visual) return;
@@ -1484,20 +1728,24 @@ export class GameScene extends Phaser.Scene {
 
     const hasCustomUploads = avatars && dirs.some((dir) => {
       const frames = normalizeFrames(avatars[dir]);
-      return frames.some((f) => typeof f === "string" && (f.startsWith("data:image/") || f.startsWith("/") || f.startsWith("http")));
+      return frames.some((f) => typeof f === "string" && (f.startsWith("sheet:") || f.startsWith("data:image/") || f.startsWith("/") || f.startsWith("http")));
     });
 
     if (!hasCustomUploads) {
       this.cleanupCustomAvatars(sessionId);
       visual.avatars = undefined;
-      visual.sprite.setVisible(true);
+      visual.sprite.setVisible(false);
+      visual.avatar?.setVisible(true);
       this.updateVisualSprite(sessionId);
       return;
     }
 
     visual.avatars = avatars || undefined;
+    visual.avatar?.setVisible(false);
+    visual.avatar?.setRpgGear("", false);
     visual.sprite.setVisible(true);
 
+    let hasSheetFrames = false;
     dirs.forEach((dir) => {
       let frames = normalizeFrames(avatars?.[dir]);
       if (frames.length === 0 && avatars?.idle) {
@@ -1506,7 +1754,12 @@ export class GameScene extends Phaser.Scene {
       if (frames.length === 0) return;
 
       frames.slice(0, 12).forEach((frameSrc, idx) => {
-        if (!frameSrc || (!frameSrc.startsWith("data:image/") && !frameSrc.startsWith("/") && !frameSrc.startsWith("http"))) return;
+        if (!frameSrc) return;
+        if (parseSheetFrameRef(frameSrc)) {
+          hasSheetFrames = true;
+          return;
+        }
+        if (!frameSrc.startsWith("data:image/") && !frameSrc.startsWith("/") && !frameSrc.startsWith("http")) return;
 
         const texKey = `avatar_${sessionId}_${dir}_${idx}`;
         const registerTex = () => {
@@ -1533,6 +1786,24 @@ export class GameScene extends Phaser.Scene {
         }
       });
     });
+
+    if (hasSheetFrames) {
+      this.updateVisualSprite(sessionId);
+    }
+  }
+
+  private mapToAvatarDirection(dir: "left" | "right" | "up" | "down"): AvatarDirection {
+    switch (dir) {
+      case "left":
+        return "west";
+      case "right":
+        return "east";
+      case "up":
+        return "north";
+      case "down":
+      default:
+        return "south";
+    }
   }
 
   private updateVisualSprite(sessionId: string) {
@@ -1544,8 +1815,44 @@ export class GameScene extends Phaser.Scene {
       ? (visual.currentDirection as "left" | "right" | "up" | "down")
       : (visual.facingDirection || "down");
 
-    // 1. If player has custom uploaded avatar pictures
+    // 1. If player has custom uploaded avatar pictures or template sheet frames (e.g. Slime)
     if (visual.avatars) {
+      visual.avatar?.setVisible(false);
+      visual.sprite.setVisible(true);
+      const rawDirFrames = normalizeFrames(
+        isMoving
+          ? (visual.avatars[activeDir] || visual.avatars.idle)
+          : (visual.avatars.idle || visual.avatars[activeDir])
+      );
+      if (rawDirFrames.length > 0) {
+        const rawRef = rawDirFrames[visual.currentFrameIdx % rawDirFrames.length];
+        const parsedSheet = parseSheetFrameRef(rawRef);
+        if (parsedSheet) {
+          let atlasKey = SPRITE_SHEET_CONFIGS[parsedSheet.sheetKey].phaserAtlas;
+          if (isMoving && parsedSheet.sheetKey === "ghost_slime" && this.textures.exists("ghost_slime_walk_sheet")) {
+            atlasKey = "ghost_slime_walk_sheet";
+          }
+          if (this.textures.exists(atlasKey)) {
+            visual.sprite.setTexture(atlasKey, parsedSheet.frameName);
+            visual.sprite.setOrigin(0.5, 1.0);
+            visual.sprite.setPosition(0, CHARACTER_MAX_SIZE / 2);
+            visual.sprite.setFlipX(parsedSheet.flipX);
+
+            const MAX_DIM = CHARACTER_MAX_SIZE;
+            const fw = visual.sprite.width;
+            const fh = visual.sprite.height;
+            if (fw > 0 && fh > 0) {
+              const ratio = Math.min(MAX_DIM / fw, MAX_DIM / fh);
+              visual.sprite.setDisplaySize(fw * ratio, fh * ratio);
+            } else {
+              visual.sprite.setDisplaySize(MAX_DIM, MAX_DIM);
+            }
+            visual.nameTagContainer.setPosition(0, -CHARACTER_MAX_SIZE / 2 - 12);
+            return;
+          }
+        }
+      }
+
       const customFrames = isMoving
         ? this.getVisualFrames(sessionId, activeDir)
         : (this.getVisualFrames(sessionId, "idle").length > 0
@@ -1575,61 +1882,20 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    // 2. Default character using:
-    // - Idle: 16x32_idle_sheet atlas & idle_sprites_mapping.json
-    // - Walking / Moving: 16x32_walk_sheet atlas & walk_sprites_mapping.json
-    // Array number used is the same as idle:
-    // - facing front and down (south) - sprites1 until sprites4
-    // - facing right and left - sprites9 until sprites12. default is facing right. flip image when facing left.
-    // - facing north - sprites17 until sprites20.
-    let frameList: string[];
-    let shouldFlip = false;
-
-    if (activeDir === "down") {
-      frameList = ["sprite1", "sprite2", "sprite3", "sprite4"];
-      shouldFlip = false;
-    } else if (activeDir === "right") {
-      frameList = ["sprite9", "sprite10", "sprite11", "sprite12"];
-      shouldFlip = false;
-    } else if (activeDir === "left") {
-      frameList = ["sprite9", "sprite10", "sprite11", "sprite12"];
-      shouldFlip = true;
-    } else { // activeDir === "up" (north)
-      frameList = ["sprite17", "sprite18", "sprite19", "sprite20"];
-      shouldFlip = false;
+    // 2. Default modular character using PlayerAvatar (Color-ID base body + 4-frame overlays + front-arm shader pass)
+    visual.sprite.setVisible(false);
+    if (visual.avatar) {
+      visual.avatar.setVisible(true);
+      visual.avatar.playDirection(this.mapToAvatarDirection(activeDir), isMoving);
     }
+    this.refreshPlayerRpgGearVisual(visual);
+    visual.nameTagContainer.setPosition(0, -CHARACTER_MAX_SIZE / 2 - 12);
+  }
 
-    const frameName = frameList[visual.currentFrameIdx % frameList.length];
-    const targetAtlas = isMoving && this.textures.exists("player_walk_sheet")
-      ? "player_walk_sheet"
-      : "player_idle_sheet";
-
-    try {
-      if (this.textures.exists(targetAtlas)) {
-        visual.sprite.setTexture(targetAtlas, frameName);
-      } else if (this.textures.exists("player_idle_sheet")) {
-        visual.sprite.setTexture("player_idle_sheet", frameName);
-      } else if (this.textures.exists("default_avatar_idle")) {
-        visual.sprite.setTexture("default_avatar_idle");
-      }
-
-      visual.sprite.setFlipX(shouldFlip);
-      visual.sprite.setOrigin(0.5, 1.0);
-      visual.sprite.setPosition(0, CHARACTER_MAX_SIZE / 2);
-
-      const scale = CHARACTER_MAX_SIZE / 25;
-      const fw = visual.sprite.width;
-      const fh = visual.sprite.height;
-      if (fw > 0 && fh > 0) {
-        visual.sprite.setDisplaySize(fw * scale, fh * scale);
-      } else {
-        visual.sprite.setDisplaySize(16 * scale, 25 * scale);
-      }
-
-      visual.nameTagContainer.setPosition(0, -CHARACTER_MAX_SIZE / 2 - 12);
-    } catch (e) {
-      console.warn("Visual update error:", e);
-    }
+  private formatPlayerNameTag(player: any): string {
+    const crownPrefix = player?.isSuperadmin ? "[Admin] " : "";
+    const focusSuffix = player?.focusStatus === "focusing" ? " [Focus]" : "";
+    return `${crownPrefix}${player?.name || "Player"}${focusSuffix}`;
   }
 
   private updatePlayerVisual(sessionId: string, player: any) {
@@ -1638,9 +1904,14 @@ export class GameScene extends Phaser.Scene {
 
     visual.player = player;
 
+    const nextGearSig = player?.rpgGearSignature || "";
+    if (visual.rpgGearSignature !== nextGearSig) {
+      visual.rpgGearSignature = nextGearSig;
+      this.refreshPlayerRpgGearVisual(visual);
+    }
+
     // Update name
-    const crownPrefix = player.isSuperadmin ? "👑 " : "";
-    const expectedName = `${crownPrefix}${player.name || "Player"}`;
+    const expectedName = this.formatPlayerNameTag(player);
     if (visual.nameTagText.text !== expectedName) {
       this.updateNameTag(visual, expectedName);
     }
@@ -1726,7 +1997,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     // Limit text length for bubble
-    const prefix = isWhisper ? "🔒 " : "";
+    const prefix = isWhisper ? "[Whisper] " : "";
     const cleanText = prefix + (text.length > 50 ? text.slice(0, 47) + "..." : text);
 
     // Create speech bubble container
@@ -1826,8 +2097,10 @@ export class GameScene extends Phaser.Scene {
       ring.fillCircle(0, 0, 11);
 
       // Inner icon
-      const micText = this.add.text(0, 0, "🎙️", {
-        fontSize: "10px",
+      const micText = this.add.text(0, 0, "MIC", {
+        fontSize: "7px",
+        fontStyle: "bold",
+        color: "#ffffff",
       });
       micText.setOrigin(0.5, 0.5);
 
@@ -1900,6 +2173,33 @@ export class GameScene extends Phaser.Scene {
   public isInventoryModalOpen(): boolean {
     const el = document.getElementById("space-inventory-modal");
     return !!(el && !el.classList.contains("hidden"));
+  }
+
+  public isFocusRoomModalOpen(): boolean {
+    const el = document.getElementById("focus-room-modal");
+    return !!(el && !el.classList.contains("hidden"));
+  }
+
+  public isSquadModalOpen(): boolean {
+    const el = document.getElementById("squad-modal");
+    return !!(el && !el.classList.contains("hidden"));
+  }
+
+  public isSquadInviteModalOpen(): boolean {
+    const el = document.getElementById("squad-invite-modal");
+    return !!(el && !el.classList.contains("hidden"));
+  }
+
+  public resetFocusIdleTimer(): void {
+    this.lastFocusActivityTime = Date.now();
+  }
+
+  public getFocusIdleElapsedMs(): number {
+    if (this.isAnyModalOpen() || this.isEditMode || !this.localPlayerId) {
+      this.lastFocusActivityTime = Date.now();
+      return 0;
+    }
+    return Math.max(0, Date.now() - this.lastFocusActivityTime);
   }
 
   public setControlsActive(active: boolean) {
@@ -2057,7 +2357,9 @@ export class GameScene extends Phaser.Scene {
         let targetDir: "idle" | "left" | "right" | "up" | "down" = "idle";
 
         if (vx !== 0 || vy !== 0) {
-          this.lastLocalMoveTime = Date.now();
+          const nowTs = Date.now();
+          this.lastLocalMoveTime = nowTs;
+          this.lastFocusActivityTime = nowTs;
           if (Math.abs(vx) >= Math.abs(vy)) {
             targetDir = vx < 0 ? "left" : "right";
           } else {
@@ -2190,9 +2492,10 @@ export class GameScene extends Phaser.Scene {
       }
     });
 
-    // 4. Animate sprites (idle breathing & walking cycles, ~6 FPS)
+    // 4. Animate sprites (custom/template avatars at ~6 FPS; PlayerAvatar animates natively via Phaser anims)
     const FRAME_DURATION = 0.166;
     this.playerVisuals.forEach((visual, sId) => {
+      if (!visual.avatars) return;
       visual.animTimer += dtSeconds;
       if (visual.animTimer >= FRAME_DURATION) {
         visual.animTimer -= FRAME_DURATION;
@@ -2493,6 +2796,31 @@ export class GameScene extends Phaser.Scene {
         const nearbyAq = closestAquariumDist <= 1.5 * TILE_SIZE ? closestAquarium : null;
         this.nearbyAquariumId = nearbyAq ? (nearbyAq as AquariumState).id : null;
 
+        // Update nearby Seller NPC (counter-aware proximity + depth sorting)
+        let isNearSeller = false;
+        if (this.sellerNpcVisual && this.sellerNpcVisual.state.enabled !== false) {
+          const npc = this.sellerNpcVisual.state;
+          const hasCounter = npc.showCounter !== false;
+          const cx = Phaser.Math.Clamp(
+            lx,
+            npc.x - (hasCounter ? 44 : 12),
+            npc.x + (hasCounter ? 44 : 12)
+          );
+          const cy = Phaser.Math.Clamp(
+            ly,
+            npc.y - 6,
+            npc.y + (hasCounter ? 44 : 18)
+          );
+          const sellerDist = Phaser.Math.Distance.Between(lx, ly, cx, cy);
+          isNearSeller = sellerDist <= 1.25 * TILE_SIZE;
+          this.sellerNpcVisual.promptText.setVisible(
+            isNearSeller && !this.isEditMode && !this.isAnyInteractionModalOpen()
+          );
+          const baseDepth = ly < npc.y - 6 ? 102 : 20 + (npc.layer ?? 0) * 0.05;
+          this.sellerNpcVisual.container.setDepth(baseDepth);
+        }
+        this.nearbySellerNpcId = isNearSeller && this.sellerNpcVisual ? this.sellerNpcVisual.state.id : null;
+
         // Update nearby custom interactable decorations (freeform & grid decorations)
         let closestCustomDeco: {
           id: string;
@@ -2549,6 +2877,40 @@ export class GameScene extends Phaser.Scene {
         if (nextNearbyKey !== this.lastReportedNearbyInteractableKey) {
           this.lastReportedNearbyInteractableKey = nextNearbyKey;
           this.onNearbyInteractableChange?.(activeNearby);
+        }
+
+        // Diner Dash NPC animation interpolation & nearby action detection
+        if (this.dinerLayer) {
+          this.dinerLayer.updateFrame(time, delta, (sid) => {
+            const pv = this.playerVisuals.get(sid);
+            return pv ? { x: pv.container.x, y: pv.container.y } : null;
+          });
+          const mySid = this.localPlayerId || "";
+          const dinerAction =
+            !this.isEditMode && !isAnyModalOpen
+              ? this.dinerLayer.getNearbyAction(lx, ly, mySid)
+              : null;
+          this.nearbyDinerAction = dinerAction;
+          if (this.dinerPromptText) {
+            if (dinerAction) {
+              this.dinerPromptText.setText(
+                dinerAction.kind === "kitchen_cooking"
+                  ? dinerAction.label
+                  : `${dinerAction.label} [E]`
+              );
+              this.dinerPromptText.setPosition(dinerAction.promptX, dinerAction.promptY);
+              this.dinerPromptText.setVisible(true);
+            } else {
+              this.dinerPromptText.setVisible(false);
+            }
+          }
+          const dinerKey = dinerAction
+            ? `${dinerAction.id}:${dinerAction.kind}:${dinerAction.label}:${Boolean(dinerAction.canLeaveShift)}`
+            : null;
+          if (dinerKey !== this.lastReportedDinerKey) {
+            this.lastReportedDinerKey = dinerKey;
+            this.onDinerNearbyChange?.(dinerAction);
+          }
         }
 
         // Apply audio attenuation to JukeboxManager
@@ -2631,6 +2993,475 @@ export class GameScene extends Phaser.Scene {
     this.gridGraphics.setDepth(0.11);
   }
 
+  private isMultiTouchActive(): boolean {
+    return Boolean(this.input.pointer1?.isDown && this.input.pointer2?.isDown);
+  }
+
+  private isGridBoxEditorTool(): boolean {
+    return (
+      this.activeEditorTool === "flooring" ||
+      this.activeEditorTool === "decoration" ||
+      this.activeEditorTool === "clear_decoration" ||
+      this.activeEditorTool === "private_zone" ||
+      this.activeEditorTool === "clear_private_zone"
+    );
+  }
+
+  public setMobileDragFillMode(enabled: boolean) {
+    this.mobileDragFillMode = enabled;
+  }
+
+  public cancelTouchPlacement() {
+    this.hasMultiTouchInCurrentGesture = true;
+    this.touchGestureState = null;
+    this.isRightMouseDown = false;
+    this.panStartPoint = null;
+    this.cancelEditorSelection();
+  }
+
+  public notifyAllTouchesEnded() {
+    this.hasMultiTouchInCurrentGesture = false;
+    this.touchGestureState = null;
+  }
+
+  private clearEditorHoverGhosts() {
+    this.editorHoverGraphics.clear();
+    this.editorOverlayText.setVisible(false);
+    if (this.editorJukeboxGhost) this.editorJukeboxGhost.setVisible(false);
+    if (this.editorTypewriterGhost) this.editorTypewriterGhost.setVisible(false);
+    if (this.editorAshtrayGhost) this.editorAshtrayGhost.setVisible(false);
+    if (this.editorChessBoardGhost) this.editorChessBoardGhost.setVisible(false);
+    if (this.editorAquariumGhost) this.editorAquariumGhost.setVisible(false);
+    if (this.editorSellerNpcGhost) this.editorSellerNpcGhost.setVisible(false);
+    if (this.editorFreeformGhost) this.editorFreeformGhost.setVisible(false);
+  }
+
+  private beginTouchEditGesture(
+    pointer: Phaser.Input.Pointer,
+    target?: {
+      freeformData?: FreeformDecorationData;
+      specialEntity?: {
+        entityKind: "jukebox" | "typewriter" | "ashtray" | "chess_board" | "aquarium" | "seller_npc";
+        entityLayer: number | undefined;
+        inspectItem: InspectableMapItem;
+      };
+    }
+  ) {
+    if (this.isMultiTouchActive() || this.hasMultiTouchInCurrentGesture) {
+      this.cancelTouchPlacement();
+      return;
+    }
+    this.touchGestureState = {
+      pointerId: pointer.id,
+      startScreenX: pointer.x,
+      startScreenY: pointer.y,
+      startWorldX: pointer.worldX,
+      startWorldY: pointer.worldY,
+      startScrollX: this.cameras.main.scrollX,
+      startScrollY: this.cameras.main.scrollY,
+      isPanning: false,
+      isDragFilling: false,
+      cancelledByMultiTouch: false,
+      pendingSpecialEntity: target?.specialEntity ?? null,
+      pendingFreeformData: target?.freeformData ?? null,
+    };
+  }
+
+  private executeCanvasEditAction(worldX: number, worldY: number, isTouchTap: boolean) {
+    if (this.movingEditorItem) {
+      this.finishMovingInspectableItem(worldX, worldY);
+      return;
+    }
+
+    if (this.activeEditorTool === "none") {
+      this.closeEditorItemMenu();
+      return;
+    }
+
+    if (this.activeEditorTool === "cursor") {
+      const inspected = this.getInspectableItemAt(worldX, worldY);
+      if (inspected && inspected.bounds) {
+        this.openEditorItemMenu(inspected);
+      } else {
+        this.closeEditorItemMenu();
+      }
+      return;
+    }
+
+    this.closeEditorItemMenu();
+
+    if (this.activeEditorTool === "jukebox") {
+      this.multiplayer.placeJukebox(
+        Math.round(worldX),
+        Math.round(worldY),
+        this.decorationPassable,
+        this.decorationOntop,
+        this.placementLayer
+      );
+      return;
+    }
+
+    if (this.activeEditorTool === "typewriter") {
+      this.multiplayer.placeTypewriter(
+        Math.round(worldX),
+        Math.round(worldY),
+        this.decorationPassable,
+        this.decorationOntop,
+        this.placementLayer
+      );
+      return;
+    }
+
+    if (this.activeEditorTool === "ashtray") {
+      this.multiplayer.placeAshtray(
+        Math.round(worldX),
+        Math.round(worldY),
+        this.decorationPassable,
+        this.decorationOntop,
+        this.placementLayer
+      );
+      return;
+    }
+
+    if (this.activeEditorTool === "chess_board") {
+      this.multiplayer.placeChessBoard(
+        Math.round(worldX),
+        Math.round(worldY),
+        this.decorationPassable,
+        this.decorationOntop,
+        this.placementLayer
+      );
+      return;
+    }
+
+    if (this.activeEditorTool === "aquarium") {
+      this.multiplayer.placeAquarium(
+        Math.round(worldX),
+        Math.round(worldY),
+        this.decorationPassable,
+        this.decorationOntop,
+        this.placementLayer
+      );
+      return;
+    }
+
+    if (this.activeEditorTool === "seller_npc") {
+      this.multiplayer.placeSellerNpc({
+        x: Math.round(worldX),
+        y: Math.round(worldY),
+        layer: this.placementLayer,
+      });
+      return;
+    }
+
+    if (this.activeEditorTool === "freeform_decoration") {
+      this.placeFreeformDecoration(
+        this.selectedAssetKey,
+        Math.round(worldX),
+        Math.round(worldY),
+        null,
+        this.decorationPassable,
+        this.decorationOntop,
+        this.placementLayer,
+        this.placementFlipX
+      );
+      return;
+    }
+
+    if (this.activeEditorTool === "spawn_point") {
+      const col = Math.max(0, Math.min(GRID_COLS - 1, Math.floor(worldX / TILE_SIZE)));
+      const row = Math.max(0, Math.min(GRID_ROWS - 1, Math.floor(worldY / TILE_SIZE)));
+      const spawnVal = `${col},${row}`;
+      this.currentTilesMap.set("spawn_point", spawnVal);
+      this.drawSpawnPoint();
+      if (this.multiplayer) {
+        this.multiplayer.sendUpdateTiles({ spawn_point: spawnVal });
+      }
+      return;
+    }
+
+    const col = Math.max(0, Math.min(GRID_COLS - 1, Math.floor(worldX / TILE_SIZE)));
+    const row = Math.max(0, Math.min(GRID_ROWS - 1, Math.floor(worldY / TILE_SIZE)));
+    if (isTouchTap) {
+      this.commitAreaSelection(col, row, col, row);
+      return;
+    }
+    this.isSelectingArea = true;
+    this.selectionStartTile = { x: col, y: row };
+    this.selectionCurrentTile = { x: col, y: row };
+    this.updateSelectionVisuals();
+  }
+
+  private commitAreaSelection(minCol: number, minRow: number, maxCol: number, maxRow: number) {
+    if (this.activeEditorTool === "private_zone") {
+      const zoneNumber = this.privateZones.length + 1;
+      const defaultName = `Private Area ${zoneNumber}`;
+      const bounds = { minCol, minRow, maxCol, maxRow };
+
+      if (this.onRequestNameForNewZone) {
+        this.onRequestNameForNewZone(bounds, defaultName);
+      } else {
+        this.createPrivateZone(bounds, defaultName);
+      }
+    } else if (this.activeEditorTool === "clear_private_zone") {
+      const prevLen = this.privateZones.length;
+      this.privateZones = this.privateZones.filter((z) => {
+        const noOverlap =
+          maxCol < z.bounds.minCol ||
+          minCol > z.bounds.maxCol ||
+          maxRow < z.bounds.minRow ||
+          minRow > z.bounds.maxRow;
+        return noOverlap;
+      });
+
+      if (this.privateZones.length !== prevLen) {
+        if (
+          this.currentInsideZone &&
+          !this.privateZones.some((z) => z.id === this.currentInsideZone?.id)
+        ) {
+          this.currentInsideZone = null;
+          this.notifyZoneChanged(null);
+        }
+        if (this.multiplayer) {
+          this.multiplayer.sendUpdatePrivateZones(this.privateZones);
+        }
+        this.drawPrivateZones();
+        this.notifyPrivateZonesListChange();
+      }
+    } else if (this.activeEditorTool === "clear_decoration") {
+      const updates: Record<string, string> = {};
+      for (let r = minRow; r <= maxRow; r++) {
+        for (let c = minCol; c <= maxCol; c++) {
+          const existing = this.currentTilesMap.get(`${c},${r}`);
+          if (existing && existing.includes("::")) {
+            const comp = this.parseTileComponents(existing);
+            const isBaseWall = isWallAsset(comp.basePart.split("|")[0]);
+            if (comp.decoParts.length > 0) {
+              comp.decoParts = [];
+              comp.decoPart = null;
+              comp.isOntop = false;
+              comp.hasObstacle = isBaseWall;
+            } else if (comp.overlayFloorPart) {
+              comp.overlayFloorPart = null;
+              comp.overlayFloorLayer = 0;
+            }
+            const newVal = this.buildTileString(comp);
+            if (newVal !== existing) {
+              updates[`${c},${r}`] = newVal;
+            }
+          }
+        }
+      }
+
+      if (Object.keys(updates).length > 0) {
+        this.applyTileUpdates(updates);
+        if (this.multiplayer) {
+          this.multiplayer.sendUpdateTiles(updates);
+        }
+      }
+    } else if (this.activeEditorTool === "decoration") {
+      const isSingleClick = minCol === maxCol && minRow === maxRow;
+      const updates: Record<string, string> = {};
+
+      const applyDecoToComp = (
+        comp: ReturnType<GameScene["parseTileComponents"]>,
+        allowToggleRemove: boolean
+      ) => {
+        const isBaseWall = isWallAsset(this.parseLayerPart(comp.basePart, false).assetKey);
+        const existingIdx = comp.decoParts.findIndex(
+          (d) => d.assetKey === this.selectedAssetKey && d.layer === this.placementLayer
+        );
+
+        if (allowToggleRemove && existingIdx !== -1) {
+          comp.decoParts.splice(existingIdx, 1);
+          if (comp.decoParts.length === 0) {
+            comp.decoPart = null;
+            comp.isOntop = false;
+            comp.hasObstacle = isBaseWall;
+          } else {
+            const top = comp.decoParts[comp.decoParts.length - 1];
+            comp.decoPart = top.rawPart;
+            comp.isOntop = top.isOntop;
+          }
+        } else {
+          const sameLayerIdx = comp.decoParts.findIndex((d) => d.layer === this.placementLayer);
+          const newItem: GridDecoItem = {
+            rawPart: this.formatLayerPart(
+              this.selectedAssetKey,
+              null,
+              this.placementLayer,
+              this.decorationOntop,
+              null,
+              this.placementFlipX
+            ),
+            assetKey: this.selectedAssetKey,
+            color: null,
+            layer: this.placementLayer,
+            isOntop: this.decorationOntop,
+            flipX: this.placementFlipX,
+          };
+          if (sameLayerIdx !== -1) {
+            comp.decoParts[sameLayerIdx] = newItem;
+          } else {
+            comp.decoParts.push(newItem);
+          }
+          comp.decoParts.sort(
+            (a, b) =>
+              this.computeLayerDepth(a.layer, a.isOntop) -
+              this.computeLayerDepth(b.layer, b.isOntop)
+          );
+          const top = comp.decoParts[comp.decoParts.length - 1];
+          comp.decoPart = top.rawPart;
+          comp.isOntop = top.isOntop;
+          comp.hasObstacle = isBaseWall
+            ? comp.hasObstacle || this.isObstacleEnabled
+            : this.isObstacleEnabled;
+        }
+      };
+
+      if (isSingleClick) {
+        const key = `${minCol},${minRow}`;
+        const existing = this.currentTilesMap.get(key);
+        const comp = this.parseTileComponents(existing);
+        applyDecoToComp(comp, true);
+        updates[key] = this.buildTileString(comp);
+      } else {
+        for (let r = minRow; r <= maxRow; r++) {
+          for (let c = minCol; c <= maxCol; c++) {
+            const existing = this.currentTilesMap.get(`${c},${r}`);
+            const comp = this.parseTileComponents(existing);
+            applyDecoToComp(comp, false);
+            updates[`${c},${r}`] = this.buildTileString(comp);
+          }
+        }
+      }
+
+      if (Object.keys(updates).length > 0) {
+        this.applyTileUpdates(updates);
+        if (this.multiplayer) {
+          this.multiplayer.sendUpdateTiles(updates);
+        }
+      }
+    } else if (this.activeEditorTool === "flooring" && this.selectedAssetKey) {
+      const isOverlayWall = isOverlayWallAsset(this.selectedAssetKey);
+      const isOverlayFloor = isOverlayFloorAsset(this.selectedAssetKey);
+      const tileVal = this.selectedAssetKey;
+
+      const isSingleClick = minCol === maxCol && minRow === maxRow;
+      const updates: Record<string, string> = {};
+
+      for (let r = minRow; r <= maxRow; r++) {
+        for (let c = minCol; c <= maxCol; c++) {
+          const existing = this.currentTilesMap.get(`${c},${r}`);
+          const comp = this.parseTileComponents(existing);
+
+          if (isOverlayFloor) {
+            const existingOverlayKey = comp.overlayFloorPart
+              ? comp.overlayFloorPart.split("|")[0]
+              : null;
+            if (
+              isSingleClick &&
+              existingOverlayKey === this.selectedAssetKey &&
+              comp.overlayFloorLayer === this.placementLayer
+            ) {
+              comp.overlayFloorPart = null;
+              comp.overlayFloorLayer = 0;
+              comp.overlayFloorOntop = false;
+              comp.overlayFloorFlipX = false;
+            } else {
+              comp.overlayFloorPart = tileVal;
+              comp.overlayFloorLayer = this.placementLayer;
+              comp.overlayFloorOntop = this.decorationOntop;
+              comp.overlayFloorFlipX = this.placementFlipX;
+              comp.hasObstacle = this.isObstacleEnabled;
+            }
+            updates[`${c},${r}`] = this.buildTileString(comp);
+          } else if (isOverlayWall) {
+            if (isWallAsset(this.parseLayerPart(comp.basePart, false).assetKey)) {
+              comp.basePart = "grass_4";
+            }
+            const existingIdx = comp.decoParts.findIndex(
+              (d) => d.assetKey === this.selectedAssetKey && d.layer === this.placementLayer
+            );
+            if (isSingleClick && existingIdx !== -1) {
+              comp.decoParts.splice(existingIdx, 1);
+              if (comp.decoParts.length === 0) {
+                comp.decoPart = null;
+                comp.isOntop = false;
+                comp.hasObstacle = isWallAsset(this.parseLayerPart(comp.basePart, false).assetKey);
+              } else {
+                const top = comp.decoParts[comp.decoParts.length - 1];
+                comp.decoPart = top.rawPart;
+                comp.isOntop = top.isOntop;
+              }
+            } else {
+              const sameLayerIdx = comp.decoParts.findIndex(
+                (d) => d.layer === this.placementLayer
+              );
+              const newItem: GridDecoItem = {
+                rawPart: this.formatLayerPart(
+                  this.selectedAssetKey,
+                  null,
+                  this.placementLayer,
+                  this.decorationOntop,
+                  null,
+                  this.placementFlipX
+                ),
+                assetKey: this.selectedAssetKey,
+                color: null,
+                layer: this.placementLayer,
+                isOntop: this.decorationOntop,
+                flipX: this.placementFlipX,
+              };
+              if (sameLayerIdx !== -1) {
+                comp.decoParts[sameLayerIdx] = newItem;
+              } else {
+                comp.decoParts.push(newItem);
+              }
+              comp.decoParts.sort(
+                (a, b) =>
+                  this.computeLayerDepth(a.layer, a.isOntop) -
+                  this.computeLayerDepth(b.layer, b.isOntop)
+              );
+              const top = comp.decoParts[comp.decoParts.length - 1];
+              comp.decoPart = top.rawPart;
+              comp.isOntop = top.isOntop;
+              comp.hasObstacle = this.isObstacleEnabled;
+            }
+            updates[`${c},${r}`] = this.buildTileString(comp);
+          } else {
+            const decoIsWall = comp.decoParts.some((d) => isWallAsset(d.assetKey));
+            comp.basePart =
+              this.placementLayer === 0 && !this.decorationOntop && !this.placementFlipX
+                ? tileVal
+                : this.formatLayerPart(
+                    tileVal,
+                    null,
+                    this.placementLayer,
+                    this.decorationOntop,
+                    null,
+                    this.placementFlipX
+                  );
+            comp.hasObstacle = this.isObstacleEnabled || decoIsWall;
+            updates[`${c},${r}`] = this.buildTileString(comp);
+          }
+        }
+      }
+
+      this.applyTileUpdates(updates);
+
+      if (this.multiplayer) {
+        this.multiplayer.sendUpdateTiles(updates);
+      }
+    }
+
+    this.isSelectingArea = false;
+    this.selectionStartTile = null;
+    this.selectionCurrentTile = null;
+    this.editorSelectionGraphics.clear();
+    this.editorOverlayText.setVisible(false);
+  }
+
   private setupEditorPointerEvents() {
     this.input.on(
       "pointerdown",
@@ -2662,134 +3493,13 @@ export class GameScene extends Phaser.Scene {
 
       if (!this.isEditMode) return;
 
+      if (pointer.wasTouch) {
+        this.beginTouchEditGesture(pointer);
+        return;
+      }
+
       if (pointer.leftButtonDown()) {
-        if (this.movingEditorItem) {
-          this.finishMovingInspectableItem(pointer.worldX, pointer.worldY);
-          return;
-        }
-
-        if (this.activeEditorTool === "none") {
-          this.closeEditorItemMenu();
-          return;
-        }
-
-        if (this.activeEditorTool === "cursor") {
-          const inspected = this.getInspectableItemAt(pointer.worldX, pointer.worldY);
-          if (inspected && inspected.bounds) {
-            this.openEditorItemMenu(inspected);
-          } else {
-            this.closeEditorItemMenu();
-          }
-          return;
-        }
-
-        this.closeEditorItemMenu();
-
-        if (this.activeEditorTool === "jukebox") {
-          // Unbounded free-placement (not snapped to grid):
-          const jx = Math.round(pointer.worldX);
-          const jy = Math.round(pointer.worldY);
-          this.multiplayer.placeJukebox(
-            jx,
-            jy,
-            this.decorationPassable,
-            this.decorationOntop,
-            this.placementLayer
-          );
-          return;
-        }
-
-        if (this.activeEditorTool === "typewriter") {
-          // Unbounded free-placement (not snapped to grid):
-          const tx = Math.round(pointer.worldX);
-          const ty = Math.round(pointer.worldY);
-          this.multiplayer.placeTypewriter(
-            tx,
-            ty,
-            this.decorationPassable,
-            this.decorationOntop,
-            this.placementLayer
-          );
-          return;
-        }
-
-        if (this.activeEditorTool === "ashtray") {
-          // Unbounded free-placement (not snapped to grid):
-          const ax = Math.round(pointer.worldX);
-          const ay = Math.round(pointer.worldY);
-          this.multiplayer.placeAshtray(
-            ax,
-            ay,
-            this.decorationPassable,
-            this.decorationOntop,
-            this.placementLayer
-          );
-          return;
-        }
-
-        if (this.activeEditorTool === "chess_board") {
-          // Unbounded free-placement (not snapped to grid):
-          const cx = Math.round(pointer.worldX);
-          const cy = Math.round(pointer.worldY);
-          this.multiplayer.placeChessBoard(
-            cx,
-            cy,
-            this.decorationPassable,
-            this.decorationOntop,
-            this.placementLayer
-          );
-          return;
-        }
-
-        if (this.activeEditorTool === "aquarium") {
-          // Unbounded free-placement (not snapped to grid):
-          const aqx = Math.round(pointer.worldX);
-          const aqy = Math.round(pointer.worldY);
-          this.multiplayer.placeAquarium(
-            aqx,
-            aqy,
-            this.decorationPassable,
-            this.decorationOntop,
-            this.placementLayer
-          );
-          return;
-        }
-
-        if (this.activeEditorTool === "freeform_decoration") {
-          // Unbounded free-placement for chairs and freeform items:
-          const fx = Math.round(pointer.worldX);
-          const fy = Math.round(pointer.worldY);
-          this.placeFreeformDecoration(
-            this.selectedAssetKey,
-            fx,
-            fy,
-            null,
-            this.decorationPassable,
-            this.decorationOntop,
-            this.placementLayer,
-            this.placementFlipX
-          );
-          return;
-        }
-
-        if (this.activeEditorTool === "spawn_point") {
-          const col = Math.max(0, Math.min(GRID_COLS - 1, Math.floor(pointer.worldX / TILE_SIZE)));
-          const row = Math.max(0, Math.min(GRID_ROWS - 1, Math.floor(pointer.worldY / TILE_SIZE)));
-          const spawnVal = `${col},${row}`;
-          this.currentTilesMap.set("spawn_point", spawnVal);
-          this.drawSpawnPoint();
-          if (this.multiplayer) {
-            this.multiplayer.sendUpdateTiles({ spawn_point: spawnVal });
-          }
-          return;
-        }
-
-        const col = Math.max(0, Math.min(GRID_COLS - 1, Math.floor(pointer.worldX / TILE_SIZE)));
-        const row = Math.max(0, Math.min(GRID_ROWS - 1, Math.floor(pointer.worldY / TILE_SIZE)));
-        this.isSelectingArea = true;
-        this.selectionStartTile = { x: col, y: row };
-        this.selectionCurrentTile = { x: col, y: row };
-        this.updateSelectionVisuals();
+        this.executeCanvasEditAction(pointer.worldX, pointer.worldY, false);
       } else if (pointer.rightButtonDown() || pointer.middleButtonDown()) {
         this.isRightMouseDown = true;
         this.panStartPoint = {
@@ -2805,6 +3515,62 @@ export class GameScene extends Phaser.Scene {
       if (!this.isEditMode) return;
       if (this.isAnyModalOpen()) return;
 
+      if (pointer.wasTouch) {
+        if (this.isMultiTouchActive()) {
+          this.cancelTouchPlacement();
+          return;
+        }
+        if (this.touchGestureState && this.touchGestureState.pointerId === pointer.id) {
+          const dist = Math.hypot(
+            pointer.x - this.touchGestureState.startScreenX,
+            pointer.y - this.touchGestureState.startScreenY
+          );
+
+          if (this.mobileDragFillMode && this.isGridBoxEditorTool() && !this.movingEditorItem) {
+            if (!this.touchGestureState.isDragFilling && dist > 8) {
+              this.touchGestureState.isDragFilling = true;
+              const startCol = Math.max(
+                0,
+                Math.min(GRID_COLS - 1, Math.floor(this.touchGestureState.startWorldX / TILE_SIZE))
+              );
+              const startRow = Math.max(
+                0,
+                Math.min(GRID_ROWS - 1, Math.floor(this.touchGestureState.startWorldY / TILE_SIZE))
+              );
+              this.isSelectingArea = true;
+              this.selectionStartTile = { x: startCol, y: startRow };
+              this.selectionCurrentTile = { x: startCol, y: startRow };
+            }
+            if (this.touchGestureState.isDragFilling && this.isSelectingArea) {
+              const col = Math.max(
+                0,
+                Math.min(GRID_COLS - 1, Math.floor(pointer.worldX / TILE_SIZE))
+              );
+              const row = Math.max(
+                0,
+                Math.min(GRID_ROWS - 1, Math.floor(pointer.worldY / TILE_SIZE))
+              );
+              this.selectionCurrentTile = { x: col, y: row };
+              this.updateSelectionVisuals();
+            }
+            return;
+          }
+
+          if (!this.touchGestureState.isPanning && dist > 10) {
+            this.touchGestureState.isPanning = true;
+            this.closeEditorItemMenu();
+            this.clearEditorHoverGhosts();
+          }
+          if (this.touchGestureState.isPanning) {
+            const dx = (pointer.x - this.touchGestureState.startScreenX) / this.cameras.main.zoom;
+            const dy = (pointer.y - this.touchGestureState.startScreenY) / this.cameras.main.zoom;
+            this.cameras.main.scrollX = this.touchGestureState.startScrollX - dx;
+            this.cameras.main.scrollY = this.touchGestureState.startScrollY - dy;
+          }
+        }
+        return;
+      }
+
       if (this.isRightMouseDown && this.panStartPoint) {
         const dx = (pointer.x - this.panStartPoint.x) / this.cameras.main.zoom;
         const dy = (pointer.y - this.panStartPoint.y) / this.cameras.main.zoom;
@@ -2815,13 +3581,7 @@ export class GameScene extends Phaser.Scene {
 
       const target = pointer.event.target as HTMLElement;
       if (target && target.tagName !== "CANVAS") {
-        this.editorHoverGraphics.clear();
-        if (this.editorJukeboxGhost) this.editorJukeboxGhost.setVisible(false);
-        if (this.editorTypewriterGhost) this.editorTypewriterGhost.setVisible(false);
-        if (this.editorAshtrayGhost) this.editorAshtrayGhost.setVisible(false);
-        if (this.editorChessBoardGhost) this.editorChessBoardGhost.setVisible(false);
-        if (this.editorAquariumGhost) this.editorAquariumGhost.setVisible(false);
-        if (this.editorFreeformGhost) this.editorFreeformGhost.setVisible(false);
+        this.clearEditorHoverGhosts();
         if (this.game.canvas) this.game.canvas.style.cursor = "default";
         return;
       }
@@ -2843,7 +3603,7 @@ export class GameScene extends Phaser.Scene {
           this.editorJukeboxGhost.setVisible(true);
         }
         this.editorOverlayText.setText(
-          `🎵 Jukebox • Layer ${this.placementLayer} (↑/↓) • Click to place`
+          `Jukebox • Layer ${this.placementLayer} (↑/↓) • Click to place`
         );
         this.editorOverlayText.setPosition(pointer.worldX + 28, Math.max(8, pointer.worldY - 28));
         this.editorOverlayText.setVisible(true);
@@ -2892,7 +3652,7 @@ export class GameScene extends Phaser.Scene {
           this.editorAshtrayGhost.setVisible(true);
         }
         this.editorOverlayText.setText(
-          `🚬 Ashtray • Layer ${this.placementLayer} (↑/↓) • Click to place`
+          `Ashtray • Layer ${this.placementLayer} (↑/↓) • Click to place`
         );
         this.editorOverlayText.setPosition(pointer.worldX + 28, Math.max(8, pointer.worldY - 28));
         this.editorOverlayText.setVisible(true);
@@ -2917,7 +3677,7 @@ export class GameScene extends Phaser.Scene {
           this.editorChessBoardGhost.setVisible(true);
         }
         this.editorOverlayText.setText(
-          `♟️ Chess Board • Layer ${this.placementLayer} (↑/↓) • Click to place`
+          `Chess Board • Layer ${this.placementLayer} (↑/↓) • Click to place`
         );
         this.editorOverlayText.setPosition(pointer.worldX + 28, Math.max(8, pointer.worldY - 28));
         this.editorOverlayText.setVisible(true);
@@ -2943,7 +3703,7 @@ export class GameScene extends Phaser.Scene {
           this.editorAquariumGhost.setVisible(true);
         }
         this.editorOverlayText.setText(
-          `🐟 Aquarium • Layer ${this.placementLayer} (↑/↓) • Click to place`
+          `Aquarium • Layer ${this.placementLayer} (↑/↓) • Click to place`
         );
         this.editorOverlayText.setPosition(pointer.worldX + 28, Math.max(8, pointer.worldY - 28));
         this.editorOverlayText.setVisible(true);
@@ -2951,6 +3711,31 @@ export class GameScene extends Phaser.Scene {
       } else {
         if (this.editorAquariumGhost) {
           this.editorAquariumGhost.setVisible(false);
+        }
+      }
+
+      if (this.activeEditorTool === "seller_npc") {
+        this.editorHoverGraphics.clear();
+        if (this.editorFreeformGhost) this.editorFreeformGhost.setVisible(false);
+        if (this.editorJukeboxGhost) this.editorJukeboxGhost.setVisible(false);
+        if (this.editorTypewriterGhost) this.editorTypewriterGhost.setVisible(false);
+        if (this.editorAshtrayGhost) this.editorAshtrayGhost.setVisible(false);
+        if (this.editorChessBoardGhost) this.editorChessBoardGhost.setVisible(false);
+        if (this.editorAquariumGhost) this.editorAquariumGhost.setVisible(false);
+        if (this.editorSellerNpcGhost) {
+          this.editorSellerNpcGhost.setDepth(136);
+          this.editorSellerNpcGhost.setPosition(pointer.worldX, pointer.worldY);
+          this.editorSellerNpcGhost.setVisible(true);
+        }
+        this.editorOverlayText.setText(
+          `Seller NPC & Counter • Click to place / relocate`
+        );
+        this.editorOverlayText.setPosition(pointer.worldX + 28, Math.max(8, pointer.worldY - 28));
+        this.editorOverlayText.setVisible(true);
+        return;
+      } else {
+        if (this.editorSellerNpcGhost) {
+          this.editorSellerNpcGhost.setVisible(false);
         }
       }
 
@@ -2973,7 +3758,7 @@ export class GameScene extends Phaser.Scene {
         }
         const label = this.formatAssetDisplayName(this.selectedAssetKey);
         this.editorOverlayText.setText(
-          `🪑 ${label} • Layer ${this.placementLayer} (↑/↓) • Click to place`
+          `${label} • Layer ${this.placementLayer} (↑/↓) • Click to place`
         );
         this.editorOverlayText.setPosition(pointer.worldX + 28, Math.max(8, pointer.worldY - 28));
         this.editorOverlayText.setVisible(true);
@@ -3003,7 +3788,7 @@ export class GameScene extends Phaser.Scene {
         if (inspected && inspected.bounds) {
           this.drawInspectHighlight(inspected, 0x38bdf8, 0.25, 2, 0.95);
           this.editorOverlayText.setText(
-            `🖱️ ${inspected.categoryLabel}: ${inspected.label} • Click for menu`
+            `${inspected.categoryLabel}: ${inspected.label} • Click for menu`
           );
           this.editorOverlayText.setPosition(
             inspected.bounds.x + 4,
@@ -3025,7 +3810,7 @@ export class GameScene extends Phaser.Scene {
         this.editorHoverGraphics.lineStyle(2.5, 0x10b981, 0.95);
         this.editorHoverGraphics.strokeRect(col * TILE_SIZE, row * TILE_SIZE, TILE_SIZE, TILE_SIZE);
 
-        this.editorOverlayText.setText(`📍 Place Spawn Point (${col}, ${row}) • Click to place`);
+        this.editorOverlayText.setText(`Place Spawn Point (${col}, ${row}) • Click to place`);
         this.editorOverlayText.setPosition(col * TILE_SIZE + 8, Math.max(8, row * TILE_SIZE - 32));
         this.editorOverlayText.setVisible(true);
         return;
@@ -3058,7 +3843,6 @@ export class GameScene extends Phaser.Scene {
           this.editorHoverGraphics.fillRect(col * TILE_SIZE, row * TILE_SIZE, TILE_SIZE, TILE_SIZE);
 
           if (hasDeco) {
-            // Draw cross mark signaling click on it to remove
             const x = col * TILE_SIZE;
             const y = row * TILE_SIZE;
             this.editorHoverGraphics.lineStyle(2.5, 0xffffff, 0.92);
@@ -3076,7 +3860,6 @@ export class GameScene extends Phaser.Scene {
           );
 
           if (isSameDecoAtLayer) {
-            // Hovering over placed decoration item on the same layer signals click on it to remove
             const hoverColor = 0xef4444;
             this.editorHoverGraphics.lineStyle(2, hoverColor, 0.95);
             this.editorHoverGraphics.strokeRect(col * TILE_SIZE, row * TILE_SIZE, TILE_SIZE, TILE_SIZE);
@@ -3099,7 +3882,7 @@ export class GameScene extends Phaser.Scene {
           }
           const label = this.formatAssetDisplayName(this.selectedAssetKey);
           this.editorOverlayText.setText(
-            `🪴 ${label} • Layer ${this.placementLayer} (↑/↓) • ${isSameDecoAtLayer ? "Click to remove" : "Click to place"}`
+            `${label} • Layer ${this.placementLayer} (↑/↓) • ${isSameDecoAtLayer ? "Click to remove" : "Click to place"}`
           );
           this.editorOverlayText.setPosition(col * TILE_SIZE + 8, Math.max(8, row * TILE_SIZE - 32));
           this.editorOverlayText.setVisible(true);
@@ -3122,7 +3905,6 @@ export class GameScene extends Phaser.Scene {
               comp.overlayFloorLayer === this.placementLayer);
 
           if (isSameOverlay) {
-            // Hovering over placed overlay tile/wall signals click on it to remove
             const hoverColor = 0xef4444;
             this.editorHoverGraphics.lineStyle(2, hoverColor, 0.95);
             this.editorHoverGraphics.strokeRect(col * TILE_SIZE, row * TILE_SIZE, TILE_SIZE, TILE_SIZE);
@@ -3145,7 +3927,7 @@ export class GameScene extends Phaser.Scene {
           if (isOverlayWall || isOverlayFloor) {
             const label = this.formatAssetDisplayName(this.selectedAssetKey);
             this.editorOverlayText.setText(
-              `📐 ${label} • Layer ${this.placementLayer} (↑/↓) • ${isSameOverlay ? "Click to remove" : "Click to place"}`
+              `${label} • Layer ${this.placementLayer} (↑/↓) • ${isSameOverlay ? "Click to remove" : "Click to place"}`
             );
             this.editorOverlayText.setPosition(col * TILE_SIZE + 8, Math.max(8, row * TILE_SIZE - 32));
             this.editorOverlayText.setVisible(true);
@@ -3164,290 +3946,81 @@ export class GameScene extends Phaser.Scene {
 
       if (!this.isEditMode) return;
 
+      if (pointer.wasTouch) {
+        const otherTouchDown =
+          (this.input.pointer1?.isDown && this.input.pointer1.id !== pointer.id) ||
+          (this.input.pointer2?.isDown && this.input.pointer2.id !== pointer.id);
+
+        if (this.hasMultiTouchInCurrentGesture) {
+          this.touchGestureState = null;
+          this.cancelEditorSelection();
+          if (!otherTouchDown) {
+            this.hasMultiTouchInCurrentGesture = false;
+          }
+          return;
+        }
+
+        if (this.touchGestureState && this.touchGestureState.pointerId === pointer.id) {
+          const gesture = this.touchGestureState;
+          this.touchGestureState = null;
+
+          if (
+            gesture.isDragFilling &&
+            this.isSelectingArea &&
+            this.selectionStartTile &&
+            this.selectionCurrentTile
+          ) {
+            const minCol = Math.min(this.selectionStartTile.x, this.selectionCurrentTile.x);
+            const maxCol = Math.max(this.selectionStartTile.x, this.selectionCurrentTile.x);
+            const minRow = Math.min(this.selectionStartTile.y, this.selectionCurrentTile.y);
+            const maxRow = Math.max(this.selectionStartTile.y, this.selectionCurrentTile.y);
+            this.commitAreaSelection(minCol, minRow, maxCol, maxRow);
+            return;
+          }
+
+          if (gesture.isPanning || gesture.cancelledByMultiTouch) {
+            return;
+          }
+
+          if (this.movingEditorItem) {
+            this.finishMovingInspectableItem(gesture.startWorldX, gesture.startWorldY);
+            return;
+          }
+
+          if (gesture.pendingSpecialEntity) {
+            this.executeSpecialEntityEditAction(
+              gesture.startWorldX,
+              gesture.startWorldY,
+              gesture.pendingSpecialEntity.entityKind,
+              gesture.pendingSpecialEntity.entityLayer,
+              gesture.pendingSpecialEntity.inspectItem,
+              true
+            );
+            return;
+          }
+
+          if (gesture.pendingFreeformData) {
+            this.executeFreeformEditAction(
+              gesture.startWorldX,
+              gesture.startWorldY,
+              gesture.pendingFreeformData,
+              true
+            );
+            return;
+          }
+
+          this.executeCanvasEditAction(gesture.startWorldX, gesture.startWorldY, true);
+          return;
+        }
+        return;
+      }
+
       if (this.isSelectingArea && this.selectionStartTile && this.selectionCurrentTile) {
         const minCol = Math.min(this.selectionStartTile.x, this.selectionCurrentTile.x);
         const maxCol = Math.max(this.selectionStartTile.x, this.selectionCurrentTile.x);
         const minRow = Math.min(this.selectionStartTile.y, this.selectionCurrentTile.y);
         const maxRow = Math.max(this.selectionStartTile.y, this.selectionCurrentTile.y);
-
-        if (this.activeEditorTool === "private_zone") {
-          // Flag this area as a private zone
-          const zoneNumber = this.privateZones.length + 1;
-          const defaultName = `Private Area ${zoneNumber}`;
-          const bounds = { minCol, minRow, maxCol, maxRow };
-
-          if (this.onRequestNameForNewZone) {
-            this.onRequestNameForNewZone(bounds, defaultName);
-          } else {
-            this.createPrivateZone(bounds, defaultName);
-          }
-        } else if (this.activeEditorTool === "clear_private_zone") {
-          // Remove any private zones that overlap with the selected rectangle
-          const prevLen = this.privateZones.length;
-          this.privateZones = this.privateZones.filter((z) => {
-            const noOverlap =
-              maxCol < z.bounds.minCol ||
-              minCol > z.bounds.maxCol ||
-              maxRow < z.bounds.minRow ||
-              minRow > z.bounds.maxRow;
-            return noOverlap;
-          });
-
-          if (this.privateZones.length !== prevLen) {
-            if (
-              this.currentInsideZone &&
-              !this.privateZones.some((z) => z.id === this.currentInsideZone?.id)
-            ) {
-              this.currentInsideZone = null;
-              this.notifyZoneChanged(null);
-            }
-            if (this.multiplayer) {
-              this.multiplayer.sendUpdatePrivateZones(this.privateZones);
-            }
-            this.drawPrivateZones();
-            this.notifyPrivateZonesListChange();
-          }
-        } else if (this.activeEditorTool === "clear_decoration") {
-          // Remove decoration or overlay floor layer from clicked tile or dragged area
-          const updates: Record<string, string> = {};
-          for (let r = minRow; r <= maxRow; r++) {
-            for (let c = minCol; c <= maxCol; c++) {
-              const existing = this.currentTilesMap.get(`${c},${r}`);
-              if (existing && existing.includes("::")) {
-                const comp = this.parseTileComponents(existing);
-                const isBaseWall = isWallAsset(comp.basePart.split("|")[0]);
-                if (comp.decoParts.length > 0) {
-                  comp.decoParts = [];
-                  comp.decoPart = null;
-                  comp.isOntop = false;
-                  comp.hasObstacle = isBaseWall;
-                } else if (comp.overlayFloorPart) {
-                  comp.overlayFloorPart = null;
-                  comp.overlayFloorLayer = 0;
-                }
-                const newVal = this.buildTileString(comp);
-                if (newVal !== existing) {
-                  updates[`${c},${r}`] = newVal;
-                }
-              }
-            }
-          }
-
-          if (Object.keys(updates).length > 0) {
-            this.applyTileUpdates(updates);
-            if (this.multiplayer) {
-              this.multiplayer.sendUpdateTiles(updates);
-            }
-          }
-        } else if (this.activeEditorTool === "decoration") {
-          // Decoration placed on top of existing bottom tile, respecting passable and layer options
-          const decoVal = this.selectedAssetKey;
-
-          const isSingleClick = minCol === maxCol && minRow === maxRow;
-          const updates: Record<string, string> = {};
-
-          const applyDecoToComp = (
-            comp: ReturnType<GameScene["parseTileComponents"]>,
-            allowToggleRemove: boolean
-          ) => {
-            const isBaseWall = isWallAsset(this.parseLayerPart(comp.basePart, false).assetKey);
-            const existingIdx = comp.decoParts.findIndex(
-              (d) => d.assetKey === this.selectedAssetKey && d.layer === this.placementLayer
-            );
-
-            if (allowToggleRemove && existingIdx !== -1) {
-              comp.decoParts.splice(existingIdx, 1);
-              if (comp.decoParts.length === 0) {
-                comp.decoPart = null;
-                comp.isOntop = false;
-                comp.hasObstacle = isBaseWall;
-              } else {
-                const top = comp.decoParts[comp.decoParts.length - 1];
-                comp.decoPart = top.rawPart;
-                comp.isOntop = top.isOntop;
-              }
-            } else {
-              // Replace any item on the exact same layer, or add as a new layer
-              const sameLayerIdx = comp.decoParts.findIndex((d) => d.layer === this.placementLayer);
-              const newItem: GridDecoItem = {
-                rawPart: this.formatLayerPart(
-                  this.selectedAssetKey,
-                  null,
-                  this.placementLayer,
-                  this.decorationOntop,
-                  null,
-                  this.placementFlipX
-                ),
-                assetKey: this.selectedAssetKey,
-                color: null,
-                layer: this.placementLayer,
-                isOntop: this.decorationOntop,
-                flipX: this.placementFlipX,
-              };
-              if (sameLayerIdx !== -1) {
-                comp.decoParts[sameLayerIdx] = newItem;
-              } else {
-                comp.decoParts.push(newItem);
-              }
-              comp.decoParts.sort(
-                (a, b) =>
-                  this.computeLayerDepth(a.layer, a.isOntop) -
-                  this.computeLayerDepth(b.layer, b.isOntop)
-              );
-              const top = comp.decoParts[comp.decoParts.length - 1];
-              comp.decoPart = top.rawPart;
-              comp.isOntop = top.isOntop;
-              comp.hasObstacle = isBaseWall
-                ? comp.hasObstacle || this.isObstacleEnabled
-                : this.isObstacleEnabled;
-            }
-          };
-
-          if (isSingleClick) {
-            const key = `${minCol},${minRow}`;
-            const existing = this.currentTilesMap.get(key);
-            const comp = this.parseTileComponents(existing);
-            applyDecoToComp(comp, true);
-            updates[key] = this.buildTileString(comp);
-          } else {
-            // Dragged area -> place decoration across selection
-            for (let r = minRow; r <= maxRow; r++) {
-              for (let c = minCol; c <= maxCol; c++) {
-                const existing = this.currentTilesMap.get(`${c},${r}`);
-                const comp = this.parseTileComponents(existing);
-                applyDecoToComp(comp, false);
-                updates[`${c},${r}`] = this.buildTileString(comp);
-              }
-            }
-          }
-
-          if (Object.keys(updates).length > 0) {
-            this.applyTileUpdates(updates);
-            if (this.multiplayer) {
-              this.multiplayer.sendUpdateTiles(updates);
-            }
-          }
-        } else {
-          // Normal tile flooring / overlay floor / wall update:
-          // Wall tiles come together with the obstacle tile
-          const isOverlayWall = isOverlayWallAsset(this.selectedAssetKey);
-          const isOverlayFloor = isOverlayFloorAsset(this.selectedAssetKey);
-          const tileVal = this.selectedAssetKey;
-
-          const isSingleClick = minCol === maxCol && minRow === maxRow;
-          const updates: Record<string, string> = {};
-
-          for (let r = minRow; r <= maxRow; r++) {
-            for (let c = minCol; c <= maxCol; c++) {
-              const existing = this.currentTilesMap.get(`${c},${r}`);
-              const comp = this.parseTileComponents(existing);
-
-              if (isOverlayFloor) {
-                const existingOverlayKey = comp.overlayFloorPart
-                  ? comp.overlayFloorPart.split("|")[0]
-                  : null;
-                if (
-                  isSingleClick &&
-                  existingOverlayKey === this.selectedAssetKey &&
-                  comp.overlayFloorLayer === this.placementLayer
-                ) {
-                  comp.overlayFloorPart = null;
-                  comp.overlayFloorLayer = 0;
-                  comp.overlayFloorOntop = false;
-                  comp.overlayFloorFlipX = false;
-                } else {
-                  comp.overlayFloorPart = tileVal;
-                  comp.overlayFloorLayer = this.placementLayer;
-                  comp.overlayFloorOntop = this.decorationOntop;
-                  comp.overlayFloorFlipX = this.placementFlipX;
-                  comp.hasObstacle = this.isObstacleEnabled;
-                }
-                updates[`${c},${r}`] = this.buildTileString(comp);
-              } else if (isOverlayWall) {
-                // Overlay wall (glass_2, glass_3, glass_4, wood_wall_2) is rendered on top of existing floor tiles:
-                if (isWallAsset(this.parseLayerPart(comp.basePart, false).assetKey)) {
-                  comp.basePart = "grass_4";
-                }
-                const existingIdx = comp.decoParts.findIndex(
-                  (d) => d.assetKey === this.selectedAssetKey && d.layer === this.placementLayer
-                );
-                if (isSingleClick && existingIdx !== -1) {
-                  comp.decoParts.splice(existingIdx, 1);
-                  if (comp.decoParts.length === 0) {
-                    comp.decoPart = null;
-                    comp.isOntop = false;
-                    comp.hasObstacle = isWallAsset(this.parseLayerPart(comp.basePart, false).assetKey);
-                  } else {
-                    const top = comp.decoParts[comp.decoParts.length - 1];
-                    comp.decoPart = top.rawPart;
-                    comp.isOntop = top.isOntop;
-                  }
-                } else {
-                  const sameLayerIdx = comp.decoParts.findIndex(
-                    (d) => d.layer === this.placementLayer
-                  );
-                  const newItem: GridDecoItem = {
-                    rawPart: this.formatLayerPart(
-                      this.selectedAssetKey,
-                      null,
-                      this.placementLayer,
-                      this.decorationOntop,
-                      null,
-                      this.placementFlipX
-                    ),
-                    assetKey: this.selectedAssetKey,
-                    color: null,
-                    layer: this.placementLayer,
-                    isOntop: this.decorationOntop,
-                    flipX: this.placementFlipX,
-                  };
-                  if (sameLayerIdx !== -1) {
-                    comp.decoParts[sameLayerIdx] = newItem;
-                  } else {
-                    comp.decoParts.push(newItem);
-                  }
-                  comp.decoParts.sort(
-                    (a, b) =>
-                      this.computeLayerDepth(a.layer, a.isOntop) -
-                      this.computeLayerDepth(b.layer, b.isOntop)
-                  );
-                  const top = comp.decoParts[comp.decoParts.length - 1];
-                  comp.decoPart = top.rawPart;
-                  comp.isOntop = top.isOntop;
-                  comp.hasObstacle = this.isObstacleEnabled;
-                }
-                updates[`${c},${r}`] = this.buildTileString(comp);
-              } else {
-                const decoIsWall = comp.decoParts.some((d) => isWallAsset(d.assetKey));
-                comp.basePart =
-                  this.placementLayer === 0 && !this.decorationOntop && !this.placementFlipX
-                    ? tileVal
-                    : this.formatLayerPart(
-                        tileVal,
-                        null,
-                        this.placementLayer,
-                        this.decorationOntop,
-                        null,
-                        this.placementFlipX
-                      );
-                comp.hasObstacle = this.isObstacleEnabled || decoIsWall;
-                updates[`${c},${r}`] = this.buildTileString(comp);
-              }
-            }
-          }
-
-          this.applyTileUpdates(updates);
-
-          if (this.multiplayer) {
-            this.multiplayer.sendUpdateTiles(updates);
-          }
-        }
-
-        this.isSelectingArea = false;
-        this.selectionStartTile = null;
-        this.selectionCurrentTile = null;
-        this.editorSelectionGraphics.clear();
-        this.editorOverlayText.setVisible(false);
+        this.commitAreaSelection(minCol, minRow, maxCol, maxRow);
       }
     });
 
@@ -3519,7 +4092,7 @@ export class GameScene extends Phaser.Scene {
       }
 
       this.editorOverlayText.setText(
-        `🔒 ${cols} × ${rows} (${totalTiles} ${totalTiles === 1 ? "tile" : "tiles"}) • Flag as Private Area • Esc when done`
+        `${cols} × ${rows} (${totalTiles} ${totalTiles === 1 ? "tile" : "tiles"}) • Flag as Private Area • Esc when done`
       );
     } else if (this.activeEditorTool === "clear_private_zone") {
       // Rose clear selection visuals
@@ -3602,7 +4175,7 @@ export class GameScene extends Phaser.Scene {
       else if (normDecoKey === "jukebox_1") labelName = "Jukebox 1";
       const layerText = this.decorationOntop ? "On Top" : "Behind";
       this.editorOverlayText.setText(
-        `🪴 ${cols} × ${rows} (${totalTiles} ${totalTiles === 1 ? "tile" : "tiles"}) • ${labelName} (${passableText} • ${layerText} • Layer ${this.placementLayer} ↑/↓) • Esc when done`
+        `${cols} × ${rows} (${totalTiles} ${totalTiles === 1 ? "tile" : "tiles"}) • ${labelName} (${passableText} • ${layerText} • Layer ${this.placementLayer} ↑/↓) • Esc when done`
       );
     } else {
       const isWall = isWallAsset(this.selectedAssetKey) || isWallTile(this.selectedAssetKey);
@@ -3659,7 +4232,7 @@ export class GameScene extends Phaser.Scene {
 
       const layerBadge = ` • Layer ${this.placementLayer} (↑/↓)`;
       this.editorOverlayText.setText(
-        `📐 ${cols} × ${rows} (${totalTiles} ${totalTiles === 1 ? "tile" : "tiles"}) • ${labelName}${layerBadge} • Esc when done`
+        `${cols} × ${rows} (${totalTiles} ${totalTiles === 1 ? "tile" : "tiles"}) • ${labelName}${layerBadge} • Esc when done`
       );
     }
 
@@ -3704,11 +4277,17 @@ export class GameScene extends Phaser.Scene {
 
     if (enabled) {
       this.closePlayerMenu();
+      this.touchGestureState = null;
+      this.hasMultiTouchInCurrentGesture = false;
+      this.mobileDragFillMode = false;
       this.cameras.main.stopFollow();
       this.cameras.main.removeBounds();
     } else {
       this.cancelMovingInspectableItem();
       this.closeEditorItemMenu();
+      this.touchGestureState = null;
+      this.hasMultiTouchInCurrentGesture = false;
+      this.mobileDragFillMode = false;
       this.isSelectingArea = false;
       this.selectionStartTile = null;
       this.selectionCurrentTile = null;
@@ -3916,10 +4495,44 @@ export class GameScene extends Phaser.Scene {
       }
       return fallback;
     }
+    if (assetKey.startsWith("adventure_guild/")) {
+      const frame = assetKey.slice("adventure_guild/".length);
+      if (
+        this.textures.exists("adventure_guild_atlas") &&
+        this.textures.get("adventure_guild_atlas").has(frame)
+      ) {
+        return { key: "adventure_guild_atlas", frame };
+      }
+      return fallback;
+    }
+    if (assetKey.startsWith("restaurant/")) {
+      const frame = assetKey.slice("restaurant/".length);
+      if (
+        this.textures.exists("restaurant_atlas") &&
+        this.textures.get("restaurant_atlas").has(frame)
+      ) {
+        return { key: "restaurant_atlas", frame };
+      }
+      return fallback;
+    }
     if (assetKey.startsWith("living_room_one/")) {
       const frame = assetKey.slice("living_room_one/".length);
       if (this.textures.exists("living_room_one_atlas") && this.textures.get("living_room_one_atlas").has(frame)) {
         return { key: "living_room_one_atlas", frame };
+      }
+      return fallback;
+    }
+    if (assetKey.startsWith("living_room_two/")) {
+      const frame = assetKey.slice("living_room_two/".length);
+      if (this.textures.exists("living_room_two_atlas") && this.textures.get("living_room_two_atlas").has(frame)) {
+        return { key: "living_room_two_atlas", frame };
+      }
+      return fallback;
+    }
+    if (assetKey.startsWith("living_room_floor/")) {
+      const frame = assetKey.slice("living_room_floor/".length);
+      if (this.textures.exists("living_room_floor_atlas") && this.textures.get("living_room_floor_atlas").has(frame)) {
+        return { key: "living_room_floor_atlas", frame };
       }
       return fallback;
     }
@@ -3958,7 +4571,10 @@ export class GameScene extends Phaser.Scene {
       assetKey.startsWith("office_one/") ||
       assetKey.startsWith("office_two/") ||
       assetKey.startsWith("pet_shop/") ||
-      assetKey.startsWith("living_room_one/")
+      assetKey.startsWith("adventure_guild/") ||
+      assetKey.startsWith("restaurant/") ||
+      assetKey.startsWith("living_room_one/") ||
+      assetKey.startsWith("living_room_two/")
         ? TILE_SIZE / 48
         : maxSize / Math.max(srcW, srcH);
     sprite.setDisplaySize(Math.round(srcW * scale), Math.round(srcH * scale));
@@ -4005,135 +4621,12 @@ export class GameScene extends Phaser.Scene {
         if (!this.isEditMode) return;
         event.stopPropagation();
 
-        if (this.movingEditorItem) {
-          this.finishMovingInspectableItem(pointer.worldX, pointer.worldY);
+        if (pointer.wasTouch) {
+          this.beginTouchEditGesture(pointer, { freeformData: data });
           return;
         }
 
-        if (this.activeEditorTool === "cursor") {
-          const { width, height } = getAssetDimensions(data.assetKey);
-          const originX = data.x - width / 2;
-          const originY = data.y - height / 2;
-          const rawRects = getAssetRects(data.assetKey, !!data.flipX);
-          if (rawRects.length > 0 && !isAssetPixelSolid(data.assetKey, pointer.worldX - originX, pointer.worldY - originY, !!data.flipX)) {
-            const inspected = this.getInspectableItemAt(pointer.worldX, pointer.worldY);
-            if (inspected && inspected.bounds) {
-              this.openEditorItemMenu(inspected);
-            } else {
-              this.closeEditorItemMenu();
-            }
-            return;
-          }
-          this.openEditorItemMenu(this.getFreeformInspectInfo(data));
-          return;
-        }
-
-        if (this.activeEditorTool === "clear_decoration") {
-          this.removeFreeformDecoration(data.id);
-          if (this.multiplayer) {
-            this.multiplayer.sendUpdateTiles({ [data.id]: "" });
-          }
-          return;
-        }
-
-        if (this.activeEditorTool === "jukebox") {
-          const jx = Math.round(pointer.worldX);
-          const jy = Math.round(pointer.worldY);
-          this.multiplayer.placeJukebox(
-            jx,
-            jy,
-            this.decorationPassable,
-            this.decorationOntop,
-            this.placementLayer
-          );
-          return;
-        }
-
-        if (this.activeEditorTool === "typewriter") {
-          const tx = Math.round(pointer.worldX);
-          const ty = Math.round(pointer.worldY);
-          this.multiplayer.placeTypewriter(
-            tx,
-            ty,
-            this.decorationPassable,
-            this.decorationOntop,
-            this.placementLayer
-          );
-          return;
-        }
-
-        if (this.activeEditorTool === "ashtray") {
-          const ax = Math.round(pointer.worldX);
-          const ay = Math.round(pointer.worldY);
-          this.multiplayer.placeAshtray(
-            ax,
-            ay,
-            this.decorationPassable,
-            this.decorationOntop,
-            this.placementLayer
-          );
-          return;
-        }
-
-        if (this.activeEditorTool === "chess_board") {
-          const cx = Math.round(pointer.worldX);
-          const cy = Math.round(pointer.worldY);
-          this.multiplayer.placeChessBoard(
-            cx,
-            cy,
-            this.decorationPassable,
-            this.decorationOntop,
-            this.placementLayer
-          );
-          return;
-        }
-
-        if (this.activeEditorTool === "aquarium") {
-          const qx = Math.round(pointer.worldX);
-          const qy = Math.round(pointer.worldY);
-          this.multiplayer.placeAquarium(
-            qx,
-            qy,
-            this.decorationPassable,
-            this.decorationOntop,
-            this.placementLayer
-          );
-          return;
-        }
-
-        if (this.activeEditorTool === "freeform_decoration") {
-          const isSameAtSameLayer =
-            normalizeDecorationAssetKey(data.assetKey) ===
-              normalizeDecorationAssetKey(this.selectedAssetKey) &&
-            (data.layer ?? 0) === this.placementLayer;
-          if (isSameAtSameLayer) {
-            this.removeFreeformDecoration(data.id);
-            if (this.multiplayer) {
-              this.multiplayer.sendUpdateTiles({ [data.id]: "" });
-            }
-          } else {
-            const fx = Math.round(pointer.worldX);
-            const fy = Math.round(pointer.worldY);
-            this.placeFreeformDecoration(
-              this.selectedAssetKey,
-              fx,
-              fy,
-              null,
-              this.decorationPassable,
-              this.decorationOntop,
-              this.placementLayer
-            );
-          }
-          return;
-        }
-
-        // For grid tools (decoration, flooring, etc.), initiate area selection at this tile
-        const col = Math.max(0, Math.min(GRID_COLS - 1, Math.floor(pointer.worldX / TILE_SIZE)));
-        const row = Math.max(0, Math.min(GRID_ROWS - 1, Math.floor(pointer.worldY / TILE_SIZE)));
-        this.isSelectingArea = true;
-        this.selectionStartTile = { x: col, y: row };
-        this.selectionCurrentTile = { x: col, y: row };
-        this.updateSelectionVisuals();
+        this.executeFreeformEditAction(pointer.worldX, pointer.worldY, data, false);
       }
     );
 
@@ -4146,6 +4639,74 @@ export class GameScene extends Phaser.Scene {
       hitZone,
       data,
     });
+  }
+
+  private executeFreeformEditAction(
+    worldX: number,
+    worldY: number,
+    data: FreeformDecorationData,
+    isTouchTap: boolean
+  ) {
+    if (this.movingEditorItem) {
+      this.finishMovingInspectableItem(worldX, worldY);
+      return;
+    }
+
+    if (this.activeEditorTool === "cursor") {
+      const { width, height } = getAssetDimensions(data.assetKey);
+      const originX = data.x - width / 2;
+      const originY = data.y - height / 2;
+      const rawRects = getAssetRects(data.assetKey, !!data.flipX);
+      if (
+        rawRects.length > 0 &&
+        !isAssetPixelSolid(data.assetKey, worldX - originX, worldY - originY, !!data.flipX)
+      ) {
+        const inspected = this.getInspectableItemAt(worldX, worldY);
+        if (inspected && inspected.bounds) {
+          this.openEditorItemMenu(inspected);
+        } else {
+          this.closeEditorItemMenu();
+        }
+        return;
+      }
+      this.openEditorItemMenu(this.getFreeformInspectInfo(data));
+      return;
+    }
+
+    if (this.activeEditorTool === "clear_decoration") {
+      this.removeFreeformDecoration(data.id);
+      if (this.multiplayer) {
+        this.multiplayer.sendUpdateTiles({ [data.id]: "" });
+      }
+      return;
+    }
+
+    if (this.activeEditorTool === "freeform_decoration") {
+      const isSameAtSameLayer =
+        normalizeDecorationAssetKey(data.assetKey) ===
+          normalizeDecorationAssetKey(this.selectedAssetKey) &&
+        (data.layer ?? 0) === this.placementLayer;
+      if (isSameAtSameLayer) {
+        this.removeFreeformDecoration(data.id);
+        if (this.multiplayer) {
+          this.multiplayer.sendUpdateTiles({ [data.id]: "" });
+        }
+      } else {
+        this.placeFreeformDecoration(
+          this.selectedAssetKey,
+          Math.round(worldX),
+          Math.round(worldY),
+          null,
+          this.decorationPassable,
+          this.decorationOntop,
+          this.placementLayer,
+          this.placementFlipX
+        );
+      }
+      return;
+    }
+
+    this.executeCanvasEditAction(worldX, worldY, isTouchTap);
   }
 
   public removeFreeformDecoration(id: string) {
@@ -4459,6 +5020,15 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
+    // Highlight solid Seller NPC + Counter in edit mode
+    if (this.sellerNpcVisual && this.sellerNpcVisual.state.enabled !== false) {
+      const npc = this.sellerNpcVisual.state;
+      this.obstaclesGraphics.fillRect(npc.x - 16, npc.y - 6, 32, 29);
+      if (npc.showCounter !== false) {
+        this.obstaclesGraphics.fillRect(npc.x - 46, npc.y + 20, 92, 28);
+      }
+    }
+
     // Highlight solid freeform decorations in edit mode
     for (const visual of this.freeformVisuals.values()) {
       if (!visual.data.passable) {
@@ -4518,7 +5088,7 @@ export class GameScene extends Phaser.Scene {
     this.spawnPointGraphics.fillCircle(cx, cy, 4);
 
     // Text badge above spawn point
-    this.spawnPointText.setText("📍 Spawn Point");
+    this.spawnPointText.setText("Spawn Point");
     this.spawnPointText.setPosition(cx, sy - 14);
     this.spawnPointText.setVisible(true);
   }
@@ -4578,6 +5148,7 @@ export class GameScene extends Phaser.Scene {
       | "ashtray"
       | "chess_board"
       | "aquarium"
+      | "seller_npc"
       | "freeform_decoration"
       | "spawn_point"
   ) {
@@ -4612,6 +5183,9 @@ export class GameScene extends Phaser.Scene {
     }
     if (tool !== "aquarium" && this.editorAquariumGhost) {
       this.editorAquariumGhost.setVisible(false);
+    }
+    if (tool !== "seller_npc" && this.editorSellerNpcGhost) {
+      this.editorSellerNpcGhost.setVisible(false);
     }
     if (tool !== "freeform_decoration" && this.editorFreeformGhost) {
       this.editorFreeformGhost.setVisible(false);
@@ -4664,7 +5238,10 @@ export class GameScene extends Phaser.Scene {
       this.isFishingModalOpen() ||
       this.isOrganisationModalOpen() ||
       this.isNotesModalOpen() ||
-      this.isCalendarModalOpen()
+      this.isCalendarModalOpen() ||
+      this.isFocusRoomModalOpen() ||
+      this.isSquadModalOpen() ||
+      this.isSquadInviteModalOpen()
     );
   }
 
@@ -4674,7 +5251,7 @@ export class GameScene extends Phaser.Scene {
     }
     return (
       document.querySelector(
-        "#player-context-menu:not(.hidden), #editor-item-context-menu:not(.hidden), #editor-interaction-dropdown-panel:not(.hidden), #user-profile-dropdown:not(.hidden), #audio-settings-dropdown:not(.hidden)"
+        "#player-context-menu:not(.hidden), #editor-item-context-menu:not(.hidden), #editor-interaction-dropdown-panel:not(.hidden), #audio-settings-dropdown:not(.hidden)"
       ) !== null
     );
   }
@@ -4755,6 +5332,32 @@ export class GameScene extends Phaser.Scene {
   }
 
   public getInspectableItemAt(worldX: number, worldY: number): InspectableMapItem | null {
+    // Check Seller NPC + Counter (freeform, superadmin-editable)
+    if (this.sellerNpcVisual && this.sellerNpcVisual.state.enabled !== false) {
+      const npc = this.sellerNpcVisual.state;
+      const hasCounter = npc.showCounter !== false;
+      const minX = hasCounter ? npc.x - 48 : npc.x - 24;
+      const maxX = hasCounter ? npc.x + 48 : npc.x + 24;
+      const minY = npc.y - 24;
+      const maxY = hasCounter ? npc.y + 48 : npc.y + 24;
+      if (worldX >= minX && worldX <= maxX && worldY >= minY && worldY <= maxY) {
+        return {
+          kind: "seller_npc",
+          id: npc.id,
+          label: npc.name || "Seller NPC",
+          categoryLabel: "Asset Shop Counter",
+          worldX: npc.x,
+          worldY: npc.y - 24,
+          bounds: {
+            x: minX,
+            y: minY,
+            width: maxX - minX,
+            height: maxY - minY,
+          },
+        };
+      }
+    }
+
     // Check Aquariums (freeform)
     for (const vis of this.aquariumVisuals.values()) {
       const aq = vis.state;
@@ -5046,7 +5649,12 @@ export class GameScene extends Phaser.Scene {
   public deleteInspectableItem(item: InspectableMapItem) {
     if (!item) return;
 
-    if (item.kind === "aquarium") {
+    if (item.kind === "seller_npc") {
+      this.removeSellerNpc();
+      if (this.multiplayer) {
+        this.multiplayer.deleteSellerNpc();
+      }
+    } else if (item.kind === "aquarium") {
       this.removeAquarium(item.id);
       if (this.multiplayer) {
         this.multiplayer.deleteAquarium(item.id);
@@ -5185,6 +5793,7 @@ export class GameScene extends Phaser.Scene {
     if (this.editorAshtrayGhost) this.editorAshtrayGhost.setVisible(false);
     if (this.editorChessBoardGhost) this.editorChessBoardGhost.setVisible(false);
     if (this.editorAquariumGhost) this.editorAquariumGhost.setVisible(false);
+    if (this.editorSellerNpcGhost) this.editorSellerNpcGhost.setVisible(false);
     if (this.editorFreeformGhost) this.editorFreeformGhost.setVisible(false);
   }
 
@@ -5197,6 +5806,7 @@ export class GameScene extends Phaser.Scene {
     this.drawInspectHighlight(item, 0xf59e0b, 0.22, 2, 0.9);
 
     const isFreeformKind =
+      item.kind === "seller_npc" ||
       item.kind === "jukebox" ||
       item.kind === "typewriter" ||
       item.kind === "ashtray" ||
@@ -5232,6 +5842,10 @@ export class GameScene extends Phaser.Scene {
         this.editorAquariumGhost.setDepth(this.computeLayerDepth(aq?.layer ?? 0, !!aq?.ontop) + 1);
         this.editorAquariumGhost.setPosition(nx, ny);
         this.editorAquariumGhost.setVisible(true);
+      } else if (item.kind === "seller_npc" && this.editorSellerNpcGhost) {
+        this.editorSellerNpcGhost.setDepth(136);
+        this.editorSellerNpcGhost.setPosition(nx, ny);
+        this.editorSellerNpcGhost.setVisible(true);
       } else if (item.kind === "freeform_decoration" && this.editorFreeformGhost) {
         const d = this.freeformVisuals.get(item.id)?.data;
         if (d) {
@@ -5322,7 +5936,16 @@ export class GameScene extends Phaser.Scene {
     const dstCol = Math.max(0, Math.min(GRID_COLS - 1, Math.floor(worldX / TILE_SIZE)));
     const dstRow = Math.max(0, Math.min(GRID_ROWS - 1, Math.floor(worldY / TILE_SIZE)));
 
-    if (item.kind === "aquarium") {
+    if (item.kind === "seller_npc") {
+      if (this.sellerNpcVisual) {
+        this.sellerNpcVisual.state.x = nx;
+        this.sellerNpcVisual.state.y = ny;
+        this.sellerNpcVisual.container.setPosition(nx, ny);
+        this.invalidatePixelCollisionChecker();
+        this.drawObstacles();
+      }
+      this.multiplayer?.moveSellerNpc(nx, ny);
+    } else if (item.kind === "aquarium") {
       const vis = this.aquariumVisuals.get(item.id);
       if (vis) {
         vis.state.x = nx;
@@ -5525,6 +6148,9 @@ export class GameScene extends Phaser.Scene {
       const aq = this.aquariumVisuals.get(item.id)?.state;
       return aq ? aq.passable === false : false;
     }
+    if (item.kind === "seller_npc") {
+      return true;
+    }
     if (item.kind === "chess_board") {
       const cb = this.chessBoardVisuals.get(item.id)?.state;
       return cb ? cb.passable === false : false;
@@ -5718,6 +6344,11 @@ export class GameScene extends Phaser.Scene {
       if (!at) return null;
       return { passable: at.passable !== false, ontop: !!at.ontop, layer: at.layer ?? 0, flipX: !!vis?.sprite?.flipX };
     }
+    if (item.kind === "seller_npc") {
+      const npc = this.sellerNpcVisual?.state;
+      if (!npc) return null;
+      return { passable: false, ontop: false, layer: npc.layer ?? 0, flipX: false };
+    }
     if (item.kind === "aquarium") {
       const vis = this.aquariumVisuals.get(item.id);
       const aq = vis?.state;
@@ -5873,6 +6504,16 @@ export class GameScene extends Phaser.Scene {
       if (patch.ontop !== undefined) vis.state.ontop = patch.ontop;
       if (patch.flipX !== undefined && vis.sprite) vis.sprite.setFlipX(patch.flipX);
       vis.container.setDepth(this.computeLayerDepth(vis.state.layer ?? 0, !!vis.state.ontop));
+      return;
+    }
+    if (item.kind === "seller_npc") {
+      const vis = this.sellerNpcVisual;
+      if (!vis) return;
+      if (patch.layer !== undefined) {
+        vis.state.layer = patch.layer;
+        this.multiplayer?.updateSellerNpc({ layer: patch.layer });
+      }
+      vis.container.setDepth(20 + (vis.state.layer ?? 0) * 0.05);
       return;
     }
     if (item.kind === "aquarium") {
@@ -6150,12 +6791,37 @@ export class GameScene extends Phaser.Scene {
    */
   private handleSpecialEntityEditPointerDown(
     pointer: Phaser.Input.Pointer,
-    entityKind: "jukebox" | "typewriter" | "ashtray" | "chess_board" | "aquarium",
+    entityKind: "jukebox" | "typewriter" | "ashtray" | "chess_board" | "aquarium" | "seller_npc",
     entityLayer: number | undefined,
     inspectItem: InspectableMapItem
   ) {
+    if (pointer.wasTouch) {
+      this.beginTouchEditGesture(pointer, {
+        specialEntity: { entityKind, entityLayer, inspectItem },
+      });
+      return;
+    }
+
+    this.executeSpecialEntityEditAction(
+      pointer.worldX,
+      pointer.worldY,
+      entityKind,
+      entityLayer,
+      inspectItem,
+      false
+    );
+  }
+
+  private executeSpecialEntityEditAction(
+    worldX: number,
+    worldY: number,
+    entityKind: "jukebox" | "typewriter" | "ashtray" | "chess_board" | "aquarium" | "seller_npc",
+    entityLayer: number | undefined,
+    inspectItem: InspectableMapItem,
+    isTouchTap: boolean
+  ) {
     if (this.movingEditorItem) {
-      this.finishMovingInspectableItem(pointer.worldX, pointer.worldY);
+      this.finishMovingInspectableItem(worldX, worldY);
       return;
     }
     if (this.activeEditorTool === "cursor") {
@@ -6166,82 +6832,16 @@ export class GameScene extends Phaser.Scene {
       this.deleteInspectableItem(inspectItem);
       return;
     }
-    if (this.activeEditorTool === entityKind && (entityLayer ?? 0) === this.placementLayer) {
+    if (
+      entityKind !== "seller_npc" &&
+      this.activeEditorTool === entityKind &&
+      (entityLayer ?? 0) === this.placementLayer
+    ) {
       this.deleteInspectableItem(inspectItem);
       return;
     }
 
-    const px = Math.round(pointer.worldX);
-    const py = Math.round(pointer.worldY);
-    if (this.activeEditorTool === "jukebox") {
-      this.multiplayer.placeJukebox(
-        px,
-        py,
-        this.decorationPassable,
-        this.decorationOntop,
-        this.placementLayer
-      );
-      return;
-    }
-    if (this.activeEditorTool === "typewriter") {
-      this.multiplayer.placeTypewriter(
-        px,
-        py,
-        this.decorationPassable,
-        this.decorationOntop,
-        this.placementLayer
-      );
-      return;
-    }
-    if (this.activeEditorTool === "ashtray") {
-      this.multiplayer.placeAshtray(
-        px,
-        py,
-        this.decorationPassable,
-        this.decorationOntop,
-        this.placementLayer
-      );
-      return;
-    }
-    if (this.activeEditorTool === "chess_board") {
-      this.multiplayer.placeChessBoard(
-        px,
-        py,
-        this.decorationPassable,
-        this.decorationOntop,
-        this.placementLayer
-      );
-      return;
-    }
-    if (this.activeEditorTool === "aquarium") {
-      this.multiplayer.placeAquarium(
-        px,
-        py,
-        this.decorationPassable,
-        this.decorationOntop,
-        this.placementLayer
-      );
-      return;
-    }
-    if (this.activeEditorTool === "freeform_decoration") {
-      this.placeFreeformDecoration(
-        this.selectedAssetKey,
-        px,
-        py,
-        null,
-        this.decorationPassable,
-        this.decorationOntop,
-        this.placementLayer
-      );
-      return;
-    }
-
-    const col = Math.max(0, Math.min(GRID_COLS - 1, Math.floor(pointer.worldX / TILE_SIZE)));
-    const row = Math.max(0, Math.min(GRID_ROWS - 1, Math.floor(pointer.worldY / TILE_SIZE)));
-    this.isSelectingArea = true;
-    this.selectionStartTile = { x: col, y: row };
-    this.selectionCurrentTile = { x: col, y: row };
-    this.updateSelectionVisuals();
+    this.executeCanvasEditAction(worldX, worldY, isTouchTap);
   }
 
   private createJukeboxVisual(jb: JukeboxState) {
@@ -6767,6 +7367,146 @@ export class GameScene extends Phaser.Scene {
     this.aquariumVisuals.set(aq.id, visual);
   }
 
+  // --- Seller NPC (Asset Shop Counter) Visuals & Interaction ---
+
+  public getSellerNpcState(): SellerNpcState | null {
+    return this.sellerNpcVisual ? { ...this.sellerNpcVisual.state } : null;
+  }
+
+  public setSellerNpc(sellerNpc: SellerNpcState | null) {
+    if (!sellerNpc || sellerNpc.enabled === false) {
+      this.removeSellerNpc();
+      return;
+    }
+    if (this.sellerNpcVisual) {
+      this.removeSellerNpc();
+    }
+    this.createSellerNpcVisual(sellerNpc);
+    this.refreshAllPlayerRpgGearVisuals();
+    this.invalidatePixelCollisionChecker();
+    this.drawObstacles();
+  }
+
+  public removeSellerNpc() {
+    if (this.sellerNpcVisual) {
+      this.sellerNpcVisual.container.destroy();
+      this.sellerNpcVisual = null;
+      this.nearbySellerNpcId = null;
+      this.invalidatePixelCollisionChecker();
+      this.drawObstacles();
+    }
+  }
+
+  private createSellerNpcVisual(npc: SellerNpcState) {
+    const spriteKey = npc.spriteKey || "general_seller";
+    const texKey = this.textures.exists(`npc_${spriteKey}`)
+      ? `npc_${spriteKey}`
+      : "npc_general_seller";
+    const npcSprite = this.add.sprite(0, 0, texKey, 0);
+    npcSprite.setDisplaySize(46, 46);
+    const animKey = `npc_wave_${spriteKey}`;
+    if (this.anims.exists(animKey)) {
+      npcSprite.play(animKey);
+    }
+
+    const counterSprite = this.add.image(0, 26, "shop_counter_prop");
+    counterSprite.setDisplaySize(96, 44);
+    counterSprite.setVisible(npc.showCounter !== false);
+
+    const displayName = npc.name || "Asset Seller";
+    const nameText = this.add.text(0, -32, displayName, {
+      fontFamily: "Outfit, sans-serif",
+      fontSize: "11px",
+      fontStyle: "bold",
+      color: "#fde68a",
+      backgroundColor: "rgba(15, 23, 42, 0.86)",
+      padding: { x: 6, y: 2 },
+    });
+    nameText.setOrigin(0.5, 0.5);
+
+    const promptText = this.add.text(
+      0,
+      -52,
+      this.isAdventureGuildSpace() ? "Press E • Guild RPG" : "Press E • Shop",
+      {
+      fontFamily: "Outfit, sans-serif",
+      fontSize: "11px",
+      fontStyle: "bold",
+      color: "#34d399",
+      backgroundColor: "rgba(15, 23, 42, 0.92)",
+      padding: { x: 7, y: 2.5 },
+    });
+    promptText.setOrigin(0.5, 0.5);
+    promptText.setVisible(false);
+
+    const hasCounter = npc.showCounter !== false;
+    const hitW = hasCounter ? 98 : 50;
+    const hitH = hasCounter ? 74 : 52;
+    const hitY = hasCounter ? 12 : 0;
+    const hitZone = this.add.rectangle(0, hitY, hitW, hitH, 0x000000, 0);
+    hitZone.setInteractive({ useHandCursor: true });
+    hitZone.on(
+      "pointerdown",
+      (
+        pointer: Phaser.Input.Pointer,
+        _lx: number,
+        _ly: number,
+        event: Phaser.Types.Input.EventData
+      ) => {
+        if (!pointer.leftButtonDown()) return;
+        if (!this.isCanvasPointerEvent(pointer)) return;
+        if (this.isAnyModalOpen()) return;
+        if (this.dismissOpenPopups()) {
+          event.stopPropagation();
+          return;
+        }
+        event.stopPropagation();
+        if (!this.isEditMode) {
+          this.triggerInteraction(npc.id, "asset_shop");
+          return;
+        }
+
+        const minX = hasCounter ? npc.x - 48 : npc.x - 24;
+        const maxX = hasCounter ? npc.x + 48 : npc.x + 24;
+        const minY = npc.y - 24;
+        const maxY = hasCounter ? npc.y + 48 : npc.y + 24;
+        this.handleSpecialEntityEditPointerDown(pointer, "seller_npc", npc.layer, {
+          kind: "seller_npc",
+          id: npc.id,
+          label: displayName,
+          categoryLabel: "Asset Shop Counter",
+          worldX: npc.x,
+          worldY: npc.y - 24,
+          bounds: {
+            x: minX,
+            y: minY,
+            width: maxX - minX,
+            height: maxY - minY,
+          },
+        });
+      }
+    );
+
+    const container = this.add.container(npc.x, npc.y, [
+      npcSprite,
+      counterSprite,
+      nameText,
+      promptText,
+      hitZone,
+    ]);
+    container.setDepth(20 + (npc.layer ?? 0) * 0.05);
+
+    this.sellerNpcVisual = {
+      container,
+      npcSprite,
+      counterSprite,
+      nameText,
+      promptText,
+      hitZone,
+      state: { ...npc },
+    };
+  }
+
   private getEffectiveEntityInteraction(
     entity: { interactable?: boolean; interaction?: DecorationInteractionType | null },
     defaultInteraction: DecorationInteractionType
@@ -6788,6 +7528,9 @@ export class GameScene extends Phaser.Scene {
   } | null {
     if (this.isEditMode || this.isAnyInteractionModalOpen()) return null;
 
+    if (this.nearbySellerNpcId) {
+      return { id: this.nearbySellerNpcId, interaction: "asset_shop" };
+    }
     if (this.nearbyCustomInteraction) {
       return {
         id: this.nearbyCustomInteraction.id,
@@ -6822,7 +7565,48 @@ export class GameScene extends Phaser.Scene {
     return null;
   }
 
+  public getActiveDinerNearbyAction(): DinerNearbyAction | null {
+    if (this.isEditMode || this.isAnyInteractionModalOpen()) return null;
+    return this.nearbyDinerAction;
+  }
+
+  public triggerDinerAction(actionOverride?: DinerNearbyAction | null): boolean {
+    const action = actionOverride ?? this.getActiveDinerNearbyAction();
+    if (!action || !this.multiplayer) return false;
+    switch (action.kind) {
+      case "join_shift":
+        this.multiplayer.dinerJoinShift();
+        return true;
+      case "seat_customer":
+      case "seat_customer_empty":
+        this.multiplayer.dinerSeatCustomer();
+        return true;
+      case "take_order":
+        this.multiplayer.dinerTakeOrder(action.tableId);
+        return true;
+      case "submit_orders":
+        this.multiplayer.dinerSubmitOrders();
+        return true;
+      case "pickup_food":
+        this.multiplayer.dinerPickupFood(action.orderId);
+        return true;
+      case "deliver_food":
+        this.multiplayer.dinerDeliverFood(action.tableId);
+        return true;
+      case "kitchen_cooking":
+        return true;
+    }
+    return false;
+  }
+
+  public triggerDinerLeaveShift(): boolean {
+    if (!this.multiplayer) return false;
+    this.multiplayer.dinerLeaveShift();
+    return true;
+  }
+
   public triggerNearbyInteraction(): boolean {
+    if (this.triggerDinerAction()) return true;
     const active = this.getActiveNearbyInteractable();
     if (!active) return false;
     this.triggerInteraction(active.id, active.interaction);
@@ -6850,6 +7634,14 @@ export class GameScene extends Phaser.Scene {
       this.onMealsClick?.(id);
     } else if (interaction === "inventory") {
       this.onInventoryClick?.(id);
+    } else if (interaction === "asset_shop") {
+      if (this.isAdventureGuildSpace() && this.onGuildHelperNpcClick) {
+        this.onGuildHelperNpcClick(this.sellerNpcVisual?.state ?? null);
+      } else if (this.onAssetShopClick) {
+        this.onAssetShopClick(id);
+      } else {
+        this.onSellerNpcClick?.(this.sellerNpcVisual?.state ?? null);
+      }
     }
   }
 
@@ -6908,6 +7700,9 @@ export class GameScene extends Phaser.Scene {
       if (!cb) return { interactable: false, interaction: null };
       const inter = this.getEffectiveEntityInteraction(cb, "chess");
       return { interactable: inter !== null, interaction: inter ?? cb.interaction ?? "chess" };
+    }
+    if (item.kind === "seller_npc") {
+      return { interactable: true, interaction: "asset_shop" };
     }
     if (item.kind === "aquarium") {
       const aq = this.aquariumVisuals.get(item.id)?.state;

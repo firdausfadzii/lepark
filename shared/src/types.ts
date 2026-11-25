@@ -1,3 +1,11 @@
+import type {
+  AssetShopTheme,
+  ResolvedAssetShopTheme,
+  SellerNpcSpriteKey,
+  SpaceShopCatalogGroup,
+} from "./assetCatalog";
+import type { FocusStats, FocusTheme } from "./focus";
+
 export type AvatarFrames = string | string[];
 
 export const MAX_AVATAR_FRAMES = 6;
@@ -10,36 +18,38 @@ export interface PlayerAvatars {
   down?: AvatarFrames; // Moving down frames
 }
 
+export const DEFAULT_AVATAR_ICON = "sheet:default_idle:sprite1";
+
 export const DEFAULT_AVATARS: Record<"idle" | "left" | "right" | "up" | "down", string[]> = {
   idle: [
-    "/assets/sprites/default/sprite1.png",
-    "/assets/sprites/default/sprite2.png",
-    "/assets/sprites/default/sprite3.png",
-    "/assets/sprites/default/sprite4.png",
+    "sheet:default_idle:sprite1",
+    "sheet:default_idle:sprite2",
+    "sheet:default_idle:sprite3",
+    "sheet:default_idle:sprite4",
   ],
   left: [
-    "/assets/sprites/default/walk_sprite9_flip.png",
-    "/assets/sprites/default/walk_sprite10_flip.png",
-    "/assets/sprites/default/walk_sprite11_flip.png",
-    "/assets/sprites/default/walk_sprite12_flip.png",
+    "sheet:default_walk:sprite9:flip",
+    "sheet:default_walk:sprite10:flip",
+    "sheet:default_walk:sprite11:flip",
+    "sheet:default_walk:sprite12:flip",
   ],
   right: [
-    "/assets/sprites/default/walk_sprite9.png",
-    "/assets/sprites/default/walk_sprite10.png",
-    "/assets/sprites/default/walk_sprite11.png",
-    "/assets/sprites/default/walk_sprite12.png",
+    "sheet:default_walk:sprite9",
+    "sheet:default_walk:sprite10",
+    "sheet:default_walk:sprite11",
+    "sheet:default_walk:sprite12",
   ],
   up: [
-    "/assets/sprites/default/walk_sprite17.png",
-    "/assets/sprites/default/walk_sprite18.png",
-    "/assets/sprites/default/walk_sprite19.png",
-    "/assets/sprites/default/walk_sprite20.png",
+    "sheet:default_walk:sprite17",
+    "sheet:default_walk:sprite18",
+    "sheet:default_walk:sprite19",
+    "sheet:default_walk:sprite20",
   ],
   down: [
-    "/assets/sprites/default/walk_sprite1.png",
-    "/assets/sprites/default/walk_sprite2.png",
-    "/assets/sprites/default/walk_sprite3.png",
-    "/assets/sprites/default/walk_sprite4.png",
+    "sheet:default_walk:sprite1",
+    "sheet:default_walk:sprite2",
+    "sheet:default_walk:sprite3",
+    "sheet:default_walk:sprite4",
   ],
 };
 
@@ -59,10 +69,46 @@ export interface PlayerInputPayload {
   y?: number;
 }
 
+export type ShirtStyle = "sleeveless" | "short_sleeve" | "long_sleeve";
+
+export interface PlayerOutfit {
+  shirtStyle: ShirtStyle;
+  shirtColor: string;
+  sleeveColor: string; // Optional override; "" resolves from shirtStyle
+  pantsColor: string;
+  skinColor: string;
+  outerwearKey: string; // e.g. "hoodie_01" or ""
+  outerwearColor: string;
+  hatKey: string; // e.g. "hat_01" or ""
+}
+
+export const DEFAULT_PLAYER_OUTFIT: PlayerOutfit = {
+  shirtStyle: "short_sleeve",
+  shirtColor: "#ffffff",
+  sleeveColor: "",
+  pantsColor: "#2c3e50",
+  skinColor: "#faf3e8",
+  outerwearKey: "",
+  outerwearColor: "#e74c3c",
+  hatKey: "",
+};
+
+export interface OuterwearCatalogItem {
+  id: string;
+  name: string;
+  sleeveType: "short" | "long";
+  defaultColor: string;
+  icon: string;
+  assetPath: string;
+}
+
+export const OUTERWEAR_CATALOG: OuterwearCatalogItem[] = [];
+
 export interface PlayerJoinOptions {
   name: string;
   color: string;
   avatars?: PlayerAvatars;
+  outfit?: Partial<PlayerOutfit>;
   spaceId?: string;
   token?: string;
 }
@@ -84,10 +130,12 @@ export interface AuthUser {
   email?: string | null;
   displayName?: string | null;
   role: "user" | "superadmin";
-  parkingPoints?: number;
+  focusPoints?: number;
+  focusStats?: FocusStats;
   unlockedSkins?: string[];
   unlockedAssets?: string[];
   lastSpaceId?: string | null;
+  lastPublicSpaceId?: string | null;
   lastX?: number | null;
   lastY?: number | null;
 }
@@ -116,11 +164,11 @@ export interface PrivateZone {
 export interface Space {
   id: string;
   name: string;
-  category: string; // e.g. "Town Square", "Hangout Lounges", or "Personal"
   ownerId: number;
   ownerUsername?: string;
   isPublic: boolean;
   isSuperadminSpace: boolean;
+  focusTheme?: FocusTheme;
   whitelist: string[]; // usernames allowed if private
   sharedOwners?: string[]; // co-owners / housemates with shared space ownership
   tiles?: Record<string, string>;
@@ -130,14 +178,65 @@ export interface Space {
   ashtrays?: AshtrayState[];
   chessBoards?: ChessBoardState[];
   aquariums?: AquariumState[];
+  sellerNpc?: SellerNpcState | null;
   playerCount?: number;
   createdAt?: string;
   updatedAt?: string;
 }
 
+export interface SellerNpcState {
+  id: string;
+  spaceId: string;
+  x: number;
+  y: number;
+  name?: string;
+  spriteKey?: SellerNpcSpriteKey;
+  shopTheme?: AssetShopTheme;
+  showCounter?: boolean;
+  enabled?: boolean;
+  layer?: number;
+}
+
+export interface SellerNpcPlacePayload {
+  x: number;
+  y: number;
+  name?: string;
+  spriteKey?: SellerNpcSpriteKey;
+  shopTheme?: AssetShopTheme;
+  showCounter?: boolean;
+  layer?: number;
+}
+
+export interface SellerNpcMovePayload {
+  x: number;
+  y: number;
+}
+
+export interface SellerNpcUpdatePayload {
+  name?: string;
+  spriteKey?: SellerNpcSpriteKey;
+  shopTheme?: AssetShopTheme;
+  showCounter?: boolean;
+  enabled?: boolean;
+  layer?: number;
+}
+
+export interface SpaceShopResponse {
+  success: boolean;
+  resolvedTheme?: ResolvedAssetShopTheme;
+  shopTitle?: string;
+  subtitle?: string;
+  npcName?: string;
+  assetCost?: number;
+  groups?: SpaceShopCatalogGroup[];
+  ownedAssets?: string[];
+  isSuperadmin?: boolean;
+  focusPoints?: number;
+  error?: string;
+}
+
 export interface SpacesListResponse {
   success: boolean;
-  categories: string[];
   spaces: Space[];
   mySpace?: Space;
   sharedSpaces?: Space[];
@@ -202,16 +301,17 @@ export interface JukeboxTrack {
 }
 
 export const DECORATION_INTERACTIONS = [
-  { id: "type_race", label: "Type Race", icon: "⌨️" },
-  { id: "smoke_duel", label: "Smoke Duel", icon: "🚬" },
-  { id: "chess", label: "Chess", icon: "♟️" },
-  { id: "jukebox", label: "Jukebox", icon: "🎵" },
-  { id: "fishing", label: "Fishing", icon: "🎣" },
-  { id: "organisation", label: "Organisation", icon: "🏢" },
-  { id: "notes", label: "Notes", icon: "📝" },
-  { id: "calendar", label: "Calendar", icon: "📅" },
-  { id: "meals", label: "Meals", icon: "🍽️" },
-  { id: "inventory", label: "Space's Inventory", icon: "📦" },
+  { id: "type_race", label: "Type Race", icon: "keyboard" },
+  { id: "smoke_duel", label: "Smoke Duel", icon: "flame" },
+  { id: "chess", label: "Chess", icon: "chess" },
+  { id: "jukebox", label: "Jukebox", icon: "music" },
+  { id: "fishing", label: "Fishing", icon: "anchor" },
+  { id: "organisation", label: "Organisation", icon: "building" },
+  { id: "notes", label: "Notes", icon: "notes" },
+  { id: "calendar", label: "Calendar", icon: "calendar" },
+  { id: "meals", label: "Meals", icon: "utensils" },
+  { id: "inventory", label: "Space's Inventory", icon: "package" },
+  { id: "asset_shop", label: "Asset Shop", icon: "store" },
 ] as const;
 
 export type DecorationInteractionType = (typeof DECORATION_INTERACTIONS)[number]["id"];
@@ -229,7 +329,8 @@ export function isValidInteractionType(
     val === "notes" ||
     val === "calendar" ||
     val === "meals" ||
-    val === "inventory"
+    val === "inventory" ||
+    val === "asset_shop"
   );
 }
 
@@ -238,7 +339,8 @@ export type InteractiveEntityKind =
   | "typewriter"
   | "ashtray"
   | "chess_board"
-  | "aquarium";
+  | "aquarium"
+  | "seller_npc";
 
 export interface EntitySetInteractionPayload {
   kind: InteractiveEntityKind;
@@ -738,7 +840,10 @@ export function isFreeformAsset(assetKey: string | undefined | null): boolean {
     baseKey.startsWith("office_one/") ||
     baseKey.startsWith("office_two/") ||
     baseKey.startsWith("pet_shop/") ||
+    baseKey.startsWith("adventure_guild/") ||
+    baseKey.startsWith("restaurant/") ||
     baseKey.startsWith("living_room_one/") ||
+    baseKey.startsWith("living_room_two/") ||
     baseKey.startsWith("table_") ||
     baseKey === "round_table_1" ||
     baseKey === "round_table_150" ||

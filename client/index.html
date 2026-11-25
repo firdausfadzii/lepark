@@ -50,102 +50,37 @@
         <!-- User Avatar & Profile Section -->
         <div id="topbar-profile-trigger" class="topbar-profile-pill" role="button" tabindex="0" title="Account Menu">
           <div class="topbar-avatar-container">
-            <img id="topbar-avatar-img" class="topbar-avatar-img" alt="Avatar" src="/assets/sprites/default/sprite1.png" />
+            <img id="topbar-avatar-img" class="topbar-avatar-img" alt="Avatar" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" />
             <span id="topbar-status-dot" class="topbar-status-dot" title="Online"></span>
           </div>
           <div class="topbar-user-details">
             <div class="topbar-name-row">
-              <span id="topbar-admin-crown" class="topbar-crown-icon hidden" title="Superadmin">👑</span>
+              <span id="topbar-admin-crown" class="topbar-crown-icon hidden" title="Superadmin"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 4l3 12h14l3-12-6 7-4-7-4 7-6-7z"/><path d="M5 20h14"/></svg></span>
               <span id="topbar-user-name" class="topbar-user-name">Player</span>
             </div>
             <span id="topbar-status-subtitle" class="topbar-status-subtitle hidden">Online</span>
           </div>
-          <span class="topbar-chevron">▾</span>
-
-          <!-- Dropdown Menu -->
-          <div id="user-profile-dropdown" class="user-profile-dropdown hidden">
-            <div id="dropdown-parking-points" class="dropdown-item dropdown-parking-info mobile-only-dropdown-item">
-              <span class="dropdown-icon">🅿️</span>
-              <div class="dropdown-text">
-                <span class="dropdown-title" id="dropdown-parking-points-val">0 Parking</span>
-                <span class="dropdown-sub">Parking points balance</span>
-              </div>
-            </div>
-            <div class="dropdown-divider mobile-only-dropdown-item"></div>
-            <button type="button" id="dropdown-my-space-btn" class="dropdown-item">
-              <span id="dropdown-my-space-icon" class="dropdown-icon">🏠</span>
-              <div class="dropdown-text">
-                <span id="dropdown-my-space-title" class="dropdown-title">Go to my space</span>
-                <span id="dropdown-my-space-sub" class="dropdown-sub">Enter personal space</span>
-              </div>
-            </button>
-            <button type="button" id="dropdown-friends-btn" class="dropdown-item">
-              <span class="dropdown-icon">👥</span>
-              <div class="dropdown-text">
-                <span class="dropdown-title">Friends <span id="dropdown-friends-badge" class="friends-req-badge hidden">0</span></span>
-                <span class="dropdown-sub">View friends & requests</span>
-              </div>
-            </button>
-            <button type="button" id="dropdown-organisations-btn" class="dropdown-item">
-              <span class="dropdown-icon">🏢</span>
-              <div class="dropdown-text">
-                <span class="dropdown-title">Organisations</span>
-                <span class="dropdown-sub">Create & manage organisations</span>
-              </div>
-            </button>
-            <button type="button" id="dropdown-notes-btn" class="dropdown-item">
-              <span class="dropdown-icon">📝</span>
-              <div class="dropdown-text">
-                <span class="dropdown-title">Notes</span>
-                <span class="dropdown-sub">Personal, space & organisation notes</span>
-              </div>
-            </button>
-            <button type="button" id="dropdown-calendar-btn" class="dropdown-item">
-              <span class="dropdown-icon">📅</span>
-              <div class="dropdown-text">
-                <span class="dropdown-title">Calendar</span>
-                <span class="dropdown-sub">Personal, space & organisation calendar</span>
-              </div>
-            </button>
-            <button type="button" id="dropdown-update-char-btn" class="dropdown-item">
-              <span class="dropdown-icon">⚙️</span>
-              <div class="dropdown-text">
-                <span class="dropdown-title">Update character</span>
-                <span class="dropdown-sub">Customize avatar & appearance</span>
-              </div>
-            </button>
-            <button type="button" id="dropdown-edit-space-btn" class="dropdown-item mobile-only-dropdown-item hidden">
-              <span class="dropdown-icon">🛠️</span>
-              <div class="dropdown-text">
-                <span class="dropdown-title">Edit space info</span>
-                <span class="dropdown-sub">Manage space name & settings</span>
-              </div>
-            </button>
-            <button type="button" id="dropdown-edit-map-btn" class="dropdown-item mobile-only-dropdown-item hidden">
-              <span class="dropdown-icon">✏️</span>
-              <div class="dropdown-text">
-                <span class="dropdown-title">Edit map</span>
-                <span class="dropdown-sub">Customize tiles & decorations</span>
-              </div>
-            </button>
-            <div class="dropdown-divider"></div>
-            <button type="button" id="dropdown-logout-btn" class="dropdown-item danger">
-              <span class="dropdown-icon">🚪</span>
-              <div class="dropdown-text">
-                <span class="dropdown-title">Logout</span>
-              </div>
-            </button>
-          </div>
         </div>
 
-        <!-- Parking Points Display (Beside Player Info) -->
-        <div id="topbar-parking-points" class="topbar-parking-points" title="Parking Points">
-          0 Parking
-        </div>
+        <!-- Focus Points Display (Beside Player Info) -->
+        <button type="button" id="topbar-focus-points" class="topbar-focus-points" title="Focus Points (FP) · Click to open Focus Room">
+          <img src="/assets/icons/focus_point.png" class="fp-icon" alt="FP" />
+          <span id="topbar-focus-points-val">0 FP</span>
+        </button>
       </div>
 
-    <!-- Top-Right Action Controls (Chat & Voice toggle triggers) -->
+    <!-- Top-Right Action Controls (Focus, Party, Map, Chat & Voice toggle triggers) -->
     <div id="topright-bar" class="topright-bar">
+      <button type="button" id="btn-open-focus" class="topright-pill-btn topright-focus-btn" title="Open Focus Room (Pomodoro)" aria-label="Open Focus Room">
+        <span class="focus-btn-dot"></span>
+        <span>Focus</span>
+      </button>
+
+      <button type="button" id="btn-open-squad" class="topright-pill-btn topright-squad-btn" title="Party" aria-label="Party">
+        <span>Party</span>
+        <span id="topbar-squad-badge" class="topbar-squad-badge hidden">1</span>
+      </button>
+
       <!-- Map Icon Button (Moved to right side of bar, left side of chat button) -->
       <button type="button" id="btn-open-map" class="topright-action-btn topbar-map-btn" title="Explore Spaces (Map)" aria-label="Explore Spaces">
         <svg class="map-svg-icon" viewBox="0 0 24 24" fill="currentColor">
@@ -250,9 +185,9 @@
                 <span id="output-volume-value" class="audio-volume-badge">100%</span>
               </div>
               <div class="volume-slider-row">
-                <span class="vol-icon-min">🔈</span>
+                <span class="vol-icon-min"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg></span>
                 <input type="range" id="audio-output-volume" min="0" max="100" value="100" step="1" class="audio-volume-slider" title="Adjust voice output volume" />
-                <span class="vol-icon-max">🔊</span>
+                <span class="vol-icon-max"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg></span>
               </div>
             </div>
 
@@ -274,39 +209,17 @@
   <!-- Game Canvas Root -->
   <div id="game-container"></div>
 
-    <!-- Top Edit Mode Floating Notice Banner -->
-    <div id="map-edit-banner" class="map-edit-banner hidden">
-      <div class="edit-banner-capsule">
-        <span class="edit-banner-pulse"></span>
-        <span class="edit-banner-tag">EDIT MODE</span>
-        <span class="edit-banner-sep">•</span>
-        <span id="edit-banner-asset-text" class="edit-banner-asset-text">Active: <strong>Wood 5</strong></span>
-        <button type="button" id="btn-banner-done" class="edit-banner-done-btn">Done Editing</button>
-      </div>
-    </div>
-
-    <!-- Edit Mode Placing Tiles Hint Toast (Shown when tile is selected; UI disappears and Esc restores UI) -->
+    <!-- Minimalist Transient Editor Notification Toast (Errors / Action Feedback Only) -->
     <div id="editor-placing-toast" class="editor-placing-toast hidden" aria-live="polite">
       <div class="placing-toast-capsule">
-        <span class="placing-toast-pulse"></span>
-        <span class="placing-toast-icon">✨</span>
-        <div class="placing-toast-text">
-          <span class="placing-toast-tag">PLACING</span>
-          <span class="placing-toast-sep">•</span>
-          <span id="placing-toast-name" class="placing-toast-name">Wood 5</span>
-          <span id="placing-toast-layer" class="placing-toast-layer-badge hidden">Layer 0 (↑/↓)</span>
-        </div>
-        <span id="placing-toast-hint" class="placing-toast-hint">Drag map to put tiles • Press <kbd class="placing-kbd">Esc</kbd> when done</span>
-        <button type="button" id="btn-toast-done-placing" class="placing-toast-done-btn" title="Show UI back (Esc)">
-          Done (Esc)
-        </button>
+        <span id="placing-toast-name" class="placing-toast-name"></span>
       </div>
     </div>
 
     <!-- Voice / Microphone Persistent Notification Banner (Does NOT auto-hide) -->
     <div id="voice-notification-banner" class="voice-notification-banner hidden" role="alert" aria-live="assertive">
       <div class="voice-notification-card">
-        <div class="voice-notification-icon" id="voice-notif-icon">🎙️</div>
+        <div class="voice-notification-icon" id="voice-notif-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg></div>
         <div class="voice-notification-content">
           <div class="voice-notification-header">
             <span class="voice-notification-title" id="voice-notif-title">Microphone Access Error</span>
@@ -328,7 +241,7 @@
     <!-- Private Area Active In-Game HUD Chip -->
     <div id="private-area-hud" class="private-area-hud hidden" aria-live="polite">
       <div class="private-area-hud-capsule">
-        <span class="private-area-hud-icon">🔒</span>
+        <span class="private-area-hud-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
         <div class="private-area-hud-info">
           <span class="private-area-hud-title" id="private-area-hud-name">Private Area</span>
           <span class="private-area-hud-subtitle">Outside dimmed • Future audio & chat isolation</span>
@@ -339,148 +252,131 @@
     <!-- YouTube Jukebox Active In-Game HUD Chip -->
     <div id="jukebox-hud-pill" class="jukebox-hud-pill hidden" title="Click to view Jukebox playlist" aria-live="polite">
       <div class="jukebox-hud-capsule">
-        <span class="jukebox-hud-icon">📻</span>
+        <span class="jukebox-hud-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="8" width="18" height="12" rx="2"/><path d="M7 8l9-5"/><circle cx="8" cy="14" r="2"/><line x1="14" y1="12" x2="17" y2="12"/><line x1="14" y1="16" x2="17" y2="16"/></svg></span>
         <div class="jukebox-hud-info">
           <span class="jukebox-hud-title" id="jukebox-hud-track-title">Jukebox Playing</span>
           <span class="jukebox-hud-subtitle" id="jukebox-hud-track-sub">Press E or Click to Open</span>
         </div>
-        <button type="button" id="btn-jukebox-hud-mute" class="btn-jukebox-hud-mute" title="Mute/Unmute Jukebox">🔊</button>
+        <button type="button" id="btn-jukebox-hud-mute" class="btn-jukebox-hud-mute" title="Mute/Unmute Jukebox"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg></button>
       </div>
+    </div>
+
+    <!-- Diner Dash Mobile-Friendly Notification Toast -->
+    <div id="diner-toast" class="diner-toast hidden" role="status" aria-live="polite">
+      <span id="diner-toast-icon" class="diner-toast-icon"></span>
+      <span id="diner-toast-text" class="diner-toast-text"></span>
+    </div>
+
+    <!-- Diner Dash Active Shift HUD -->
+    <div id="diner-hud" class="diner-hud hidden" aria-live="polite">
+      <div class="diner-hud-top">
+        <div class="diner-hud-stats">
+          <span class="diner-stat-pill" id="diner-hud-staff" title="Active employees on shift">Staff: 1</span>
+          <span class="diner-stat-pill" id="diner-hud-served" title="Customers served">Served: 0</span>
+          <span class="diner-stat-pill diner-stat-fp" id="diner-hud-fp" title="Focus Points earned this shift">+0 FP</span>
+        </div>
+        <div class="diner-hud-hands" id="diner-hud-hands"></div>
+      </div>
+      <div class="diner-hud-ticker hidden" id="diner-hud-ticker"></div>
     </div>
 
 
 
-    <!-- Right-Side Tile Options Sidebar (Passable, Render Layer, Layer Level) -->
+    <!-- Minimalist Tile Options Popover (Anchored above bottom bar; same on mobile & desktop) -->
     <aside id="map-editor-tile-options-sidebar" class="map-editor-right-sidebar editor-category-group hidden" aria-label="Tile Options">
-      <div class="editor-category-header right-sidebar-header" id="right-sidebar-header-toggle" role="button" tabindex="0" aria-expanded="true" title="Click to hide or expand Tile Options">
-        <div class="editor-category-name-wrap">
-          <span class="category-icon">⚙️</span>
-          <span class="category-title">Tile Options</span>
-        </div>
-        <div class="editor-category-header-right">
-          <button
-            type="button"
-            id="btn-toggle-right-sidebar"
-            class="right-sidebar-collapse-btn"
-            aria-label="Hide or expand Tile Options"
-            title="Hide / Expand Tile Options"
-          >
-            <span class="right-collapse-label">Hide</span>
-            <svg class="category-chevron-svg" viewBox="0 0 24 24" width="16" height="16">
-              <path fill="currentColor" d="M8.59 16.59L10 18l6-6-6-6-1.41 1.41L13.17 12z"/>
-            </svg>
-          </button>
-        </div>
-      </div>
-
-      <!-- Collapsed pill shown when right sidebar is hidden -->
-      <button
-        type="button"
-        id="btn-expand-right-sidebar"
-        class="right-sidebar-expand-pill"
-        title="Expand Tile Options"
-        aria-label="Expand Tile Options"
-      >
-        <span class="expand-pill-arrow">◂</span>
-        <span class="expand-pill-icon">⚙️</span>
-        <span class="expand-pill-text">Tile Options</span>
-      </button>
-
-      <div class="editor-category-content right-sidebar-content">
-        <!-- Selected Tile Summary Card -->
+      <div class="tile-options-popover-header">
         <div class="tile-options-selected-card" id="tile-options-selected-card">
           <div class="tile-options-preview" id="tile-options-preview">
-            <span class="tile-options-preview-placeholder" id="tile-options-preview-placeholder">🧩</span>
+            <span class="tile-options-preview-placeholder" id="tile-options-preview-placeholder"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="8" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/></svg></span>
             <img id="tile-options-preview-img" class="tile-options-preview-img hidden" src="" alt="" />
           </div>
           <div class="tile-options-info">
             <div class="tile-options-name" id="tile-options-name">No Tile Selected</div>
-            <div class="tile-options-category" id="tile-options-category">Select flooring, wall, or decoration</div>
+            <div class="tile-options-category" id="tile-options-category">Select a tile or item</div>
           </div>
         </div>
+        <button
+          type="button"
+          id="btn-close-tile-options"
+          class="tile-options-close-btn"
+          aria-label="Close Tile Options"
+          title="Close Tile Options"
+        >
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
 
-        <!-- Tile Option Controls -->
-        <div class="tile-options-controls disabled" id="tile-options-controls">
-          <!-- 1. Passable or Not (Switch) -->
-          <div class="tile-option-row tile-option-switch-row">
-            <div class="tile-option-label-group">
-              <label class="tile-option-label" for="tile-opt-passable-switch">Passable</label>
-              <span class="tile-option-hint" id="tile-opt-passable-hint">Walkable</span>
-            </div>
-            <label class="editor-switch" title="Toggle whether players can walk through this tile">
-              <input type="checkbox" id="tile-opt-passable-switch" checked disabled />
-              <span class="editor-switch-slider"></span>
-            </label>
+      <!-- Tile Option Controls (Compact 2x2 Grid) -->
+      <div class="tile-options-controls disabled" id="tile-options-controls">
+        <!-- 1. Passable or Not (Switch) -->
+        <div class="tile-option-row tile-option-switch-row">
+          <div class="tile-option-label-group">
+            <label class="tile-option-label" for="tile-opt-passable-switch">Passable</label>
+            <span class="tile-option-hint" id="tile-opt-passable-hint">Walkable</span>
           </div>
+          <label class="editor-switch" title="Toggle whether players can walk through this tile">
+            <input type="checkbox" id="tile-opt-passable-switch" checked disabled />
+            <span class="editor-switch-slider"></span>
+          </label>
+        </div>
 
-          <!-- 2. Render Layer (Top or Bottom of Player - Dropdown) -->
-          <div class="tile-option-row">
-            <label class="tile-option-label" for="tile-opt-render-layer">Render Layer</label>
-            <select id="tile-opt-render-layer" class="editor-select" disabled>
-              <option value="bottom">Bottom of Player</option>
-              <option value="top">Top of Player</option>
-            </select>
+        <!-- 2. Flip Horizontal (Switch) -->
+        <div class="tile-option-row tile-option-switch-row">
+          <div class="tile-option-label-group">
+            <label class="tile-option-label" for="tile-opt-flip-x-switch">Flip X</label>
+            <span class="tile-option-hint" id="tile-opt-flip-x-hint">Normal</span>
           </div>
+          <label class="editor-switch" title="Flip this asset horizontally">
+            <input type="checkbox" id="tile-opt-flip-x-switch" disabled />
+            <span class="editor-switch-slider"></span>
+          </label>
+        </div>
 
-          <!-- 3. Layer Level (Button Up and Down) -->
-          <div class="tile-option-row">
-            <div class="tile-option-label-group">
-              <span class="tile-option-label">Layer Level</span>
-              <span class="tile-option-hint">Shortcuts: ↑ / ↓</span>
-            </div>
-            <div class="editor-layer-stepper">
-              <button
-                type="button"
-                id="btn-tile-opt-layer-down"
-                class="editor-layer-step-btn"
-                title="Decrease Layer Level (Down)"
-                disabled
-              >
-                ▼
-              </button>
-              <span class="editor-layer-step-value" id="tile-opt-layer-value">0</span>
-              <button
-                type="button"
-                id="btn-tile-opt-layer-up"
-                class="editor-layer-step-btn"
-                title="Increase Layer Level (Up)"
-                disabled
-              >
-                ▲
-              </button>
-            </div>
-          </div>
+        <!-- 3. Render Layer (Top or Bottom of Player - Dropdown) -->
+        <div class="tile-option-row">
+          <label class="tile-option-label" for="tile-opt-render-layer">Render</label>
+          <select id="tile-opt-render-layer" class="editor-select" disabled>
+            <option value="bottom">Bottom</option>
+            <option value="top">Top of Player</option>
+          </select>
+        </div>
 
-          <!-- 4. Flip Horizontal (Switch) -->
-          <div class="tile-option-row tile-option-switch-row">
-            <div class="tile-option-label-group">
-              <label class="tile-option-label" for="tile-opt-flip-x-switch">Flip Horizontal</label>
-              <span class="tile-option-hint" id="tile-opt-flip-x-hint">Normal</span>
-            </div>
-            <label class="editor-switch" title="Flip this asset horizontally">
-              <input type="checkbox" id="tile-opt-flip-x-switch" disabled />
-              <span class="editor-switch-slider"></span>
-            </label>
+        <!-- 4. Layer Level (Button Up and Down) -->
+        <div class="tile-option-row">
+          <span class="tile-option-label">Layer</span>
+          <div class="editor-layer-stepper">
+            <button
+              type="button"
+              id="btn-tile-opt-layer-down"
+              class="editor-layer-step-btn"
+              title="Decrease Layer Level (Down)"
+              aria-label="Decrease Layer Level"
+              disabled
+            >
+              −
+            </button>
+            <span class="editor-layer-step-value" id="tile-opt-layer-value">0</span>
+            <button
+              type="button"
+              id="btn-tile-opt-layer-up"
+              class="editor-layer-step-btn"
+              title="Increase Layer Level (Up)"
+              aria-label="Increase Layer Level"
+              disabled
+            >
+              +
+            </button>
           </div>
         </div>
       </div>
     </aside>
 
-    <!-- Bottom Map Editor Bar with Tabs -->
+    <!-- Minimalist Bottom Map Editor Dock (Same on Mobile & Desktop) -->
     <aside id="map-editor-sidebar" class="map-editor-sidebar map-editor-bottom-bar hidden" aria-label="Map Editor Assets">
       <div class="editor-sidebar-header editor-bottom-bar-header">
-        <div class="editor-header-title-box">
-          <div class="editor-header-badge">
-            <svg class="editor-palette-icon" viewBox="0 0 24 24">
-              <path d="M12 3c-4.97 0-9 4.03-9 9 0 2.12.74 4.07 1.97 5.61L4.35 19.4c-.39.39-.39 1.02 0 1.41.39.39 1.02.39 1.41 0l1.9-1.9C9.17 19.64 10.54 20 12 20c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-5 9c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1zm3-4c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1zm4 0c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1zm3 4c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1z"/>
-            </svg>
-          </div>
-          <div>
-            <h3 class="editor-title">Map Editor</h3>
-            <span class="editor-subtitle">Select tab &amp; tool</span>
-          </div>
-        </div>
-
         <!-- Bottom Bar Category Tabs -->
         <div class="editor-tabs-nav" id="editor-tabs-nav" role="tablist" aria-label="Map Editor Tabs">
           <button
@@ -490,8 +386,8 @@
             role="tab"
             aria-selected="true"
           >
-            <span class="editor-tab-icon">🛠️</span>
-            <span class="editor-tab-label">Utilities</span>
+            <span class="editor-tab-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg></span>
+            <span class="editor-tab-label">Tools</span>
           </button>
           <button
             type="button"
@@ -500,8 +396,8 @@
             role="tab"
             aria-selected="false"
           >
-            <span class="editor-tab-icon">🪵</span>
-            <span class="editor-tab-label">Flooring</span>
+            <span class="editor-tab-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/></svg></span>
+            <span class="editor-tab-label">Floor</span>
           </button>
           <button
             type="button"
@@ -510,7 +406,7 @@
             role="tab"
             aria-selected="false"
           >
-            <span class="editor-tab-icon">🧱</span>
+            <span class="editor-tab-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="12" y1="4" x2="12" y2="12"/><line x1="8" y1="12" x2="8" y2="20"/><line x1="16" y1="12" x2="16" y2="20"/></svg></span>
             <span class="editor-tab-label">Wall</span>
           </button>
           <button
@@ -520,29 +416,66 @@
             role="tab"
             aria-selected="false"
           >
-            <span class="editor-tab-icon">🪴</span>
-            <span class="editor-tab-label">Decoration</span>
+            <span class="editor-tab-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22v-8"/><path d="M12 14c-4 0-7-3-7-7 4 0 7 3 7 7z"/><path d="M12 14c4 0 7-3 7-7-4 0-7 3-7 7z"/><path d="M8 22h8"/></svg></span>
+            <span class="editor-tab-label">Decor</span>
           </button>
         </div>
 
         <!-- Bottom Bar Right Actions -->
         <div class="editor-bottom-bar-actions">
-          <span class="editor-inline-tip">Press <kbd class="editor-tip-kbd">Esc</kbd> to show/exit</span>
+          <button
+            type="button"
+            id="btn-toggle-drag-fill"
+            class="editor-options-btn editor-drag-fill-btn hidden"
+            aria-pressed="false"
+            aria-label="Drag Fill Mode"
+            title="Drag Fill: Swipe to select/fill area instead of panning"
+          >
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M3 7V5a2 2 0 0 1 2-2h2"/>
+              <path d="M17 3h2a2 2 0 0 1 2 2v2"/>
+              <path d="M21 17v2a2 2 0 0 1-2 2h-2"/>
+              <path d="M7 21H5a2 2 0 0 1-2-2v-2"/>
+              <rect x="7" y="7" width="10" height="10" rx="1"/>
+            </svg>
+          </button>
+          <button
+            type="button"
+            id="btn-toggle-tile-options"
+            class="editor-options-btn"
+            aria-expanded="false"
+            aria-label="Tile Options"
+            title="Tile Options"
+            disabled
+          >
+            <img id="editor-options-btn-thumb" class="editor-options-btn-thumb hidden" src="" alt="" />
+            <svg class="editor-options-sliders-svg" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <line x1="4" y1="21" x2="4" y2="14"></line>
+              <line x1="4" y1="10" x2="4" y2="3"></line>
+              <line x1="12" y1="21" x2="12" y2="12"></line>
+              <line x1="12" y1="8" x2="12" y2="3"></line>
+              <line x1="20" y1="21" x2="20" y2="16"></line>
+              <line x1="20" y1="12" x2="20" y2="3"></line>
+              <line x1="1" y1="14" x2="7" y2="14"></line>
+              <line x1="9" y1="8" x2="15" y2="8"></line>
+              <line x1="17" y1="16" x2="23" y2="16"></line>
+            </svg>
+          </button>
           <button
             type="button"
             id="btn-expand-map-editor"
             class="editor-expand-btn"
-            aria-expanded="false"
-            aria-label="Expand Map Editor bar"
-            title="Expand / Collapse Map Editor bar"
+            aria-expanded="true"
+            aria-label="Collapse Map Editor drawer"
+            title="Show / Hide Tools Drawer"
           >
-            <svg class="editor-expand-chevron" viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
-              <path fill="currentColor" d="M7.41 15.41L12 10.83l4.59 4.58L18 14l-6-6-6 6z"/>
+            <svg class="editor-expand-chevron" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+              <path fill="currentColor" d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"/>
             </svg>
-            <span class="editor-expand-label">Expand</span>
           </button>
-          <button type="button" id="btn-close-map-editor" class="editor-finish-btn">
-            <span>✓</span> Done Editing
+          <button type="button" id="btn-close-map-editor" class="editor-finish-btn" title="Done Editing">
+            <span>✓</span>
+            <span class="editor-finish-label">Done</span>
           </button>
         </div>
       </div>
@@ -553,11 +486,11 @@
         <div class="editor-category-group" data-category="flooring" data-tab-panel="flooring">
           <div class="editor-category-header" role="button" tabindex="0" aria-expanded="true">
             <div class="editor-category-name-wrap">
-              <span class="category-icon">🪵</span>
+              <span class="category-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/></svg></span>
               <span class="category-title">Flooring Patterns</span>
             </div>
             <div class="editor-category-header-right">
-              <span class="category-count">30 styles</span>
+              <span class="category-count">43 styles</span>
               <span class="category-chevron-icon" aria-hidden="true">
                 <svg class="category-chevron-svg" viewBox="0 0 24 24" width="16" height="16">
                   <path fill="currentColor" d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"/>
@@ -576,6 +509,15 @@
                 aria-selected="true"
               >
                 Free
+              </button>
+              <button
+                type="button"
+                class="editor-group-tab-btn"
+                data-asset-group-tab="Living Room"
+                role="tab"
+                aria-selected="false"
+              >
+                Living Room
               </button>
             </div>
             <div class="editor-group-panel active-group-panel" data-asset-group-panel="Free">
@@ -1121,6 +1063,9 @@
             </button>
           </div>
           </div>
+          <div class="editor-group-panel" data-asset-group-panel="Living Room">
+            <div class="editor-assets-grid" id="living-room-floor-grid"></div>
+          </div>
           </div>
         </div>
 
@@ -1128,7 +1073,7 @@
         <div class="editor-category-group" data-category="decoration" data-tab-panel="decoration">
           <div class="editor-category-header" role="button" tabindex="0" aria-expanded="true">
             <div class="editor-category-name-wrap">
-              <span class="category-icon">🪴</span>
+              <span class="category-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22v-8"/><path d="M12 14c-4 0-7-3-7-7 4 0 7 3 7 7z"/><path d="M12 14c4 0 7-3 7-7-4 0-7 3-7 7z"/><path d="M8 22h8"/></svg></span>
               <span class="category-title">Decoration</span>
             </div>
             <div class="editor-category-header-right">
@@ -1182,11 +1127,38 @@
             <button
               type="button"
               class="editor-group-tab-btn"
+              data-asset-group-tab="Adventure Guild"
+              role="tab"
+              aria-selected="false"
+            >
+              Adventure Guild
+            </button>
+            <button
+              type="button"
+              class="editor-group-tab-btn"
+              data-asset-group-tab="Restaurant"
+              role="tab"
+              aria-selected="false"
+            >
+              Restaurant
+            </button>
+            <button
+              type="button"
+              class="editor-group-tab-btn"
               data-asset-group-tab="Living Room One"
               role="tab"
               aria-selected="false"
             >
               Living Room One
+            </button>
+            <button
+              type="button"
+              class="editor-group-tab-btn"
+              data-asset-group-tab="Living Room Two"
+              role="tab"
+              aria-selected="false"
+            >
+              Living Room Two
             </button>
           </div>
           <div class="editor-group-panel active-group-panel" data-asset-group-panel="Free">
@@ -1501,8 +1473,17 @@
           <div class="editor-group-panel" data-asset-group-panel="Pet Shop">
             <div class="editor-assets-grid" id="pet-shop-deco-grid"></div>
           </div>
+          <div class="editor-group-panel" data-asset-group-panel="Adventure Guild">
+            <div class="editor-assets-grid" id="adventure-guild-deco-grid"></div>
+          </div>
+          <div class="editor-group-panel" data-asset-group-panel="Restaurant">
+            <div class="editor-assets-grid" id="restaurant-deco-grid"></div>
+          </div>
           <div class="editor-group-panel" data-asset-group-panel="Living Room One">
             <div class="editor-assets-grid" id="living-room-one-deco-grid"></div>
+          </div>
+          <div class="editor-group-panel" data-asset-group-panel="Living Room Two">
+            <div class="editor-assets-grid" id="living-room-two-deco-grid"></div>
           </div>
           </div>
         </div>
@@ -1511,7 +1492,7 @@
         <div class="editor-category-group" data-category="walls" data-tab-panel="wall">
           <div class="editor-category-header" role="button" tabindex="0" aria-expanded="true">
             <div class="editor-category-name-wrap">
-              <span class="category-icon">🧱</span>
+              <span class="category-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="12" y1="4" x2="12" y2="12"/><line x1="8" y1="12" x2="8" y2="20"/><line x1="16" y1="12" x2="16" y2="20"/></svg></span>
               <span class="category-title">Walls</span>
             </div>
             <div class="editor-category-header-right">
@@ -1987,7 +1968,7 @@
         <div class="editor-category-group editor-utilities-group active-tab-panel" data-category="utilities" data-tab-panel="utilities">
           <div class="editor-category-header" role="button" tabindex="0" aria-expanded="true">
             <div class="editor-category-name-wrap">
-              <span class="category-icon">🛠️</span>
+              <span class="category-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg></span>
               <span class="category-title">Utilities</span>
             </div>
             <div class="editor-category-header-right">
@@ -2075,12 +2056,31 @@
               title="Spawn Point - Click on map to place player spawn point. By default in middle. Only 1 per map. Only highlighted in edit mode."
             >
               <div class="asset-card-thumb spawn-tool-thumb">
-                <span class="spawn-card-emoji">📍</span>
+                <span class="spawn-card-emoji"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></span>
                 <span class="asset-card-check">✓</span>
               </div>
               <div class="asset-card-info">
                 <span class="asset-card-name">Spawn Point</span>
                 <span class="asset-card-code">Place Spawn</span>
+              </div>
+            </button>
+
+            <!-- Tool 4: Seller NPC (Superadmin Only) -->
+            <button
+              type="button"
+              class="editor-asset-card editor-tool-card hidden"
+              id="tool-seller-npc"
+              data-tool-type="seller_npc"
+              data-tool-name="Seller NPC"
+              title="Seller NPC &amp; Counter (Superadmin only) - Place or move this space's Seller NPC"
+            >
+              <div class="asset-card-thumb seller-npc-tool-thumb">
+                <span class="spawn-card-emoji"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7"/><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><path d="M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4"/><path d="M2 7h20"/><path d="M22 7v3a2 2 0 0 1-2 2v0a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 16 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 12 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 8 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 4 12v0a2 2 0 0 1-2-2V7"/></svg></span>
+                <span class="asset-card-check">✓</span>
+              </div>
+              <div class="asset-card-info">
+                <span class="asset-card-name">Seller NPC</span>
+                <span class="asset-card-code">Counter Shop</span>
               </div>
             </button>
           </div>
@@ -2133,7 +2133,7 @@
             data-room="map"
             title="Area Chat"
           >
-            <span class="chat-tab-icon">🗺️</span>
+            <span class="chat-tab-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg></span>
             <span class="chat-tab-name" id="chat-tab-map-name">CO3</span>
             <span class="chat-tab-badge hidden" id="chat-map-badge"></span>
           </button>
@@ -2148,7 +2148,7 @@
             data-room="zone"
             title="Private Area Chat"
           >
-            <span class="chat-tab-icon">🔒</span>
+            <span class="chat-tab-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
             <span class="chat-tab-name" id="chat-tab-zone-name">Private Area</span>
             <span class="chat-tab-badge hidden" id="chat-zone-badge"></span>
           </button>
@@ -2165,7 +2165,7 @@
       <div class="chat-messages-container" id="chat-messages-container">
         <div id="chat-messages-list" class="chat-messages-list">
           <div class="chat-welcome-notice">
-            <div class="chat-welcome-icon">💬</div>
+            <div class="chat-welcome-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
             <div class="chat-welcome-title">Welcome to Chat!</div>
             <div class="chat-welcome-sub">Say hello to nearby players. Use tabs above to switch channels.</div>
           </div>
@@ -2221,6 +2221,9 @@
           <button type="button" class="player-context-btn" id="btn-player-menu-throw-battle" title="Challenge player to Throw Battle">
             <span class="player-context-btn-label">Throw battle</span>
           </button>
+          <button type="button" class="player-context-btn" id="btn-player-menu-invite-squad" title="Invite player to Party">
+            <span class="player-context-btn-label">Invite to Party</span>
+          </button>
           <button type="button" class="player-context-btn" id="btn-player-menu-add-friend" title="Send friend request">
             <span class="player-context-btn-label" id="player-menu-add-friend-label">Add Friend</span>
           </button>
@@ -2238,11 +2241,11 @@
         </div>
         <div class="player-context-body">
           <button type="button" class="player-context-btn editor-item-obstacle-btn" id="btn-editor-item-obstacle" title="Toggle obstacle collision for this item">
-            <span class="player-context-btn-icon" id="editor-item-obstacle-icon">🚫</span>
+            <span class="player-context-btn-icon" id="editor-item-obstacle-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg></span>
             <span class="player-context-btn-label" id="editor-item-obstacle-label">Obstacle: ON</span>
           </button>
           <button type="button" class="player-context-btn editor-item-interact-btn hidden" id="btn-editor-item-interactable" title="Toggle whether players can interact with this decoration">
-            <span class="player-context-btn-icon" id="editor-item-interact-icon">⚡</span>
+            <span class="player-context-btn-icon" id="editor-item-interact-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></span>
             <span class="player-context-btn-label" id="editor-item-interact-label">Interactable: OFF</span>
           </button>
           <div id="editor-item-interaction-picker" class="editor-interaction-picker hidden">
@@ -2255,12 +2258,27 @@
               <div id="editor-interaction-options" class="editor-interaction-options"></div>
             </div>
           </div>
+          <div id="editor-seller-npc-controls" class="editor-seller-npc-controls hidden">
+            <label class="editor-seller-field-label" for="editor-seller-name-input">NPC Name</label>
+            <div class="editor-seller-name-row">
+              <input type="text" id="editor-seller-name-input" class="editor-interaction-search-input" maxlength="40" placeholder="NPC Name..." autocomplete="off" />
+              <button type="button" id="btn-editor-seller-save-name" class="editor-seller-mini-btn">Save</button>
+            </div>
+            <label class="editor-seller-field-label" for="editor-seller-theme-select">Shop Catalog</label>
+            <select id="editor-seller-theme-select" class="editor-seller-select"></select>
+            <label class="editor-seller-field-label" for="editor-seller-sprite-select">NPC Outfit</label>
+            <select id="editor-seller-sprite-select" class="editor-seller-select"></select>
+            <button type="button" class="player-context-btn editor-seller-counter-btn" id="btn-editor-seller-counter-toggle">
+              <span class="player-context-btn-icon">🪵</span>
+              <span class="player-context-btn-label" id="editor-seller-counter-label">Counter: ON</span>
+            </button>
+          </div>
           <button type="button" class="player-context-btn editor-item-move-btn" id="btn-editor-item-move" title="Move this item to another location">
             <span class="player-context-btn-icon">✥</span>
             <span class="player-context-btn-label">Move</span>
           </button>
           <button type="button" class="player-context-btn editor-item-delete-btn" id="btn-editor-item-delete" title="Delete this item from the map">
-            <span class="player-context-btn-icon">🗑️</span>
+            <span class="player-context-btn-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></span>
             <span class="player-context-btn-label">Delete</span>
           </button>
         </div>
@@ -2290,9 +2308,28 @@
         class="mobile-interact-btn hidden"
         aria-label="Interact with nearby object"
       >
-        <span id="mobile-interact-icon" class="mobile-interact-icon">✨</span>
+        <span id="mobile-interact-icon" class="mobile-interact-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.9 5.8L20 11l-6.1 2.2L12 19l-1.9-5.8L4 11l6.1-2.2L12 3z"/></svg></span>
         <span id="mobile-interact-label" class="mobile-interact-label">Interact</span>
       </button>
+
+      <!-- Diner Dash Contextual Action Bar (Desktop & Mobile friendly) -->
+      <div id="diner-action-bar" class="diner-action-bar hidden">
+        <button
+          type="button"
+          id="diner-leave-shift-btn"
+          class="diner-action-btn diner-leave-btn hidden"
+        >
+          Leave Shift
+        </button>
+        <button
+          type="button"
+          id="diner-primary-action-btn"
+          class="diner-action-btn diner-primary-btn"
+        >
+          <span id="diner-primary-action-label">Start Shift</span>
+          <span class="diner-key-chip" id="diner-primary-key-chip">E</span>
+        </button>
+      </div>
 
       <!-- Bottom HUD Controls Hint -->
       <div class="hud-footer" id="hud-footer">
@@ -2331,7 +2368,7 @@
 
         <!-- Error / Info Banner -->
         <div id="auth-alert" class="auth-alert hidden">
-          <span id="auth-alert-icon">⚠️</span>
+          <span id="auth-alert-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></span>
           <span id="auth-alert-msg"></span>
         </div>
 
@@ -2349,7 +2386,7 @@
           <div class="form-group">
             <label class="form-label" id="login-identifier-label" for="login-username">Username</label>
             <div class="input-with-icon">
-              <span class="input-icon" id="login-identifier-icon">👤</span>
+              <span class="input-icon" id="login-identifier-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
               <input
                 id="login-username"
                 class="form-input"
@@ -2369,7 +2406,7 @@
               </button>
             </div>
             <div class="input-with-icon">
-              <span class="input-icon">🔒</span>
+              <span class="input-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
               <input
                 id="login-password"
                 class="form-input"
@@ -2378,7 +2415,7 @@
                 required
                 autocomplete="current-password"
               />
-              <button type="button" class="btn-toggle-pwd" data-target="login-password" title="Toggle password visibility">👁️</button>
+              <button type="button" class="btn-toggle-pwd" data-target="login-password" title="Toggle password visibility"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
             </div>
           </div>
 
@@ -2405,7 +2442,7 @@
               Email <span class="badge-required">Required</span>
             </label>
             <div class="input-with-icon">
-              <span class="input-icon">✉️</span>
+              <span class="input-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg></span>
               <input
                 id="forgot-email"
                 class="form-input"
@@ -2427,7 +2464,7 @@
               OTP Code <span class="badge-required">Required</span>
             </label>
             <div class="input-with-icon">
-              <span class="input-icon">🔑</span>
+              <span class="input-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3L22 7l-3-3"/></svg></span>
               <input
                 id="forgot-otp"
                 class="form-input"
@@ -2446,7 +2483,7 @@
               New Password <span class="badge-required">Required</span>
             </label>
             <div class="input-with-icon">
-              <span class="input-icon">🔒</span>
+              <span class="input-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
               <input
                 id="forgot-new-password"
                 class="form-input"
@@ -2456,7 +2493,7 @@
                 minlength="6"
                 autocomplete="new-password"
               />
-              <button type="button" class="btn-toggle-pwd" data-target="forgot-new-password" title="Toggle password visibility">👁️</button>
+              <button type="button" class="btn-toggle-pwd" data-target="forgot-new-password" title="Toggle password visibility"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
             </div>
           </div>
 
@@ -2465,7 +2502,7 @@
               Confirm Password <span class="badge-required">Confirm</span>
             </label>
             <div class="input-with-icon">
-              <span class="input-icon">🔐</span>
+              <span class="input-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
               <input
                 id="forgot-confirm-password"
                 class="form-input"
@@ -2475,7 +2512,7 @@
                 minlength="6"
                 autocomplete="new-password"
               />
-              <button type="button" class="btn-toggle-pwd" data-target="forgot-confirm-password" title="Toggle password visibility">👁️</button>
+              <button type="button" class="btn-toggle-pwd" data-target="forgot-confirm-password" title="Toggle password visibility"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
             </div>
           </div>
 
@@ -2497,7 +2534,7 @@
               Username <span class="badge-required">Unique</span>
             </label>
             <div class="input-with-icon">
-              <span class="input-icon">👤</span>
+              <span class="input-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
               <input
                 id="reg-username"
                 class="form-input"
@@ -2517,7 +2554,7 @@
               Email <span class="badge-required">Required</span>
             </label>
             <div class="input-with-icon">
-              <span class="input-icon">✉️</span>
+              <span class="input-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg></span>
               <input
                 id="reg-email"
                 class="form-input"
@@ -2539,7 +2576,7 @@
               OTP Code <span class="badge-required">Verify</span>
             </label>
             <div class="input-with-icon">
-              <span class="input-icon">🔑</span>
+              <span class="input-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3L22 7l-3-3"/></svg></span>
               <input
                 id="reg-otp"
                 class="form-input"
@@ -2558,7 +2595,7 @@
               Display Name <span class="badge-optional">Optional</span>
             </label>
             <div class="input-with-icon">
-              <span class="input-icon">🏷️</span>
+              <span class="input-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg></span>
               <input
                 id="reg-display-name"
                 class="form-input"
@@ -2576,7 +2613,7 @@
               Password <span class="badge-required">Required</span>
             </label>
             <div class="input-with-icon">
-              <span class="input-icon">🔒</span>
+              <span class="input-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
               <input
                 id="reg-password"
                 class="form-input"
@@ -2586,7 +2623,7 @@
                 minlength="6"
                 autocomplete="new-password"
               />
-              <button type="button" class="btn-toggle-pwd" data-target="reg-password" title="Toggle password visibility">👁️</button>
+              <button type="button" class="btn-toggle-pwd" data-target="reg-password" title="Toggle password visibility"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
             </div>
           </div>
 
@@ -2595,7 +2632,7 @@
               Require Password <span class="badge-required">Confirm</span>
             </label>
             <div class="input-with-icon">
-              <span class="input-icon">🔐</span>
+              <span class="input-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
               <input
                 id="reg-confirm-password"
                 class="form-input"
@@ -2605,7 +2642,7 @@
                 minlength="6"
                 autocomplete="new-password"
               />
-              <button type="button" class="btn-toggle-pwd" data-target="reg-confirm-password" title="Toggle password visibility">👁️</button>
+              <button type="button" class="btn-toggle-pwd" data-target="reg-confirm-password" title="Toggle password visibility"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
             </div>
             <span class="field-hint">Must match password exactly.</span>
           </div>
@@ -2631,7 +2668,7 @@
         </div>
 
         <div id="link-email-alert" class="auth-alert hidden">
-          <span id="link-email-alert-icon">⚠️</span>
+          <span id="link-email-alert-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></span>
           <span id="link-email-alert-msg"></span>
         </div>
 
@@ -2641,7 +2678,7 @@
               Email <span class="badge-required">Required</span>
             </label>
             <div class="input-with-icon">
-              <span class="input-icon">✉️</span>
+              <span class="input-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg></span>
               <input
                 id="link-email-input"
                 class="form-input"
@@ -2663,7 +2700,7 @@
               OTP Code <span class="badge-required">Verify</span>
             </label>
             <div class="input-with-icon">
-              <span class="input-icon">🔑</span>
+              <span class="input-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3L22 7l-3-3"/></svg></span>
               <input
                 id="link-email-otp"
                 class="form-input"
@@ -2699,11 +2736,14 @@
         <div class="preview-box">
           <div class="preview-character-container">
             <div id="preview-name" class="preview-name-tag">Player</div>
-            <img id="preview-avatar" class="preview-avatar" alt="Character Preview" src="/assets/sprites/default/sprite1.png" />
+            <div class="preview-avatar-stack">
+              <img id="preview-avatar" class="preview-avatar" alt="Character Preview" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" />
+              <img id="preview-fashion-cloth" class="preview-avatar preview-fashion-layer hidden" alt="" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" />
+            </div>
           </div>
           <!-- Direction Preview Switcher (Hidden: only still preview is displayed) -->
           <div id="preview-directions-bar" class="preview-directions-bar hidden" style="display: none;">
-            <button type="button" class="preview-dir-btn active" data-dir="idle" title="Standing Still">🧍 Still</button>
+            <button type="button" class="preview-dir-btn active" data-dir="idle" title="Standing Still">Still</button>
           </div>
           <div id="preview-status-hint" class="preview-status-hint">Default template (idle)</div>
         </div>
@@ -2749,10 +2789,29 @@
             </div>
           </div>
 
+          <!-- Wardrobe Trigger (Visible when Default template is selected) -->
+          <div id="fashion-picker-group" class="form-group fashion-picker-group">
+            <label class="form-label">
+              Appearance <span class="badge-optional">Default Character</span>
+            </label>
+            <button type="button" id="btn-open-wardrobe" class="btn-wardrobe-trigger">
+              <span class="wardrobe-trigger-icon" aria-hidden="true">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M20.38 3.46L16 2a4 4 0 0 1-8 0L3.62 3.46a2 2 0 0 0-1.34 2.23l.58 3.47a1 1 0 0 0 .99.84H6v10c0 1.1.9 2 2 2h8a2 2 0 0 0 2-2V10h2.15a1 1 0 0 0 .99-.84l.58-3.47a2 2 0 0 0-1.34-2.23z"/>
+                </svg>
+              </span>
+              <span class="wardrobe-trigger-text">
+                <span class="wardrobe-trigger-title">Wardrobe</span>
+                <span id="wardrobe-trigger-summary" class="wardrobe-trigger-sub">Customize shirt, pants & skin</span>
+              </span>
+              <span class="wardrobe-trigger-chevron" aria-hidden="true">›</span>
+            </button>
+          </div>
+
           <!-- Section 2: Upload Pictures Form (Hidden for now) -->
           <div id="upload-pictures-section" class="input-section hidden" style="display: none;">
             <div class="section-notice">
-              <span class="notice-icon">💡</span>
+              <span class="notice-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.3 1 2.3h6c0-1 .4-1.8 1-2.3A7 7 0 0 0 12 2z"/></svg></span>
               <span class="notice-text">
                 Upload custom sprites to personalize your character. Any empty movement directions will automatically use the default male character movements!
               </span>
@@ -2760,7 +2819,7 @@
 
             <div class="demo-sprites-row">
               <button type="button" id="btn-load-demo-sprites" class="btn-demo-sprites">
-                ✨ Reset to Default Male Sprites
+                Reset to Default Male Sprites
               </button>
               <button type="button" id="btn-clear-all-sprites" class="btn-demo-sprites secondary">
                 ✕ Clear All
@@ -2772,7 +2831,7 @@
               <div class="upload-slot-card primary-slot" id="slot-card-idle">
                 <div class="upload-slot-header">
                   <div class="slot-badge-group">
-                    <span class="slot-icon">🧍</span>
+                    <span class="slot-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
                     <span class="slot-title">Standing Still</span>
                     <span class="badge-required">Required</span>
                     <span class="badge-frame-counter" id="badge-counter-idle">0 / 6</span>
@@ -2808,7 +2867,7 @@
                 <div class="upload-slot-card" id="slot-card-right">
                   <div class="upload-slot-header">
                     <div class="slot-badge-group">
-                      <span class="slot-icon">➡️</span>
+                      <span class="slot-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></span>
                       <span class="slot-title">Right</span>
                       <span class="badge-frame-counter" id="badge-counter-right">0 / 6</span>
                     </div>
@@ -2865,19 +2924,60 @@
       </div>
     </div>
 
+    <!-- Modal: Wardrobe (Fashion Customization) -->
+    <div id="wardrobe-modal" class="modal-overlay wardrobe-modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="wardrobe-modal-title">
+      <div class="modal-card wardrobe-modal-card">
+        <div class="modal-header">
+          <div class="modal-header-row">
+            <h2 id="wardrobe-modal-title" class="modal-title">Wardrobe</h2>
+            <button type="button" id="btn-close-wardrobe-modal" class="btn-modal-close" title="Close">✕</button>
+          </div>
+        </div>
+
+        <!-- Live Outfit Preview -->
+        <div class="preview-box wardrobe-preview-box">
+          <div class="preview-character-container">
+            <div class="preview-avatar-stack">
+              <img id="wardrobe-preview-avatar" class="preview-avatar" alt="Wardrobe Character Preview" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" />
+            </div>
+          </div>
+          <div class="preview-status-hint" id="wardrobe-preview-hint">Default Character Outfit</div>
+        </div>
+
+        <div class="fashion-tabs" role="tablist" aria-label="Fashion categories">
+          <button type="button" class="fashion-tab-btn active" data-fashion-tab="cloth" role="tab" aria-selected="true">Cloth</button>
+          <button type="button" class="fashion-tab-btn" data-fashion-tab="pants" role="tab" aria-selected="false">Pants</button>
+          <button type="button" class="fashion-tab-btn" data-fashion-tab="skin" role="tab" aria-selected="false">Skin</button>
+          <button type="button" class="fashion-tab-btn" data-fashion-tab="hair" role="tab" aria-selected="false">Hair</button>
+        </div>
+
+        <div id="fashion-items-grid" class="fashion-items-grid">
+          <!-- Dynamically populated per tab -->
+        </div>
+
+        <div id="fashion-color-row" class="fashion-color-row hidden"></div>
+
+        <div class="modal-footer-actions wardrobe-modal-footer">
+          <button type="button" id="btn-save-wardrobe" class="btn-primary">
+            Done
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- Modal: My Space Settings & Invitation Whitelist -->
     <div id="my-space-settings-modal" class="modal-overlay hidden">
       <div class="modal-card space-settings-card">
         <div class="modal-header">
           <div class="modal-header-row">
-            <h2 class="modal-title">⚙️ My Space Settings</h2>
+            <h2 class="modal-title">My Space Settings</h2>
             <button type="button" id="btn-close-my-space-settings" class="btn-modal-close" title="Close">✕</button>
           </div>
         </div>
 
         <form id="my-space-settings-form">
           <div id="my-space-owner-banner" class="shared-owner-banner hidden">
-            <span>🏠</span>
+            <span><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10.5L12 3l9 7.5"/><path d="M5 9.5V20a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9.5"/><path d="M9 21V13h6v8"/></svg></span>
             <span>Primary Owner: <strong id="my-space-owner-name">@owner</strong> (Shared House)</span>
           </div>
 
@@ -2914,7 +3014,7 @@
               </label>
               <div class="whitelist-input-row">
                 <div class="input-with-icon flex-1">
-                  <span class="input-icon">👤</span>
+                  <span class="input-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
                   <input
                     id="my-space-invite-username"
                     class="form-input"
@@ -2945,11 +3045,11 @@
           <div id="my-space-sharing-section" class="whitelist-manager-section space-sharing-section">
             <div class="form-group">
               <label class="form-label">
-                🏠 Space Sharing (Housemates) <span class="badge-coowner">Co-Owners</span>
+                Space Sharing (Housemates) <span class="badge-coowner">Co-Owners</span>
               </label>
               <div class="whitelist-input-row">
                 <div class="input-with-icon flex-1">
-                  <span class="input-icon">🤝</span>
+                  <span class="input-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>
                   <select id="my-space-share-friend-select" class="form-input">
                     <option value="">Select a friend to share with...</option>
                   </select>
@@ -2985,7 +3085,7 @@
       <div class="modal-card space-settings-card">
         <div class="modal-header">
           <div class="modal-header-row">
-            <h2 id="admin-space-modal-title" class="modal-title">🌌 Create New Space</h2>
+            <h2 id="admin-space-modal-title" class="modal-title">Create New Space</h2>
             <button type="button" id="btn-close-admin-space-modal" class="btn-modal-close" title="Close">✕</button>
           </div>
         </div>
@@ -3006,24 +3106,17 @@
           </div>
 
           <div class="form-group">
-            <label class="form-label" for="admin-space-category-select">Category</label>
-            <div class="category-select-row">
-              <select id="admin-space-category-select" class="form-select">
-                <option value="Town Square">Town Square</option>
-                <option value="Hangout Lounges">Hangout Lounges</option>
-                <option value="Gaming Zones">Gaming Zones</option>
-                <option value="Chill Parks">Chill Parks</option>
-                <option value="__custom__">+ Custom Category...</option>
-              </select>
-              <input
-                id="admin-space-category-custom"
-                class="form-input hidden"
-                type="text"
-                placeholder="Type new category..."
-                maxlength="30"
-              />
-            </div>
-            <span class="field-hint">Spaces in the side panel are organized by this category.</span>
+            <label class="form-label" for="admin-space-focus-theme">Focus Room Animation Theme</label>
+            <select id="admin-space-focus-theme" class="form-select">
+              <option value="auto">Auto-Detect (Name / Assets)</option>
+              <option value="office">Office (Working on PC)</option>
+              <option value="lounge">Cozy Lounge / Cafe</option>
+              <option value="park">Park / Campfire</option>
+              <option value="guild">Adventure Guild</option>
+              <option value="living_room">Living Room / Home Study</option>
+              <option value="pet_shop">Pet Shop / Cat Corner</option>
+            </select>
+            <span class="field-hint">Animated theme shown when players go idle (1m) or enter Focus Room in this space.</span>
           </div>
 
           <div class="form-group switch-group">
@@ -3047,7 +3140,7 @@
               </label>
               <div class="whitelist-input-row">
                 <div class="input-with-icon flex-1">
-                  <span class="input-icon">👤</span>
+                  <span class="input-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
                   <input
                     id="admin-space-invite-username"
                     class="form-input"
@@ -3088,7 +3181,7 @@
       <div class="modal-card private-zone-modal-card">
         <div class="modal-header">
           <div class="modal-header-row">
-            <h2 class="modal-title" id="private-zone-modal-title">🔒 Name Private Area</h2>
+            <h2 class="modal-title" id="private-zone-modal-title">Name Private Area</h2>
             <button type="button" id="btn-close-private-zone-modal" class="btn-modal-close" title="Close">✕</button>
           </div>
         </div>
@@ -3098,7 +3191,7 @@
           <div class="form-group">
             <label class="form-label" for="private-zone-input-name">Area Name</label>
             <div class="input-with-icon">
-              <span class="input-icon">🏷️</span>
+              <span class="input-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg></span>
               <input
                 id="private-zone-input-name"
                 class="form-input"
@@ -3123,39 +3216,36 @@
       </div>
     </div>
 
-    <!-- Modal: Spaces & Map Picker (Grid of 4 with Category Tabs) -->
-    <div id="map-modal" class="modal-overlay hidden">
+    <!-- Modal: Spaces & Map Picker -->
+    <div id="map-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="map-modal-title">
       <div class="modal-card map-picker-card">
         <div class="modal-header map-picker-header">
-          <div class="modal-header-row">
+          <div class="modal-header-row map-header-row">
             <div class="map-header-title-box">
-              <span class="map-header-icon">🗺️</span>
-              <div>
-                <h2 class="modal-title">Select Destination</h2>
-                <div class="current-space-chip">
-                  <span class="status-dot"></span>
-                  <span>Currently at: <strong id="map-current-space-name">CO3</strong></span>
-                </div>
+              <h2 id="map-modal-title" class="modal-title map-modal-title">Select Destination</h2>
+              <div class="current-space-chip">
+                <span class="status-dot"></span>
+                <span id="map-current-space-name">CO3</span>
               </div>
             </div>
             <div class="map-header-actions">
-              <button type="button" id="btn-admin-add-space" class="btn-primary btn-add-space-header hidden">
-                + Create Space
+              <button type="button" id="btn-admin-add-space" class="btn-add-space-header hidden" title="Create Space">
+                + New
               </button>
-              <button type="button" id="btn-close-map-modal" class="btn-modal-close" title="Close">✕</button>
+              <button type="button" id="btn-close-map-modal" class="btn-modal-close" title="Close" aria-label="Close">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <line x1="18" y1="6" x2="6" y2="18"/>
+                  <line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+              </button>
             </div>
-          </div>
-
-          <!-- Category Tabs at Top -->
-          <div id="map-category-tabs" class="map-category-tabs">
-            <!-- Dynamically populated category buttons -->
           </div>
         </div>
 
-        <!-- Tab Content: Spaces in Grid of 4 -->
+        <!-- Destinations Grid / List -->
         <div class="map-picker-body">
           <div id="map-spaces-grid" class="map-spaces-grid">
-            <!-- Dynamically populated grid of 4 space cards -->
+            <!-- Dynamically populated destination items -->
           </div>
         </div>
       </div>
@@ -3167,7 +3257,7 @@
         <div class="modal-header">
           <div class="modal-header-row">
             <div class="space-error-header-title">
-              <span id="space-error-icon" class="space-error-icon">🔒</span>
+              <span id="space-error-icon" class="space-error-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
               <h2 id="space-error-title" class="modal-title">Access Denied</h2>
             </div>
             <button type="button" id="btn-close-space-error-modal" class="btn-modal-close" title="Close">✕</button>
@@ -3185,7 +3275,7 @@
           <div class="space-error-return-box">
             <span class="space-error-return-label">Returned to:</span>
             <div class="space-error-return-target">
-              <span class="space-error-return-icon">🏠</span>
+              <span class="space-error-return-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10.5L12 3l9 7.5"/><path d="M5 9.5V20a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9.5"/><path d="M9 21V13h6v8"/></svg></span>
               <span id="space-error-return-name" class="space-error-return-name">CO3</span>
             </div>
           </div>
@@ -3194,6 +3284,181 @@
         <div class="modal-footer-actions">
           <button type="button" id="btn-space-error-ok" class="btn-primary w-full">
             Understood
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal: Profile Menu -->
+    <div id="profile-menu-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="profile-modal-user-name">
+      <div class="modal-card profile-modal-card">
+        <!-- Section 1: User Info -->
+        <div class="profile-modal-user-section">
+          <div class="profile-modal-user-left">
+            <div class="profile-modal-avatar-wrap">
+              <img id="profile-modal-avatar-img" class="profile-modal-avatar-img" alt="Avatar" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" />
+              <span id="profile-modal-status-dot" class="profile-modal-status-dot" title="Online"></span>
+            </div>
+            <div class="profile-modal-user-meta">
+              <div class="profile-modal-name-row">
+                <h2 id="profile-modal-user-name" class="profile-modal-user-name">Player</h2>
+                <span id="profile-modal-admin-badge" class="profile-modal-admin-badge hidden" title="Superadmin">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+                  </svg>
+                  <span>Admin</span>
+                </span>
+              </div>
+              <div class="profile-modal-sub-row">
+                <span id="profile-modal-username" class="profile-modal-username">@player</span>
+                <span class="profile-modal-parking-pill" title="Focus Points balance">
+                  <img src="/assets/icons/focus_point.png" class="fp-icon" alt="FP" />
+                  <span id="dropdown-focus-points-val">0 FP</span>
+                </span>
+              </div>
+            </div>
+          </div>
+          <button type="button" id="btn-close-profile-modal" class="btn-modal-close" title="Close" aria-label="Close">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <line x1="18" y1="6" x2="6" y2="18"/>
+              <line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        </div>
+
+        <!-- Section 2: Grid Menu -->
+        <div class="profile-modal-grid">
+          <button type="button" id="dropdown-my-space-btn" class="profile-grid-item">
+            <span id="dropdown-my-space-icon" class="profile-grid-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 10.5L12 3l9 7.5"/>
+                <path d="M5 9.5V20a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9.5"/>
+                <path d="M9 21V13h6v8"/>
+              </svg>
+            </span>
+            <span class="profile-grid-text">
+              <span id="dropdown-my-space-title" class="profile-grid-title">Go to my space</span>
+              <span id="dropdown-my-space-sub" class="profile-grid-sub">Enter personal space</span>
+            </span>
+          </button>
+
+          <button type="button" id="dropdown-friends-btn" class="profile-grid-item">
+            <span class="profile-grid-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+                <circle cx="9" cy="7" r="4"/>
+                <path d="M22 21v-2a4 4 0 0 0-3-3.87"/>
+                <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+              </svg>
+            </span>
+            <span class="profile-grid-text">
+              <span class="profile-grid-title">Friends <span id="dropdown-friends-badge" class="friends-req-badge hidden">0</span></span>
+              <span class="profile-grid-sub">View friends & requests</span>
+            </span>
+          </button>
+
+          <button type="button" id="dropdown-organisations-btn" class="profile-grid-item">
+            <span class="profile-grid-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="3" width="18" height="18" rx="2"/>
+                <path d="M9 3v18"/>
+                <path d="M13 8h4"/>
+                <path d="M13 12h4"/>
+                <path d="M13 16h4"/>
+              </svg>
+            </span>
+            <span class="profile-grid-text">
+              <span class="profile-grid-title">Organisations</span>
+              <span class="profile-grid-sub">Create & manage organisations</span>
+            </span>
+          </button>
+
+          <button type="button" id="dropdown-notes-btn" class="profile-grid-item">
+            <span class="profile-grid-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <polyline points="14 2 14 8 20 8"/>
+                <line x1="8" y1="13" x2="16" y2="13"/>
+                <line x1="8" y1="17" x2="13" y2="17"/>
+              </svg>
+            </span>
+            <span class="profile-grid-text">
+              <span class="profile-grid-title">Notes</span>
+              <span class="profile-grid-sub">Personal, space & organisation notes</span>
+            </span>
+          </button>
+
+          <button type="button" id="dropdown-calendar-btn" class="profile-grid-item">
+            <span class="profile-grid-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                <line x1="16" y1="2" x2="16" y2="6"/>
+                <line x1="8" y1="2" x2="8" y2="6"/>
+                <line x1="3" y1="10" x2="21" y2="10"/>
+              </svg>
+            </span>
+            <span class="profile-grid-text">
+              <span class="profile-grid-title">Calendar</span>
+              <span class="profile-grid-sub">Personal, space & organisation calendar</span>
+            </span>
+          </button>
+
+          <button type="button" id="dropdown-update-char-btn" class="profile-grid-item">
+            <span class="profile-grid-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="8" r="4"/>
+                <path d="M4 20a8 8 0 0 1 16 0"/>
+              </svg>
+            </span>
+            <span class="profile-grid-text">
+              <span class="profile-grid-title">Wardrobe</span>
+              <span class="profile-grid-sub">Customize avatar & appearance</span>
+            </span>
+          </button>
+
+          <button type="button" id="dropdown-edit-space-btn" class="profile-grid-item mobile-only-dropdown-item hidden">
+            <span class="profile-grid-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="4" y1="21" x2="4" y2="14"/>
+                <line x1="4" y1="10" x2="4" y2="3"/>
+                <line x1="12" y1="21" x2="12" y2="12"/>
+                <line x1="12" y1="8" x2="12" y2="3"/>
+                <line x1="20" y1="21" x2="20" y2="16"/>
+                <line x1="20" y1="12" x2="20" y2="3"/>
+                <line x1="1" y1="14" x2="7" y2="14"/>
+                <line x1="9" y1="8" x2="15" y2="8"/>
+                <line x1="17" y1="16" x2="23" y2="16"/>
+              </svg>
+            </span>
+            <span class="profile-grid-text">
+              <span class="profile-grid-title">Edit space info</span>
+              <span class="profile-grid-sub">Manage space name & settings</span>
+            </span>
+          </button>
+
+          <button type="button" id="dropdown-edit-map-btn" class="profile-grid-item mobile-only-dropdown-item hidden">
+            <span class="profile-grid-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 20h9"/>
+                <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+              </svg>
+            </span>
+            <span class="profile-grid-text">
+              <span class="profile-grid-title">Edit map</span>
+              <span class="profile-grid-sub">Customize tiles & decorations</span>
+            </span>
+          </button>
+        </div>
+
+        <!-- Section 3: Bottom Logout Section (Aligned Right) -->
+        <div class="profile-modal-footer">
+          <button type="button" id="dropdown-logout-btn" class="profile-modal-logout-btn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+              <polyline points="16 17 21 12 16 7"/>
+              <line x1="21" y1="12" x2="9" y2="12"/>
+            </svg>
+            <span>Logout</span>
           </button>
         </div>
       </div>
@@ -3251,166 +3516,166 @@
         <div class="modal-header jukebox-modal-header">
           <div class="modal-header-row">
             <div class="jukebox-header-title-box">
-              <span class="jukebox-header-icon">📻</span>
-              <div>
-                <h2 id="jukebox-modal-title" class="modal-title">YouTube Jukebox</h2>
-              </div>
+              <span class="jukebox-header-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="8" width="18" height="12" rx="2"/><path d="M7 8l9-5"/><circle cx="8" cy="14" r="2"/><line x1="14" y1="12" x2="17" y2="12"/><line x1="14" y1="16" x2="17" y2="16"/></svg></span>
+              <h2 id="jukebox-modal-title" class="modal-title">Jukebox</h2>
             </div>
-            <button type="button" id="btn-close-jukebox-modal" class="btn-modal-close" title="Close">✕</button>
+            <button type="button" id="btn-close-jukebox-modal" class="btn-modal-close" title="Close" aria-label="Close Jukebox">✕</button>
           </div>
         </div>
 
-        <!-- Jukebox Now Playing Hero Card -->
-        <div class="jukebox-now-playing-box" id="jukebox-now-playing-box">
-          <div class="now-playing-status-row">
-            <span class="now-playing-badge" id="jukebox-status-badge">🎶 NOW PLAYING</span>
-            <span class="now-playing-loop-badge">🔁 AUTO-LOOPING</span>
-          </div>
+        <div class="jukebox-modal-body">
+          <div class="jukebox-controls-pane">
+            <!-- Jukebox Now Playing Compact Card -->
+            <div class="jukebox-now-playing-box" id="jukebox-now-playing-box">
+              <div class="jukebox-now-playing-main">
+                <!-- Video Frame Container (YouTube player shown directly in Now Playing) -->
+                <div class="jukebox-video-frame-container" id="jukebox-video-frame-container">
+                  <div class="jukebox-player-body placeholder-active" id="jukebox-player-body">
+                    <div id="youtube-jukebox-iframe"></div>
+                    <div id="jukebox-player-error-overlay" class="jukebox-player-error-overlay hidden">
+                      <span class="player-error-badge">Restricted</span>
+                      <a id="btn-player-open-external" href="#" target="_blank" rel="noopener noreferrer" class="btn-player-link">YouTube ↗</a>
+                    </div>
+                  </div>
 
-          <!-- Video Frame Container (YouTube player shown directly in Now Playing) -->
-          <div class="jukebox-video-frame-container" id="jukebox-video-frame-container">
-            <div class="jukebox-player-body placeholder-active" id="jukebox-player-body">
-              <div id="youtube-jukebox-iframe"></div>
-              <div id="jukebox-player-error-overlay" class="jukebox-player-error-overlay hidden">
-                <span class="player-error-badge">⚠️ Embed Restricted</span>
-                <p class="player-error-desc">Video owner restricted playback in third-party players</p>
-                <a id="btn-player-open-external" href="#" target="_blank" rel="noopener noreferrer" class="btn-player-link">Watch on YouTube ↗</a>
+                  <!-- Empty State / Placeholder when no track is playing -->
+                  <div id="jukebox-video-placeholder" class="jukebox-video-placeholder">
+                    <div class="now-playing-disc-spin" id="jukebox-disc-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="8" width="18" height="12" rx="2"/><path d="M7 8l9-5"/><circle cx="8" cy="14" r="2"/><line x1="14" y1="12" x2="17" y2="12"/><line x1="14" y1="16" x2="17" y2="16"/></svg></div>
+                  </div>
+                </div>
+
+                <!-- Active Track Info & Controls -->
+                <div class="now-playing-details">
+                  <div class="now-playing-status-row">
+                    <span class="now-playing-badge" id="jukebox-status-badge">IDLE</span>
+                  </div>
+
+                  <div class="now-playing-track-info" id="jukebox-track-info">
+                    <div class="now-playing-meta">
+                      <h3 class="now-playing-title" id="jukebox-now-playing-title">Playlist Empty</h3>
+                      <p class="now-playing-submitter" id="jukebox-now-playing-submitter">Add a YouTube link below to start</p>
+                    </div>
+                  </div>
+
+                  <div class="now-playing-controls-row">
+                    <button type="button" id="btn-jukebox-play-pause" class="btn-jukebox-control" title="Pause playback">
+                      <span id="btn-jukebox-play-pause-icon" aria-hidden="true"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg></span>
+                      <span id="btn-jukebox-play-pause-text">Pause</span>
+                    </button>
+                    <button type="button" id="btn-jukebox-skip" class="btn-jukebox-control" title="Skip to next track">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="5 4 15 12 5 20 5 4"/><rect x="17" y="4" width="3" height="16" rx="1"/></svg>
+                      <span>Skip</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Jukebox Track Error Alert Banner -->
+              <div id="jukebox-error-banner" class="jukebox-error-banner hidden" role="alert">
+                <div class="jukebox-error-content">
+                  <span class="jukebox-error-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></span>
+                  <div class="jukebox-error-text">
+                    <span class="jukebox-error-title" id="jukebox-error-title">Embedding Restricted (Error 150)</span>
+                    <p class="jukebox-error-desc" id="jukebox-error-desc">The video owner restricted playback in third-party embedded players.</p>
+                  </div>
+                </div>
+                <div class="jukebox-error-actions">
+                  <a id="btn-jukebox-open-youtube" href="#" target="_blank" rel="noopener noreferrer" class="btn-jukebox-external">Open ↗</a>
+                  <button type="button" id="btn-jukebox-error-skip" class="btn-jukebox-error-skip">Skip</button>
+                </div>
               </div>
             </div>
 
-            <!-- Empty State / Placeholder when no track is playing -->
-            <div id="jukebox-video-placeholder" class="jukebox-video-placeholder">
-              <div class="now-playing-disc-spin" id="jukebox-disc-icon">📻</div>
-              <div class="video-placeholder-meta">
-                <p class="video-placeholder-title">No Video Playing</p>
-                <span class="video-placeholder-sub">Add a YouTube link below to start</span>
-              </div>
-            </div>
-          </div>
-
-          <!-- Active Track Info (Always visible whether playing, paused, or idle) -->
-          <div class="now-playing-track-info" id="jukebox-track-info">
-            <div class="now-playing-meta">
-              <h3 class="now-playing-title" id="jukebox-now-playing-title">Playlist Empty</h3>
-              <p class="now-playing-submitter" id="jukebox-now-playing-submitter">Add a YouTube link below to start playing</p>
-            </div>
-          </div>
-
-          <div class="now-playing-controls-row">
-            <button type="button" id="btn-jukebox-play-pause" class="btn-jukebox-control" title="Pause playback">
-              <span id="btn-jukebox-play-pause-icon">⏸️</span>
-              <span id="btn-jukebox-play-pause-text">Pause</span>
-            </button>
-            <button type="button" id="btn-jukebox-skip" class="btn-jukebox-control" title="Skip to next track">
-              <span>⏭️ Skip Track</span>
-            </button>
-          </div>
-
-          <!-- Jukebox Track Error Alert Banner -->
-          <div id="jukebox-error-banner" class="jukebox-error-banner hidden" role="alert">
-            <div class="jukebox-error-content">
-              <span class="jukebox-error-icon">⚠️</span>
-              <div class="jukebox-error-text">
-                <span class="jukebox-error-title" id="jukebox-error-title">Embedding Restricted (Error 150)</span>
-                <p class="jukebox-error-desc" id="jukebox-error-desc">The video owner restricted playback in third-party embedded players. Please try another YouTube link (e.g. lyric videos, covers, or audio uploads).</p>
-              </div>
-            </div>
-            <div class="jukebox-error-actions">
-              <a id="btn-jukebox-open-youtube" href="#" target="_blank" rel="noopener noreferrer" class="btn-jukebox-external">Open on YouTube ↗</a>
-              <button type="button" id="btn-jukebox-error-skip" class="btn-jukebox-error-skip">Skip Track ⏭</button>
-            </div>
-          </div>
-        </div>
-
-        <!-- Jukebox Add Form Mode Tabs -->
-        <div class="jukebox-tabs-row" role="tablist">
-          <button type="button" id="tab-jukebox-single" class="jukebox-tab-btn active" role="tab" aria-selected="true">
-            <span>🎵 Single Track</span>
-          </button>
-          <button type="button" id="tab-jukebox-playlist" class="jukebox-tab-btn" role="tab" aria-selected="false">
-            <span>📑 Upload Playlist Link</span>
-          </button>
-        </div>
-
-        <!-- Add Single Track Form -->
-        <form id="jukebox-add-track-form" class="jukebox-add-form">
-          <label class="form-label" for="jukebox-url-input">Add Single Video</label>
-          <div class="jukebox-input-group">
-            <input
-              type="text"
-              id="jukebox-url-input"
-              class="input-text jukebox-url-input"
-              placeholder="Paste YouTube link (https://youtu.be/... or ID)"
-              autocomplete="off"
-            />
-            <button type="submit" id="btn-jukebox-add" class="btn-primary btn-jukebox-add">
-              <span>➕ Add Song</span>
-            </button>
-          </div>
-          <span class="field-hint" id="jukebox-add-hint">Paste YouTube, YouTube Music, or Shorts link. You can also paste playlist links directly.</span>
-        </form>
-
-        <!-- Add / Upload Playlist Link Form -->
-        <form id="jukebox-add-playlist-form" class="jukebox-add-form hidden">
-          <label class="form-label" for="jukebox-playlist-input">Upload / Import YouTube Playlist</label>
-          <div class="jukebox-input-group">
-            <input
-              type="text"
-              id="jukebox-playlist-input"
-              class="input-text jukebox-url-input"
-              placeholder="Paste YouTube playlist link (https://youtube.com/playlist?list=...)"
-              autocomplete="off"
-            />
-            <button type="submit" id="btn-jukebox-add-playlist" class="btn-primary btn-jukebox-add">
-              <span id="btn-jukebox-playlist-label">📥 Extract Videos</span>
-            </button>
-          </div>
-          <div class="jukebox-playlist-actions-row">
-            <span class="field-hint" id="jukebox-playlist-hint">Extracts all videos in the playlist and queues them into the jukebox.</span>
-            <label for="jukebox-playlist-file-input" class="btn-jukebox-file-upload" title="Upload a file containing a playlist link (.txt / .m3u)">
-              <span>📁 Upload Link File</span>
-            </label>
-            <input type="file" id="jukebox-playlist-file-input" accept=".txt,.m3u,.json,.csv" class="hidden" />
-          </div>
-        </form>
-
-        <!-- Dynamic Action / Loading Feedback Banner -->
-        <div id="jukebox-action-status" class="jukebox-action-status hidden" role="status">
-          <span class="jukebox-status-icon" id="jukebox-status-icon">⏳</span>
-          <span class="jukebox-status-text" id="jukebox-status-text">Extracting playlist videos...</span>
-        </div>
-
-        <!-- Playlist Queue Section -->
-        <div class="jukebox-queue-section">
-          <div class="jukebox-queue-header">
-            <span class="queue-heading">Playlist Queue</span>
-            <div class="jukebox-queue-header-actions">
-              <span class="queue-count-badge" id="jukebox-queue-count">0 tracks</span>
-              <button type="button" id="btn-jukebox-clear-list" class="btn-queue-clear-list" title="Clear entire playlist" disabled>
-                <span>🧹 Clear List</span>
+            <!-- Jukebox Add Form Mode Tabs -->
+            <div class="jukebox-tabs-row" role="tablist">
+              <button type="button" id="tab-jukebox-single" class="jukebox-tab-btn active" role="tab" aria-selected="true">
+                <span>Add Track</span>
+              </button>
+              <button type="button" id="tab-jukebox-playlist" class="jukebox-tab-btn" role="tab" aria-selected="false">
+                <span>Import Playlist</span>
               </button>
             </div>
-          </div>
 
-          <!-- Bulk Selection Toolbar -->
-          <div id="jukebox-bulk-toolbar" class="jukebox-bulk-toolbar hidden">
-            <label class="jukebox-select-all-label" for="jukebox-select-all-checkbox">
-              <input type="checkbox" id="jukebox-select-all-checkbox" class="jukebox-track-checkbox" />
-              <span>Select All</span>
-            </label>
-            <span id="jukebox-selected-count" class="jukebox-selected-count">0 selected</span>
-            <div class="jukebox-bulk-actions">
-              <button type="button" id="btn-jukebox-bulk-up" class="btn-queue-bulk" title="Move selected tracks up" disabled>▲ Up</button>
-              <button type="button" id="btn-jukebox-bulk-down" class="btn-queue-bulk" title="Move selected tracks down" disabled>▼ Down</button>
-              <button type="button" id="btn-jukebox-bulk-delete" class="btn-queue-bulk btn-queue-bulk-delete" title="Delete selected tracks" disabled>🗑️ Delete</button>
+            <!-- Add Single Track Form -->
+            <form id="jukebox-add-track-form" class="jukebox-add-form">
+              <div class="jukebox-input-group">
+                <input
+                  type="text"
+                  id="jukebox-url-input"
+                  class="input-text jukebox-url-input"
+                  aria-label="YouTube track or playlist link"
+                  placeholder="Paste YouTube or playlist link..."
+                  autocomplete="off"
+                />
+                <button type="submit" id="btn-jukebox-add" class="btn-primary btn-jukebox-add">
+                  <span>Add</span>
+                </button>
+              </div>
+            </form>
+
+            <!-- Add / Upload Playlist Link Form -->
+            <form id="jukebox-add-playlist-form" class="jukebox-add-form hidden">
+              <div class="jukebox-input-group">
+                <input
+                  type="text"
+                  id="jukebox-playlist-input"
+                  class="input-text jukebox-url-input"
+                  aria-label="YouTube playlist link"
+                  placeholder="Paste YouTube playlist URL..."
+                  autocomplete="off"
+                />
+                <button type="submit" id="btn-jukebox-add-playlist" class="btn-primary btn-jukebox-add">
+                  <span id="btn-jukebox-playlist-label">Extract</span>
+                </button>
+              </div>
+              <div class="jukebox-playlist-actions-row">
+                <span class="field-hint" id="jukebox-playlist-hint">Import links from a file</span>
+                <label for="jukebox-playlist-file-input" class="btn-jukebox-file-upload" title="Upload a file containing a playlist link (.txt / .m3u)">
+                  <span>Upload File (.txt / .m3u)</span>
+                </label>
+                <input type="file" id="jukebox-playlist-file-input" accept=".txt,.m3u,.json,.csv" class="hidden" />
+              </div>
+            </form>
+
+            <!-- Dynamic Action / Loading Feedback Banner -->
+            <div id="jukebox-action-status" class="jukebox-action-status hidden" role="status">
+              <span class="jukebox-status-icon" id="jukebox-status-icon">⏳</span>
+              <span class="jukebox-status-text" id="jukebox-status-text">Extracting playlist videos...</span>
             </div>
           </div>
 
-          <div class="jukebox-queue-list" id="jukebox-queue-list">
-            <div class="jukebox-empty-queue">
-              <span class="empty-queue-icon">🎵</span>
-              <p>The playlist is empty.</p>
-              <span class="empty-queue-sub">Paste a YouTube link above to start the jukebox!</span>
+          <!-- Playlist Queue Section -->
+          <div class="jukebox-queue-section">
+            <div class="jukebox-queue-header">
+              <div class="jukebox-queue-title-group">
+                <span class="queue-heading">Playlist</span>
+                <span class="queue-count-badge" id="jukebox-queue-count">0 tracks</span>
+              </div>
+              <button type="button" id="btn-jukebox-clear-list" class="btn-queue-clear-list" title="Clear entire playlist" disabled>
+                <span>Clear</span>
+              </button>
+            </div>
+
+            <!-- Bulk Selection Toolbar -->
+            <div id="jukebox-bulk-toolbar" class="jukebox-bulk-toolbar hidden">
+              <label class="jukebox-select-all-label" for="jukebox-select-all-checkbox">
+                <input type="checkbox" id="jukebox-select-all-checkbox" class="jukebox-track-checkbox" />
+                <span>All</span>
+              </label>
+              <span id="jukebox-selected-count" class="jukebox-selected-count">0 selected</span>
+              <div class="jukebox-bulk-actions">
+                <button type="button" id="btn-jukebox-bulk-up" class="btn-queue-bulk" title="Move selected tracks up" aria-label="Move selected tracks up" disabled>▲</button>
+                <button type="button" id="btn-jukebox-bulk-down" class="btn-queue-bulk" title="Move selected tracks down" aria-label="Move selected tracks down" disabled>▼</button>
+                <button type="button" id="btn-jukebox-bulk-delete" class="btn-queue-bulk btn-queue-bulk-delete" title="Delete selected tracks" disabled>Delete</button>
+              </div>
+            </div>
+
+            <div class="jukebox-queue-list" id="jukebox-queue-list">
+              <div class="jukebox-empty-queue">
+                <span class="empty-queue-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg></span>
+                <p>The playlist is empty.</p>
+                <span class="empty-queue-sub">Paste a YouTube link above to start!</span>
+              </div>
             </div>
           </div>
         </div>
@@ -3434,7 +3699,7 @@
 
         <!-- Viewer / Spectator Banner -->
         <div id="typerace-viewer-banner" class="typerace-viewer-banner hidden">
-          <span class="viewer-banner-icon">👀</span>
+          <span class="viewer-banner-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></span>
           <div class="viewer-banner-info">
             <strong>Spectator Mode</strong>
             <span>A match is currently in progress. You are watching live and will automatically join the next round!</span>
@@ -3483,7 +3748,7 @@
           <!-- Race Track (all racers' progress bars & positions) -->
           <div class="typerace-track-section">
             <div class="track-header-row">
-              <span class="track-heading">🏁 Live Race Track</span>
+              <span class="track-heading">Live Race Track</span>
               <span class="track-status" id="typerace-race-status-text">Typing in progress...</span>
             </div>
             <div class="typerace-track-lanes" id="typerace-track-lanes">
@@ -3533,7 +3798,7 @@
 
             <!-- Finished Alert (Shown to player once they cross the finish line) -->
             <div id="typerace-finished-banner" class="typerace-finished-banner hidden">
-              <span class="finished-banner-icon">🏆</span>
+              <span class="finished-banner-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg></span>
               <div class="finished-banner-meta">
                 <h4 id="typerace-finished-title">You Finished!</h4>
                 <p id="typerace-finished-sub">Waiting for remaining racers to finish...</p>
@@ -3545,7 +3810,7 @@
         <!-- VIEW 3: SCOREBOARD / RESULTS VIEW -->
         <div id="typerace-results-view" class="typerace-view-section hidden">
           <div class="scoreboard-hero">
-            <span class="scoreboard-trophy-icon">🏆</span>
+            <span class="scoreboard-trophy-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg></span>
             <h3 class="scoreboard-title">Match Finished!</h3>
             <p class="scoreboard-subtitle">Here is the final scoreboard for this race duel:</p>
           </div>
@@ -3570,7 +3835,7 @@
 
           <div class="scoreboard-actions-row">
             <button type="button" id="btn-typerace-play-again" class="btn-primary btn-typerace-play-again">
-              <span>🔄 Play Again</span>
+              <span>Play Again</span>
             </button>
             <button type="button" id="btn-typerace-leave" class="btn-secondary btn-typerace-leave">
               <span>✕ Leave Race</span>
@@ -3588,14 +3853,14 @@
         <div class="modal-header ashtray-modal-header">
           <div class="modal-header-row">
             <div class="ashtray-header-title-box">
-              <span class="ashtray-header-icon">🚬</span>
+              <span class="ashtray-header-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2c.5 2.5-1.5 4-1.5 6.5a2.5 2.5 0 0 0 5 0c0-1.5-.5-2.5-1.5-3.5"/><path d="M8.5 14.5A2.5 2.5 0 0 1 11 12c2.5 0 4.5 2 4.5 4.5a4.5 4.5 0 1 1-9 0c0-.7.2-1.4.5-2"/></svg></span>
               <div>
                 <h2 id="ashtray-modal-title" class="modal-title">Cigarette Smoking Duel</h2>
               </div>
             </div>
             <div class="ashtray-header-actions">
               <button type="button" id="btn-ashtray-keybinds" class="btn-secondary btn-ashtray-settings" title="Change spam keys">
-                ⚙️ Keys: <strong id="ashtray-keybinds-summary">A & D</strong>
+                Keys: <strong id="ashtray-keybinds-summary">A & D</strong>
               </button>
               <button type="button" id="btn-close-ashtray-modal" class="btn-modal-close" title="Close">✕</button>
             </div>
@@ -3604,7 +3869,7 @@
 
         <!-- Viewer / Spectator Banner -->
         <div id="ashtray-viewer-banner" class="ashtray-viewer-banner hidden">
-          <span class="viewer-banner-icon">👀</span>
+          <span class="viewer-banner-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></span>
           <div class="viewer-banner-info">
             <strong>Spectator Mode</strong>
             <span>A smoking showdown is currently in progress. You will join the duel next round!</span>
@@ -3647,14 +3912,14 @@
             <!-- Game Starter Settings Panel -->
             <div class="ashtray-settings-panel">
               <div class="ashtray-starter-badge-row">
-                <span id="ashtray-starter-info-badge" class="ashtray-starter-pill">👑 Game Starter: <strong>Loading...</strong></span>
+                <span id="ashtray-starter-info-badge" class="ashtray-starter-pill">Game Starter: <strong>Loading...</strong></span>
               </div>
               
               <div class="ashtray-config-grid">
                 <!-- Mashes per Cigarette Config -->
                 <div class="ashtray-config-card">
                   <div class="config-label-row">
-                    <span class="config-icon">🎯</span>
+                    <span class="config-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg></span>
                     <span class="config-title">Mashes per Cigarette</span>
                   </div>
                   <div class="config-input-wrap">
@@ -3690,7 +3955,7 @@
             <div class="lobby-ready-actions">
               <!-- Starter Action: Start Game -->
               <button type="button" id="btn-ashtray-start" class="btn-primary btn-ashtray-start hidden">
-                <span>🔥 Start Smoking Duel</span>
+                <span>Start Smoking Duel</span>
               </button>
               <!-- Non-Starter Action: Ready Toggle -->
               <button type="button" id="btn-ashtray-ready" class="btn-primary btn-ashtray-ready">
@@ -3729,7 +3994,7 @@
               <span class="timer-value" id="ashtray-live-timer">01:00</span>
             </div>
             <div class="game-rule-pill">
-              <span>🎯 Target: <strong id="ashtray-rule-mashes">50</strong> mashes / cigarette</span>
+              <span>Target: <strong id="ashtray-rule-mashes">50</strong> mashes / cigarette</span>
             </div>
             <div class="game-keys-pill">
               <span>Spam Keys: <strong id="ashtray-live-keys">A & D</strong></span>
@@ -3778,7 +4043,7 @@
             <div class="ashtray-personal-metrics">
               <div class="metric-card">
                 <span class="metric-val" id="ashtray-my-finished">0</span>
-                <span class="metric-lbl">🚬 Finished</span>
+                <span class="metric-lbl">Finished</span>
               </div>
               <div class="metric-card">
                 <span class="metric-val" id="ashtray-my-current">0%</span>
@@ -3794,7 +4059,7 @@
           <!-- All Players Duel Tracker (Lanes) -->
           <div class="ashtray-players-tracker-section">
             <div class="tracker-header">
-              <span class="tracker-title">🏆 Competitors' Cigarette Progress</span>
+              <span class="tracker-title">Competitors' Cigarette Progress</span>
               <span class="tracker-sub">Most cigarettes smoked wins!</span>
             </div>
             <div class="ashtray-players-lanes" id="ashtray-players-lanes">
@@ -3806,7 +4071,7 @@
         <!-- VIEW 3: RESULTS / SCOREBOARD VIEW -->
         <div id="ashtray-results-view" class="ashtray-view-section hidden">
           <div class="scoreboard-hero">
-            <span class="scoreboard-trophy-icon">🏆</span>
+            <span class="scoreboard-trophy-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg></span>
             <h3 class="scoreboard-title" id="ashtray-winner-title">Winner Announced!</h3>
             <p class="scoreboard-subtitle" id="ashtray-winner-sub">Here are the final standings for this smoking duel:</p>
           </div>
@@ -3818,7 +4083,7 @@
                 <tr>
                   <th class="col-rank">Rank</th>
                   <th class="col-player">Competitor</th>
-                  <th class="col-finished">🚬 Cigarettes Smoked</th>
+                  <th class="col-finished">Cigarettes Smoked</th>
                   <th class="col-last">Last Cigarette</th>
                   <th class="col-speed">Speed</th>
                   <th class="col-total">Total Mashes</th>
@@ -3832,7 +4097,7 @@
 
           <div class="scoreboard-actions-row">
             <button type="button" id="btn-ashtray-play-again" class="btn-primary btn-ashtray-play-again">
-              <span>🔄 Play Again</span>
+              <span>Play Again</span>
             </button>
             <button type="button" id="btn-ashtray-leave" class="btn-secondary btn-ashtray-leave">
               <span>✕ Leave Duel</span>
@@ -3850,7 +4115,7 @@
         <div class="modal-header chess-modal-header">
           <div class="modal-header-row">
             <div class="chess-header-title-box">
-              <span class="chess-header-icon">♟️</span>
+              <span class="chess-header-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 4h6l-1 5 2 8H8l2-8-1-5z"/><path d="M6 20h12"/></svg></span>
               <div>
                 <h2 id="chess-modal-title" class="modal-title">Chess Arena</h2>
               </div>
@@ -3887,7 +4152,7 @@
           <div class="chess-ongoing-section">
             <div class="chess-section-header">
               <div class="chess-section-title-wrap">
-                <span class="chess-section-icon">⚔️</span>
+                <span class="chess-section-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="14.5 17.5 3 6 3 3 6 3 17.5 14.5"/><line x1="13" y1="19" x2="19" y2="13"/><line x1="16" y1="16" x2="20" y2="20"/><line x1="19" y1="21" x2="21" y2="19"/></svg></span>
                 <h4 class="chess-section-title">Ongoing Games</h4>
               </div>
               <span class="chess-count-pill" id="chess-ongoing-count-pill">0 Active Matches</span>
@@ -3899,7 +4164,7 @@
 
             <!-- Empty state when no ongoing games -->
             <div class="chess-games-empty" id="chess-games-empty">
-              <div class="chess-empty-icon">♟️</div>
+              <div class="chess-empty-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 4h6l-1 5 2 8H8l2-8-1-5z"/><path d="M6 20h12"/></svg></div>
               <h5>No games in progress</h5>
               <p>Create a game above or challenge an open match to start playing!</p>
             </div>
@@ -3917,10 +4182,10 @@
               <div id="chess-match-status-badge" class="chess-status-badge">White to move</div>
             </div>
             <div class="chess-game-top-actions">
-              <button type="button" id="btn-chess-flip-board" class="btn-icon-action" title="Flip Board Perspective">🔃 Flip</button>
-              <button type="button" id="btn-chess-offer-draw" class="btn-secondary btn-chess-draw hidden" title="Offer a Draw">🤝 Draw</button>
-              <button type="button" id="btn-chess-resign" class="btn-danger btn-chess-resign hidden" title="Resign Match">🏳️ Resign</button>
-              <button type="button" id="btn-chess-rematch" class="btn-primary btn-chess-rematch hidden" title="Play Rematch">🔄 Rematch</button>
+              <button type="button" id="btn-chess-flip-board" class="btn-icon-action" title="Flip Board Perspective">Flip</button>
+              <button type="button" id="btn-chess-offer-draw" class="btn-secondary btn-chess-draw hidden" title="Offer a Draw">Draw</button>
+              <button type="button" id="btn-chess-resign" class="btn-danger btn-chess-resign hidden" title="Resign Match">Resign</button>
+              <button type="button" id="btn-chess-rematch" class="btn-primary btn-chess-rematch hidden" title="Play Rematch">Rematch</button>
             </div>
           </div>
 
@@ -3933,7 +4198,7 @@
                 <!-- White Player Card -->
                 <div class="chess-player-card" id="chess-player-white-card">
                   <div class="chess-player-avatar-wrap">
-                    <img id="chess-white-avatar" src="/assets/sprites/default/sprite1.png" alt="White Player" class="chess-player-avatar" />
+                    <img id="chess-white-avatar" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="White Player" class="chess-player-avatar" />
                     <span class="chess-color-dot white-dot" title="White"></span>
                   </div>
                   <div class="chess-player-info">
@@ -3953,7 +4218,7 @@
                 <!-- Black Player Card -->
                 <div class="chess-player-card" id="chess-player-black-card">
                   <div class="chess-player-avatar-wrap">
-                    <img id="chess-black-avatar" src="/assets/sprites/default/sprite1.png" alt="Black Player" class="chess-player-avatar" />
+                    <img id="chess-black-avatar" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="Black Player" class="chess-player-avatar" />
                     <span class="chess-color-dot black-dot" title="Black"></span>
                   </div>
                   <div class="chess-player-info">
@@ -3989,7 +4254,7 @@
               <!-- Spectators Panel -->
               <div class="chess-sidebar-panel chess-spectators-panel">
                 <div class="chess-sidebar-header">
-                  <span class="chess-sidebar-icon">👀</span>
+                  <span class="chess-sidebar-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></span>
                   <span class="chess-sidebar-title">Spectators</span>
                   <span class="chess-spectators-count" id="chess-spectators-count">0</span>
                 </div>
@@ -4001,7 +4266,7 @@
               <!-- Move History Panel -->
               <div class="chess-sidebar-panel chess-history-panel">
                 <div class="chess-sidebar-header">
-                  <span class="chess-sidebar-icon">📜</span>
+                  <span class="chess-sidebar-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></span>
                   <span class="chess-sidebar-title">Move History</span>
                 </div>
                 <div class="chess-history-list" id="chess-history-list">
@@ -4020,7 +4285,7 @@
         <!-- Modal Header -->
         <div class="modal-header aquarium-modal-header">
           <div class="aquarium-header-title-box">
-            <span class="aquarium-header-icon">🐟</span>
+            <span class="aquarium-header-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.5 12c.94-3.46 4.94-6 8.5-6 3.56 0 6.06 2.54 7 6-.94 3.46-3.44 6-7 6-3.56 0-7.56-2.54-8.5-6Z"/><path d="M18 12v.5"/><path d="M16 17.93a9.77 9.77 0 0 1 0-11.86"/><path d="M7 10.67C7 8 5.58 5.97 2.73 5.5c-1 1.5-1 5 .23 6.5-1.24 1.5-1.24 5-.23 6.5C5.58 18.03 7 16 7 13.33"/></svg></span>
             <div>
               <h2 id="aquarium-modal-title" class="modal-title">Aquarium Fishing</h2>
             </div>
@@ -4028,13 +4293,13 @@
           <div class="aquarium-header-actions">
             <div class="aquarium-tabs-nav">
               <button type="button" id="tab-aquarium-play" class="btn-aquarium-tab active">
-                <span>🎣</span> Fishing Game
+                <span><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="5" r="2"/><path d="M12 7v14"/><path d="M5 13a7 7 0 0 0 14 0"/></svg></span> Fishing Game
               </button>
               <button type="button" id="tab-aquarium-collection" class="btn-aquarium-tab">
-                <span>🐠</span> Collection (<span id="aquarium-species-count">0</span>/12)
+                <span><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.5 12c.94-3.46 4.94-6 8.5-6 3.56 0 6.06 2.54 7 6-.94 3.46-3.44 6-7 6-3.56 0-7.56-2.54-8.5-6Z"/><path d="M18 12v.5"/><path d="M16 17.93a9.77 9.77 0 0 1 0-11.86"/><path d="M7 10.67C7 8 5.58 5.97 2.73 5.5c-1 1.5-1 5 .23 6.5-1.24 1.5-1.24 5-.23 6.5C5.58 18.03 7 16 7 13.33"/></svg></span> Collection (<span id="aquarium-species-count">0</span>/12)
               </button>
             </div>
-            <button type="button" id="btn-aquarium-sound" class="btn-secondary btn-aquarium-icon-btn" title="Toggle Sound">🔊</button>
+            <button type="button" id="btn-aquarium-sound" class="btn-secondary btn-aquarium-icon-btn" title="Toggle Sound"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg></button>
             <button type="button" id="btn-close-aquarium-modal" class="btn-modal-close" title="Close">×</button>
           </div>
         </div>
@@ -4045,9 +4310,9 @@
           <div class="aquarium-top-toolbar">
             <div class="aquarium-tank-selector">
               <span class="tank-selector-label">Target Waters:</span>
-              <button type="button" class="btn-tank-choice active" data-tank="all">🌊 All Waters</button>
-              <button type="button" class="btn-tank-choice" data-tank="salt">🧂 Salt Water</button>
-              <button type="button" class="btn-tank-choice" data-tank="fresh">💧 Fresh Water</button>
+              <button type="button" class="btn-tank-choice active" data-tank="all">All Waters</button>
+              <button type="button" class="btn-tank-choice" data-tank="salt">Salt Water</button>
+              <button type="button" class="btn-tank-choice" data-tank="fresh">Fresh Water</button>
             </div>
             <div class="aquarium-diff-badge" id="aquarium-diff-indicator">
               <span>⭐ Difficulty:</span> <strong>Medium – Hard</strong>
@@ -4081,13 +4346,13 @@
                 <h3 id="fishing-cast-status-title">Cast your line into the aquarium</h3>
                 <p id="fishing-cast-status-desc">Hold &amp; release mechanics tuned for authentic Stardew Valley reel challenge!</p>
                 <button type="button" id="btn-cast-fishing-line" class="btn-primary btn-fishing-cast">
-                  <span>🎣</span> Cast Fishing Line (Space)
+                  <span><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="5" r="2"/><path d="M12 7v14"/><path d="M5 13a7 7 0 0 0 14 0"/></svg></span> Cast Fishing Line (Space)
                 </button>
               </div>
 
               <!-- Bite Reaction Overlay (! HIT !) -->
               <div id="fishing-bite-alert" class="fishing-bite-alert hidden">
-                <div class="bite-exclamation">❗</div>
+                <div class="bite-exclamation"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg></div>
                 <div class="bite-text">HIT! CLICK TO HOOK!</div>
                 <div class="bite-sub">Press Space or Click now!</div>
               </div>
@@ -4140,7 +4405,7 @@
                         <div class="catch-fill-shine"></div>
                       </div>
                     </div>
-                    <div class="catch-hook-icon" id="catch-hook-icon">🪝</div>
+                    <div class="catch-hook-icon" id="catch-hook-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="5" r="2"/><path d="M12 7v14"/><path d="M5 13a7 7 0 0 0 14 0"/></svg></div>
                   </div>
                 </div>
 
@@ -4164,9 +4429,9 @@
                 <!-- Success View -->
                 <div id="result-success-box" class="result-box">
                   <div class="result-banner-top">
-                    <span class="result-banner-sparkle">✨</span>
+                    <span class="result-banner-sparkle"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.9 5.8L20 11l-6.1 2.2L12 19l-1.9-5.8L4 11l6.1-2.2L12 3z"/></svg></span>
                     <h3 class="result-banner-title">YOU CAUGHT A FISH!</h3>
-                    <span class="result-banner-sparkle">✨</span>
+                    <span class="result-banner-sparkle"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.9 5.8L20 11l-6.1 2.2L12 19l-1.9-5.8L4 11l6.1-2.2L12 3z"/></svg></span>
                   </div>
                   <div class="result-fish-showcase">
                     <div class="result-fish-circle">
@@ -4184,22 +4449,22 @@
                   </div>
                   <div class="result-actions-row">
                     <button type="button" id="btn-result-cast-again" class="btn-primary btn-result-btn">
-                      <span>🎣</span> Cast Again
+                      <span><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="5" r="2"/><path d="M12 7v14"/><path d="M5 13a7 7 0 0 0 14 0"/></svg></span> Cast Again
                     </button>
                     <button type="button" id="btn-result-view-collection" class="btn-secondary btn-result-btn">
-                      <span>🐠</span> View Tank
+                      <span><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.5 12c.94-3.46 4.94-6 8.5-6 3.56 0 6.06 2.54 7 6-.94 3.46-3.44 6-7 6-3.56 0-7.56-2.54-8.5-6Z"/><path d="M18 12v.5"/><path d="M16 17.93a9.77 9.77 0 0 1 0-11.86"/><path d="M7 10.67C7 8 5.58 5.97 2.73 5.5c-1 1.5-1 5 .23 6.5-1.24 1.5-1.24 5-.23 6.5C5.58 18.03 7 16 7 13.33"/></svg></span> View Tank
                     </button>
                   </div>
                 </div>
 
                 <!-- Escape View -->
                 <div id="result-escape-box" class="result-box hidden">
-                  <div class="result-escape-icon">💨</div>
+                  <div class="result-escape-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.7 7.7a2.5 2.5 0 1 1 1.8 4.3H2"/><path d="M9.6 4.6A2 2 0 1 1 11 8H2"/><path d="M12.6 19.4A2 2 0 1 0 14 16H2"/></svg></div>
                   <h3 class="result-escape-title">The fish got away!</h3>
                   <p class="result-escape-desc">It slipped off the hook! Maintain the green bar over the fish to keep tension.</p>
                   <div class="result-actions-row">
                     <button type="button" id="btn-result-try-again" class="btn-primary btn-result-btn">
-                      <span>🔄</span> Try Again
+                      <span><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg></span> Try Again
                     </button>
                   </div>
                 </div>
@@ -4224,7 +4489,7 @@
               <div class="tank-seaweed sw3"></div>
             </div>
             <div class="tank-caption">
-              <span>🐠 Virtual Aquarium Tank</span>
+              <span>Virtual Aquarium Tank</span>
               <em>Caught fish will swim here! (<span id="tank-swimming-count">0</span> swimming)</em>
             </div>
           </div>
@@ -4256,7 +4521,7 @@
     <div id="throw-battle-setup-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="tb-setup-title">
       <div class="modal-card tb-setup-card">
         <div class="tb-setup-header">
-          <div class="tb-setup-icon">⚔️</div>
+          <div class="tb-setup-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="14.5 17.5 3 6 3 3 6 3 17.5 14.5"/><line x1="13" y1="19" x2="19" y2="13"/><line x1="16" y1="16" x2="20" y2="20"/><line x1="19" y1="21" x2="21" y2="19"/></svg></div>
           <h2 id="tb-setup-title" class="tb-setup-title">Throw Battle Setup</h2>
           <p id="tb-setup-desc" class="tb-setup-desc">Challenge <strong id="tb-setup-target-name">Player</strong> to a Cat vs Dog duel</p>
         </div>
@@ -4264,7 +4529,7 @@
         <div class="tb-setup-body">
           <div class="tb-setup-config-card">
             <div class="tb-setup-label-row">
-              <span class="tb-setup-label-icon">❤️</span>
+              <span class="tb-setup-label-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg></span>
               <span class="tb-setup-label-title">Hits Required (Health Points)</span>
             </div>
             <p class="tb-setup-label-sub">How many direct hits to defeat a player? Got hit this many times, lose!</p>
@@ -4286,7 +4551,7 @@
 
         <div class="tb-setup-actions">
           <button type="button" id="btn-tb-cancel-setup" class="btn-secondary">Cancel</button>
-          <button type="button" id="btn-tb-confirm-challenge" class="btn-primary btn-tb-accept">⚔️ Send Challenge</button>
+          <button type="button" id="btn-tb-confirm-challenge" class="btn-primary btn-tb-accept">Send Challenge</button>
         </div>
       </div>
     </div>
@@ -4295,27 +4560,27 @@
     <div id="throw-battle-invite-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="tb-invite-title">
       <div class="modal-card tb-invite-card">
         <div class="tb-invite-header">
-          <div class="tb-invite-icon">⚔️</div>
+          <div class="tb-invite-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="14.5 17.5 3 6 3 3 6 3 17.5 14.5"/><line x1="13" y1="19" x2="19" y2="13"/><line x1="16" y1="16" x2="20" y2="20"/><line x1="19" y1="21" x2="21" y2="19"/></svg></div>
           <h2 id="tb-invite-title" class="tb-invite-title">Throw Battle Challenge!</h2>
           <p id="tb-invite-desc" class="tb-invite-desc"><strong id="tb-invite-challenger-name">Player</strong> has challenged you to a Throw Battle duel!</p>
         </div>
         <div class="tb-invite-info-box">
           <div class="tb-invite-feature">
-            <span class="tb-feat-icon">🎯</span>
+            <span class="tb-feat-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg></span>
             <div class="tb-feat-text">
               <strong>Fleabag vs Mutt Rules</strong>
               <span>Turn-based projectile battle • 50/50 split arena • Wind dynamics</span>
             </div>
           </div>
           <div class="tb-invite-feature">
-            <span class="tb-feat-icon">❤️</span>
+            <span class="tb-feat-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg></span>
             <div class="tb-feat-text">
               <strong>Hits Required</strong>
               <span><strong id="tb-invite-hits-count">20</strong> hits to defeat (Health Points)</span>
             </div>
           </div>
           <div class="tb-invite-feature">
-            <span class="tb-feat-icon">⚡</span>
+            <span class="tb-feat-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></span>
             <div class="tb-feat-text">
               <strong>Fair Play First Turn</strong>
               <span>You were challenged, so <u>you move first</u>!</span>
@@ -4346,7 +4611,7 @@
         <div class="modal-header tb-arena-header">
           <div class="modal-header-row">
             <div class="tb-header-title-box">
-              <span class="tb-header-icon">⚔️</span>
+              <span class="tb-header-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="14.5 17.5 3 6 3 3 6 3 17.5 14.5"/><line x1="13" y1="19" x2="19" y2="13"/><line x1="16" y1="16" x2="20" y2="20"/><line x1="19" y1="21" x2="21" y2="19"/></svg></span>
               <div>
                 <h2 id="tb-arena-title" class="modal-title">Throw Battle</h2>
               </div>
@@ -4374,7 +4639,7 @@
           <div class="tb-wind-container">
             <div class="tb-turn-indicator" id="tb-turn-indicator">Your Turn!</div>
             <div class="tb-wind-box">
-              <span class="tb-wind-label">💨 WIND</span>
+              <span class="tb-wind-label"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.7 7.7a2.5 2.5 0 1 1 1.8 4.3H2"/><path d="M9.6 4.6A2 2 0 1 1 11 8H2"/><path d="M12.6 19.4A2 2 0 1 0 14 16H2"/></svg> WIND</span>
               <div class="tb-wind-display">
                 <span class="tb-wind-arrow" id="tb-wind-arrow" title="Wind Direction">
                   <svg viewBox="0 0 24 24" class="wind-arrow-svg" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
@@ -4408,11 +4673,11 @@
           <!-- Game Over Overlay -->
           <div id="tb-gameover-overlay" class="tb-gameover-overlay hidden">
             <div class="tb-gameover-box">
-              <span class="tb-gameover-trophy">🏆</span>
+              <span class="tb-gameover-trophy"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg></span>
               <h2 id="tb-gameover-title" class="tb-gameover-title">Victory!</h2>
               <p id="tb-gameover-subtitle" class="tb-gameover-subtitle">Player won the Throw Battle!</p>
               <div class="tb-gameover-actions">
-                <button type="button" id="btn-tb-rematch" class="btn-primary">🔄 Play Again</button>
+                <button type="button" id="btn-tb-rematch" class="btn-primary">Play Again</button>
                 <button type="button" id="btn-tb-exit" class="btn-secondary">Leave Battle</button>
               </div>
             </div>
@@ -4440,7 +4705,7 @@
       <div class="modal-card organisation-modal-card">
         <div class="modal-header">
           <div class="modal-header-row">
-            <h2 id="organisation-modal-title" class="modal-title">🏢 Organisation</h2>
+            <h2 id="organisation-modal-title" class="modal-title">Organisation</h2>
             <button type="button" id="btn-close-organisation-modal" class="btn-modal-close" title="Close">✕</button>
           </div>
         </div>
@@ -4457,8 +4722,8 @@
         <!-- Tab 1: Create Organisation Form -->
         <form id="org-create-form" class="org-create-form">
           <div id="org-points-banner" class="org-points-banner">
-            <span>🅿️ Your Park Points: <strong id="org-current-points">0</strong></span>
-            <span class="org-cost-pill">Cost: 144 Points</span>
+            <span class="org-points-label"><img src="/assets/icons/focus_point.png" class="fp-icon" alt="FP" /> Your Focus Points: <strong id="org-current-points">0</strong> FP</span>
+            <span class="org-cost-pill">Cost: 144 FP</span>
           </div>
 
           <div class="org-form-group">
@@ -4483,7 +4748,7 @@
               </div>
               <div class="org-logo-controls">
                 <input type="file" id="org-logo-input" accept="image/png,image/jpeg,image/webp,image/gif" class="hidden" />
-                <button type="button" id="btn-org-upload-logo" class="btn-secondary org-logo-btn">📷 Choose Image</button>
+                <button type="button" id="btn-org-upload-logo" class="btn-secondary org-logo-btn">Choose Image</button>
                 <button type="button" id="btn-org-clear-logo" class="btn-secondary org-logo-btn hidden">✕ Remove</button>
               </div>
             </div>
@@ -4508,7 +4773,7 @@
 
           <div class="org-form-actions">
             <button type="submit" id="btn-org-create-submit" class="btn-primary org-submit-btn">
-              Create Organisation (144 Park Points)
+              Create Organisation (144 FP)
             </button>
           </div>
         </form>
@@ -4527,7 +4792,7 @@
       <div class="modal-card notes-modal-card">
         <div class="modal-header">
           <div class="modal-header-row">
-            <h2 id="notes-modal-title" class="modal-title">📝 Notes</h2>
+            <h2 id="notes-modal-title" class="modal-title">Notes</h2>
             <button type="button" id="btn-close-notes-modal" class="btn-modal-close" title="Close">✕</button>
           </div>
         </div>
@@ -4539,13 +4804,13 @@
           <div class="notes-list-topbar">
             <div class="notes-tabs" role="tablist">
               <button type="button" class="notes-tab-btn active" data-note-tab="personal" role="tab" aria-selected="true">
-                🔒 Personal
+                Personal
               </button>
               <button type="button" class="notes-tab-btn" data-note-tab="space" role="tab" aria-selected="false">
-                🏠 Space
+                Space
               </button>
               <button type="button" class="notes-tab-btn" data-note-tab="organisation" role="tab" aria-selected="false">
-                🏢 Organisation
+                Organisation
               </button>
             </div>
             <button type="button" id="btn-new-note" class="btn-primary notes-new-btn">+ Note</button>
@@ -4566,8 +4831,8 @@
           <div class="notes-view-toolbar">
             <button type="button" id="btn-notes-back-from-detail" class="notes-back-btn">← Back</button>
             <div class="notes-detail-actions">
-              <button type="button" id="btn-note-edit" class="notes-action-btn">✏️ Edit</button>
-              <button type="button" id="btn-note-delete" class="notes-action-btn danger">🗑️ Delete</button>
+              <button type="button" id="btn-note-edit" class="notes-action-btn">Edit</button>
+              <button type="button" id="btn-note-delete" class="notes-action-btn danger">Delete</button>
             </div>
           </div>
           <div class="notes-detail-body">
@@ -4606,7 +4871,7 @@
               <button type="button" class="wysiwyg-btn" data-cmd="insertUnorderedList" title="Bullet List">• List</button>
               <button type="button" class="wysiwyg-btn" data-cmd="insertOrderedList" title="Numbered List">1. List</button>
               <span class="wysiwyg-sep"></span>
-              <button type="button" class="wysiwyg-btn" data-cmd="createLink" title="Insert Link">🔗</button>
+              <button type="button" class="wysiwyg-btn" data-cmd="createLink" title="Insert Link"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></button>
               <button type="button" class="wysiwyg-btn" data-cmd="removeFormat" title="Clear Formatting">Tx</button>
             </div>
             <div
@@ -4628,7 +4893,7 @@
                   multiple
                   class="hidden"
                 />
-                <span>📷 Upload Pictures</span>
+                <span>Upload Pictures</span>
               </label>
               <div id="note-editor-images-list" class="calendar-images-thumb-grid hidden"></div>
             </div>
@@ -4646,7 +4911,7 @@
       <div class="modal-card inventory-modal-card">
         <div class="modal-header">
           <div class="modal-header-row">
-            <h2 id="space-inventory-modal-title" class="modal-title">📦 Space's Inventory</h2>
+            <h2 id="space-inventory-modal-title" class="modal-title">Space's Inventory</h2>
             <button type="button" id="btn-close-inventory-modal" class="btn-modal-close" title="Close" aria-label="Close">✕</button>
           </div>
         </div>
@@ -4680,7 +4945,7 @@
           <div class="inventory-view-toolbar">
             <button type="button" id="btn-inventory-back" class="inventory-back-btn">← Back</button>
             <span id="inventory-form-heading" class="inventory-form-heading">Add Inventory</span>
-            <button type="button" id="btn-inventory-delete" class="inventory-delete-icon-btn hidden" title="Delete item" aria-label="Delete item">🗑️</button>
+            <button type="button" id="btn-inventory-delete" class="inventory-delete-icon-btn hidden" title="Delete item" aria-label="Delete item"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
           </div>
 
           <form id="inventory-form" class="inventory-form">
@@ -4726,7 +4991,7 @@
       <div class="modal-card calendar-modal-card">
         <div class="modal-header">
           <div class="modal-header-row">
-            <h2 id="calendar-modal-title" class="modal-title">📅 Calendar</h2>
+            <h2 id="calendar-modal-title" class="modal-title">Calendar</h2>
             <button type="button" id="btn-close-calendar-modal" class="btn-modal-close" title="Close">✕</button>
           </div>
         </div>
@@ -4738,16 +5003,16 @@
           <div class="calendar-topbar">
             <div class="calendar-tabs" role="tablist">
               <button type="button" class="calendar-tab-btn active" data-calendar-tab="personal" role="tab" aria-selected="true">
-                🔒 Personal
+                Personal
               </button>
               <button type="button" class="calendar-tab-btn" data-calendar-tab="space" role="tab" aria-selected="false">
-                🏠 Space
+                Space
               </button>
               <button type="button" class="calendar-tab-btn" data-calendar-tab="organisation" role="tab" aria-selected="false">
-                🏢 Organisation
+                Organisation
               </button>
               <button type="button" class="calendar-tab-btn" data-calendar-tab="meals" role="tab" aria-selected="false">
-                🍽️ Meals
+                Meals
               </button>
             </div>
             <button type="button" id="btn-new-calendar-event" class="btn-primary notes-new-btn">+ Event</button>
@@ -4855,8 +5120,8 @@
           <div class="notes-view-toolbar">
             <button type="button" id="btn-calendar-back-from-detail" class="notes-back-btn">← Back</button>
             <div class="notes-detail-actions">
-              <button type="button" id="btn-calendar-event-edit" class="notes-action-btn">✏️ Edit</button>
-              <button type="button" id="btn-calendar-event-delete" class="notes-action-btn danger">🗑️ Delete</button>
+              <button type="button" id="btn-calendar-event-edit" class="notes-action-btn">Edit</button>
+              <button type="button" id="btn-calendar-event-delete" class="notes-action-btn danger">Delete</button>
             </div>
           </div>
           <div class="notes-detail-body">
@@ -4893,7 +5158,7 @@
                 <div class="calendar-date-wrap">
                   <div id="calendar-event-start-date-display" class="calendar-form-input calendar-date-display">
                     <span class="calendar-date-text">dd/mm/yyyy</span>
-                    <span class="calendar-date-icon" aria-hidden="true">📅</span>
+                    <span class="calendar-date-icon" aria-hidden="true"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></span>
                   </div>
                   <input type="date" id="calendar-event-start-date" class="calendar-date-native" lang="en-GB" />
                 </div>
@@ -4903,7 +5168,7 @@
                 <div class="calendar-date-wrap">
                   <div id="calendar-event-end-date-display" class="calendar-form-input calendar-date-display">
                     <span class="calendar-date-text">dd/mm/yyyy</span>
-                    <span class="calendar-date-icon" aria-hidden="true">📅</span>
+                    <span class="calendar-date-icon" aria-hidden="true"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></span>
                   </div>
                   <input type="date" id="calendar-event-end-date" class="calendar-date-native" lang="en-GB" />
                 </div>
@@ -4984,7 +5249,7 @@
               <button type="button" class="wysiwyg-btn" data-cmd="insertUnorderedList" title="Bullet List">• List</button>
               <button type="button" class="wysiwyg-btn" data-cmd="insertOrderedList" title="Numbered List">1. List</button>
               <span class="wysiwyg-sep"></span>
-              <button type="button" class="wysiwyg-btn" data-cmd="createLink" title="Insert Link">🔗</button>
+              <button type="button" class="wysiwyg-btn" data-cmd="createLink" title="Insert Link"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></button>
               <button type="button" class="wysiwyg-btn" data-cmd="removeFormat" title="Clear Formatting">Tx</button>
             </div>
             <div
@@ -5006,7 +5271,7 @@
                   multiple
                   class="hidden"
                 />
-                <span>📷 Upload Pictures</span>
+                <span>Upload Pictures</span>
               </label>
               <div id="calendar-event-images-list" class="calendar-images-thumb-grid hidden"></div>
             </div>
@@ -5025,31 +5290,338 @@
       <img id="calendar-lightbox-img" class="calendar-lightbox-img" src="" alt="Event picture preview" />
     </div>
 
-    <!-- Modal: Offline / Disconnected -->
+    <!-- Modal: Offline / Reconnecting -->
     <div id="offline-modal" class="modal-overlay offline-modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="offline-modal-title">
       <div class="modal-card offline-modal-card">
         <div class="modal-header">
           <div class="modal-header-row">
             <div class="space-error-header-title">
-              <span class="space-error-icon">📡</span>
-              <h2 id="offline-modal-title" class="modal-title">You Are Offline</h2>
+              <span class="space-error-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="1" y1="1" x2="23" y2="23"/><path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"/><path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"/><path d="M10.71 5.05A16 16 0 0 1 22.58 9"/><path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg></span>
+              <h2 id="offline-modal-title" class="modal-title">Connection Lost</h2>
             </div>
           </div>
         </div>
 
         <div class="space-error-body">
           <div class="space-error-alert-box">
-            <span class="space-error-badge">Offline</span>
+            <span id="offline-modal-badge" class="space-error-badge offline-reconnecting-badge">
+              <span class="offline-spinner" aria-hidden="true"></span>
+              <span id="offline-modal-badge-text">Reconnecting</span>
+            </span>
             <p id="offline-modal-message" class="space-error-desc">
-              You are currently offline or disconnected from the server. Please check your connection and reload the page.
+              You are currently offline or disconnected from the server. Trying to reconnect automatically...
             </p>
           </div>
         </div>
 
         <div class="modal-footer-actions">
-          <button type="button" id="btn-offline-reload" class="btn-primary w-full">
-            Reload
+          <button type="button" id="btn-offline-reconnect" class="btn-primary w-full">
+            Reconnect Now
           </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Subtle Idle Auto-Focus Countdown Toast (Last 10s of 1-minute inactivity) -->
+    <div id="focus-idle-countdown-toast" class="focus-idle-countdown-toast hidden" role="status" aria-live="polite">
+      <img src="/assets/icons/focus_point.png" class="fp-icon" alt="FP" />
+      <span id="focus-idle-countdown-text">Entering Focus Room in 10s (move to stay in world)</span>
+      <button type="button" id="btn-focus-idle-enter-now" class="focus-idle-now-btn">Enter Now</button>
+    </div>
+
+    <!-- Full-Screen Modal: Focus Room (Pomodoro Timer + Space-Themed Pixel Animation) -->
+    <div id="focus-room-modal" class="modal-overlay focus-room-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="focus-room-mode-title">
+      <div class="focus-room-shell">
+        <!-- Minimalist Top Bar -->
+        <header class="focus-room-topbar">
+          <div class="focus-room-topbar-left">
+            <span id="focus-room-mode-title" class="focus-room-type-pill">PERSONAL</span>
+            <div class="focus-room-space-chip">
+              <span id="focus-room-space-name">CO3</span>
+              <span class="focus-chip-sep">&middot;</span>
+              <span id="focus-room-theme-label">Cozy Lounge / Cafe</span>
+              <span id="focus-room-fallback-badge" class="focus-fallback-badge hidden" title="Personal space using your last public space theme">Last Public</span>
+            </div>
+          </div>
+
+          <div class="focus-room-topbar-right">
+            <div class="focus-stats-group">
+              <div class="focus-stat-pill" title="Consecutive Focus Days">
+                <span>Streak</span>
+                <strong id="focus-room-streak-val">0d</strong>
+              </div>
+              <div class="focus-stat-pill" title="Weekly Freeze Shields (Replenishes 2 every Monday)">
+                <span>Shields</span>
+                <strong id="focus-room-shields-val">2</strong>
+              </div>
+              <div class="focus-stat-pill" title="Daily 100% Rate Cap (50% FP beyond 240 mins/day)">
+                <span>Today</span>
+                <strong id="focus-room-daily-val">0/240m</strong>
+              </div>
+              <div class="focus-fp-pill" title="Total Focus Points">
+                <img src="/assets/icons/focus_point.png" class="fp-icon" alt="FP" />
+                <strong id="focus-room-fp-balance">0 FP</strong>
+              </div>
+            </div>
+            <div class="focus-topbar-actions">
+              <button type="button" id="btn-focus-chime-toggle" class="focus-icon-btn" title="Toggle completion chime audio">
+                <svg class="focus-chime-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                <span id="focus-chime-label">ON</span>
+              </button>
+              <button type="button" id="btn-focus-room-exit" class="focus-exit-btn" title="Leave Focus Room (Esc)">Exit</button>
+            </div>
+          </div>
+        </header>
+
+        <!-- Main Animated Stage + Minimalist Controls -->
+        <div class="focus-room-body">
+          <div class="focus-scene-wrapper">
+            <canvas id="focus-room-canvas" class="focus-room-canvas"></canvas>
+            <div class="focus-scene-vignette" aria-hidden="true"></div>
+
+            <!-- Floating Party Participants Overlay -->
+            <div id="focus-room-participants-bar" class="focus-room-participants-bar">
+              <div id="focus-room-participants-list" class="focus-room-participants-list"></div>
+              <button type="button" id="btn-focus-room-invite-squad" class="focus-invite-inline-btn">+ Party</button>
+            </div>
+
+            <!-- Floating Notices / Strict Warning (overlay so layout never jumps or scrolls) -->
+            <div class="focus-scene-alerts">
+              <div id="focus-strict-warning-banner" class="focus-warning-banner hidden">
+                <span id="focus-strict-warning-text">Strict Lock forfeited: switched tabs over 30s (Honor 1.00x rate active).</span>
+              </div>
+              <div id="focus-room-notice-banner" class="focus-notice-banner hidden"></div>
+            </div>
+          </div>
+
+          <!-- Active Pomodoro Control Dock (FOCUS_LOCKED) -->
+          <section id="focus-locked-panel" class="focus-timer-panel">
+            <div class="focus-timer-main-row">
+              <div class="focus-timer-clock-box">
+                <div class="focus-timer-status-label">
+                  <span id="focus-lock-state-dot" class="focus-lock-dot"></span>
+                  <span id="focus-lock-state-text">HONOR &middot; 1.00x</span>
+                </div>
+                <div id="focus-countdown-display" class="focus-countdown-display">25:00</div>
+              </div>
+
+              <div class="focus-timer-projection-box">
+                <div class="focus-projection-fp-row">
+                  <img src="/assets/icons/focus_point.png" class="fp-icon" alt="FP" />
+                  <span id="focus-estimated-fp-val">+100 FP</span>
+                </div>
+                <div id="focus-multiplier-chips" class="focus-multiplier-chips"></div>
+              </div>
+            </div>
+
+            <div class="focus-progress-track">
+              <div id="focus-progress-fill" class="focus-progress-fill" style="width: 0%;"></div>
+            </div>
+
+            <!-- Minimalist Settings Bar -->
+            <div class="focus-controls-row">
+              <div class="focus-presets-group">
+                <button type="button" class="focus-preset-btn" data-focus-mins="15">15m</button>
+                <button type="button" class="focus-preset-btn active" data-focus-mins="25">25m</button>
+                <button type="button" class="focus-preset-btn" data-focus-mins="50">50m</button>
+                <div class="focus-custom-mins-wrap">
+                  <input type="number" id="focus-custom-mins-input" class="focus-custom-mins-input" min="1" max="180" value="25" aria-label="Custom minutes" />
+                  <button type="button" id="btn-focus-apply-custom-mins" class="focus-preset-btn">Set</button>
+                </div>
+              </div>
+
+              <div class="focus-mode-group">
+                <button type="button" id="btn-focus-mode-honor" class="focus-mode-btn active" data-focus-mode="honor" title="Switch tabs freely while working">Honor 1.0x</button>
+                <button type="button" id="btn-focus-mode-strict" class="focus-mode-btn" data-focus-mode="strict" title="Stay on tab (>30s away forfeits 1.25x bonus)">Strict 1.25x</button>
+              </div>
+            </div>
+          </section>
+
+          <!-- Post-Session Reward & Break Result Panel (BREAK_REWARD) -->
+          <section id="focus-break-panel" class="focus-break-panel hidden">
+            <div class="focus-break-header">
+              <div>
+                <div id="focus-break-badge" class="focus-break-badge">SESSION COMPLETE</div>
+                <h2 id="focus-break-heading" class="focus-break-heading">Great Focus Session!</h2>
+              </div>
+              <div class="focus-break-fp-earned">
+                <img src="/assets/icons/focus_point.png" class="fp-icon-lg" alt="FP" />
+                <div>
+                  <div id="focus-break-earned-amount" class="focus-break-earned-amount">+0 FP</div>
+                  <div id="focus-break-new-balance" class="focus-break-new-balance">Balance: 0 FP</div>
+                </div>
+              </div>
+            </div>
+
+            <div id="focus-break-guest-note" class="focus-warning-banner hidden">
+              Sign in with an account to earn and persist Focus Points, streaks, and shields.
+            </div>
+
+            <div id="focus-break-breakdown-grid" class="focus-breakdown-grid"></div>
+
+            <div class="focus-break-footer">
+              <div class="focus-break-timer-chip">
+                <span>Break</span>
+                <strong id="focus-break-countdown">05:00</strong>
+              </div>
+              <div class="focus-break-cta-row">
+                <button type="button" id="btn-focus-start-next" class="btn-primary">Focus Again (25m)</button>
+                <button type="button" id="btn-focus-break-return" class="btn-secondary">Return</button>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+
+      <!-- Centered Exit Confirmation Modal -->
+      <div id="focus-end-confirm-bar" class="focus-end-confirm-modal hidden" role="alertdialog" aria-modal="true" aria-labelledby="focus-end-confirm-title">
+        <div class="focus-end-confirm-card">
+          <h3 id="focus-end-confirm-title" class="focus-end-confirm-title">End Focus Session?</h3>
+          <p id="focus-end-confirm-text" class="focus-end-confirm-text">Less than 10 minutes elapsed: ending now earns 0 FP.</p>
+          <div class="focus-end-confirm-actions">
+            <button type="button" id="btn-focus-end-cancel" class="btn-secondary">Keep Going</button>
+            <button type="button" id="btn-focus-end-confirm" class="focus-end-confirm-yes">Yes, End Session</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal: Party (Minimalist & Mobile-Friendly) -->
+    <div id="squad-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="squad-modal-title">
+      <div class="modal-card squad-modal-card">
+        <div class="modal-header squad-modal-header">
+          <div class="modal-header-row">
+            <div class="squad-modal-title-group">
+              <h2 id="squad-modal-title" class="modal-title">Party</h2>
+              <span id="squad-modal-count" class="squad-hud-count">0/8</span>
+            </div>
+            <button type="button" id="btn-close-squad-modal" class="btn-modal-close" title="Close" aria-label="Close">✕</button>
+          </div>
+        </div>
+
+        <div id="squad-modal-feedback" class="focus-notice-banner hidden"></div>
+
+        <div id="squad-modal-members-list" class="squad-members-list">
+          <div class="squad-empty-state">Not in a party yet.</div>
+        </div>
+
+        <div class="squad-modal-footer">
+          <button type="button" id="btn-squad-create" class="btn-primary">Create Party</button>
+          <button type="button" id="btn-squad-start-focus" class="btn-secondary hidden">Start Party Focus</button>
+          <button type="button" id="btn-squad-leave" class="btn-logout hidden">Leave Party</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal: Incoming Party Invite -->
+    <div id="squad-invite-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="squad-invite-title">
+      <div class="modal-card squad-invite-card">
+        <div class="modal-header">
+          <div class="modal-header-row">
+            <h2 id="squad-invite-title" class="modal-title">Party Invite</h2>
+            <button type="button" id="btn-close-squad-invite" class="btn-modal-close" title="Close" aria-label="Close">✕</button>
+          </div>
+        </div>
+        <p id="squad-invite-desc" class="squad-invite-desc">
+          Player invited you to join their Party!
+        </p>
+        <div class="modal-footer-actions squad-invite-actions">
+          <button type="button" id="btn-squad-invite-decline" class="btn-secondary">Decline</button>
+          <button type="button" id="btn-squad-invite-accept" class="btn-primary">Accept &amp; Join Party</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal: Space Seller NPC Asset Shop -->
+    <div id="asset-shop-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="asset-shop-modal-title">
+      <div class="modal-card asset-shop-modal-card">
+        <div class="modal-header asset-shop-header">
+          <h2 id="asset-shop-modal-title" class="modal-title">Shop</h2>
+          <div class="asset-shop-header-right">
+            <span id="asset-shop-fp-balance" class="asset-shop-fp-pill">0 FP</span>
+            <button type="button" id="btn-close-asset-shop-modal" class="btn-modal-close" title="Close" aria-label="Close">✕</button>
+          </div>
+        </div>
+
+        <div id="asset-shop-admin-banner" class="asset-shop-admin-banner hidden">
+          <span>★ All assets owned</span>
+        </div>
+
+        <div id="asset-shop-feedback" class="asset-shop-feedback hidden"></div>
+
+        <div class="asset-shop-toolbar">
+          <div id="asset-shop-pack-tabs" class="asset-shop-pack-tabs" role="tablist"></div>
+          <div class="asset-shop-meta-right">
+            <span id="asset-shop-owned-count" class="asset-shop-owned-pill">0/0</span>
+            <button type="button" id="btn-asset-shop-hide-owned" class="asset-shop-filter-btn" aria-pressed="false">
+              Unbought
+            </button>
+          </div>
+        </div>
+
+        <div id="asset-shop-body" class="asset-shop-body">
+          <div id="asset-shop-grid" class="asset-shop-grid"></div>
+          <div id="asset-shop-empty" class="asset-shop-empty hidden"></div>
+        </div>
+        <div id="asset-shop-pagination" class="asset-shop-pagination hidden" role="navigation" aria-label="Shop pages"></div>
+      </div>
+    </div>
+
+    <!-- Modal: Guild Helper NPC Class Selection (First-Time Adventurer) -->
+    <div id="rpg-class-select-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="rpg-class-select-title">
+      <div class="modal-card rpg-class-modal-card">
+        <div class="modal-header">
+          <div class="modal-header-row">
+            <h2 id="rpg-class-select-title" class="modal-title">Guild Quartermaster</h2>
+            <button type="button" id="btn-close-rpg-class-modal" class="btn-modal-close" title="Close (Esc)" aria-label="Close">✕</button>
+          </div>
+        </div>
+        <p class="rpg-class-prompt">Welcome to the Adventure Guild! Choose your starting class to begin:</p>
+        <div id="rpg-class-select-grid" class="rpg-class-select-grid"></div>
+        <div class="rpg-class-modal-footer">
+          <button type="button" id="btn-rpg-class-open-decor-shop" class="btn-secondary rpg-sm-btn">Browse Guild Furniture Shop</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Full-Screen Minimalist Modal: Netherworld Focus RPG -->
+    <div id="rpg-modal" class="modal-overlay rpg-fullscreen-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="rpg-modal-title">
+      <div class="rpg-fullscreen-shell">
+        <header class="rpg-fullscreen-topbar">
+          <div class="rpg-header-left">
+            <span class="focus-room-type-pill">ADVENTURE GUILD</span>
+            <h2 id="rpg-modal-title" class="rpg-topbar-hero-title">Adventurer</h2>
+            <span id="rpg-party-badge" class="rpg-chip">Solo (1)</span>
+          </div>
+          <div class="rpg-header-right">
+            <span id="rpg-fp-balance" class="rpg-balance-pill fp">0 FP</span>
+            <span id="rpg-karma-balance" class="rpg-balance-pill karma">0 Karma</span>
+            <button type="button" id="btn-rpg-open-decor-shop" class="btn-secondary rpg-xs-btn" title="Open Guild Furniture Shop">Guild Shop</button>
+            <button type="button" id="btn-close-rpg-modal" class="focus-exit-btn" title="Exit (Esc)">Exit</button>
+          </div>
+        </header>
+
+        <div id="rpg-notice-banner" class="rpg-notice-banner hidden"></div>
+
+        <div class="rpg-fullscreen-body">
+          <div id="rpg-stage-wrapper" class="rpg-stage-wrapper">
+            <div id="rpg-clash-stage-mount" class="rpg-clash-stage-mount"></div>
+            <div class="rpg-speed-controls">
+              <button type="button" class="rpg-speed-btn active" data-clash-speed="1">1x</button>
+              <button type="button" class="rpg-speed-btn" data-clash-speed="2">2x</button>
+              <button type="button" class="rpg-speed-btn" data-clash-speed="4">4x</button>
+              <button type="button" class="rpg-speed-btn skip" data-clash-speed="skip">Skip</button>
+            </div>
+          </div>
+
+          <nav class="rpg-tabs-bar" role="tablist">
+            <button type="button" class="rpg-tab-btn active" data-rpg-tab="dive">Dive</button>
+            <button type="button" class="rpg-tab-btn" data-rpg-tab="hero">Hero &amp; Gear</button>
+            <button type="button" class="rpg-tab-btn" data-rpg-tab="cheat">Cheat Shop</button>
+            <button type="button" class="rpg-tab-btn" data-rpg-tab="coop">Co-Op</button>
+          </nav>
+
+          <div id="rpg-tab-body" class="rpg-tab-body"></div>
         </div>
       </div>
     </div>

@@ -148,6 +148,13 @@ export interface PixelCollisionEntity {
   passable?: boolean;
 }
 
+export interface SellerNpcCollisionEntity {
+  x: number;
+  y: number;
+  enabled?: boolean;
+  showCounter?: boolean;
+}
+
 export interface PixelCollisionWorldInput {
   tiles: Map<string, string> | Record<string, string>;
   jukeboxes?: Iterable<PixelCollisionEntity>;
@@ -155,6 +162,7 @@ export interface PixelCollisionWorldInput {
   ashtrays?: Iterable<PixelCollisionEntity>;
   chessBoards?: Iterable<PixelCollisionEntity>;
   aquariums?: Iterable<PixelCollisionEntity>;
+  sellerNpc?: SellerNpcCollisionEntity | null;
   freeformDecorations?: Iterable<{ x: number; y: number; assetKey: string; passable?: boolean; flipX?: boolean }>;
 }
 
@@ -257,6 +265,31 @@ export function createPixelCollisionChecker(world: PixelCollisionWorldInput): Pi
           rects: getAssetRects("aquarium_1"),
         });
       }
+    }
+  }
+
+  if (world.sellerNpc && world.sellerNpc.enabled !== false) {
+    const npc = world.sellerNpc;
+    solidProps.push({
+      minX: npc.x - 16,
+      maxX: npc.x + 15,
+      minY: npc.y - 6,
+      maxY: npc.y + 22,
+      originX: npc.x - 16,
+      originY: npc.y - 6,
+      rects: [[0, 0, 32, 29]],
+    });
+    if (npc.showCounter !== false) {
+      // Counter positioned directly south in front of the Seller NPC
+      solidProps.push({
+        minX: npc.x - 46,
+        maxX: npc.x + 45,
+        minY: npc.y + 20,
+        maxY: npc.y + 47,
+        originX: npc.x - 46,
+        originY: npc.y + 20,
+        rects: [[0, 0, 92, 28]],
+      });
     }
   }
 

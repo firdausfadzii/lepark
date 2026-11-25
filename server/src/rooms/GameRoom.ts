@@ -1,10 +1,16 @@
 import { Room, Client, ServerError } from "colyseus";
-import { parkingPointsService } from "../services/ParkingPointsService";
-import { GameState, PlayerState } from "../schema/GameState";
+import { focusPointsService } from "../services/FocusPointsService";
+import { focusSessionService } from "../services/FocusSessionService";
+import { rpgService } from "../services/RpgService";
+import { squadService } from "../services/SquadService";
+import { DinerRoomController } from "../services/DinerService";
+import { GameState, PlayerState, OutfitSchema } from "../schema/GameState";
 import {
   PlayerInputPayload,
   PlayerJoinOptions,
   PlayerAvatars,
+  PlayerOutfit,
+  DEFAULT_AVATAR_ICON,
   normalizeFrames,
   TILE_SIZE,
   GRID_COLS,
@@ -86,6 +92,10 @@ import {
   AquariumPlacePayload,
   AquariumMovePayload,
   AquariumDeletePayload,
+  SellerNpcState,
+  SellerNpcPlacePayload,
+  SellerNpcMovePayload,
+  SellerNpcUpdatePayload,
   ThrowBattleTurnPhase,
   ThrowBattlePlayer,
   ThrowBattleState,
@@ -102,12 +112,29 @@ import {
   isValidInteractionType,
   parseFreeformTile,
   isPaidAssetId,
+  ASSET_UNLOCK_COST,
+  FocusTheme,
+  FocusRoomStartPayload,
+  FocusRoomUpdateSettingsPayload,
+  FocusRoomVisibilityPayload,
+  SquadInvitePayload,
+  SquadInviteRespondPayload,
+  SquadKickPayload,
+  isValidFocusTheme,
+  resolveSpaceFocusTheme,
+  resolveSpaceAssetShopTheme,
+  getSellerThemeProfile,
+  isValidAssetShopTheme,
+  isValidSellerNpcSpriteKey,
+  buildRpgGearSignature,
 } from "shared";
 import { Chess } from "chess.js";
 import {
   upsertPlayer,
   updatePlayerPosition,
   updateUserLastLocation,
+  updateUserLastPublicSpace,
+  computeUserFocusStats,
   getSpaceById,
   getSpaceTiles,
   updateSpaceTiles,
@@ -124,6 +151,8 @@ import {
   updateSpaceChessBoards,
   getSpaceAquariums,
   updateSpaceAquariums,
+  getSpaceSellerNpc,
+  updateSpaceSellerNpc,
   findUserById,
   ensureUserPersonalSpace,
   saveChatMessage,
@@ -142,11 +171,15 @@ export function getSpacePlayerCount(spaceId: string): number {
   return activeSpaceCounts.get(spaceId) || 0;
 }
 
-export function notifySpaceSettingsUpdated(spaceId: string, sharedOwners: string[]) {
+export function notifySpaceSettingsUpdated(
+  spaceId: string,
+  sharedOwners: string[],
+  meta?: { name?: string; focusTheme?: FocusTheme }
+) {
   const rooms = activeRoomsBySpace.get(spaceId);
   if (!rooms) return;
   for (const room of rooms) {
-    room.updateSpaceSharedOwners(sharedOwners);
+    room.updateSpaceSettings(sharedOwners, meta);
   }
 }
 
@@ -154,6 +187,9 @@ export class GameRoom extends Room<GameState> {
   maxClients = 64;
 
   public spaceId: string = "space_central_plaza";
+  public spaceName: string = "CO3";
+  public isSuperadminSpace: boolean = true;
+  public spaceFocusTheme: FocusTheme = "auto";
   private playerInputs: Map<string, PlayerInputPayload> = new Map();
   private playerInputSyncTimes: Map<string, number> = new Map();
   private playerAvatars: Map<string, PlayerAvatars> = new Map();
@@ -163,6 +199,14 @@ export class GameRoom extends Room<GameState> {
     if (!avatars || !avatars.idle) return null;
     const frames = normalizeFrames(avatars.idle);
     return frames.length > 0 ? frames[0] : null;
+  }
+
+  public getPlayerAvatars(sessionId: string): PlayerAvatars | null {
+    return this.playerAvatars.get(sessionId) || null;
+  }
+
+  public get spaceTilesSnapshot(): Record<string, string> {
+    return this.tiles;
   }
   private tiles: Record<string, string> = {};
   private privateZones: PrivateZone[] = [];
@@ -254,10 +298,43 @@ export class GameRoom extends Room<GameState> {
   private voiceParticipants: Set<string> = new Set();
   private spaceOwnerId: number | null = null;
   private spaceSharedOwners: string[] = [];
+  private sellerNpc: SellerNpcState | null = null;
   private clientAuthMap: Map<string, any> = new Map();
+  private dinerController: DinerRoomController = new DinerRoomController(
+    (type, payload) => this.broadcast(type, payload),
+    (sessionId) => this.clients.find((c) => c.sessionId === sessionId)
+  );
 
   public updateSpaceSharedOwners(sharedOwners: string[]) {
     this.spaceSharedOwners = Array.isArray(sharedOwners) ? [...sharedOwners] : [];
+  }
+
+  public updateSpaceSettings(
+    sharedOwners: string[],
+    meta?: { name?: string; focusTheme?: FocusTheme }
+  ) {
+    this.updateSpaceSharedOwners(sharedOwners);
+    if (meta) {
+      if (typeof meta.name === "string" && meta.name.trim()) {
+        this.spaceName = meta.name.trim();
+      }
+      if (meta.focusTheme && isValidFocusTheme(meta.focusTheme)) {
+        this.spaceFocusTheme = meta.focusTheme;
+      }
+      this.broadcast("SPACE_INFO_UPDATED", {
+        spaceId: this.spaceId,
+        name: this.spaceName,
+        isSuperadminSpace: this.isSuperadminSpace,
+        focusTheme: this.spaceFocusTheme,
+        resolvedTheme: resolveSpaceFocusTheme({
+          spaceName: this.spaceName,
+          focusTheme: this.spaceFocusTheme,
+          tiles: this.tiles,
+          fallbackTheme: "park",
+        }),
+      });
+      this.broadcast("SELLER_NPC_UPDATED", this.resolveSellerNpcForBroadcast());
+    }
   }
 
   private isSpaceOwnerOrCoOwner(
@@ -286,6 +363,8 @@ export class GameRoom extends Room<GameState> {
         ashtrays: this.ashtrays.values(),
         chessBoards: this.chessBoards.values(),
         aquariums: this.aquariums.values(),
+        sellerNpc:
+          this.sellerNpc && this.sellerNpc.enabled !== false ? this.sellerNpc : null,
       });
     }
     return this.cachedPixelCollisionChecker;
@@ -396,7 +475,9 @@ export class GameRoom extends Room<GameState> {
             username: userExists.username,
             displayName: userExists.display_name,
             role: userExists.role,
-            parkingPoints: userExists.parking_points || 0,
+            focusPoints: userExists.focus_points || 0,
+            focusStats: computeUserFocusStats(userExists),
+            lastPublicSpaceId: userExists.last_public_space_id || null,
             lastSpaceId: userExists.last_space_id || null,
             lastX: userExists.last_x ?? null,
             lastY: userExists.last_y ?? null,
@@ -530,7 +611,7 @@ export class GameRoom extends Room<GameState> {
       "UPDATE_PROFILE",
       (
         client: Client,
-        data: { name?: string; color?: string; avatars?: PlayerAvatars | null },
+        data: { name?: string; color?: string; avatars?: PlayerAvatars | null; outfit?: Partial<PlayerOutfit> },
       ) => {
         const player = this.state.players.get(client.sessionId);
         if (player) {
@@ -539,6 +620,9 @@ export class GameRoom extends Room<GameState> {
           }
           if (data.color && /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(data.color)) {
             player.color = data.color;
+          }
+          if (data.outfit && typeof data.outfit === "object") {
+            this.applyOutfitUpdate(player.outfit, data.outfit);
           }
           if (data.avatars !== undefined) {
             if (data.avatars && data.avatars.idle) {
@@ -563,6 +647,15 @@ export class GameRoom extends Room<GameState> {
             y: player.y,
           });
         }
+      },
+    );
+
+    this.onMessage(
+      "change_outfit",
+      (client: Client, data: Partial<PlayerOutfit>) => {
+        const player = this.state.players.get(client.sessionId);
+        if (!player || !data || typeof data !== "object") return;
+        this.applyOutfitUpdate(player.outfit, data);
       },
     );
 
@@ -594,7 +687,7 @@ export class GameRoom extends Room<GameState> {
 
     // Load initial tiles, space metadata, zones, jukeboxes, typewriters, ashtrays, and recent chat history
     try {
-      const [loadedTiles, space, loadedZones, loadedJukeboxes, loadedTypewriters, loadedAshtrays, loadedChessBoards, loadedAquariums, loadedChats] =
+      const [loadedTiles, space, loadedZones, loadedJukeboxes, loadedTypewriters, loadedAshtrays, loadedChessBoards, loadedAquariums, loadedSellerNpc, loadedChats] =
         await Promise.all([
           getSpaceTiles(this.spaceId),
           getSpaceById(this.spaceId),
@@ -604,12 +697,16 @@ export class GameRoom extends Room<GameState> {
           getSpaceAshtrays(this.spaceId),
           getSpaceChessBoards(this.spaceId),
           getSpaceAquariums(this.spaceId),
+          getSpaceSellerNpc(this.spaceId),
           getRecentChatMessages(this.spaceId, "map", 50),
         ]);
 
       this.tiles = loadedTiles || {};
       if (space) {
         this.spaceOwnerId = space.owner_id;
+        this.spaceName = space.name || this.spaceId;
+        this.isSuperadminSpace = !!space.is_superadmin_space;
+        this.spaceFocusTheme = isValidFocusTheme(space.focus_theme) ? space.focus_theme : "auto";
         this.spaceSharedOwners = Array.isArray(space.shared_owners) ? [...space.shared_owners] : [];
       }
       this.privateZones = loadedZones || [];
@@ -638,8 +735,25 @@ export class GameRoom extends Room<GameState> {
           this.aquariums.set(aq.id, aq);
         }
       }
+      if (loadedSellerNpc) {
+        this.sellerNpc = loadedSellerNpc;
+      } else if (this.isSuperadminSpace) {
+        const defaultPos = this.chooseDefaultSellerNpcPosition();
+        this.sellerNpc = {
+          id: `seller_${this.spaceId}`,
+          spaceId: this.spaceId,
+          x: defaultPos.x,
+          y: defaultPos.y,
+          shopTheme: "auto",
+          showCounter: true,
+          enabled: true,
+          layer: 0,
+        };
+        await this.persistSellerNpc();
+      }
       this.invalidatePixelCollisionChecker();
       await this.syncVirtualJukeboxesFromTiles(this.tiles, false);
+      this.dinerController.syncLayoutFromTiles(this.tiles, this.getPixelCollisionChecker());
       this.recentChatMessages = loadedChats || [];
     } catch (err) {
       console.warn(`[GameRoom] Error preloading data for space ${this.spaceId}:`, err);
@@ -711,6 +825,19 @@ export class GameRoom extends Room<GameState> {
                 ) {
                   newlyPlacedPaidAssets.add(nextParsed.assetKey);
                 }
+              } else if (!isSuperadmin && /^\d+,\d+$/.test(k)) {
+                const prevAssets = new Set(
+                  (this.tiles[k] || "")
+                    .split("&")
+                    .map((part) => part.split("|")[0])
+                    .filter(Boolean)
+                );
+                for (const part of migratedVal.split("&")) {
+                  const assetKey = part.split("|")[0];
+                  if (assetKey && isPaidAssetId(assetKey) && !prevAssets.has(assetKey)) {
+                    newlyPlacedPaidAssets.add(assetKey);
+                  }
+                }
               }
               migratedUpdates[k] = migratedVal;
             }
@@ -724,7 +851,7 @@ export class GameRoom extends Room<GameState> {
             for (const assetId of newlyPlacedPaidAssets) {
               if (!unlockedSet.has(assetId)) {
                 client.send("ERROR", {
-                  message: "Asset locked: Purchase this sprite (5 Parking Points) before placing it.",
+                  message: `Asset locked: Visit a space's Seller NPC counter to purchase this asset (${ASSET_UNLOCK_COST} FP) before placing it.`,
                 });
                 return;
               }
@@ -742,9 +869,77 @@ export class GameRoom extends Room<GameState> {
           this.broadcast("TILES_UPDATED", migratedUpdates);
           await updateSpaceTiles(this.spaceId, this.tiles);
           await this.syncVirtualJukeboxesFromTiles(migratedUpdates, true);
+          this.dinerController.syncLayoutFromTiles(this.tiles, this.getPixelCollisionChecker());
+          this.dinerController.broadcastStateNow();
         }
       },
     );
+
+    // ==========================================
+    // Diner Dash Restaurant Minigame Handlers
+    // ==========================================
+    this.onMessage("DINER_JOIN_SHIFT", (client: Client) => {
+      const player = this.state.players.get(client.sessionId);
+      if (!player) return;
+      this.dinerController.handleJoinShift(client, {
+        x: player.x,
+        y: player.y,
+        name: player.name,
+        color: player.color,
+        userId: player.userId,
+      });
+    });
+
+    this.onMessage("DINER_LEAVE_SHIFT", (client: Client) => {
+      const player = this.state.players.get(client.sessionId);
+      this.dinerController.handleLeaveShift(
+        client.sessionId,
+        player ? { x: player.x, y: player.y } : null,
+        true
+      );
+    });
+
+    this.onMessage("DINER_SEAT_CUSTOMER", (client: Client) => {
+      const player = this.state.players.get(client.sessionId);
+      if (!player) return;
+      this.dinerController.handleSeatCustomer(client, { x: player.x, y: player.y });
+    });
+
+    this.onMessage("DINER_TAKE_ORDER", (client: Client, data?: { tableId?: string }) => {
+      const player = this.state.players.get(client.sessionId);
+      if (!player) return;
+      this.dinerController.handleTakeOrder(
+        client,
+        { x: player.x, y: player.y },
+        data?.tableId
+      );
+    });
+
+    this.onMessage("DINER_SUBMIT_ORDERS", (client: Client) => {
+      const player = this.state.players.get(client.sessionId);
+      if (!player) return;
+      this.dinerController.handleSubmitOrders(client, { x: player.x, y: player.y });
+    });
+
+    this.onMessage("DINER_PICKUP_FOOD", (client: Client, data?: { orderId?: string }) => {
+      const player = this.state.players.get(client.sessionId);
+      if (!player) return;
+      this.dinerController.handlePickupFood(
+        client,
+        { x: player.x, y: player.y },
+        data?.orderId
+      );
+    });
+
+    this.onMessage("DINER_DELIVER_FOOD", (client: Client, data?: { tableId?: string }) => {
+      const player = this.state.players.get(client.sessionId);
+      if (!player) return;
+      this.dinerController.handleDeliverFood(
+        client,
+        { x: player.x, y: player.y },
+        data?.tableId
+      );
+    });
 
     // Handle updating interactable & interaction type on special entities (jukebox, typewriter, ashtray, chess_board, aquarium)
     this.onMessage(
@@ -1952,7 +2147,7 @@ export class GameRoom extends Room<GameState> {
           }
         }
         if (!avatarUrl) {
-          avatarUrl = "/assets/sprites/default/sprite1.png";
+          avatarUrl = DEFAULT_AVATAR_ICON;
         }
 
         const isViewer =
@@ -2374,6 +2569,134 @@ export class GameRoom extends Room<GameState> {
           this.broadcast("AQUARIUM_UPDATED", aq);
           await this.persistAquariums();
         }
+      }
+    );
+
+    // --- Seller NPC (Asset Shop Counter) Handlers (Superadmin only) ---
+
+    this.onMessage(
+      "SELLER_NPC_SET",
+      async (client: Client, data: SellerNpcPlacePayload) => {
+        const auth = this.clientAuthMap.get(client.sessionId);
+        const user = auth?.user;
+        if (user?.role !== "superadmin") {
+          client.send("ERROR", {
+            message: "Permission denied: Only superadmin can place or configure Seller NPCs.",
+          });
+          return;
+        }
+        if (!data || typeof data.x !== "number" || typeof data.y !== "number") return;
+
+        const clampedX = Math.max(64, Math.min(WORLD_WIDTH - 64, Math.round(data.x)));
+        const clampedY = Math.max(48, Math.min(WORLD_HEIGHT - 80, Math.round(data.y)));
+        const nextNpc: SellerNpcState = {
+          id: this.sellerNpc?.id || `seller_${this.spaceId}`,
+          spaceId: this.spaceId,
+          x: clampedX,
+          y: clampedY,
+          name:
+            typeof data.name === "string" && data.name.trim().length > 0
+              ? data.name.trim().slice(0, 40)
+              : this.sellerNpc?.name,
+          spriteKey: isValidSellerNpcSpriteKey(data.spriteKey)
+            ? data.spriteKey
+            : this.sellerNpc?.spriteKey,
+          shopTheme: isValidAssetShopTheme(data.shopTheme)
+            ? data.shopTheme
+            : this.sellerNpc?.shopTheme || "auto",
+          showCounter:
+            data.showCounter !== undefined
+              ? Boolean(data.showCounter)
+              : this.sellerNpc?.showCounter !== false,
+          enabled: true,
+          layer: typeof data.layer === "number" ? Math.round(data.layer) : this.sellerNpc?.layer ?? 0,
+        };
+        this.sellerNpc = nextNpc;
+        this.invalidatePixelCollisionChecker();
+        this.broadcast("SELLER_NPC_UPDATED", this.resolveSellerNpcForBroadcast());
+        await this.persistSellerNpc();
+      }
+    );
+
+    this.onMessage(
+      "SELLER_NPC_MOVE",
+      async (client: Client, data: SellerNpcMovePayload) => {
+        const auth = this.clientAuthMap.get(client.sessionId);
+        const user = auth?.user;
+        if (user?.role !== "superadmin") {
+          client.send("ERROR", {
+            message: "Permission denied: Only superadmin can move the Seller NPC.",
+          });
+          return;
+        }
+        if (!this.sellerNpc || typeof data?.x !== "number" || typeof data?.y !== "number") return;
+
+        this.sellerNpc.x = Math.max(64, Math.min(WORLD_WIDTH - 64, Math.round(data.x)));
+        this.sellerNpc.y = Math.max(48, Math.min(WORLD_HEIGHT - 80, Math.round(data.y)));
+        this.sellerNpc.enabled = true;
+        this.invalidatePixelCollisionChecker();
+        this.broadcast("SELLER_NPC_UPDATED", this.resolveSellerNpcForBroadcast());
+        await this.persistSellerNpc();
+      }
+    );
+
+    this.onMessage(
+      "SELLER_NPC_UPDATE",
+      async (client: Client, data: SellerNpcUpdatePayload) => {
+        const auth = this.clientAuthMap.get(client.sessionId);
+        const user = auth?.user;
+        if (user?.role !== "superadmin") {
+          client.send("ERROR", {
+            message: "Permission denied: Only superadmin can update the Seller NPC.",
+          });
+          return;
+        }
+        if (!this.sellerNpc || !data || typeof data !== "object") return;
+
+        if (data.name !== undefined) {
+          const cleanName = typeof data.name === "string" ? data.name.trim().slice(0, 40) : "";
+          this.sellerNpc.name = cleanName.length > 0 ? cleanName : undefined;
+        }
+        if (data.spriteKey !== undefined) {
+          this.sellerNpc.spriteKey = isValidSellerNpcSpriteKey(data.spriteKey)
+            ? data.spriteKey
+            : undefined;
+        }
+        if (data.shopTheme !== undefined && isValidAssetShopTheme(data.shopTheme)) {
+          this.sellerNpc.shopTheme = data.shopTheme;
+        }
+        if (data.showCounter !== undefined) {
+          this.sellerNpc.showCounter = Boolean(data.showCounter);
+        }
+        if (data.enabled !== undefined) {
+          this.sellerNpc.enabled = Boolean(data.enabled);
+        }
+        if (typeof data.layer === "number" && Number.isFinite(data.layer)) {
+          this.sellerNpc.layer = Math.round(data.layer);
+        }
+        this.invalidatePixelCollisionChecker();
+        this.broadcast("SELLER_NPC_UPDATED", this.resolveSellerNpcForBroadcast());
+        await this.persistSellerNpc();
+      }
+    );
+
+    this.onMessage(
+      "SELLER_NPC_DELETE",
+      async (client: Client) => {
+        const auth = this.clientAuthMap.get(client.sessionId);
+        const user = auth?.user;
+        if (user?.role !== "superadmin") {
+          client.send("ERROR", {
+            message: "Permission denied: Only superadmin can remove the Seller NPC.",
+          });
+          return;
+        }
+        if (!this.sellerNpc) return;
+
+        this.sellerNpc.enabled = false;
+        this.invalidatePixelCollisionChecker();
+        this.broadcast("SELLER_NPC_UPDATED", null);
+        await this.persistSellerNpc();
       }
     );
 
@@ -3244,7 +3567,7 @@ export class GameRoom extends Room<GameState> {
 
           // Cross-room whisper lookup if target is in another space
           if (!targetPlayer || !targetClient) {
-            const remoteSession = parkingPointsService.findSessionBySessionId(targetSessionId);
+            const remoteSession = focusPointsService.findSessionBySessionId(targetSessionId);
             if (remoteSession) {
               targetPlayer = remoteSession.playerState;
               targetClient = remoteSession.client;
@@ -3383,7 +3706,7 @@ export class GameRoom extends Room<GameState> {
 
           const deliveredSessionIds = new Set<string>();
           for (const member of org.members) {
-            const session = parkingPointsService.getOnlineSessionForUser(member.userId);
+            const session = focusPointsService.getOnlineSessionForUser(member.userId);
             if (session && session.client && !deliveredSessionIds.has(session.sessionId)) {
               deliveredSessionIds.add(session.sessionId);
               session.client.send("CHAT_MESSAGE", chatMsg);
@@ -3510,6 +3833,458 @@ export class GameRoom extends Room<GameState> {
         });
       },
     );
+
+    // ==========================================
+    // Focus Room (Pomodoro) & Squad Message Handlers
+    // ==========================================
+
+    this.onMessage("FOCUS_ROOM_START", async (client: Client, data: FocusRoomStartPayload) => {
+      const player = this.state.players.get(client.sessionId);
+      if (!player) return;
+      await focusSessionService.startOrJoinFocusRoom({
+        userId: player.userId,
+        colyseusSessionId: client.sessionId,
+        room: this,
+        playerState: player,
+        payload: data,
+      });
+    });
+
+    this.onMessage(
+      "FOCUS_ROOM_UPDATE_SETTINGS",
+      (client: Client, data: FocusRoomUpdateSettingsPayload) => {
+        const player = this.state.players.get(client.sessionId);
+        if (!player) return;
+        const res = focusSessionService.updateSettings(player.userId, client.sessionId, data || {});
+        if (!res.success && res.error) {
+          client.send("FOCUS_NOTICE", { type: "warning", message: res.error });
+        }
+      },
+    );
+
+    this.onMessage("FOCUS_ROOM_VISIBILITY", (client: Client, data: FocusRoomVisibilityPayload) => {
+      const player = this.state.players.get(client.sessionId);
+      if (!player) return;
+      focusSessionService.reportVisibility(player.userId, client.sessionId, !!data?.hidden);
+    });
+
+    this.onMessage("FOCUS_ROOM_END_EARLY", async (client: Client) => {
+      const player = this.state.players.get(client.sessionId);
+      if (!player) return;
+      await focusSessionService.endEarly(player.userId, client.sessionId);
+    });
+
+    this.onMessage("FOCUS_ROOM_EXIT", (client: Client) => {
+      const player = this.state.players.get(client.sessionId);
+      if (!player) return;
+      focusSessionService.exitRoom(player.userId, client.sessionId);
+    });
+
+    this.onMessage("SQUAD_CREATE", async (client: Client) => {
+      const player = this.state.players.get(client.sessionId);
+      if (!player) return;
+      const res = await squadService.createSquad(player.userId);
+      if (!res.success && res.error) {
+        client.send("SQUAD_NOTICE", { type: "warning", message: res.error });
+      }
+    });
+
+    this.onMessage("SQUAD_INVITE", async (client: Client, data: SquadInvitePayload) => {
+      const player = this.state.players.get(client.sessionId);
+      if (!player) return;
+
+      let targetUserId = Number(data?.targetUserId || 0);
+      if ((!targetUserId || targetUserId <= 0) && data?.targetSessionId) {
+        const targetPlayer = this.state.players.get(data.targetSessionId);
+        if (targetPlayer && targetPlayer.userId > 0) {
+          targetUserId = targetPlayer.userId;
+        } else {
+          const remote = focusPointsService.findSessionBySessionId(data.targetSessionId);
+          if (remote && remote.userId > 0) {
+            targetUserId = remote.userId;
+          }
+        }
+      }
+
+      const res = await squadService.invitePlayer(player.userId, targetUserId);
+      if (!res.success) {
+        client.send("SQUAD_NOTICE", { type: "warning", message: res.error || "Could not send squad invite." });
+      } else {
+        client.send("SQUAD_NOTICE", { type: "info", message: "Party invite sent!" });
+      }
+    });
+
+    this.onMessage("SQUAD_INVITE_RESPOND", async (client: Client, data: SquadInviteRespondPayload) => {
+      const player = this.state.players.get(client.sessionId);
+      if (!player) return;
+      const res = await squadService.respondToInvite(
+        player.userId,
+        Number(data?.fromUserId || 0),
+        !!data?.accept,
+      );
+      if (!res.success && res.error) {
+        client.send("SQUAD_NOTICE", { type: "warning", message: res.error });
+      }
+    });
+
+    this.onMessage("SQUAD_LEAVE", (client: Client) => {
+      const player = this.state.players.get(client.sessionId);
+      if (!player) return;
+      squadService.leaveSquad(player.userId, "left");
+    });
+
+    this.onMessage("SQUAD_KICK", (client: Client, data: SquadKickPayload) => {
+      const player = this.state.players.get(client.sessionId);
+      if (!player) return;
+      const res = squadService.kickMember(player.userId, Number(data?.targetUserId || 0));
+      if (!res.success && res.error) {
+        client.send("SQUAD_NOTICE", { type: "warning", message: res.error });
+      }
+    });
+
+    this.onMessage("SQUAD_REQUEST_STATE", (client: Client) => {
+      const player = this.state.players.get(client.sessionId);
+      if (!player) return;
+      client.send("SQUAD_STATE_UPDATED", {
+        squad: player.userId > 0 ? squadService.getSquadStateForUser(player.userId) : null,
+      });
+    });
+
+    // ==========================================
+    // Netherworld Focus RPG Message Handlers
+    // ==========================================
+
+    this.onMessage("RPG_GET_STATE", async (client: Client) => {
+      const player = this.state.players.get(client.sessionId);
+      if (!player) return;
+      const bundle = await rpgService.getFullClientBundle(player.userId);
+      client.send("RPG_STATE_SYNC", bundle);
+    });
+
+    this.onMessage("RPG_CHOOSE_CLASS", async (client: Client, data: { classId: any }) => {
+      const player = this.state.players.get(client.sessionId);
+      if (!player) return;
+      const res = await rpgService.chooseInitialClass(player.userId, data?.classId);
+      if (!res.success) {
+        client.send("RPG_ACTION_ERROR", { message: res.error || "Could not select class." });
+        return;
+      }
+      if (res.profile) {
+        player.rpgGearSignature = buildRpgGearSignature(res.profile.hero);
+      }
+      const bundle = await rpgService.getFullClientBundle(player.userId);
+      client.send("RPG_CLASS_CHOSEN", bundle);
+    });
+
+    this.onMessage("RPG_TRAIN_HERO", async (client: Client, data: { fpAmount: number }) => {
+      const player = this.state.players.get(client.sessionId);
+      if (!player) return;
+      const res = await rpgService.trainHeroWithFp(player.userId, Number(data?.fpAmount || 0));
+      if (!res.success) {
+        client.send("RPG_ACTION_ERROR", { message: res.error || "Training failed." });
+        return;
+      }
+      client.send("RPG_PROFILE_UPDATED", {
+        profile: res.profile,
+        notice: `Hero trained! +${res.xpGained} XP`,
+      });
+    });
+
+    this.onMessage(
+      "RPG_REINCARNATE",
+      async (client: Client, data: { nextClassId?: any; inheritedPassives?: string[] }) => {
+        const player = this.state.players.get(client.sessionId);
+        if (!player) return;
+        const res = await rpgService.reincarnateHero(
+          player.userId,
+          data?.nextClassId,
+          data?.inheritedPassives
+        );
+        if (!res.success) {
+          client.send("RPG_ACTION_ERROR", { message: res.error || "Reincarnation failed." });
+          return;
+        }
+        const alliedParty = res.profile ? await rpgService.assembleAlliedParty(player.userId, res.profile) : undefined;
+        client.send("RPG_PROFILE_UPDATED", {
+          profile: res.profile,
+          alliedParty,
+          notice: `Reincarnated! Earned +${res.karmaEarned} Karma & banked Stored Levels!`,
+        });
+      }
+    );
+
+    this.onMessage(
+      "RPG_UPGRADE_KARMA",
+      async (client: Client, data: { node: "aptitude" | "shopRank" | "focusEfficiency" | "dimensional" }) => {
+        const player = this.state.players.get(client.sessionId);
+        if (!player) return;
+        const res = await rpgService.upgradeKarmaNode(player.userId, data?.node);
+        if (!res.success) {
+          client.send("RPG_ACTION_ERROR", { message: res.error || "Karma upgrade failed." });
+          return;
+        }
+        client.send("RPG_PROFILE_UPDATED", {
+          profile: res.profile,
+          notice: "Karma Meta-Tree upgraded!",
+        });
+      }
+    );
+
+    this.onMessage(
+      "RPG_BUY_GEAR",
+      async (client: Client, data: { rank: number; slot: any; weaponType?: any }) => {
+        const player = this.state.players.get(client.sessionId);
+        if (!player) return;
+        const res = await rpgService.buyShopEquipment(
+          player.userId,
+          Number(data?.rank || 1),
+          data?.slot || "WEAPON",
+          data?.weaponType
+        );
+        if (!res.success) {
+          client.send("RPG_ACTION_ERROR", { message: res.error || "Purchase failed." });
+          return;
+        }
+        client.send("RPG_PROFILE_UPDATED", {
+          profile: res.profile,
+          notice: `Purchased ${res.item?.name || "Equipment"}!`,
+        });
+      }
+    );
+
+    this.onMessage("RPG_EQUIP_ITEM", async (client: Client, data: { itemId: string }) => {
+      const player = this.state.players.get(client.sessionId);
+      if (!player) return;
+      const res = await rpgService.equipItem(player.userId, data?.itemId);
+      if (!res.success) {
+        client.send("RPG_ACTION_ERROR", { message: res.error || "Equip failed." });
+        return;
+      }
+      client.send("RPG_PROFILE_UPDATED", { profile: res.profile });
+    });
+
+    this.onMessage(
+      "RPG_BLACKSMITH_RARITY",
+      async (client: Client, data: { targetItemId: string; duplicateItemId: string }) => {
+        const player = this.state.players.get(client.sessionId);
+        if (!player) return;
+        const res = await rpgService.campBlacksmithRarityFusion(
+          player.userId,
+          data?.targetItemId,
+          data?.duplicateItemId
+        );
+        if (!res.success) {
+          client.send("RPG_ACTION_ERROR", { message: res.error || "Rarity Fusion failed." });
+          return;
+        }
+        client.send("RPG_PROFILE_UPDATED", {
+          profile: res.profile,
+          notice: "Blacksmith Rarity Fusion complete!",
+        });
+      }
+    );
+
+    this.onMessage(
+      "RPG_BLACKSMITH_TRAIT",
+      async (client: Client, data: { targetItemId: string; sourceItemId: string; traitId: string }) => {
+        const player = this.state.players.get(client.sessionId);
+        if (!player) return;
+        const res = await rpgService.campBlacksmithTraitTransfer(
+          player.userId,
+          data?.targetItemId,
+          data?.sourceItemId,
+          data?.traitId
+        );
+        if (!res.success) {
+          client.send("RPG_ACTION_ERROR", { message: res.error || "Trait Transfer failed." });
+          return;
+        }
+        client.send("RPG_PROFILE_UPDATED", {
+          profile: res.profile,
+          notice: "Passive Trait transferred!",
+        });
+      }
+    );
+
+    this.onMessage("RPG_LAUNCH_EXPEDITION", async (client: Client, data: { itemId: string; floors: 10 | 50 }) => {
+      const player = this.state.players.get(client.sessionId);
+      if (!player) return;
+      const res = await rpgService.launchExpedition(player.userId, data?.itemId, data?.floors === 50 ? 50 : 10);
+      if (!res.success) {
+        client.send("RPG_ACTION_ERROR", { message: res.error || "Expedition failed." });
+        return;
+      }
+      client.send("RPG_EXPEDITION_RESULT", {
+        profile: res.profile,
+        expedition: res.expedition,
+      });
+    });
+
+    this.onMessage(
+      "RPG_MERGE_SPECIALISTS",
+      async (client: Client, data: { specId1: string; specId2: string }) => {
+        const player = this.state.players.get(client.sessionId);
+        if (!player) return;
+        const res = await rpgService.mergeWarehouseSpecialists(
+          player.userId,
+          data?.specId1,
+          data?.specId2
+        );
+        if (!res.success) {
+          client.send("RPG_ACTION_ERROR", { message: res.error || "Merge failed." });
+          return;
+        }
+        client.send("RPG_PROFILE_UPDATED", {
+          profile: res.profile,
+          notice: "Specialists merged (+10% synergy bonus)!",
+        });
+      }
+    );
+
+    this.onMessage(
+      "RPG_SOCKET_SPECIALIST",
+      async (client: Client, data: { specId: string; targetItemId: string }) => {
+        const player = this.state.players.get(client.sessionId);
+        if (!player) return;
+        const res = await rpgService.socketSpecialist(player.userId, data?.specId, data?.targetItemId);
+        if (!res.success) {
+          client.send("RPG_ACTION_ERROR", { message: res.error || "Socketing failed." });
+          return;
+        }
+        client.send("RPG_PROFILE_UPDATED", {
+          profile: res.profile,
+          notice: "Specialist socketed into equipment!",
+        });
+      }
+    );
+
+    this.onMessage("RPG_UNLOCK_STAR_CAP", async (client: Client) => {
+      const player = this.state.players.get(client.sessionId);
+      if (!player) return;
+      const res = await rpgService.unlockCheatStarCap(player.userId);
+      if (!res.success) {
+        client.send("RPG_ACTION_ERROR", { message: res.error || "Star cap unlock failed." });
+        return;
+      }
+      client.send("RPG_PROFILE_UPDATED", {
+        profile: res.profile,
+        notice: `Cheat Shop Star Cap raised to ${res.profile?.cheatShop.starCap}★!`,
+      });
+    });
+
+    this.onMessage("RPG_UPDATE_CHEAT_SHOP", async (client: Client, data: any) => {
+      const player = this.state.players.get(client.sessionId);
+      if (!player) return;
+      const res = await rpgService.updateCheatShop(player.userId, data || {});
+      if (!res.success) {
+        client.send("RPG_ACTION_ERROR", { message: res.error || "Cheat Shop update failed." });
+        return;
+      }
+      client.send("RPG_PROFILE_UPDATED", {
+        profile: res.profile,
+        notice: "Cheat Shop settings saved!",
+      });
+    });
+
+    this.onMessage("RPG_UPDATE_TACTICS", async (client: Client, data: any) => {
+      const player = this.state.players.get(client.sessionId);
+      if (!player) return;
+      const res = await rpgService.updateHeroTactics(player.userId, data || {});
+      if (!res.success) {
+        client.send("RPG_ACTION_ERROR", { message: res.error || "Tactics update failed." });
+        return;
+      }
+      client.send("RPG_PROFILE_UPDATED", {
+        profile: res.profile,
+        alliedParty: res.alliedParty,
+        notice: "Hero stance & Demonic AI saved!",
+      });
+    });
+
+    this.onMessage("RPG_CLAIM_CAMP_INBOX", async (client: Client) => {
+      const player = this.state.players.get(client.sessionId);
+      if (!player) return;
+      const res = await rpgService.claimCampInbox(player.userId);
+      if (!res.success) {
+        client.send("RPG_ACTION_ERROR", { message: res.error || "Camp Inbox empty." });
+        return;
+      }
+      client.send("RPG_PROFILE_UPDATED", {
+        profile: res.profile,
+        notice: `Claimed +${res.claimedFp || 0} FP & +${res.claimedKarma || 0} Assist Karma!`,
+      });
+    });
+
+    this.onMessage("RPG_LIVE_CHEER", async (client: Client, data: { targetUserId: number }) => {
+      const player = this.state.players.get(client.sessionId);
+      if (!player) return;
+      const res = await rpgService.sendLiveSquadCheer(
+        player.userId,
+        player.name || "Squadmate",
+        Number(data?.targetUserId || 0)
+      );
+      if (!res.success) {
+        client.send("RPG_ACTION_ERROR", { message: res.error || "Cheer failed." });
+        return;
+      }
+      client.send("RPG_PROFILE_UPDATED", {
+        notice: "Sent +20% Crit Damage Cheer surge to squadmate!",
+      });
+    });
+
+    this.onMessage("RPG_POST_TRADE", async (client: Client, data: any) => {
+      const player = this.state.players.get(client.sessionId);
+      if (!player) return;
+      const res = await rpgService.postTradeOffer(player.userId, data || {});
+      if (!res.success) {
+        client.send("RPG_ACTION_ERROR", { message: res.error || "Could not post barter offer." });
+        return;
+      }
+      client.send("RPG_BARTER_UPDATED", { offers: res.offers, profile: res.profile });
+    });
+
+    this.onMessage("RPG_ACCEPT_TRADE", async (client: Client, data: { offerId: string; offeredBackItemId: string }) => {
+      const player = this.state.players.get(client.sessionId);
+      if (!player) return;
+      const res = await rpgService.acceptTradeOffer(player.userId, data?.offerId, data?.offeredBackItemId);
+      if (!res.success) {
+        client.send("RPG_ACTION_ERROR", { message: res.error || "Could not complete barter." });
+        return;
+      }
+      client.send("RPG_BARTER_UPDATED", {
+        offers: res.offers,
+        profile: res.profile,
+        notice: "Squad Barter completed!",
+      });
+    });
+
+    this.onMessage("RPG_CANCEL_TRADE", async (client: Client, data: { offerId: string }) => {
+      const player = this.state.players.get(client.sessionId);
+      if (!player) return;
+      const res = await rpgService.cancelTradeOffer(player.userId, data?.offerId);
+      if (!res.success) {
+        client.send("RPG_ACTION_ERROR", { message: res.error || "Could not cancel barter." });
+        return;
+      }
+      client.send("RPG_BARTER_UPDATED", { offers: res.offers });
+    });
+
+    this.onMessage("RPG_ATTACK_RAID", async (client: Client) => {
+      const player = this.state.players.get(client.sessionId);
+      if (!player) return;
+      const res = await rpgService.attackRaidBoss(player.userId);
+      if (!res.success) {
+        client.send("RPG_ACTION_ERROR", { message: res.error || "Raid attack failed." });
+        return;
+      }
+      client.send("RPG_RAID_RESULT", {
+        raid: res.raid,
+        profile: res.profile,
+        hitEvent: res.hitEvent,
+        karmaEarned: res.karmaEarned,
+      });
+      this.broadcast("RPG_RAID_HIT", { raid: res.raid, hitEvent: res.hitEvent }, { except: client });
+    });
   }
 
   onJoin(client: Client, options: PlayerJoinOptions, auth: any) {
@@ -3537,16 +4312,39 @@ export class GameRoom extends Room<GameState> {
       (auth && auth.user && auth.user.role === "superadmin") || false;
     player.userId = (auth && auth.user && auth.user.id) || 0;
     player.userSpaceId = auth && auth.user ? `user_space_${auth.user.id}` : "";
-    player.parkingPoints = (auth && auth.user && auth.user.parkingPoints) || 0;
+    player.focusPoints = (auth && auth.user && auth.user.focusPoints) || 0;
+    player.focusStatus = "idle";
+    player.focusSquadId = player.userId > 0 ? squadService.getSquadIdForUser(player.userId) || "" : "";
+    player.focusEndTime = 0;
+    if (options && options.outfit && typeof options.outfit === "object") {
+      this.applyOutfitUpdate(player.outfit, options.outfit);
+    }
 
-    parkingPointsService.registerClient({
+    if (auth?.space) {
+      this.spaceName = auth.space.name || this.spaceName || this.spaceId;
+      this.isSuperadminSpace = !!auth.space.is_superadmin_space;
+      this.spaceFocusTheme = isValidFocusTheme(auth.space.focus_theme) ? auth.space.focus_theme : this.spaceFocusTheme;
+    }
+
+    focusPointsService.registerClient({
       userId: player.userId,
+      username: (auth && auth.user && auth.user.username) || player.name,
       sessionId: client.sessionId,
       client,
       room: this,
       playerState: player,
+      initialPoints: player.focusPoints,
+    }).then(() => {
+      if (player.userId > 0) {
+        squadService.handleUserConnect(player.userId);
+        if (this.isSuperadminSpace) {
+          updateUserLastPublicSpace(player.userId, this.spaceId).catch((err) => {
+            console.warn("Could not persist last public space:", err);
+          });
+        }
+      }
     }).catch((err) => {
-      console.warn("Could not register client in parkingPointsService:", err);
+      console.warn("Could not register client in focusPointsService:", err);
     });
 
     if (auth && auth.user) {
@@ -3688,14 +4486,46 @@ export class GameRoom extends Room<GameState> {
     // Send current space aquariums to joining client
     client.send("CURRENT_AQUARIUMS", Array.from(this.aquariums.values()));
 
+    // Send current space Seller NPC to joining client
+    client.send("CURRENT_SELLER_NPC", this.resolveSellerNpcForBroadcast());
+
     // Send recent chat messages from DB to joining client
     if (this.recentChatMessages && this.recentChatMessages.length > 0) {
       client.send("CHAT_HISTORY", this.recentChatMessages);
     }
+
+    // Send space focus theme metadata & focus stats to joining client
+    client.send("CURRENT_SPACE_INFO", {
+      spaceId: this.spaceId,
+      name: this.spaceName,
+      isSuperadminSpace: this.isSuperadminSpace,
+      focusTheme: this.spaceFocusTheme,
+      resolvedTheme: resolveSpaceFocusTheme({
+        spaceName: this.spaceName,
+        focusTheme: this.spaceFocusTheme,
+        tiles: this.tiles,
+        fallbackTheme: "park",
+      }),
+    });
+    if (auth?.user?.focusStats) {
+      client.send("FOCUS_STATS_SYNC", auth.user.focusStats);
+    }
+    client.send("DINER_STATE", this.dinerController.getPublicState());
+    void rpgService.getFullClientBundle(player.userId).then((bundle) => {
+      try {
+        player.rpgGearSignature = buildRpgGearSignature(bundle.profile.hero);
+        client.send("RPG_STATE_SYNC", bundle);
+      } catch {}
+    });
   }
 
   onLeave(client: Client, consented?: boolean) {
-    parkingPointsService.unregisterClient(client.sessionId);
+    const leavingPlayer = this.state.players.get(client.sessionId);
+    focusSessionService.handleRoomLeave(leavingPlayer?.userId || 0, client.sessionId);
+    focusPointsService.unregisterClient(client.sessionId);
+    if (leavingPlayer && leavingPlayer.userId > 0) {
+      squadService.handleUserDisconnect(leavingPlayer.userId);
+    }
     const count = activeSpaceCounts.get(this.spaceId) || 1;
     activeSpaceCounts.set(this.spaceId, Math.max(0, count - 1));
 
@@ -3719,6 +4549,9 @@ export class GameRoom extends Room<GameState> {
 
     // Cleanup throw battle match or challenge if user was in throw battle
     this.handleThrowBattleLeave(client.sessionId);
+
+    // Cleanup diner shift if user was clocked in
+    this.dinerController.handleLeaveShift(client.sessionId, null, false);
 
     const player = this.state.players.get(client.sessionId);
     if (player) {
@@ -3803,6 +4636,8 @@ export class GameRoom extends Room<GameState> {
         player.direction = "idle";
       }
     });
+
+    this.dinerController.update(now, deltaTime, this.state.players);
 
     this.dbSyncCounter++;
     if (this.dbSyncCounter >= 100) {
@@ -4397,6 +5232,132 @@ export class GameRoom extends Room<GameState> {
     }
   }
 
+  private resolveSellerNpcForBroadcast(): SellerNpcState | null {
+    if (!this.sellerNpc || this.sellerNpc.enabled === false) {
+      return null;
+    }
+    const resolvedTheme = resolveSpaceAssetShopTheme({
+      shopTheme: this.sellerNpc.shopTheme || "auto",
+      spaceName: this.spaceName,
+      focusTheme: this.spaceFocusTheme,
+      tiles: this.tiles,
+    });
+    const profile = getSellerThemeProfile(resolvedTheme);
+    return {
+      ...this.sellerNpc,
+      name: this.sellerNpc.name || profile.defaultNpcName,
+      spriteKey: this.sellerNpc.spriteKey || profile.defaultSpriteKey,
+      shopTheme: this.sellerNpc.shopTheme || "auto",
+      showCounter: this.sellerNpc.showCounter !== false,
+      enabled: true,
+      layer: this.sellerNpc.layer ?? 0,
+    };
+  }
+
+  private chooseDefaultSellerNpcPosition(): { x: number; y: number } {
+    let prefCol = Math.floor(GRID_COLS / 2);
+    let prefRow = Math.floor(GRID_ROWS / 2);
+    if (this.tiles["spawn_point"]) {
+      const [sc, sr] = this.tiles["spawn_point"].split(",");
+      const parsedCol = parseInt(sc, 10);
+      const parsedRow = parseInt(sr, 10);
+      if (
+        !isNaN(parsedCol) &&
+        !isNaN(parsedRow) &&
+        parsedCol >= 0 &&
+        parsedCol < GRID_COLS &&
+        parsedRow >= 0 &&
+        parsedRow < GRID_ROWS
+      ) {
+        prefCol = parsedCol;
+        prefRow = parsedRow;
+      }
+    }
+    const spawnCenter = getTileCenter(prefCol, prefRow);
+    const checker = this.getPixelCollisionChecker();
+    const isSpotClear = (cx: number, cy: number): boolean => {
+      if (cx < 90 || cx > WORLD_WIDTH - 90 || cy < 80 || cy > WORLD_HEIGHT - 120) {
+        return false;
+      }
+      if (Math.hypot(cx - spawnCenter.x, cy - spawnCenter.y) < 85) {
+        return false;
+      }
+      const npcBlocked = checker.isBoxBlocked
+        ? checker.isBoxBlocked(cx - 20, cy - 12, cx + 19, cy + 22)
+        : false;
+      if (npcBlocked) return false;
+      const counterBlocked = checker.isBoxBlocked
+        ? checker.isBoxBlocked(cx - 48, cy + 18, cx + 47, cy + 48)
+        : false;
+      if (counterBlocked) return false;
+      const standBlocked = checker.isBoxBlocked
+        ? checker.isBoxBlocked(cx - 18, cy + 60, cx + 17, cy + 88)
+        : false;
+      return !standBlocked;
+    };
+
+    const candidateOffsets: Array<[number, number]> = [
+      [150, -100],
+      [-150, -100],
+      [200, -50],
+      [-200, -50],
+      [0, -150],
+      [150, 50],
+      [-150, 50],
+      [250, -100],
+      [-250, -100],
+      [100, -200],
+      [-100, -200],
+    ];
+    for (const [dx, dy] of candidateOffsets) {
+      const cx = Math.round(spawnCenter.x + dx);
+      const cy = Math.round(spawnCenter.y + dy);
+      if (isSpotClear(cx, cy)) return { x: cx, y: cy };
+    }
+
+    for (let ring = 2; ring <= 8; ring++) {
+      for (let dRow = -ring; dRow <= ring; dRow++) {
+        for (let dCol = -ring; dCol <= ring; dCol++) {
+          if (Math.abs(dRow) !== ring && Math.abs(dCol) !== ring) continue;
+          const cx = spawnCenter.x + dCol * TILE_SIZE;
+          const cy = spawnCenter.y + dRow * TILE_SIZE;
+          if (isSpotClear(cx, cy)) return { x: cx, y: cy };
+        }
+      }
+    }
+
+    return {
+      x: Math.min(WORLD_WIDTH - 100, spawnCenter.x + 150),
+      y: Math.max(90, spawnCenter.y - 100),
+    };
+  }
+
+  private async persistSellerNpc() {
+    try {
+      await updateSpaceSellerNpc(this.spaceId, this.sellerNpc);
+    } catch (err) {
+      console.error("[GameRoom] Error persisting space seller NPC:", err);
+    }
+  }
+
+  private applyOutfitUpdate(target: OutfitSchema, data: Partial<PlayerOutfit>) {
+    const isValidHex = (val: unknown): val is string =>
+      typeof val === "string" && /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(val);
+    const isValidKey = (val: unknown): val is string =>
+      typeof val === "string" && /^[a-z0-9_-]{0,64}$/i.test(val);
+
+    if (data.shirtStyle === "sleeveless" || data.shirtStyle === "short_sleeve" || data.shirtStyle === "long_sleeve") {
+      target.shirtStyle = data.shirtStyle;
+    }
+    if (isValidHex(data.shirtColor)) target.shirtColor = data.shirtColor;
+    if (data.sleeveColor === "" || isValidHex(data.sleeveColor)) target.sleeveColor = data.sleeveColor;
+    if (isValidHex(data.pantsColor)) target.pantsColor = data.pantsColor;
+    if (isValidHex(data.skinColor)) target.skinColor = data.skinColor;
+    if (isValidKey(data.outerwearKey)) target.outerwearKey = data.outerwearKey;
+    if (isValidHex(data.outerwearColor)) target.outerwearColor = data.outerwearColor;
+    if (isValidKey(data.hatKey)) target.hatKey = data.hatKey;
+  }
+
   private getPlayerAvatarUrl(sessionId: string): string {
     const avatars = this.playerAvatars.get(sessionId);
     if (avatars?.idle) {
@@ -4406,7 +5367,7 @@ export class GameRoom extends Room<GameState> {
         return avatars.idle;
       }
     }
-    return "/assets/sprites/default/sprite1.png";
+    return DEFAULT_AVATAR_ICON;
   }
 
   private getChessLobbyState(chessBoardId: string): ChessLobbyState {
@@ -4652,6 +5613,6 @@ export class GameRoom extends Room<GameState> {
     this.throwBattleMatches.clear();
     this.clientThrowBattleMatchMap.clear();
     this.pendingThrowBattleChallenges.clear();
-    parkingPointsService.unregisterRoom(this);
+    focusPointsService.unregisterRoom(this);
   }
 }

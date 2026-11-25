@@ -1,4 +1,5 @@
-import { parkingPointsService } from "./services/ParkingPointsService";
+import { focusPointsService } from "./services/FocusPointsService";
+import { focusSessionService } from "./services/FocusSessionService";
 import http from "http";
 import https from "https";
 import fs from "fs";
@@ -43,6 +44,7 @@ import {
   addOrganisationMember,
   removeOrganisationMember,
   deleteOrganisation,
+  transferOrganisationLeadership,
   getAllUsersBasic,
   getAccessibleSpacesForNotes,
   getNotesForUser,
@@ -61,10 +63,33 @@ import {
   updateSpaceInventoryItem,
   deleteSpaceInventoryItem,
   SpaceRecord,
+  UserRecord,
+  getSpaceTiles,
+  computeUserFocusStats,
 } from "./db";
 import { hashPassword, verifyPassword, generateToken, verifyToken } from "./auth";
 import { sendOtp, verifyOtp, consumeOtp, isValidEmail, OtpPurpose } from "./services/EmailService";
-import { AuthUser, Space, SpacesListResponse, SpaceResponse, FriendEntry, FriendRequestEntry, FriendsListResponse, ORGANISATION_CREATION_COST, ASSET_UNLOCK_COST, isPaidAssetId, NoteType, CalendarType, CalendarRepeatUnit } from "shared";
+import {
+  AuthUser,
+  Space,
+  SpacesListResponse,
+  SpaceResponse,
+  SpaceShopResponse,
+  FriendEntry,
+  FriendRequestEntry,
+  FriendsListResponse,
+  ORGANISATION_CREATION_COST,
+  ASSET_UNLOCK_COST,
+  ALL_PAID_ASSET_IDS,
+  isPaidAssetId,
+  isValidFocusTheme,
+  getSpaceShopCatalog,
+  isAssetSoldInShopTheme,
+  FocusTheme,
+  NoteType,
+  CalendarType,
+  CalendarRepeatUnit,
+} from "shared";
 
 dotenv.config({ path: path.resolve(__dirname, "../.env") });
 dotenv.config({ path: path.resolve(__dirname, "../../.env") });
@@ -220,6 +245,28 @@ app.post("/api/auth/send-otp", async (req, res) => {
   }
 });
 
+function buildAuthUserDto(record: UserRecord, includeLastLocation: boolean = true): AuthUser {
+  const isSuperadmin = record.role === "superadmin";
+  const dto: AuthUser = {
+    id: record.id,
+    username: record.username,
+    email: record.email || null,
+    displayName: record.display_name,
+    role: record.role,
+    focusPoints: record.focus_points || 0,
+    focusStats: computeUserFocusStats(record),
+    lastPublicSpaceId: record.last_public_space_id || null,
+    unlockedSkins: record.unlocked_skins || [],
+    unlockedAssets: isSuperadmin ? [...ALL_PAID_ASSET_IDS] : record.unlocked_assets || [],
+  };
+  if (includeLastLocation) {
+    dto.lastSpaceId = record.last_space_id || null;
+    dto.lastX = record.last_x ?? null;
+    dto.lastY = record.last_y ?? null;
+  }
+  return dto;
+}
+
 /**
  * Register a new user account.
  */
@@ -309,16 +356,7 @@ app.post("/api/auth/register", async (req, res) => {
     const createdUser = await createUser(cleanUsername, passwordHash, cleanDisplayName, "user", cleanEmail);
     consumeOtp(cleanEmail, "register");
 
-    const user: AuthUser = {
-      id: createdUser.id,
-      username: createdUser.username,
-      email: createdUser.email,
-      displayName: createdUser.display_name,
-      role: createdUser.role,
-      parkingPoints: createdUser.parking_points || 0,
-      unlockedSkins: createdUser.unlocked_skins || [],
-      unlockedAssets: createdUser.unlocked_assets || [],
-    };
+    const user: AuthUser = buildAuthUserDto(createdUser, false);
 
     const token = generateToken(user);
 
@@ -375,19 +413,7 @@ app.post("/api/auth/login", async (req, res) => {
     // Ensure personal space is initialized
     await ensureUserPersonalSpace(userRecord.id, userRecord.username);
 
-    const user: AuthUser = {
-      id: userRecord.id,
-      username: userRecord.username,
-      email: userRecord.email || null,
-      displayName: userRecord.display_name,
-      role: userRecord.role,
-      parkingPoints: userRecord.parking_points || 0,
-      unlockedSkins: userRecord.unlocked_skins || [],
-      unlockedAssets: userRecord.unlocked_assets || [],
-      lastSpaceId: userRecord.last_space_id || null,
-      lastX: userRecord.last_x ?? null,
-      lastY: userRecord.last_y ?? null,
-    };
+    const user: AuthUser = buildAuthUserDto(userRecord, true);
 
     const token = generateToken(user);
 
@@ -423,19 +449,7 @@ app.get("/api/auth/me", async (req, res) => {
     // Ensure user has personal space
     await ensureUserPersonalSpace(userRecord.id, userRecord.username);
 
-    const updatedUser: AuthUser = {
-      id: userRecord.id,
-      username: userRecord.username,
-      email: userRecord.email || null,
-      displayName: userRecord.display_name,
-      role: userRecord.role,
-      parkingPoints: userRecord.parking_points || 0,
-      unlockedSkins: userRecord.unlocked_skins || [],
-      unlockedAssets: userRecord.unlocked_assets || [],
-      lastSpaceId: userRecord.last_space_id || null,
-      lastX: userRecord.last_x ?? null,
-      lastY: userRecord.last_y ?? null,
-    };
+    const updatedUser: AuthUser = buildAuthUserDto(userRecord, true);
 
     return res.json({ success: true, user: updatedUser });
   } catch (err: any) {
@@ -465,16 +479,7 @@ app.put("/api/auth/profile", async (req, res) => {
       return res.status(404).json({ success: false, error: "User not found." });
     }
 
-    const updatedUser: AuthUser = {
-      id: updatedRecord.id,
-      username: updatedRecord.username,
-      email: updatedRecord.email || null,
-      displayName: updatedRecord.display_name,
-      role: updatedRecord.role,
-      parkingPoints: updatedRecord.parking_points || 0,
-      unlockedSkins: updatedRecord.unlocked_skins || [],
-      unlockedAssets: updatedRecord.unlocked_assets || [],
-    };
+    const updatedUser: AuthUser = buildAuthUserDto(updatedRecord, false);
 
     const newToken = generateToken(updatedUser);
 
@@ -574,16 +579,7 @@ app.post("/api/auth/link-email", async (req, res) => {
       return res.status(404).json({ success: false, error: "User not found." });
     }
 
-    const updatedUser: AuthUser = {
-      id: updatedRecord.id,
-      username: updatedRecord.username,
-      email: updatedRecord.email || null,
-      displayName: updatedRecord.display_name,
-      role: updatedRecord.role,
-      parkingPoints: updatedRecord.parking_points || 0,
-      unlockedSkins: updatedRecord.unlocked_skins || [],
-      unlockedAssets: updatedRecord.unlocked_assets || [],
-    };
+    const updatedUser: AuthUser = buildAuthUserDto(updatedRecord, false);
 
     const newToken = generateToken(updatedUser);
     return res.json({
@@ -601,7 +597,7 @@ app.post("/api/auth/link-email", async (req, res) => {
 
 
 /**
- * Unlock a character sprite skin with parking points.
+ * Unlock a character sprite skin with Focus Points (FP).
  * POST /api/skins/unlock
  */
 app.post("/api/skins/unlock", async (req, res) => {
@@ -637,8 +633,8 @@ app.post("/api/skins/unlock", async (req, res) => {
       });
     }
 
-    // Synchronize points with active sessions in ParkingPointsService
-    parkingPointsService.updateUserPoints(user.id, result.newPoints);
+    // Synchronize points with active sessions in FocusPointsService
+    focusPointsService.updateUserPoints(user.id, result.newPoints);
 
     return res.json({
       success: true,
@@ -653,7 +649,64 @@ app.post("/api/skins/unlock", async (req, res) => {
 });
 
 /**
- * Unlock a single map editor asset/sprite with parking points (5 points per sprite).
+ * Get the themed Asset Shop catalog for a specific space's Seller NPC counter.
+ * GET /api/spaces/:spaceId/shop
+ */
+app.get("/api/spaces/:spaceId/shop", async (req, res) => {
+  try {
+    const { spaceId } = req.params;
+    const space = await getSpaceById(spaceId);
+    if (!space) {
+      return res.status(404).json({ success: false, error: "Space not found." } satisfies SpaceShopResponse);
+    }
+
+    const authUser = getAuthUser(req);
+    const userRecord = authUser ? await findUserById(authUser.id) : null;
+    const isSuperadmin = userRecord?.role === "superadmin";
+
+    if (!space.is_public && !isSuperadmin) {
+      const unameLower = userRecord?.username?.toLowerCase();
+      const isOwner = !!userRecord && space.owner_id === userRecord.id;
+      const isShared = !!unameLower && (space.shared_owners || []).some((u) => u.toLowerCase() === unameLower);
+      const isWhitelisted = !!unameLower && (space.whitelist || []).some((u) => u.toLowerCase() === unameLower);
+      if (!isOwner && !isShared && !isWhitelisted) {
+        return res.status(403).json({ success: false, error: "Access denied to this space." } satisfies SpaceShopResponse);
+      }
+    }
+
+    const tiles = await getSpaceTiles(spaceId);
+    const catalog = getSpaceShopCatalog({
+      shopTheme: space.seller_npc?.shopTheme || "auto",
+      spaceName: space.name,
+      focusTheme: space.focus_theme,
+      tiles,
+    });
+
+    const ownedAssets = isSuperadmin
+      ? [...catalog.assetIds]
+      : (userRecord?.unlocked_assets || []).filter((id) => catalog.assetIds.includes(id));
+
+    return res.json({
+      success: true,
+      resolvedTheme: catalog.resolvedTheme,
+      shopTitle: catalog.profile.shopTitle,
+      subtitle: catalog.profile.subtitle,
+      npcName: space.seller_npc?.name || catalog.profile.defaultNpcName,
+      assetCost: ASSET_UNLOCK_COST,
+      groups: catalog.groups,
+      ownedAssets,
+      isSuperadmin,
+      focusPoints: userRecord?.focus_points || 0,
+    } satisfies SpaceShopResponse);
+  } catch (err: any) {
+    console.error("Get space shop error:", err);
+    return res.status(500).json({ success: false, error: "Failed to load space asset shop." } satisfies SpaceShopResponse);
+  }
+});
+
+/**
+ * Unlock a single map editor asset/sprite with Focus Points (50 FP per sprite).
+ * Regular users must purchase assets from a space's Seller NPC counter (`spaceId`).
  * POST /api/assets/unlock
  */
 app.post("/api/assets/unlock", async (req, res) => {
@@ -663,13 +716,56 @@ app.post("/api/assets/unlock", async (req, res) => {
       return res.status(401).json({ success: false, error: "Invalid or expired authorization token." });
     }
 
-    const { assetId } = req.body || {};
+    const userRecord = await findUserById(user.id);
+    if (!userRecord) {
+      return res.status(401).json({ success: false, error: "User no longer exists." });
+    }
+
+    const { assetId, spaceId } = req.body || {};
     if (!assetId || typeof assetId !== "string" || assetId.length > 200 || assetId.includes("..")) {
       return res.status(400).json({ success: false, error: "Invalid assetId." });
     }
 
     if (!isPaidAssetId(assetId)) {
       return res.status(400).json({ success: false, error: `Asset '${assetId}' does not require unlocking.` });
+    }
+
+    // Superadmin already has all paid assets
+    if (userRecord.role === "superadmin") {
+      return res.json({
+        success: true,
+        points: userRecord.focus_points || 0,
+        unlockedAssets: [...ALL_PAID_ASSET_IDS],
+        assetId,
+        alreadyOwned: true,
+      });
+    }
+
+    if (!spaceId || typeof spaceId !== "string") {
+      return res.status(400).json({
+        success: false,
+        error: "Assets must be purchased from a space's Seller NPC counter.",
+      });
+    }
+
+    const space = await getSpaceById(spaceId);
+    if (!space) {
+      return res.status(404).json({ success: false, error: "Space not found." });
+    }
+
+    const tiles = await getSpaceTiles(spaceId);
+    const catalog = getSpaceShopCatalog({
+      shopTheme: space.seller_npc?.shopTheme || "auto",
+      spaceName: space.name,
+      focusTheme: space.focus_theme,
+      tiles,
+    });
+
+    if (!isAssetSoldInShopTheme(assetId, catalog.resolvedTheme)) {
+      return res.status(400).json({
+        success: false,
+        error: `This asset is not sold by ${space.name}'s Seller NPC. Visit the matching themed space to buy it.`,
+      });
     }
 
     const result = await unlockAssetForUser(user.id, assetId, ASSET_UNLOCK_COST);
@@ -683,8 +779,8 @@ app.post("/api/assets/unlock", async (req, res) => {
       });
     }
 
-    // Synchronize points with active sessions in ParkingPointsService
-    parkingPointsService.updateUserPoints(user.id, result.newPoints);
+    // Synchronize points with active sessions in FocusPointsService
+    focusPointsService.updateUserPoints(user.id, result.newPoints);
 
     return res.json({
       success: true,
@@ -706,13 +802,14 @@ function toSpaceDto(s: SpaceRecord, ownerUsernameOverride?: string): Space {
   return {
     id: s.id,
     name: s.name,
-    category: s.is_superadmin_space ? (s.category || "General") : "Personal",
     ownerId: s.owner_id,
     ownerUsername: ownerUsernameOverride || s.owner_username || (s.is_superadmin_space ? "superadmin" : "User"),
     isPublic: s.is_public,
     isSuperadminSpace: s.is_superadmin_space,
+    focusTheme: s.focus_theme || "auto",
     whitelist: s.whitelist || [],
     sharedOwners: s.shared_owners || [],
+    sellerNpc: s.seller_npc ?? null,
     playerCount: getSpacePlayerCount(s.id),
     createdAt: s.created_at.toISOString(),
     updatedAt: s.updated_at.toISOString(),
@@ -785,7 +882,7 @@ async function cleanAndValidateSharedOwners(
 
 /**
  * GET /api/spaces
- * - Returns superadmin spaces (shown in listing, grouped by category).
+ * - Returns superadmin spaces (shown in listing).
  * - User spaces are explicitly omitted from the public listing.
  * - If user is authenticated, also returns their own single personal space and spaces shared with them.
  */
@@ -795,12 +892,6 @@ app.get("/api/spaces", async (req, res) => {
     const adminSpaces = await getSuperadminSpaces();
 
     const spaces: Space[] = adminSpaces.map((s) => toSpaceDto(s));
-
-    const categorySet = new Set<string>();
-    spaces.forEach((s) => {
-      if (s.category) categorySet.add(s.category);
-    });
-    const categories = Array.from(categorySet);
 
     let mySpace: Space | undefined = undefined;
     let sharedSpaces: Space[] | undefined = undefined;
@@ -821,7 +912,6 @@ app.get("/api/spaces", async (req, res) => {
 
     const response: SpacesListResponse = {
       success: true,
-      categories,
       spaces,
       mySpace,
       sharedSpaces,
@@ -883,7 +973,7 @@ app.put("/api/spaces/my-space", async (req, res) => {
       return res.status(404).json({ success: false, error: "Personal space not found." });
     }
 
-    const { name, isPublic, whitelist, sharedOwners } = req.body || {};
+    const { name, isPublic, whitelist, sharedOwners, focusTheme } = req.body || {};
 
     const cleanWhitelist = cleanWhitelistInput(whitelist);
     const { usernames: cleanSharedOwners, error: shareError } = await cleanAndValidateSharedOwners(
@@ -904,6 +994,7 @@ app.put("/api/spaces/my-space", async (req, res) => {
         : cleanWhitelist;
 
     const updated = await updateSpace(personalSpace.id, {
+      focusTheme: isValidFocusTheme(focusTheme) ? focusTheme : undefined,
       name: typeof name === "string" && name.trim() ? name.trim().slice(0, 50) : undefined,
       isPublic: typeof isPublic === "boolean" ? isPublic : undefined,
       whitelist: finalWhitelist,
@@ -914,7 +1005,10 @@ app.put("/api/spaces/my-space", async (req, res) => {
       return res.status(500).json({ success: false, error: "Failed to update personal space." });
     }
 
-    notifySpaceSettingsUpdated(updated.id, updated.shared_owners);
+    notifySpaceSettingsUpdated(updated.id, updated.shared_owners, {
+      name: updated.name,
+      focusTheme: updated.focus_theme,
+    });
 
     return res.json({ success: true, space: toSpaceDto(updated, userRecord.username) });
   } catch (err: any) {
@@ -958,7 +1052,7 @@ app.put("/api/spaces/personal/:id", async (req, res) => {
       });
     }
 
-    const { name, isPublic, whitelist, sharedOwners } = req.body || {};
+    const { name, isPublic, whitelist, sharedOwners, focusTheme } = req.body || {};
 
     const cleanWhitelist = cleanWhitelistInput(whitelist);
     const { usernames: cleanSharedOwners, error: shareError } = await cleanAndValidateSharedOwners(
@@ -981,6 +1075,7 @@ app.put("/api/spaces/personal/:id", async (req, res) => {
         : cleanWhitelist;
 
     const updated = await updateSpace(existing.id, {
+      focusTheme: isValidFocusTheme(focusTheme) ? focusTheme : undefined,
       name: typeof name === "string" && name.trim() ? name.trim().slice(0, 50) : undefined,
       isPublic: typeof isPublic === "boolean" ? isPublic : undefined,
       whitelist: finalWhitelist,
@@ -991,7 +1086,10 @@ app.put("/api/spaces/personal/:id", async (req, res) => {
       return res.status(500).json({ success: false, error: "Failed to update space." });
     }
 
-    notifySpaceSettingsUpdated(updated.id, updated.shared_owners);
+    notifySpaceSettingsUpdated(updated.id, updated.shared_owners, {
+      name: updated.name,
+      focusTheme: updated.focus_theme,
+    });
 
     return res.json({ success: true, space: toSpaceDto(updated) });
   } catch (err: any) {
@@ -1033,7 +1131,7 @@ app.get("/api/spaces/user-space/:identifier", async (req, res) => {
 
 /**
  * POST /api/spaces
- * - Superadmin creates a new space (public or private with category)
+ * - Superadmin creates a new space (public or private)
  */
 app.post("/api/spaces", async (req, res) => {
   try {
@@ -1045,16 +1143,12 @@ app.post("/api/spaces", async (req, res) => {
       });
     }
 
-    const { name, category, isPublic, whitelist, sharedOwners } = req.body || {};
+    const { name, isPublic, whitelist, sharedOwners, focusTheme } = req.body || {};
     if (!name || typeof name !== "string" || name.trim().length === 0) {
       return res.status(400).json({ success: false, error: "Space name is required." });
     }
 
     const cleanName = name.trim().slice(0, 50);
-    const cleanCategory =
-      category && typeof category === "string" && category.trim().length > 0
-        ? category.trim().slice(0, 40)
-        : "General";
 
     const cleanWhitelist = cleanWhitelistInput(whitelist) || [];
     const { usernames: cleanSharedOwners, error: shareError } = await cleanAndValidateSharedOwners(
@@ -1066,8 +1160,8 @@ app.post("/api/spaces", async (req, res) => {
     }
 
     const created = await createSuperadminSpace({
+      focusTheme: isValidFocusTheme(focusTheme) ? focusTheme : "auto",
       name: cleanName,
-      category: cleanCategory,
       isPublic: typeof isPublic === "boolean" ? isPublic : true,
       ownerId: authUser.id,
       whitelist: cleanWhitelist,
@@ -1101,7 +1195,7 @@ app.put("/api/spaces/:id", async (req, res) => {
       return res.status(404).json({ success: false, error: "Superadmin space not found." });
     }
 
-    const { name, category, isPublic, whitelist, sharedOwners } = req.body || {};
+    const { name, isPublic, whitelist, sharedOwners, focusTheme } = req.body || {};
 
     const cleanWhitelist = cleanWhitelistInput(whitelist);
     const { usernames: cleanSharedOwners, error: shareError } = await cleanAndValidateSharedOwners(
@@ -1113,8 +1207,8 @@ app.put("/api/spaces/:id", async (req, res) => {
     }
 
     const updated = await updateSpace(spaceId, {
+      focusTheme: isValidFocusTheme(focusTheme) ? focusTheme : undefined,
       name: typeof name === "string" && name.trim() ? name.trim().slice(0, 50) : undefined,
-      category: typeof category === "string" && category.trim() ? category.trim().slice(0, 40) : undefined,
       isPublic: typeof isPublic === "boolean" ? isPublic : undefined,
       whitelist: cleanWhitelist,
       sharedOwners: cleanSharedOwners,
@@ -1124,7 +1218,10 @@ app.put("/api/spaces/:id", async (req, res) => {
       return res.status(500).json({ success: false, error: "Failed to update space." });
     }
 
-    notifySpaceSettingsUpdated(updated.id, updated.shared_owners);
+    notifySpaceSettingsUpdated(updated.id, updated.shared_owners, {
+      name: updated.name,
+      focusTheme: updated.focus_theme,
+    });
 
     return res.json({ success: true, space: toSpaceDto(updated) });
   } catch (err: any) {
@@ -1167,7 +1264,7 @@ app.delete("/api/spaces/:id", async (req, res) => {
 
 function notifyUserFriendUpdate(userId: number) {
   try {
-    const session = parkingPointsService.getOnlineSessionForUser(userId);
+    const session = focusPointsService.getOnlineSessionForUser(userId);
     if (session) {
       session.client.send("FRIEND_UPDATE", { timestamp: Date.now() });
     }
@@ -1205,7 +1302,10 @@ async function addFriendToPrivateSpaceIfNeeded(ownerId: number, friendUsername: 
       whitelist: [...current, friendUsername],
     });
     if (updated) {
-      notifySpaceSettingsUpdated(updated.id, updated.shared_owners);
+      notifySpaceSettingsUpdated(updated.id, updated.shared_owners, {
+      name: updated.name,
+      focusTheme: updated.focus_theme,
+    });
     }
   } catch (err) {
     console.warn("Could not auto-add friend to private space whitelist:", err);
@@ -1254,7 +1354,7 @@ app.get("/api/friends", async (req, res) => {
 
     for (const row of rows) {
       const baseName = row.other_display_name || row.other_username;
-      const onlineInfo = parkingPointsService.getOnlineUserInfo(row.other_user_id);
+      const onlineInfo = focusPointsService.getOnlineUserInfo(row.other_user_id);
 
       if (row.status === "accepted") {
         if (onlineInfo) {
@@ -1482,7 +1582,7 @@ app.get("/api/organisations/players", async (req, res) => {
       .filter((u) => u.userId !== authUser.id)
       .map((u) => ({
         ...u,
-        isOnline: Boolean(parkingPointsService.getOnlineUserInfo(u.userId)),
+        isOnline: Boolean(focusPointsService.getOnlineUserInfo(u.userId)),
       }));
     return res.json({ success: true, players });
   } catch (err) {
@@ -1545,7 +1645,7 @@ app.post("/api/organisations", async (req, res) => {
     }
 
     if (typeof result.newPoints === "number") {
-      parkingPointsService.updateUserPoints(authUser.id, result.newPoints);
+      focusPointsService.updateUserPoints(authUser.id, result.newPoints);
     }
 
     return res.json({
@@ -1624,6 +1724,29 @@ app.delete("/api/organisations/:id", async (req, res) => {
   } catch (err) {
     console.error("Delete organisation error:", err);
     return res.status(500).json({ success: false, error: "Failed to disband organisation." });
+  }
+});
+
+app.post("/api/organisations/:id/transfer", async (req, res) => {
+  try {
+    const authUser = getAuthUser(req);
+    if (!authUser) {
+      return res.status(401).json({ success: false, error: "Authentication required." });
+    }
+    const orgId = Number(req.params.id);
+    const newLeaderUserId = Number(req.body?.userId);
+    if (!Number.isInteger(orgId) || orgId <= 0 || !Number.isInteger(newLeaderUserId) || newLeaderUserId <= 0) {
+      return res.status(400).json({ success: false, error: "Invalid organisation or member ID." });
+    }
+
+    const result = await transferOrganisationLeadership(orgId, authUser.id, newLeaderUserId);
+    if (!result.success) {
+      return res.status(400).json({ success: false, error: result.error });
+    }
+    return res.json({ success: true, organisation: result.organisation });
+  } catch (err) {
+    console.error("Transfer organisation leadership error:", err);
+    return res.status(500).json({ success: false, error: "Failed to transfer leadership." });
   }
 });
 
@@ -2474,7 +2597,8 @@ gameServer.define("game_room", GameRoom).filterBy(["spaceId"]);
 
 async function start() {
   await initDb();
-  parkingPointsService.start();
+  focusPointsService.start();
+  focusSessionService.start();
   await gameServer.listen(PORT, "0.0.0.0");
   const isTls = serverInstance instanceof https.Server;
   const protocol = isTls ? "https" : "http";

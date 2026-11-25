@@ -18,6 +18,7 @@
     "typescript": "^5.3.3"
   },
   "dependencies": {
-    "@colyseus/schema": "^2.0.35"
+    "@colyseus/schema": "^2.0.35",
+    "break_infinity.js": "^2.2.0"
   }
 }
