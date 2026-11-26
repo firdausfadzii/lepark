@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import { Pool, PoolClient } from "pg";
 import dotenv from "dotenv";
 import { hashPassword } from "../auth";
@@ -29,6 +30,10 @@ import {
   isValidFocusTheme,
   calculateFocusPointsReward,
   FOCUS_MIN_MINUTES,
+  InventoryItemDto,
+  InventoryCategory,
+  FashionGearSlot,
+  OutfitMode,
 } from "shared";
 
 dotenv.config();
@@ -415,6 +420,19 @@ async function setupDatabaseSchema(client: PoolClient) {
     ALTER TABLE users ADD COLUMN IF NOT EXISTS last_space_id VARCHAR(64);
     ALTER TABLE users ADD COLUMN IF NOT EXISTS last_x DOUBLE PRECISION;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS last_y DOUBLE PRECISION;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS casual_outfit JSONB DEFAULT '{"chestKey":"white_shirt","outerwearKey":"white_shirt","pantsKey":"jean_pant","helmetKey":"","hatKey":"","bootsKey":"","glovesKey":""}'::jsonb;
+    UPDATE users
+    SET casual_outfit = COALESCE(casual_outfit, '{}'::jsonb) || '{"chestKey":"white_shirt","outerwearKey":"white_shirt","pantsKey":"jean_pant"}'::jsonb
+    WHERE casual_outfit IS NULL
+       OR (
+         COALESCE(casual_outfit->>'chestKey', '') = ''
+         AND COALESCE(casual_outfit->>'outerwearKey', '') = ''
+         AND COALESCE(casual_outfit->>'pantsKey', '') = ''
+         AND COALESCE(casual_outfit->>'helmetKey', '') = ''
+         AND COALESCE(casual_outfit->>'hatKey', '') = ''
+         AND COALESCE(casual_outfit->>'bootsKey', '') = ''
+         AND COALESCE(casual_outfit->>'glovesKey', '') = ''
+       );
   `);
 
   // 2. Players table
@@ -653,6 +671,31 @@ async function setupDatabaseSchema(client: PoolClient) {
       raid_json JSONB NOT NULL,
       updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     );
+  `);
+
+  // 11. Normalized Player Inventory table
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS player_inventory_items (
+      id UUID PRIMARY KEY,
+      user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      category VARCHAR(24) NOT NULL,
+      template_id VARCHAR(64) NOT NULL,
+      quantity INT NOT NULL DEFAULT 1,
+      equipped_mode VARCHAR(16) DEFAULT NULL,
+      equipped_slot VARCHAR(24) DEFAULT NULL,
+      is_locked BOOLEAN NOT NULL DEFAULT FALSE,
+      instance_data JSONB DEFAULT NULL,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_inv_user_cat
+      ON player_inventory_items (user_id, category);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_inv_unique_equipped
+      ON player_inventory_items (user_id, equipped_mode, equipped_slot)
+      WHERE equipped_slot IS NOT NULL AND equipped_mode IS NOT NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_inv_unique_stack
+      ON player_inventory_items (user_id, template_id)
+      WHERE instance_data IS NULL AND equipped_slot IS NULL;
   `);
 }
 
@@ -5507,4 +5550,293 @@ export async function saveRaidBossJson(weekKey: string, raidJson: any): Promise<
       handleDbQueryError("Error saving raid state", err);
     }
   }
+}
+
+// ==========================================
+// Player Inventory Database Operations
+// ==========================================
+
+const inMemoryPlayerInventory = new Map<number, InventoryItemDto[]>();
+
+function mapInventoryRow(row: any): InventoryItemDto {
+  return {
+    id: String(row.id),
+    templateId: String(row.template_id),
+    category: row.category as InventoryCategory,
+    quantity: Number(row.quantity) || 1,
+    equippedMode: (row.equipped_mode as OutfitMode | null) || null,
+    equippedSlot: (row.equipped_slot as FashionGearSlot | null) || null,
+    isLocked: Boolean(row.is_locked),
+    instanceData: row.instance_data ?? null,
+  };
+}
+
+export async function getPlayerInventoryItems(userId: number): Promise<InventoryItemDto[]> {
+  if (isDbConnected) {
+    try {
+      const res = await pool.query(
+        `SELECT id, template_id, category, quantity, equipped_mode, equipped_slot, is_locked, instance_data
+         FROM player_inventory_items
+         WHERE user_id = $1
+         ORDER BY created_at ASC`,
+        [userId]
+      );
+      const items = res.rows.map(mapInventoryRow);
+      inMemoryPlayerInventory.set(userId, items);
+      return items;
+    } catch (err) {
+      handleDbQueryError("Error loading player inventory", err);
+    }
+  }
+  return (inMemoryPlayerInventory.get(userId) || []).map((item) => ({ ...item }));
+}
+
+export async function seedPlayerInventoryItems(
+  userId: number,
+  items: Array<Omit<InventoryItemDto, "id">>
+): Promise<InventoryItemDto[]> {
+  const created: InventoryItemDto[] = items.map((item) => ({
+    ...item,
+    id: crypto.randomUUID(),
+  }));
+
+  if (isDbConnected && created.length > 0) {
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      for (const item of created) {
+        await client.query(
+          `INSERT INTO player_inventory_items
+             (id, user_id, category, template_id, quantity, equipped_mode, equipped_slot, is_locked, instance_data)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)`,
+          [
+            item.id,
+            userId,
+            item.category,
+            item.templateId,
+            item.quantity,
+            item.equippedMode,
+            item.equippedSlot,
+            item.isLocked,
+            item.instanceData ? JSON.stringify(item.instanceData) : null,
+          ]
+        );
+      }
+      await client.query("COMMIT");
+    } catch (err) {
+      await client.query("ROLLBACK").catch(() => {});
+      handleDbQueryError("Error seeding player inventory", err);
+    } finally {
+      client.release();
+    }
+  }
+
+  inMemoryPlayerInventory.set(userId, created);
+  return created.map((item) => ({ ...item }));
+}
+
+export async function equipPlayerInventoryItem(
+  userId: number,
+  itemId: string,
+  mode: OutfitMode,
+  slot: FashionGearSlot
+): Promise<{ updated: InventoryItemDto[]; error?: string }> {
+  if (isDbConnected) {
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const updatedRows: InventoryItemDto[] = [];
+
+      const prevRes = await client.query(
+        `UPDATE player_inventory_items
+         SET equipped_mode = NULL, equipped_slot = NULL, updated_at = CURRENT_TIMESTAMP
+         WHERE user_id = $1 AND equipped_mode = $2 AND equipped_slot = $3 AND id <> $4
+         RETURNING id, template_id, category, quantity, equipped_mode, equipped_slot, is_locked, instance_data`,
+        [userId, mode, slot, itemId]
+      );
+      for (const r of prevRes.rows) {
+        updatedRows.push(mapInventoryRow(r));
+      }
+
+      const nextRes = await client.query(
+        `UPDATE player_inventory_items
+         SET equipped_mode = $1, equipped_slot = $2, updated_at = CURRENT_TIMESTAMP
+         WHERE id = $3 AND user_id = $4
+         RETURNING id, template_id, category, quantity, equipped_mode, equipped_slot, is_locked, instance_data`,
+        [mode, slot, itemId, userId]
+      );
+
+      if (nextRes.rows.length === 0) {
+        await client.query("ROLLBACK");
+        return { updated: [], error: "Item not found in inventory." };
+      }
+
+      updatedRows.push(mapInventoryRow(nextRes.rows[0]));
+      await client.query("COMMIT");
+      return { updated: updatedRows };
+    } catch (err) {
+      await client.query("ROLLBACK").catch(() => {});
+      handleDbQueryError("Error equipping inventory item", err);
+      return { updated: [], error: "Failed to equip item." };
+    } finally {
+      client.release();
+    }
+  }
+
+  const list = inMemoryPlayerInventory.get(userId) || [];
+  const target = list.find((i) => i.id === itemId);
+  if (!target) return { updated: [], error: "Item not found in inventory." };
+
+  const updated: InventoryItemDto[] = [];
+  for (const item of list) {
+    if (item.id !== itemId && item.equippedMode === mode && item.equippedSlot === slot) {
+      item.equippedMode = null;
+      item.equippedSlot = null;
+      updated.push({ ...item });
+    }
+  }
+  target.equippedMode = mode;
+  target.equippedSlot = slot;
+  updated.push({ ...target });
+  return { updated };
+}
+
+export async function unequipPlayerInventoryItem(
+  userId: number,
+  itemId: string
+): Promise<{ updated: InventoryItemDto[]; error?: string }> {
+  if (isDbConnected) {
+    try {
+      const res = await pool.query(
+        `UPDATE player_inventory_items
+         SET equipped_mode = NULL, equipped_slot = NULL, updated_at = CURRENT_TIMESTAMP
+         WHERE id = $1 AND user_id = $2
+         RETURNING id, template_id, category, quantity, equipped_mode, equipped_slot, is_locked, instance_data`,
+        [itemId, userId]
+      );
+      if (res.rows.length === 0) {
+        return { updated: [], error: "Item not found in inventory." };
+      }
+      return { updated: [mapInventoryRow(res.rows[0])] };
+    } catch (err) {
+      handleDbQueryError("Error unequipping inventory item", err);
+      return { updated: [], error: "Failed to unequip item." };
+    }
+  }
+
+  const list = inMemoryPlayerInventory.get(userId) || [];
+  const target = list.find((i) => i.id === itemId);
+  if (!target) return { updated: [], error: "Item not found in inventory." };
+  target.equippedMode = null;
+  target.equippedSlot = null;
+  return { updated: [{ ...target }] };
+}
+
+export async function addPlayerInventoryItem(
+  userId: number,
+  item: Omit<InventoryItemDto, "id">,
+  maxSlots: number
+): Promise<{ added?: InventoryItemDto; updated?: InventoryItemDto; error?: string }> {
+  const canStack = !item.instanceData && !item.equippedSlot;
+
+  if (isDbConnected) {
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      if (canStack) {
+        const stackRes = await client.query(
+          `UPDATE player_inventory_items
+           SET quantity = quantity + $1, updated_at = CURRENT_TIMESTAMP
+           WHERE user_id = $2 AND template_id = $3 AND instance_data IS NULL AND equipped_slot IS NULL
+           RETURNING id, template_id, category, quantity, equipped_mode, equipped_slot, is_locked, instance_data`,
+          [Math.max(1, item.quantity), userId, item.templateId]
+        );
+        if (stackRes.rows.length > 0) {
+          await client.query("COMMIT");
+          return { updated: mapInventoryRow(stackRes.rows[0]) };
+        }
+      }
+
+      const countRes = await client.query(
+        `SELECT COUNT(*)::int AS cnt FROM player_inventory_items WHERE user_id = $1`,
+        [userId]
+      );
+      if ((countRes.rows[0]?.cnt || 0) >= maxSlots) {
+        await client.query("ROLLBACK");
+        return { error: `Inventory full (${maxSlots} / ${maxSlots}).` };
+      }
+
+      const id = crypto.randomUUID();
+      const insertRes = await client.query(
+        `INSERT INTO player_inventory_items
+           (id, user_id, category, template_id, quantity, equipped_mode, equipped_slot, is_locked, instance_data)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)
+         RETURNING id, template_id, category, quantity, equipped_mode, equipped_slot, is_locked, instance_data`,
+        [
+          id,
+          userId,
+          item.category,
+          item.templateId,
+          Math.max(1, item.quantity),
+          item.equippedMode,
+          item.equippedSlot,
+          item.isLocked,
+          item.instanceData ? JSON.stringify(item.instanceData) : null,
+        ]
+      );
+      await client.query("COMMIT");
+      return { added: mapInventoryRow(insertRes.rows[0]) };
+    } catch (err) {
+      await client.query("ROLLBACK").catch(() => {});
+      handleDbQueryError("Error adding inventory item", err);
+      return { error: "Failed to add inventory item." };
+    } finally {
+      client.release();
+    }
+  }
+
+  const list = inMemoryPlayerInventory.get(userId) || [];
+  if (canStack) {
+    const existing = list.find(
+      (i) => i.templateId === item.templateId && !i.instanceData && !i.equippedSlot
+    );
+    if (existing) {
+      existing.quantity += Math.max(1, item.quantity);
+      return { updated: { ...existing } };
+    }
+  }
+  if (list.length >= maxSlots) {
+    return { error: `Inventory full (${maxSlots} / ${maxSlots}).` };
+  }
+  const created: InventoryItemDto = { ...item, id: crypto.randomUUID() };
+  list.push(created);
+  inMemoryPlayerInventory.set(userId, list);
+  return { added: { ...created } };
+}
+
+export async function removePlayerInventoryItem(
+  userId: number,
+  itemId: string
+): Promise<{ removedId?: string; error?: string }> {
+  if (isDbConnected) {
+    try {
+      const res = await pool.query(
+        `DELETE FROM player_inventory_items WHERE id = $1 AND user_id = $2 RETURNING id`,
+        [itemId, userId]
+      );
+      if (res.rows.length === 0) {
+        return { error: "Item not found in inventory." };
+      }
+      return { removedId: String(res.rows[0].id) };
+    } catch (err) {
+      handleDbQueryError("Error removing inventory item", err);
+      return { error: "Failed to remove inventory item." };
+    }
+  }
+
+  const list = inMemoryPlayerInventory.get(userId) || [];
+  const idx = list.findIndex((i) => i.id === itemId);
+  if (idx === -1) return { error: "Item not found in inventory." };
+  list.splice(idx, 1);
+  return { removedId: itemId };
 }

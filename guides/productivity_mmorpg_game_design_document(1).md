@@ -20,7 +20,7 @@
 
 ## 2. Core Gameplay Loop & State Machine
 
-To protect the user's real-world productivity while delivering deep RPG satisfaction, the game enforces a strict two-state loop managed by the Colyseus room state inside a persistent **Base Camp / Side-View Clash Stage**:
+To protect the user's real-world productivity while delivering deep RPG satisfaction, the game enforces a strict two-state loop managed by the Colyseus room state inside a persistent **Base Camp / Top-Down Survivor Auto-Battle Arena**:
 
 ```text
 +-------------------------------------------------------------------+
@@ -51,7 +51,7 @@ To protect the user's real-world productivity while delivering deep RPG satisfac
    * **Minimalist View:** Renders a low-CPU ambient campfire scene where your personal hero studies or rests alongside visiting Focus Squadmates while a subtle countdown timer runs.
    * **Strict Lock vs. Honor Mode:** Players can choose *Strict Lock* (leaving the tab/app for more than $30\text{ seconds}$ forfeits the completion bonus) or *Honor Mode* (allows tab switching for work research at a base $1.0\times$ FP rate).
 2. **`BREAK_REWARD` (Post-Session Window):**
-   * **Seeded Side-View Clash Stage:** Spending FP deploys your hero alongside 3 real allied avatars, running an immediate 10-floor or 50-floor combat simulation on the Colyseus server in $< 5\text{ms}$ and returning lightweight `FloorMilestone` summaries. Phaser 3 uses those milestones to choreograph a punchy **6–10 second side-view battle sequence** with speed toggles (`1x | 2x | 4x | Skip`).
+   * **Top-Down Survivor Auto-Battle Arena:** Spending FP deploys your hero alongside 3 real allied avatars, running an immediate 10-floor or 50-floor combat simulation on the Colyseus server in $< 5\text{ms}$ and returning lightweight `FloorMilestone` summaries. Phaser 3 uses those milestones to drive a **Vampire Survivors-style top-down auto-battle arena** where your party roams freely in 4 directions (`idle`, `walking`, `melee_swing`), clears incoming monster waves from the arena perimeter, collects magnetized XP/loot orbs, and faces Boss waves with speed toggles (`1x | 2x | 4x | Skip`).
    * **Carryover Bank:** Unspent FP never expires, allowing busy users to accumulate points all day and play during an evening break.
 
 ---
@@ -159,7 +159,7 @@ Because each player controls **one personal hero**, gear progression centers on 
 
 | Slot | Primary Stats | Gameplay & Build Role |
 | :--- | :--- | :--- |
-| **1. Weapon** | `ATK` or `INT`, `HIT` | Defines your **Weapon Type** (`SWORD`, `AXE`, `SPEAR`, `BOW`, `STAFF`, `FIST`, or `GUN`), scales with **Weapon Mastery**, and unlocks 3–4 weapon-specific skills for the Side-View Clash Stage. |
+| **1. Weapon** | `ATK` or `INT`, `HIT` | Defines your **Weapon Type** (`SWORD`, `AXE`, `SPEAR`, `BOW`, `STAFF`, `FIST`, or `GUN`), scales with **Weapon Mastery**, and unlocks 3–4 weapon-specific skills for the Top-Down Survivor Auto-Battle Arena. |
 | **2. Armor** | `DEF`, `RES`, `HP` | Your primary survivability layer. Heavy Knights scale mitigation off `DEF`; Mages and Clergy rely on `RES` robes to survive magic bosses. |
 | **3. Class Emblem** | Class Primary + `Aptitude %` | A role-specific relic (*Vanguard Crest*, *Warlord Banner*, *Archmage Grimoire*, *Saint's Chalice*) that amplifies your **Cross-Player Synergy** potency (e.g., stronger *Sunder Guard* shred or bigger *Overheal Ward* shields). |
 | **4. Accessory** | `SPD`, `Crit %`, Utility | Shoes, Orbs, Belts, or Rings that tune turn priority (ensuring your Tank acts before your DPS) and boost critical hit or drop rates. |
@@ -225,22 +225,22 @@ Players configure their own hero's combat behavior during breaks without manual 
   * `Save SP for Boss`: Holds burst skill multipliers until Floor 10's Gatekeeper or Floor 100's Item God.
   * `Trigger Party Combo`: Holds action until an allied Tank or Mage applies a debuff/mark to trigger a Cross-Player Synergy combo.
 
-### 7.3 Side-View Clash Stage & Seeded Choreography (Phaser 3)
-Instead of rendering a slow $10 \times 10$ tactical grid, Phaser 3 presents a dynamic **Side-View Clash Stage** driven by per-floor `FloorMilestone` summaries:
-* **Stage Layout:**
-  * *Left Side:* **Your personal hero** positioned in front alongside **your 3 real party members** (with floating player nameplates and class role badges) in their chosen Front or Back rows.
-  * *Center:* Floating **Geo-Crystal** matching the floor's active Geo-Effect color, shattering in a screen-wide burst if neutralized.
-  * *Right Side:* Enemy wave sprites, glowing **Specialist Spirit** targets, or the towering **Floor 10 Gatekeeper / Floor 100 Item God**.
-* **Three-Tier Expedition Pacing (6–10 Seconds Total):**
-  1. **Wave Blitz ($\sim 0.7\text{s}$ per routine floor):** Enemies slide in from the right while Front Row allies dash through in a rapid slash blur; floor counter ticks up (`F1` $\to$ `F2` $\to$ `F3`) with escalating combo multipliers.
-  2. **Spotlight Cut-In ($\sim 2.0\text{s}$ for Specialist/Mystery floors):** Brief slow-motion camera zoom ($1.15\times$) as your hero lands a **"SUBDUED!"** capture strike, pulling the Specialist into a glowing orb.
-  3. **Boss Showdown ($\sim 4.5\text{s}$ climax on Floor 10 / 100):** Boss drops in with a ground-slam shake; two allied players flash across the screen in a **Dual Team Attack Cut-In** (e.g., *Heavy Knight Sunder Guard* $\to$ *Warrior Relentless Follow-Up*), followed by a massive finisher and treasure chest burst.
+### 7.3 Top-Down Survivor Auto-Battle Arena & Seeded Wave Choreography (Phaser 3)
+Instead of rendering a slow $10 \times 10$ tactical grid or a static side-view lane, Phaser 3 presents a dynamic **Top-Down Survivor Auto-Battle Arena** (inspired by *Vampire Survivors* auto-battlers) driven by per-floor `FloorMilestone` summaries:
+* **Arena Layout:**
+  * *Dungeon Floor & Braziers:* A top-down stone dungeon arena with flickering corner braziers and a central **Geo-Crystal** altar matching the wave's active Geo-Effect color (shattering in a screen-wide burst if neutralized).
+  * *Autonomous 4-Player Party:* **Your personal hero** and **your 3 real party members** roam the arena autonomously using 4-directional `idle`, `walking`, and `melee_swing` animations. Melee classes (`Heavy Knight`, `Warrior`, `Thief`, `Magic Knight`) pursue and cleave incoming monsters with directional `melee_swing` arcs, while ranged/magic/support classes (`Mage`, `Clergy`, `Professor`) auto-kite, fire projectiles/AoE bursts, and heal allies.
+  * *Perimeter Monster Waves & Boss Waves:* Each floor spawns a wave of monsters from the outer arena perimeter that swarm inward toward the party. Every 10th floor triggers a **Boss Wave** (Gatekeeper, or Floor 100 Item God) with a dramatic north-edge entrance, wide Boss HP bar, and Synergy Combo cut-in.
+* **Three-Tier Wave Pacing:**
+  1. **Swarm Wave ($\sim 1.6\text{–}2.4\text{s}$ per standard wave, compressed on 50-floor runs):** Monsters stream in from all sides while your party weaves, slashes, casts, and collects magnetized XP/gold orbs dropped by slain foes.
+  2. **Spotlight Capture (Specialist/Mystery waves):** Neutral **Specialist Spirits** or **Bounty Mimics** spawn with the wave; defeating the Specialist triggers a **"SUBDUED!"** capture burst and magnetizes a glowing cyan orb to your hero.
+  3. **Boss Wave Showdown (Floor 10 / 100):** The Gatekeeper or Item God drops in with a ground-slam shake and cut-in banner (*Heavy Knight Sunder Guard* $\to$ *Warrior Relentless Follow-Up*), followed by a massive finisher and magnetized victory orb fountain.
 * **Playback Speed Controls:** A persistent `1x | 2x | 4x | Skip` toggle lets players customize watch speed to fit their break duration.
 * **Phaser 3 "Game Feel" Juice:**
-  * *Hitstop Freeze Frames:* Pause sprite tweens for $60\text{–}90\text{ms}$ on critical hits and boss finishers.
-  * *Micro Camera Shake & Tint Flashes:* Trigger subtle screen shake and white/red sprite flashes on heavy impacts.
-  * *Logarithmic Damage Numbers:* Scale floating damage text size and gold outlines proportionally to digit count (e.g., `42.5M!` slams onto screen at $2.2\times$ scale).
-  * *Victory Chest Fountain:* Pop physical loot chests and Karma orbs out of defeated bosses with bounce tweens that auto-collect into the HUD.
+  * *4-Directional `melee_swing` & Slash Arcs:* Melee characters lock into their 4-directional swing animation paired with rotated slash/thrust/impact VFX.
+  * *Micro Camera Shake & Tint Flashes:* Trigger subtle screen shake and white/red sprite flashes on crits and heavy impacts.
+  * *Logarithmic Damage Numbers:* Scale floating damage text size and gold outlines proportionally to digit count (e.g., `42.5M!` slams onto screen).
+  * *Magnetized XP & Loot Orbs:* Defeated monsters pop glowing XP/gold orbs that scatter outward and smoothly magnetize into the hero.
 
 ---
 
@@ -318,7 +318,7 @@ For v1, all multiplayer interactions are **100% cooperative PvE**—eliminating 
 2. **Focus Squads, Live Ticker & Real-Time "Cheer" Buffs:**
    * Players join a persistent 4–8 player Squad room. Active timers display live status indicators (*"Focusing: 18m left"*).
    * Whenever a member completes a Pomodoro or defeats a **Squad Bounty Beast**, all squadmates receive a passive **Squad Cheer Care Package** ($15\%$ of that session's FP) in their Camp Inbox.
-   * During break-time expeditions, a compact **Live Squad Ticker** broadcasts milestones (*"Alex triggered a Sunder Guard Combo with Sarah on Floor 40!"*). Clicking **Cheer** sends a real-time Colyseus signal that drops a glowing aura onto that squadmate's active Clash Stage, granting an instant $+20\%$ **Crit Damage** surge.
+   * During break-time expeditions, a compact **Live Squad Ticker** broadcasts milestones (*"Alex triggered a Sunder Guard Combo with Sarah on Floor 40!"*). Clicking **Cheer** sends a real-time Colyseus signal that drops a glowing aura onto that squadmate's active Auto-Battle Arena, granting an instant $+20\%$ **Crit Damage** surge.
 3. **Squad-Exclusive 1-to-1 Barter Board (Squad Member Perk):**
    * **No Global Auction House or Solo 1-to-1 Trade:** Trading is strictly exclusive to members of the same Focus Squad. Because each player builds one dedicated hero archetype (e.g., a **Mage** seeking `INT` *Tutors* while a **Heavy Knight** seeks `DEF` *Coaches*), squadmates naturally rely on each other to optimize gear while preventing multi-account funneling.
    * **Co-Focus Eligibility Gate:** Two squadmates can trade after belonging to the same squad for at least **48 hours** and logging at least **60 shared focus minutes** together.
@@ -327,7 +327,7 @@ For v1, all multiplayer interactions are **100% cooperative PvE**—eliminating 
      $$\text{EffectiveRank} = \min\left(I_{\text{rank}}, \; R_{\text{shop}}\right) \qquad \text{EffectiveItemLevel} = \min\left(I_{\text{lv}}, \; F_{\text{max}}\right)$$
 4. **Live Co-Op Raid Stages (Shared Boss Room):**
    * Weekly server-wide super-bosses (e.g., *Overlord Baal*) hosted in a shared Colyseus `RaidRoom`.
-   * Up to **16 players** spending FP during the same break window appear on the left side of the Clash Stage simultaneously, watching each other's personal avatars lunge at the boss in real time while active Tanks and Healers provide shared **Vanguard Shield** and **Inspirational Aura** buffs across the room.
+   * Up to **16 players** spending FP during the same break window appear in the Auto-Battle Arena simultaneously, watching each other's personal avatars surround and strike the boss in real time while active Tanks and Healers provide shared **Vanguard Shield** and **Inspirational Aura** buffs across the room.
 
 ---
 
@@ -335,7 +335,7 @@ For v1, all multiplayer interactions are **100% cooperative PvE**—eliminating 
 
 ### Authoritative Server Simulation + Seeded Client Choreography
 * **Never trust client timers, trades, or combat math.** When a player starts a Pomodoro, Colyseus records `sessionStartTime` on the server.
-* When a player spends FP on an Item World expedition, the Colyseus server fetches the 3 allied player snapshots, resolves the 4-player synergy math across all floors in $< 5\text{ms}$, mutates the authoritative Colyseus Schema, and emits an `ExpeditionResult` containing compact `FloorMilestone` objects to drive the Phaser 3 Side-View Clash Stage animations.
+* When a player spends FP on an Item World expedition, the Colyseus server fetches the 3 allied player snapshots, resolves the 4-player synergy math across all floors in $< 5\text{ms}$, mutates the authoritative Colyseus Schema, and emits an `ExpeditionResult` containing compact `FloorMilestone` objects to drive the Phaser 3 Top-Down Survivor Auto-Battle Arena animations.
 
 ### Reference TypeScript Interfaces & Functions
 
@@ -504,7 +504,7 @@ export interface LiveRaidHitEvent {
 }
 ```
 
-#### Phaser 3 Side-View Clash Stage Animator (Real-Player Party & Dual Cut-Ins)
+#### Phaser 3 Top-Down Survivor Auto-Battle Animator (Real-Player Party & Wave Choreography)
 ```typescript
 export class BattleStageAnimator {
   constructor(
@@ -743,8 +743,8 @@ export function calculateSessionFP(
   * Integrate `break_infinity.js` across server and Phaser client.
   * Build the Asynchronous 4-Player Party assembler (Focus Squad snapshots + Tavern Mercenary Link) and server combat simulator supporting **Trinity Aura**, **Cross-Player Synergy Combos**, Geo-Effects, and personal AI rules.
   * Add Gatekeepers, Floor 100 **Item Gods** (unlocking Ranks $31\text{–}40$), Specialist subduing & merging, Camp Blacksmith (**Rarity Fusion** & **Trait Transfer**), single-hero Reincarnation with 6-star Class Mastery, Karma Tree, and Cheat Shop sliders.
-* **Phase 3: Phaser 3 Side-View Clash Stage & Visual Juice**
-  * Build the persistent Base Camp & Side-View Clash Stage: cozy campfire idle visuals during `FOCUS_LOCKED`, and choreographed 4-player battle animations (`BattleStageAnimator`) during `BREAK_REWARD`.
+* **Phase 3: Phaser 3 Top-Down Survivor Auto-Battle Arena & Visual Juice**
+  * Build the persistent Base Camp & Top-Down Survivor Auto-Battle Arena: cozy campfire idle visuals during `FOCUS_LOCKED`, and autonomous 4-directional wave combat (`BattleStageAnimator` with `idle`, `walking`, `melee_swing`, perimeter waves, magnetized orbs, and Boss waves) during `BREAK_REWARD`.
   * Implement hitstop freeze frames, screen shake, **Dual Team Attack Cut-Ins**, logarithmically scaled floating damage numbers, victory chest fountains, and `1x | 2x | 4x | Skip` speed controls.
 * **Phase 4: Pure PvE Co-Op MMO Layer & Squad Barter**
   * Launch 8-player Focus Squad rooms, live status indicators, real-time Cheer buffs, and Assist Karma inbox payouts.

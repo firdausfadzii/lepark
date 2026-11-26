@@ -1,6 +1,7 @@
 import { Room, Client, ServerError } from "colyseus";
 import { focusPointsService } from "../services/FocusPointsService";
 import { focusSessionService } from "../services/FocusSessionService";
+import { inventoryService } from "../services/InventoryService";
 import { rpgService } from "../services/RpgService";
 import { squadService } from "../services/SquadService";
 import { DinerRoomController } from "../services/DinerService";
@@ -3951,6 +3952,34 @@ export class GameRoom extends Room<GameState> {
     });
 
     // ==========================================
+    // Player Inventory (Lazy-load + Delta Sync)
+    // ==========================================
+
+    this.onMessage("INVENTORY_GET", async (client: Client) => {
+      const player = this.state.players.get(client.sessionId);
+      if (!player) return;
+      const payload = await inventoryService.getInventory(player.userId);
+      client.send("INVENTORY_SYNC", payload);
+    });
+
+    this.onMessage(
+      "INVENTORY_EQUIP",
+      async (client: Client, data: { itemId?: string; mode?: "casual" | "adventure" }) => {
+        const player = this.state.players.get(client.sessionId);
+        if (!player || !data?.itemId) return;
+        const res = await inventoryService.equipItem(player.userId, String(data.itemId), data.mode);
+        client.send("INVENTORY_DELTA", res.delta);
+      }
+    );
+
+    this.onMessage("INVENTORY_UNEQUIP", async (client: Client, data: { itemId?: string }) => {
+      const player = this.state.players.get(client.sessionId);
+      if (!player || !data?.itemId) return;
+      const res = await inventoryService.unequipItem(player.userId, String(data.itemId));
+      client.send("INVENTORY_DELTA", res.delta);
+    });
+
+    // ==========================================
     // Netherworld Focus RPG Message Handlers
     // ==========================================
 
@@ -4525,6 +4554,7 @@ export class GameRoom extends Room<GameState> {
     focusPointsService.unregisterClient(client.sessionId);
     if (leavingPlayer && leavingPlayer.userId > 0) {
       squadService.handleUserDisconnect(leavingPlayer.userId);
+      inventoryService.evictUser(leavingPlayer.userId);
     }
     const count = activeSpaceCounts.get(this.spaceId) || 1;
     activeSpaceCounts.set(this.spaceId, Math.max(0, count - 1));

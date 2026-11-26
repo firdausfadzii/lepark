@@ -7,3 +7,4 @@ export * from "./assetCatalog";
 export * from "./focus";
 export * from "./diner";
 export * from "./rpg";
+export * from "./inventory";

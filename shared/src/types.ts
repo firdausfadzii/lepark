@@ -84,6 +84,7 @@ export interface FashionGearCatalogItem {
   name: string;
   slot: FashionGearSlot;
   category: OutfitMode;
+  setId?: string;
   assetBasePath: string;
   iconPath: string;
   supportedAnims: FashionAnimState[];
@@ -93,12 +94,33 @@ export interface FashionGearCatalogItem {
 
 export const FASHION_GEAR_CATALOG: FashionGearCatalogItem[] = [
   {
+    id: "white_shirt",
+    name: "Plain White Shirt",
+    slot: "chest",
+    category: "casual",
+    assetBasePath: "/assets/gears/casual/chest",
+    iconPath: "/assets/gears/casual/chest/icon.png",
+    supportedAnims: ["idle", "walking"],
+    dyeable: false,
+    hasSleeves: false,
+  },
+  {
+    id: "jean_pant",
+    name: "Jean Pants",
+    slot: "pants",
+    category: "casual",
+    assetBasePath: "/assets/gears/casual/pants",
+    iconPath: "/assets/gears/casual/pants/icon.png",
+    supportedAnims: ["idle", "walking"],
+    dyeable: false,
+  },
+  {
     id: "leather_cloth",
     name: "Leather Tunic",
     slot: "chest",
     category: "adventure",
-    assetBasePath: "/assets/gears/chest/leather_cloth",
-    iconPath: "/assets/gears/chest/leather_cloth/icon.png",
+    assetBasePath: "/assets/gears/adventure/chest",
+    iconPath: "/assets/gears/adventure/chest/icon.png",
     supportedAnims: ["idle", "walking", "melee_swing"],
     dyeable: false,
     hasSleeves: false,
@@ -108,8 +130,8 @@ export const FASHION_GEAR_CATALOG: FashionGearCatalogItem[] = [
     name: "Leather Pants",
     slot: "pants",
     category: "adventure",
-    assetBasePath: "/assets/gears/pants/leather_pant",
-    iconPath: "/assets/gears/pants/leather_pant/icon.png",
+    assetBasePath: "/assets/gears/adventure/pants",
+    iconPath: "/assets/gears/adventure/pants/icon.png",
     supportedAnims: ["idle", "walking"],
     dyeable: false,
   },
@@ -118,8 +140,8 @@ export const FASHION_GEAR_CATALOG: FashionGearCatalogItem[] = [
     name: "Leather Helmet",
     slot: "helmet",
     category: "adventure",
-    assetBasePath: "/assets/gears/helmet/leather_helmet",
-    iconPath: "/assets/gears/helmet/leather_helmet/icon.png",
+    assetBasePath: "/assets/gears/adventure/helmet",
+    iconPath: "/assets/gears/adventure/helmet/icon.png",
     supportedAnims: ["idle", "walking"],
     dyeable: false,
   },
@@ -151,11 +173,11 @@ export const DEFAULT_PLAYER_OUTFIT: PlayerOutfit = {
   sleeveColor: "",
   pantsColor: "#2c3e50",
   skinColor: "#faf3e8",
-  outerwearKey: "",
+  outerwearKey: "white_shirt",
   outerwearColor: "#e74c3c",
   hatKey: "",
-  chestKey: "",
-  pantsKey: "",
+  chestKey: "white_shirt",
+  pantsKey: "jean_pant",
   helmetKey: "",
   bootsKey: "",
   glovesKey: "",
@@ -165,6 +187,13 @@ export const DEFAULT_PLAYER_OUTFIT: PlayerOutfit = {
 
 export const DEFAULT_CASUAL_OUTFIT: PlayerOutfit = {
   ...DEFAULT_PLAYER_OUTFIT,
+  chestKey: "white_shirt",
+  outerwearKey: "white_shirt",
+  pantsKey: "jean_pant",
+  helmetKey: "",
+  hatKey: "",
+  bootsKey: "",
+  glovesKey: "",
 };
 
 export const DEFAULT_ADVENTURE_OUTFIT: PlayerOutfit = {

@@ -3,6 +3,7 @@ import { MultiplayerManager } from "./network/MultiplayerManager";
 import { GameScene, InspectableMapItem } from "./scenes/GameScene";
 import { FocusUiController } from "./focus/FocusUiController";
 import { NetherworldUiController } from "./rpg/NetherworldUiController";
+import { InventoryUiController } from "./inventory/InventoryUiController";
 import { DinerUiController } from "./diner/DinerUiController";
 import { OFFICE_ONE_DECORATION_ASSETS } from "./officeOneAssets";
 import { OFFICE_TWO_DECORATION_ASSETS } from "./officeTwoAssets";
@@ -307,15 +308,6 @@ const btnProfileCharRotReset = document.getElementById(
 const btnProfileCharRotRight = document.getElementById(
   "btn-profile-char-rot-right",
 ) as HTMLButtonElement | null;
-const profileEquipInspectorSlot = document.getElementById(
-  "profile-equip-inspector-slot",
-) as HTMLSpanElement | null;
-const profileEquipInspectorItem = document.getElementById(
-  "profile-equip-inspector-item",
-) as HTMLSpanElement | null;
-const profileEquipInspectorActions = document.getElementById(
-  "profile-equip-inspector-actions",
-) as HTMLDivElement | null;
 const btnOpenSquad = document.getElementById(
   "btn-open-squad",
 ) as HTMLButtonElement | null;
@@ -2087,6 +2079,12 @@ function loadSavedOutfit(): PlayerOutfit {
         const chestKey = isValidFashionGearKey("chest", parsed.chestKey || parsed.outerwearKey);
         const pantsKey = isValidFashionGearKey("pants", parsed.pantsKey);
         const helmetKey = isValidFashionGearKey("helmet", parsed.helmetKey || parsed.hatKey);
+        // Existing player with no gear equipped -> equip default Plain White Shirt & Jean Pants
+        if (!chestKey && !pantsKey && !helmetKey) {
+          const upgraded = { ...DEFAULT_CASUAL_OUTFIT };
+          saveOutfitToStorage(upgraded);
+          return upgraded;
+        }
         return {
           ...DEFAULT_PLAYER_OUTFIT,
           chestKey,
@@ -2100,7 +2098,7 @@ function loadSavedOutfit(): PlayerOutfit {
   } catch {
     // Fallback to default outfit
   }
-  return { ...DEFAULT_PLAYER_OUTFIT };
+  return { ...DEFAULT_CASUAL_OUTFIT };
 }
 
 function saveOutfitToStorage(outfit: PlayerOutfit) {
@@ -2745,7 +2743,7 @@ const PROFILE_CHAR_ROT_ORDER = [0, 1, 3, 2]; // Front (south) -> West -> Back (n
 
 let activeProfileEquipTab: OutfitMode = (() => {
   const saved = localStorage.getItem("player_equip_tab");
-  return saved === "casual" || saved === "adventure" ? saved : "adventure";
+  return saved === "casual" || saved === "adventure" ? saved : "casual";
 })();
 
 let selectedProfileEquipSlot: ProfileEquipSlot = "helmet";
@@ -2781,7 +2779,21 @@ function sanitizeOutfitForMode(raw: any, mode: OutfitMode, fallback: PlayerOutfi
 let casualOutfit: PlayerOutfit = (() => {
   try {
     const raw = localStorage.getItem("player_outfit_casual");
-    if (raw) return sanitizeOutfitForMode(JSON.parse(raw), "casual", DEFAULT_CASUAL_OUTFIT);
+    if (raw) {
+      const sanitized = sanitizeOutfitForMode(JSON.parse(raw), "casual", DEFAULT_CASUAL_OUTFIT);
+      const hasAnyCasual = Boolean(
+        sanitized.chestKey ||
+          sanitized.pantsKey ||
+          sanitized.helmetKey ||
+          sanitized.bootsKey ||
+          sanitized.glovesKey
+      );
+      if (hasAnyCasual) return sanitized;
+      // Existing player had no casual gear -> equip Plain White Shirt & Jean Pants
+      const upgraded = { ...DEFAULT_CASUAL_OUTFIT };
+      localStorage.setItem("player_outfit_casual", JSON.stringify(upgraded));
+      return upgraded;
+    }
   } catch {
     // ignore
   }
@@ -2930,56 +2942,6 @@ function renderProfileEquipmentPane() {
       placeholder?.classList.remove("hidden");
     }
   });
-
-  // Render Slot Inspector / Quick Equip Bar
-  const slotLabel = PROFILE_EQUIP_SLOT_LABELS[selectedProfileEquipSlot];
-  const equippedId = getSlotKeyFromOutfit(outfit, selectedProfileEquipSlot);
-  const equippedItem = equippedId
-    ? FASHION_GEAR_CATALOG.find((g) => g.id === equippedId)
-    : undefined;
-
-  if (profileEquipInspectorSlot) {
-    profileEquipInspectorSlot.textContent = slotLabel;
-  }
-  if (profileEquipInspectorItem) {
-    profileEquipInspectorItem.textContent = equippedItem ? equippedItem.name : "Empty";
-  }
-  if (profileEquipInspectorActions) {
-    profileEquipInspectorActions.innerHTML = "";
-    const availableItems = FASHION_GEAR_CATALOG.filter(
-      (g) => g.slot === selectedProfileEquipSlot && g.category === mode
-    );
-
-    if (availableItems.length === 0) {
-      const note = document.createElement("span");
-      note.className = "profile-equip-empty-note";
-      note.textContent =
-        mode === "casual"
-          ? "No casual items yet"
-          : `No ${slotLabel.toLowerCase()} items yet`;
-      profileEquipInspectorActions.appendChild(note);
-    } else {
-      const noneBtn = document.createElement("button");
-      noneBtn.type = "button";
-      noneBtn.className = `profile-equip-chip-btn ${!equippedId ? "active" : ""}`;
-      noneBtn.textContent = "None";
-      noneBtn.addEventListener("click", () => {
-        setProfileEquipSlotItem(mode, selectedProfileEquipSlot, "");
-      });
-      profileEquipInspectorActions.appendChild(noneBtn);
-
-      availableItems.forEach((item) => {
-        const btn = document.createElement("button");
-        btn.type = "button";
-        btn.className = `profile-equip-chip-btn ${equippedId === item.id ? "active" : ""}`;
-        btn.textContent = item.name;
-        btn.addEventListener("click", () => {
-          setProfileEquipSlotItem(mode, selectedProfileEquipSlot, item.id);
-        });
-        profileEquipInspectorActions.appendChild(btn);
-      });
-    }
-  }
 }
 
 profileEquipTabBtns.forEach((btn) => {
@@ -3003,7 +2965,12 @@ document.querySelectorAll<HTMLButtonElement>(".wow-equip-slot").forEach((btn) =>
     if (!slot) return;
     selectedProfileEquipSlot = slot;
     renderProfileEquipmentPane();
+    ensureInventoryUiController().open({ slot, category: activeProfileEquipTab });
   });
+});
+
+document.getElementById("btn-profile-open-inventory")?.addEventListener("click", () => {
+  ensureInventoryUiController().open();
 });
 
 btnProfileCharRotLeft?.addEventListener("click", () => {
@@ -9695,9 +9662,35 @@ function ensureFocusUiController(): FocusUiController {
   return focusUiController;
 }
 
+let inventoryUiController: InventoryUiController | null = null;
+
+function ensureInventoryUiController(): InventoryUiController {
+  if (!inventoryUiController) {
+    inventoryUiController = new InventoryUiController({
+      getMultiplayer: () => multiplayer,
+      getCurrentUser: () => currentUser,
+      getActiveEquipMode: () => activeProfileEquipTab,
+      getOutfitForMode: (mode) => getProfileEquipOutfit(mode),
+      onEquipSlotChanged: (mode, slot, templateId) => {
+        if (
+          slot === "helmet" ||
+          slot === "chest" ||
+          slot === "pants" ||
+          slot === "boots" ||
+          slot === "gloves"
+        ) {
+          setProfileEquipSlotItem(mode, slot, templateId);
+        }
+      },
+    });
+  }
+  return inventoryUiController;
+}
+
 function setupMultiplayerFocusListeners(mgr: MultiplayerManager) {
   ensureFocusUiController().attachMultiplayer(mgr);
   ensureNetherworldUiController().attachMultiplayer(mgr);
+  ensureInventoryUiController().attachMultiplayer(mgr);
 }
 
 let dinerUiController: DinerUiController | null = null;

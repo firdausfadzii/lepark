@@ -3239,6 +3239,18 @@
                   Adventure
                 </button>
               </div>
+              <button
+                type="button"
+                id="btn-profile-open-inventory"
+                class="profile-equip-bag-btn"
+                title="Inventory"
+                aria-label="Open Inventory"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" width="16" height="16" aria-hidden="true">
+                  <path d="M6 7h12l1.2 12.2A2 2 0 0 1 17.2 21H6.8a2 2 0 0 1-2-1.8L6 7z"/>
+                  <path d="M9 7V5a3 3 0 0 1 6 0v2"/>
+                </svg>
+              </button>
             </div>
 
             <!-- WoW Paperdoll: Left Slots | Center Character Viewport | Right Slots -->
@@ -3349,18 +3361,33 @@
                 </button>
               </div>
             </div>
-
-            <!-- Selected Slot Inspector / Quick Equip Bar -->
-            <div id="profile-equip-inspector" class="profile-equip-inspector">
-              <div class="profile-equip-inspector-info">
-                <span id="profile-equip-inspector-slot" class="profile-equip-inspector-slot">Helmet</span>
-                <span id="profile-equip-inspector-item" class="profile-equip-inspector-item">Leather Helmet</span>
-              </div>
-              <div id="profile-equip-inspector-actions" class="profile-equip-inspector-actions">
-                <!-- Populated dynamically when a slot is clicked -->
-              </div>
-            </div>
           </section>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal: Minimalistic Paginated Inventory -->
+    <div id="inventory-modal" class="modal-overlay inventory-modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="inventory-modal-title">
+      <div class="modal-card inventory-modal-card">
+        <div class="inventory-modal-header">
+          <div class="inventory-modal-title-wrap">
+            <h2 id="inventory-modal-title" class="inventory-modal-title">Inventory</h2>
+            <span id="inventory-modal-count" class="inventory-modal-count">0 / 100</span>
+          </div>
+          <button type="button" id="btn-close-inventory-modal" class="btn-modal-close" title="Close" aria-label="Close">✕</button>
+        </div>
+
+        <div id="inventory-grid" class="inventory-grid" role="grid" aria-label="Inventory Items"></div>
+
+        <div id="inventory-action-bar" class="inventory-action-bar hidden">
+          <span id="inventory-selected-name" class="inventory-selected-name"></span>
+          <button type="button" id="btn-inventory-equip" class="inventory-equip-btn">Equip</button>
+        </div>
+
+        <div id="inventory-pagination" class="inventory-pagination hidden">
+          <button type="button" id="btn-inventory-prev" class="inventory-page-btn" aria-label="Previous Page">‹</button>
+          <span id="inventory-page-label" class="inventory-page-label">1 / 1</span>
+          <button type="button" id="btn-inventory-next" class="inventory-page-btn" aria-label="Next Page">›</button>
         </div>
       </div>
     </div>

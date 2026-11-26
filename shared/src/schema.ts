@@ -7,11 +7,11 @@ export class OutfitSchema extends Schema {
   @type("string") sleeveColor: string = "";
   @type("string") pantsColor: string = "#2c3e50";
   @type("string") skinColor: string = "#faf3e8";
-  @type("string") outerwearKey: string = "";
+  @type("string") outerwearKey: string = "white_shirt";
   @type("string") outerwearColor: string = "#e74c3c";
   @type("string") hatKey: string = "";
-  @type("string") chestKey: string = "";
-  @type("string") pantsKey: string = "";
+  @type("string") chestKey: string = "white_shirt";
+  @type("string") pantsKey: string = "jean_pant";
   @type("string") helmetKey: string = "";
   @type("string") bootsKey: string = "";
   @type("string") glovesKey: string = "";

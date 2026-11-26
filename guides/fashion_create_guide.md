@@ -66,16 +66,23 @@ Paint flat, unshaded RGB colors aligned pixel-for-pixel to `grayscale_sheet.png`
        melee_swing/grayscale_sheet.png
        melee_swing/part_mask.png
      gears/
-       chest/leather_cloth/{idle,walking,melee_swing}.png
-       pants/leather_pant/{idle,walking,melee_swing}.png
-       helmet/leather_helmet/{idle,walking,melee_swing}.png
+       casual/
+         chest/{icon,idle,walking}.png
+         helmet/{icon,idle,walking}.png
+         pants/{icon,idle,walking}.png
+       adventure/
+         chest/{icon,idle,walking,melee_swing}.png
+         helmet/{icon,idle,walking}.png
+         pants/{icon,idle,walking}.png
    ```
 
 ### B. Shared Data & Catalog (`shared/src/types.ts`)
-* Update `PlayerOutfit` and gear catalog entries (`OUTERWEAR_CATALOG` / unified `GEAR_CATALOG`) so each wearable item defines:
+* Update `PlayerOutfit` and gear catalog entries (`FASHION_GEAR_CATALOG`) so each wearable item defines:
   * `id`: unique item key (e.g. `"leather_cloth"`)
+  * `category`: `"casual" | "adventure"`
   * `slot`: `"cape" | "pants" | "boots" | "chest" | "gloves" | "helmet" | "weapon"`
-  * `assetBasePath`: folder or sheet path template (e.g. `"/assets/gears/chest/leather_cloth"`)
+  * `assetBasePath`: folder path (e.g. `"/assets/gears/adventure/chest"`)
+  * `iconPath`: preview icon path (e.g. `"/assets/gears/adventure/chest/icon.png"`)
   * `dyeable?: boolean` (whether the baker should multiply-tint it with a user-selected color)
   * `hasSleeves?: boolean` (if `true`, the baker routes sleeve pixels overlapping `near_arm` above the chest)
 * Replace legacy 32×32 static 4-frame strip fields (`outerwearKey` static bobbing assumptions) with animation-matched gear keys.
@@ -167,14 +174,14 @@ Follow this checklist every time you create a new piece of gear (shirt, armor, p
 * **If the Item Should Be Dyeable:** Author the dyeable fabric in neutral grayscale (matching `grayscale_sheet.png` value range) so the baker can multiply-tint it cleanly. If the item has non-dyeable trim (e.g. iron buckle, leather straps), either keep it fixed-color (non-dyeable item) or put fixed accents in an optional `_trim.png` overlay.
 
 ### Step 4: Export Required Files
-For every new gear item `<item_id>` under `<slot>`, export:
-1. `<item_id>/idle.png` (`368 × 368`, `4 × 4`)
-2. `<item_id>/walking.png` (`552 × 368`, `6 × 4`)
-3. `<item_id>/melee_swing.png` (`368 × 368`, `4 × 4`)
-4. *(Optional)* `<item_id>/icon.png` (`92 × 92` — auto-cropped from Row 0, Frame 0 of `idle.png` so inventory icons always match the animated sheet).
+Place gear assets under `client/public/assets/gears/<category>/<slot>/` where `<category>` is `casual` or `adventure` and `<slot>` is `chest`, `helmet`, `pants`, etc. (for example, `assets/gears/adventure/chest/`). Inside each `<slot>` folder, export:
+1. `idle.png` (`368 × 368`, `4 × 4`)
+2. `walking.png` (`552 × 368`, `6 × 4`)
+3. `melee_swing.png` (`368 × 368`, `4 × 4`, required for `adventure` combat slots)
+4. `icon.png` (`92 × 92` — auto-cropped from Row 0, Frame 0 of `idle.png` so Wardrobe/inventory icons always match the animated sheet).
 
 ### Step 5: Register & Verify
-1. **Register in Catalog:** Add the item entry to `shared/src/types.ts` (slot, ID, base asset path, `dyeable`, `hasSleeves`).
+1. **Register in Catalog:** Add the item entry to `FASHION_GEAR_CATALOG` in `shared/src/types.ts` (`id`, `name`, `category`, `slot`, `assetBasePath`, `iconPath`, `supportedAnims`, `dyeable`, `hasSleeves`).
 2. **Run Automated Checks:**
    * Exact canvas dimensions match each animation spec.
    * Strict binary alpha check (`alpha === 0 || alpha === 255` for every pixel).

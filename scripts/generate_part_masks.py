@@ -267,8 +267,8 @@ def main():
     anims = ["idle", "walking", "melee_swing"]
     for anim in anims:
         base_p = os.path.join(root, "player", anim, "grayscale_sheet.png")
-        chest_p = os.path.join(root, "gears", "chest", "leather_cloth", f"{anim}.png")
-        pants_p = os.path.join(root, "gears", "pants", "leather_pant", f"{anim}.png")
+        chest_p = os.path.join(root, "gears", "adventure", "chest", f"{anim}.png")
+        pants_p = os.path.join(root, "gears", "adventure", "pants", f"{anim}.png")
         out_p = os.path.join(root, "player", anim, "part_mask.png")
         generate_mask_for_anim(base_p, chest_p, pants_p, out_p)
 

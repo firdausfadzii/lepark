@@ -53,6 +53,9 @@ import {
   EquipSlot,
   WeaponType,
   PlayerAvatarState,
+  InventorySyncPayload,
+  InventoryDeltaPayload,
+  OutfitMode,
 } from "shared";
 
 export interface NetworkStats {
@@ -144,6 +147,8 @@ export type RpgRaidResultCallback = (data: {
 export type RpgRaidHitCallback = (data: { raid?: RaidBossState; hitEvent?: LiveRaidHitEvent }) => void;
 export type RpgCheerReceivedCallback = (data: { fromName: string; bonusLabel: string }) => void;
 export type RpgActionErrorCallback = (data: { message: string }) => void;
+export type InventorySyncCallback = (payload: InventorySyncPayload) => void;
+export type InventoryDeltaCallback = (payload: InventoryDeltaPayload) => void;
 
 // Throw Battle Callbacks
 export type ThrowBattleInviteCallback = (data: ThrowBattleInviteData) => void;
@@ -176,9 +181,11 @@ export function extractPlayerOutfit(raw: any): PlayerOutfit {
     outerwearKey: typeof src.outerwearKey === "string" ? src.outerwearKey : DEFAULT_PLAYER_OUTFIT.outerwearKey,
     outerwearColor: typeof src.outerwearColor === "string" && src.outerwearColor ? src.outerwearColor : DEFAULT_PLAYER_OUTFIT.outerwearColor,
     hatKey: typeof src.hatKey === "string" ? src.hatKey : DEFAULT_PLAYER_OUTFIT.hatKey,
-    chestKey: typeof src.chestKey === "string" ? src.chestKey : (typeof src.outerwearKey === "string" ? src.outerwearKey : ""),
-    pantsKey: typeof src.pantsKey === "string" ? src.pantsKey : "",
+    chestKey: typeof src.chestKey === "string" ? src.chestKey : (typeof src.outerwearKey === "string" ? src.outerwearKey : (DEFAULT_PLAYER_OUTFIT.chestKey || "")),
+    pantsKey: typeof src.pantsKey === "string" ? src.pantsKey : (DEFAULT_PLAYER_OUTFIT.pantsKey || ""),
     helmetKey: typeof src.helmetKey === "string" ? src.helmetKey : (typeof src.hatKey === "string" ? src.hatKey : ""),
+    bootsKey: typeof src.bootsKey === "string" ? src.bootsKey : "",
+    glovesKey: typeof src.glovesKey === "string" ? src.glovesKey : "",
   };
 }
 
@@ -250,6 +257,8 @@ export class MultiplayerManager {
   private onRpgRaidHitCallbacks: RpgRaidHitCallback[] = [];
   private onRpgCheerReceivedCallbacks: RpgCheerReceivedCallback[] = [];
   private onRpgActionErrorCallbacks: RpgActionErrorCallback[] = [];
+  private onInventorySyncCallbacks: InventorySyncCallback[] = [];
+  private onInventoryDeltaCallbacks: InventoryDeltaCallback[] = [];
 
   public currentRpgBundle: RpgClientBundle | null = null;
 
@@ -961,6 +970,28 @@ export class MultiplayerManager {
           cb(data);
         } catch (err) {
           console.error("Error in onFocusNotice callback:", err);
+        }
+      });
+    });
+
+    this.room.onMessage("INVENTORY_SYNC", (payload: InventorySyncPayload) => {
+      if (!payload) return;
+      this.onInventorySyncCallbacks.forEach((cb) => {
+        try {
+          cb(payload);
+        } catch (err) {
+          console.error("Error in onInventorySync callback:", err);
+        }
+      });
+    });
+
+    this.room.onMessage("INVENTORY_DELTA", (payload: InventoryDeltaPayload) => {
+      if (!payload) return;
+      this.onInventoryDeltaCallbacks.forEach((cb) => {
+        try {
+          cb(payload);
+        } catch (err) {
+          console.error("Error in onInventoryDelta callback:", err);
         }
       });
     });
@@ -2298,6 +2329,27 @@ export class MultiplayerManager {
   public onRpgStateSync(cb: RpgStateSyncCallback) {
     this.onRpgStateSyncCallbacks.push(cb);
     if (this.currentRpgBundle) cb(this.currentRpgBundle);
+  }
+  public onInventorySync(cb: InventorySyncCallback) {
+    this.onInventorySyncCallbacks.push(cb);
+  }
+  public onInventoryDelta(cb: InventoryDeltaCallback) {
+    this.onInventoryDeltaCallbacks.push(cb);
+  }
+  public requestInventory() {
+    if (this.room) {
+      this.room.send("INVENTORY_GET", {});
+    }
+  }
+  public equipInventoryItem(itemId: string, mode?: OutfitMode) {
+    if (this.room) {
+      this.room.send("INVENTORY_EQUIP", { itemId, mode });
+    }
+  }
+  public unequipInventoryItem(itemId: string) {
+    if (this.room) {
+      this.room.send("INVENTORY_UNEQUIP", { itemId });
+    }
   }
   public onRpgClassChosen(cb: RpgStateSyncCallback) {
     this.onRpgClassChosenCallbacks.push(cb);
