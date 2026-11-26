@@ -67,8 +67,19 @@ function getHttpsConfig(enabled: boolean, customCert?: string, customKey?: strin
 
 export default defineConfig(({ mode }) => {
   const envDir = path.resolve(__dirname, ".");
+  const rootEnvDir = path.resolve(__dirname, "..");
+  const serverEnvDir = path.resolve(__dirname, "../server");
+
   const env = loadEnv(mode, envDir, "");
-  const serverUrl = typeof env.VITE_SERVER_URL === "string" ? env.VITE_SERVER_URL : (typeof process.env.VITE_SERVER_URL === "string" ? process.env.VITE_SERVER_URL : "");
+  const rootEnv = loadEnv(mode, rootEnvDir, "");
+  const serverEnv = loadEnv(mode, serverEnvDir, "");
+
+  const serverUrl =
+    typeof env.VITE_SERVER_URL === "string"
+      ? env.VITE_SERVER_URL
+      : typeof process.env.VITE_SERVER_URL === "string"
+        ? process.env.VITE_SERVER_URL
+        : "";
 
   const enableHttps =
     env.VITE_HTTPS === "true" ||
@@ -79,15 +90,57 @@ export default defineConfig(({ mode }) => {
   const customCert = env.SSL_CERT_PATH || process.env.SSL_CERT_PATH;
   const customKey = env.SSL_KEY_PATH || process.env.SSL_KEY_PATH;
 
-  const backendIsHttps =
-    serverUrl.startsWith("https://") ||
-    enableHttps ||
-    env.SERVER_HTTPS === "true" ||
-    process.env.SERVER_HTTPS === "true";
+  // Determine backend protocol matching server/src/index.ts shouldEnableHttps() precedence:
+  // process.env -> server/.env -> root .env -> client/.env
+  const serverHttpsFlag =
+    process.env.SERVER_HTTPS ??
+    serverEnv.SERVER_HTTPS ??
+    rootEnv.SERVER_HTTPS ??
+    env.SERVER_HTTPS;
+  const serverPort = process.env.PORT || serverEnv.PORT || rootEnv.PORT || "2567";
+  const serverBackendUrl =
+    process.env.SERVER_URL || serverEnv.SERVER_URL || rootEnv.SERVER_URL || "";
 
-  const proxyTarget = backendIsHttps
-    ? "https://localhost:2567"
-    : "http://localhost:2567";
+  let backendIsHttps = false;
+  if (serverHttpsFlag === "false") {
+    backendIsHttps = false;
+  } else if (serverHttpsFlag === "true") {
+    backendIsHttps = true;
+  } else if (serverBackendUrl.startsWith("https://")) {
+    backendIsHttps = true;
+  } else if (serverUrl.startsWith("https://")) {
+    backendIsHttps = true;
+  }
+
+  const proxyTarget =
+    process.env.VITE_PROXY_TARGET ||
+    env.VITE_PROXY_TARGET ||
+    (backendIsHttps ? `https://localhost:${serverPort}` : `http://localhost:${serverPort}`);
+
+  const proxyConfig = {
+    "/api": {
+      target: proxyTarget,
+      changeOrigin: true,
+      secure: false,
+    },
+    "/health": {
+      target: proxyTarget,
+      changeOrigin: true,
+      secure: false,
+    },
+    "/matchmake": {
+      target: proxyTarget,
+      changeOrigin: true,
+      secure: false,
+    },
+    "/colyseus": {
+      target: proxyTarget,
+      changeOrigin: true,
+      ws: true,
+      secure: false,
+      rewrite: (p: string) => p.replace(/^\/colyseus/, ""),
+    },
+  };
 
   return {
     envDir,
@@ -109,30 +162,13 @@ export default defineConfig(({ mode }) => {
         "Permissions-Policy":
           "compute-pressure=*, encrypted-media=*, autoplay=*, camera=*, microphone=*",
       },
-      proxy: {
-        "/api": {
-          target: proxyTarget,
-          changeOrigin: true,
-          secure: false,
-        },
-        "/health": {
-          target: proxyTarget,
-          changeOrigin: true,
-          secure: false,
-        },
-        "/matchmake": {
-          target: proxyTarget,
-          changeOrigin: true,
-          secure: false,
-        },
-        "/colyseus": {
-          target: proxyTarget,
-          changeOrigin: true,
-          ws: true,
-          secure: false,
-          rewrite: (path) => path.replace(/^\/colyseus/, ""),
-        },
-      },
+      proxy: proxyConfig,
+    },
+    preview: {
+      port: 5173,
+      host: true,
+      https: getHttpsConfig(enableHttps, customCert, customKey),
+      proxy: proxyConfig,
     },
     build: {
       target: "esnext",

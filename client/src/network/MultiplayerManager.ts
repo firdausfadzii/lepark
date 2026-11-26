@@ -320,12 +320,9 @@ export class MultiplayerManager {
         cleanUrl = cleanUrl.replace(/^http:\/\//i, "https://");
       }
       serverUrl = cleanUrl.replace(/^http:/i, "ws:").replace(/^https:/i, "wss:");
-    } else if (window.location.protocol === "http:" && (host === "localhost" || host === "127.0.0.1")) {
-      serverUrl = `ws://${host}:2567`;
-    } else if (window.location.protocol === "https:" && (host === "localhost" || host === "127.0.0.1")) {
-      serverUrl = `wss://${host}:2567`;
     } else {
-      // Connect to the same origin host via /colyseus proxy (handles HTTPS -> WSS cleanly)
+      // Connect to the same origin host via /colyseus proxy (Vite dev proxy on localhost,
+      // Nginx reverse proxy on hosting) — avoids CORS & cross-port self-signed cert issues.
       const portStr =
         window.location.port && window.location.port !== "80" && window.location.port !== "443"
           ? `:${window.location.port}`

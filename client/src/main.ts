@@ -1315,25 +1315,19 @@ let previewAnimTimer: number | null = null;
 let previewFrameIndex = 0;
 
 function getApiUrl(path: string): string {
+  const cleanPath = path.startsWith("/") ? path : `/${path}`;
   const envUrl = (import.meta as any).env?.VITE_SERVER_URL;
   if (envUrl && typeof envUrl === "string" && envUrl.trim().length > 0) {
     let base = envUrl.trim().replace(/\/+$/, "");
     if (typeof window !== "undefined" && window.location.protocol === "https:" && base.startsWith("http://")) {
       base = base.replace(/^http:\/\//i, "https://");
     }
-    const cleanPath = path.startsWith("/") ? path : `/${path}`;
     return `${base}${cleanPath}`;
   }
-  const host = window.location.hostname || "localhost";
-  if (window.location.protocol === "http:" && (host === "localhost" || host === "127.0.0.1")) {
-    return `http://${host}:2567${path.startsWith("/") ? path : `/${path}`}`;
-  }
-  if (window.location.protocol === "https:" && (host === "localhost" || host === "127.0.0.1")) {
-    return `https://${host}:2567${path.startsWith("/") ? path : `/${path}`}`;
-  }
-  // When accessed via HTTPS, LAN IP, or any host without explicit VITE_SERVER_URL,
-  // use same-origin which routes to backend via Vite proxy
-  return path;
+  // When VITE_SERVER_URL is empty, always use same-origin so Vite dev proxy
+  // (on localhost) and Nginx reverse proxy (on hosting) handle routing without CORS
+  // or cross-port self-signed certificate issues.
+  return cleanPath;
 }
 
 /**
